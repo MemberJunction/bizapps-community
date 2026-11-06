@@ -100,7 +100,7 @@ Community is pre-release (`0.1.0`). ✅ is designed in the baseline specificatio
 | 🚧 | **Participatory Point-Allocation & Quadratic Ideation (`ForumIdeaCampaign` & `ForumIdeaPost`):** `100-point` member wallets or Quadratic Voting ($\text{Cost} = \text{Votes}^2$) with demographic/tier slicing via `BizApps Common`. |
 | 🚧 | **Native Polls & Structured Intakes (`ForumFormPost`):** hard-FK integration with **`BizApps Forms`** (`__mj_BizAppsForms`) for inline single-click polls, multi-question surveys, and structured case intakes. |
 | 🚧 | **MJ Core Collaborative Docs, Slides & Sheets (`ForumArtifactPost`):** live Yjs co-editing on `MJ: Artifacts` (`.doc.md`, `.slides.json`, `.sheet.json`) with passage-anchored comment threads, AI `Suggest` redlines, and custom Community `BaseDocumentBlock` embeds. |
-| 🚧 | **AI-Generated Interactive Games & Mini-Apps (`ForumInteractivePost`):** describe a trivia challenge, compliance simulation, or ROI calculator in natural language and let the AI Assistant spin up a live sandboxed `<mj-react-component>` with leaderboards inside the post. |
+| 🚧 | **AI-Generated Interactive Component Artifacts (`ForumInteractivePost`):** describe a trivia challenge, compliance simulation, or ROI calculator in natural language and let the AI Assistant generate a versioned **`MJ: Artifact` (`ArtifactType = 'Component'`)** rendered via `@memberjunction/ng-artifacts` (`ComponentArtifactViewerComponent`) with built-in storage, version history, permission checks, and live leaderboards (`ForumInteractiveSession`). |
 
 ### Personalized Digests & Reply-by-Email
 
@@ -135,17 +135,63 @@ Community is pre-release (`0.1.0`). ✅ is designed in the baseline specificatio
 | `ForumIdeaCampaign` & `ForumIdeaPost` | `IsA` `Forum` and `IsA` `ForumPost` subtype tables for 100-point budget allocation (`ForumIdeaWallet`) and quadratic voting (`ForumIdeaAllocation`). |
 | `ForumFormPost` | `IsA` `ForumPost` subtype table with hard SQL Foreign Keys to `__mj_BizAppsForms.Form(ID)` and `FormDistribution(ID)`. |
 | `ForumArtifactPost` | `IsA` `ForumPost` subtype table with hard SQL Foreign Keys to `__mj.Artifact(ID)`, `__mj.ArtifactVersion(ID)`, and `__mj_BizAppsCollaboration.SpaceItem(ID)` for live Yjs co-edited Docs, Slides, and Sheets. |
-| `ForumInteractivePost` & `ForumInteractiveSession` | `IsA` `ForumPost` subtype table and session leaderboard log for AI-generated interactive games, simulations, and calculators hosted in `<mj-react-component>`. |
+| `ForumInteractivePost` & `ForumInteractiveSession` | `IsA` `ForumPost` subtype table with hard SQL Foreign Keys to `__mj.Artifact(ID)` (`ComponentArtifactID`), `__mj.ArtifactVersion(ID)`, and `__mj_BizAppsCollaboration.SpaceItem(ID)`—storing and rendering AI-generated interactive games, simulations, and calculators as versioned **Interactive Component Artifacts** (`ComponentArtifactViewerComponent`) with version-tracked session leaderboards. |
 
 ---
 
 ## Extend it
 
-Following the exact extensibility model of [`BizApps Collaboration`](https://github.com/MemberJunction/bizapps-collaboration), **Community** is extensible along two axes without touching core tables or adding soft polymorphic keys:
+### Why BizApps Community Is the Most Extensible Community Platform Ever Built — Without Forking Core
 
-1. **Forum Types (`ForumType`) & Post Types (`PostType`):** Register a `BaseForumServerDriver` / `BaseForumUIDriver` or `BasePostServerDriver` / `BasePostUIDriver` via `@RegisterClass` and attach a 1:1 `IsA` child table (`ForumExtensionEntity` or `PostExtensionEntity`) with real SQL Foreign Keys.
-2. **4-Level Settings Cascade:** Configure allowed `PostType`s and feature switches at Global (`MJ: Application Settings`) → `ForumType.Configuration` → `CommunitySpace.Configuration` → `Forum.Configuration` (cascading down `ParentForumID` sub-forums).
-3. **Downstream Bridge Open Apps (`mj-bizapps-community-*`):** Optional sibling domains (`mj-bizapps-community-voting`, `mj-bizapps-community-issues`, `mj-bizapps-community-credentialing`) ship as downstream bridge Open Apps that depend on both apps and declare `IsA` subtype tables (`ForumVotingAssembly`, `ForumBallotPost`, `ForumIssuePost`) with enforced SQL Foreign Keys.
+Historically, organizations choosing community software faced a false choice between two broken models:
+
+| Traditional Approach | Why It Breaks Down |
+|---|---|
+| **1. Closed Legacy SaaS Black Boxes** | You are locked into rigid, vendor-hardcoded thread types and bolted-on widgets. You cannot add real relational tables, custom post mechanics, or domain-specific workflows—and your community data lives in someone else's silo. |
+| **2. "Fork-and-Maintain" Open Source** | You get the source code, but the moment you add custom columns to core forum tables or patch server/UI files for your industry's workflows, **you violate core and break your upgrade path**. Every upstream release becomes a painful merge-conflict project. |
+| **3. MemberJunction Upgrade-Safe Open App Extensibility (`BizApps Community`)** | Built from day one on MemberJunction's metadata, `IsA` table inheritance, and `@RegisterClass` polymorphism. **You extend schema, server logic, UI rendering, and AI behavior through first-class extension points without ever touching a single line of Community Core—so you stay 100% upgrade-safe forever.** |
+
+```mermaid
+flowchart LR
+  subgraph CORE["Unmodified Community Core (100% Upgrade-Safe)"]
+    FT["ForumType Registry<br/>(BaseForumTypeID)"]
+    PT["PostType Registry<br/>(BasePostTypeID)"]
+    F["Forum (Parent PK)"]
+    FP["ForumPost (Parent PK)"]
+  end
+
+  subgraph EXT["Your Upgrade-Safe Extensions & Bridge Open Apps"]
+    FISA["Custom Forum IsA Table<br/>(PK/FK -> Forum.ID + Hard Domain FKs)"]
+    PISA["Custom Post IsA Table<br/>(PK/FK -> ForumPost.ID + Hard Domain FKs)"]
+    DRV["@RegisterClass Drivers<br/>(ServerDriverClass & UIDriverClass)"]
+    ART["Interactive Component Artifacts<br/>(MJ: Artifacts + ComponentArtifactViewer)"]
+  end
+
+  FT --> DRV
+  PT --> DRV
+  F -. "1:1 IsA (Zero Core Schema Edits)" .-> FISA
+  FP -. "1:1 IsA (Zero Core Schema Edits)" .-> PISA
+  FP --> ART
+```
+
+### Five Upgrade-Safe Extension Mechanics Built Into the Architecture
+
+1. **Two-Axis Plug-In Registries (`ForumType` + `PostType`) with Single-Inheritance Subclassing:**
+   - Every container is governed by a `ForumType` (`BaseForumServerDriver` + `BaseForumUIDriver`) and every root post or reply is governed by a `PostType` (`BasePostServerDriver` + `BasePostUIDriver`).
+   - Need a specialized `'clinical-case-board'` forum or a `'peer-reviewed-protocol'` post type? Point `BaseForumTypeID` or `BasePostTypeID` at an existing type, register your subclass via `@RegisterClass`, and override only the hooks or UI components you care about—while inheriting everything else automatically.
+2. **Database-Enforced `1:1 IsA` Table Inheritance (`100% Hard SQL Foreign Keys`, Zero Soft Keys):**
+   - Never pollute core tables with nullable custom columns or untyped polymorphic UUIDs.
+   - Any `ForumType` (`ForumExtensionEntity`) or `PostType` (`PostExtensionEntity`) can declare a 1:1 `IsA` child table whose primary key `ID` is a foreign key to `Forum(ID)` or `ForumPost(ID)`.
+   - MemberJunction CodeGen automatically links parent and child entities into a single transactional unit with full TypeScript types, cascading validation, permissions, and GraphQL relationships—while `Forum` and `ForumPost` remain untouched across upgrades.
+3. **Composable Downstream Bridge Open Apps (`mj-bizapps-community-*`):**
+   - Optional enterprise domains never bloat Community Core. Instead, lightweight downstream bridge Open Apps (`mj-bizapps-community-voting`, `mj-bizapps-community-issues`, `mj-bizapps-community-credentialing`) depend on both apps and contribute their own `IsA` tables (`ForumVotingAssembly`, `ForumBallotPost`, `ForumIssuePost`, `ForumAccreditedSpec`) with **enforced SQL Foreign Keys** to both schemas.
+   - Organizations install only the bridges they need, and partners or vertical communities can publish their own `mj-bizapps-community-*` plugin apps using the exact same pattern.
+4. **4-Level Hierarchical Configuration Cascade (`resolveForumConfiguration`):**
+   - Control which root and reply `PostType`s are allowed—and toggle feature switches (`qaGrading`, `ideation`, `formsAndPolls`, `collaborativeDocs`, `interactiveMiniApps`, `moderation`, `anonymousAccess`)—at four cascading levels without writing code:
+     $$\text{Global MJ App Settings} \longrightarrow \text{ForumType} \longrightarrow \text{CommunitySpace} \longrightarrow \text{Forum / Sub-Forum}$$
+5. **Runtime AI Extensibility via Interactive Component Artifacts (`MJ: Artifacts`):**
+   - Not every new post experience even requires a deployment. Using `ForumInteractivePost`, a moderator or member can ask the AI Assistant in plain English to build a custom trivia challenge, compliance simulator, or benchmark calculator.
+   - MJ compiles and stores the `ComponentSpec` as a versioned **`MJ: Artifact` (`ArtifactType = 'Component'`)** and **`MJ: Artifact Version`**, renders it safely through `@memberjunction/ng-artifacts` (`ComponentArtifactViewerComponent`), tracks scores in `ForumInteractiveSession`, and lets admins promote hit experiences into reusable `PostType` templates in one click.
 
 See [**Extensibility Architecture (`docs/EXTENSIBILITY_PLAN.md`)**](docs/EXTENSIBILITY_PLAN.md) for full driver interfaces, ERDs, and SQL examples.
 
@@ -157,7 +203,7 @@ See [**Extensibility Architecture (`docs/EXTENSIBILITY_PLAN.md`)**](docs/EXTENSI
 |---|---|
 | **Phase 1** | Core `IsA` schema (`__mj_BizAppsCommunity`), `ForumType` & `PostType` registries, 4-level configuration cascade, `fnCommunityForumAccess`, and `@mj-biz-apps/community-entities`. |
 | **Phase 2** | `BaseForumServerDriver` & `BasePostServerDriver` runtime, `CommunityPublicEdge` (`/community` anonymous `TeaserOnly`/`FullRead`), Q&A epistemic rubric grading, and 100-point ideation wallets. |
-| **Phase 3** | MJ Core Docs/Slides/Sheets live Yjs co-editing (`ForumArtifactPost` + custom `BaseDocumentBlock`s), `BizApps Forms` inline polls (`ForumFormPost`), and AI Interactive Game/Mini-App builder (`ForumInteractivePost`). |
+| **Phase 3** | MJ Core Docs/Slides/Sheets live Yjs co-editing (`ForumArtifactPost` + custom `BaseDocumentBlock`s), `BizApps Forms` inline polls (`ForumFormPost`), and AI Interactive Component Artifact builder (`ForumInteractivePost` + `ComponentArtifactViewerComponent`). |
 | **Phase 4** | Personalized digests, HMAC Reply-by-Email, downstream bridge Open Apps (`mj-bizapps-community-voting`, `mj-bizapps-community-issues`, `mj-bizapps-community-credentialing`), and health probes (`BIZAPPS.COMMUNITY.*`). |
 
 ---
@@ -165,7 +211,8 @@ See [**Extensibility Architecture (`docs/EXTENSIBILITY_PLAN.md`)**](docs/EXTENSI
 ## Documentation
 
 - [**Master Architecture, Full IsA Schema & Work Plan (`plans/plan.md`)**](plans/plan.md) — Complete 33-table SQL DDL, Mermaid ERDs, anonymous access TVF, and phased engineering plan.
-- [**ForumType & PostType Extensibility Plan (`docs/EXTENSIBILITY_PLAN.md`)**](docs/EXTENSIBILITY_PLAN.md) — Deep dive into `IsA` hard-FK subtype tables, 4-level configuration cascade, per-forum roles, MJ Docs/Slides/Sheets integration, AI interactive games, and downstream bridge Open Apps.
+- [**ForumType & PostType Extensibility Plan (`docs/EXTENSIBILITY_PLAN.md`)**](docs/EXTENSIBILITY_PLAN.md) — Deep dive into `IsA` hard-FK subtype tables, 4-level configuration cascade, per-forum roles, MJ Docs/Slides/Sheets integration, Interactive Component Artifacts, and downstream bridge Open Apps.
 - [**Interactive AI-Native Community UX Prototype (`docs/ux/interactive-community-prototype.html`)**](docs/ux/interactive-community-prototype.html) — Self-contained interactive HTML prototype of the Collapsed Forum, Ask-First Composer, Living Thread Synthesis, and Collaboration Space graduation flow.
 - [**CLAUDE.md**](CLAUDE.md) — Metadata, migration, and workspace authoring rules.
+
 

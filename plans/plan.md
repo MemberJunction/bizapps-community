@@ -25,9 +25,9 @@ Rather than isolating member discussions in a disconnected forum silo—or pollu
 3. **MJ Core Collaborative Docs, Slides & Sheets (`MJ PR #6215`):**
    - `ForumArtifactPost` (`IsA` `ForumPost`) embeds live Yjs co-edited **MJ Documents (`.doc.md`), Presentations (`.slides.json`), and Spreadsheets (`.sheet.json`)** backed by hard FKs to `__mj.Artifact(ID)` and `__mj.ArtifactVersion(ID)`.
    - Supports delegated co-editing permissions (`AuthorOnly`, `ForumModerators`, `HighTrustMembers`, `AllContributors`), passage-anchored `MJ: Conversations` comment threads, AI agent co-authoring with `Suggest` redlines (`DocumentToolLibrary` / `SlidesToolLibrary` / `SheetsToolLibrary`), and three custom Community `BaseDocumentBlock` plugins (`CommunityThreadSynthesisBlock`, `CommunityCanonAnswerBlock`, `CommunityIdeaLeaderboardBlock`).
-4. **Native Polls & Structured Intakes via `BizApps Forms` + AI-Generated Interactive Games (`MJ PR #5257`):**
+4. **Native Polls & Structured Intakes via `BizApps Forms` + AI-Generated Interactive Component Artifacts:**
    - `mj-bizapps-forms` is a **hard dependency** of `mj-bizapps-community`: `ForumFormPost` (`IsA` `ForumPost`) links directly to `__mj_BizAppsForms.Form(ID)` and `FormDistribution(ID)` with real SQL Foreign Keys for inline polls, multi-question surveys, and structured case intakes.
-   - `ForumInteractivePost` (`IsA` `ForumPost`) + `ForumInteractiveSession` embed MJ's **Sandboxed Component Host (`<mj-react-component>`, `MJ PR #5257`)** inside an opaque-origin CSP iframe (`BridgeDataProvider`), allowing an AI Assistant to dynamically generate playable trivia games, "Spot the Compliance Flaw" simulations, ROI calculators, and bracket challenges from a natural-language prompt.
+   - `ForumInteractivePost` (`IsA` `ForumPost`) + `ForumInteractiveSession` use **MemberJunction Interactive Component Artifacts** (`MJ: Artifacts` & `MJ: Artifact Versions` with `ArtifactType = 'Component'`, `ComponentSpec` from `@memberjunction/interactive-component-types`, and `@memberjunction/ng-artifacts` `ComponentArtifactViewerComponent` / `<mj-artifact-type-plugin-viewer>`), giving AI-generated trivia games, "Spot the Compliance Flaw" simulations, ROI calculators, and bracket challenges full database storage, immutable version history (`<mj-artifact-version-history>`), client-side permission evaluation (`EvaluateComponentPermissions`), and sandboxed execution (`MJ PR #5257`).
 5. **Dual Human + AI Epistemic Answer Grading & Participatory Point-Allocation Ideation:**
    - `ForumQuestionPost` and `ForumAnswerPost` (`IsA` `ForumPost`) combine Stack Overflow-style `+1 / -1` voting (weighted by `ForumRoleType.VoteWeightMultiplier`) with an asynchronous MJ Agent Epistemic Rubric (**Canon Alignment**, **Completeness**, and **Temporal Freshness / Supersession detection**).
    - `ForumIdeaCampaign` (`IsA` `Forum`) and `ForumIdeaPost` (`IsA` `ForumPost`) give members `100-point` wallets (`ForumIdeaWallet`) or Quadratic Voting ($\text{Cost} = \text{Votes}^2$) with demographic/tier slicing via `BizApps Common`.
@@ -44,7 +44,7 @@ Rather than isolating member discussions in a disconnected forum silo—or pollu
 
 | Hard Upstream Dependency | SQL Schema | Enforced SQL Foreign Keys & Capabilities in `mj-bizapps-community` |
 |---|---|---|
-| **BizApps Collaboration** (`mj-bizapps-collaboration`) | `__mj_BizAppsCollaboration` | `CommunitySpace(ID)` IsA `Space(ID)`; `Forum.SpaceID` and `ForumPost.PromotedSpaceID` reference `Space(ID)`; `ForumPostAttachment.SpaceItemID`, `ForumArtifactPost.SpaceItemID`, and `ForumPlaybook.SpaceItemID` reference `SpaceItem(ID)`; inherits `fnCollaborationAccess(@UserID)` (`Shared` vs `Team` bands). |
+| **BizApps Collaboration** (`mj-bizapps-collaboration`) | `__mj_BizAppsCollaboration` | `CommunitySpace(ID)` IsA `Space(ID)`; `Forum.SpaceID` and `ForumPost.PromotedSpaceID` reference `Space(ID)`; `ForumPostAttachment.SpaceItemID`, `ForumArtifactPost.SpaceItemID`, `ForumInteractivePost.SpaceItemID`, and `ForumPlaybook.SpaceItemID` reference `SpaceItem(ID)`; inherits `fnCollaborationAccess(@UserID)` (`Shared` vs `Team` bands). |
 | **BizApps Common** (`mj-bizapps-common`) | `__mj_BizAppsCommon` | `ForumPost.AuthorPersonID`, `ForumPostVote.VoterPersonID`, `ForumIdeaWallet.PersonID`, and `CommunityMemberProfile.PersonID` reference `Person(ID)`; `ForumIdeaWallet.OrganizationID` references `Organization(ID)` for demographic & tier slicing. |
 | **BizApps Tasks** (`mj-bizapps-tasks`) | `__mj_BizAppsTasks` | Action items extracted from discussions or created inside promoted Working Spaces land directly in `__mj_BizAppsTasks.Task(ID)`. |
 | **BizApps Forms** (`mj-bizapps-forms`) | `__mj_BizAppsForms` | `ForumFormPost(ID)` (IsA `ForumPost`) holds enforced SQL Foreign Keys to `__mj_BizAppsForms.Form(ID)` and `__mj_BizAppsForms.FormDistribution(ID)` for inline polls, pulse checks, and structured intake forms. |
@@ -80,7 +80,7 @@ erDiagram
     COMMON_Org["__mj_BizAppsCommon.Organization"]
     FORMS_Form["__mj_BizAppsForms.Form"]
     FORMS_Dist["__mj_BizAppsForms.FormDistribution"]
-    MJ_Artifact["__mj.Artifact (Docs/Slides/Sheets)"]
+    MJ_Artifact["__mj.Artifact (Docs/Slides/Sheets & Interactive Components)"]
     MJ_ArtifactVer["__mj.ArtifactVersion"]
 
     %% Community Container Axis
@@ -136,6 +136,10 @@ erDiagram
     MJ_Artifact ||--o{ COMM_ArtifactPost : "ArtifactID (Hard FK)"
     MJ_ArtifactVer ||--o{ COMM_ArtifactPost : "PinnedArtifactVersionID (Hard FK)"
     COLLAB_SpaceItem ||--o{ COMM_ArtifactPost : "SpaceItemID (Hard FK)"
+    MJ_Artifact ||--o{ COMM_InteractivePost : "ComponentArtifactID (Hard FK)"
+    MJ_ArtifactVer ||--o{ COMM_InteractivePost : "PinnedArtifactVersionID (Hard FK)"
+    COLLAB_SpaceItem ||--o{ COMM_InteractivePost : "SpaceItemID (Hard FK)"
+    MJ_ArtifactVer ||--o{ COMM_InteractiveSession : "ArtifactVersionID (Hard FK)"
     COMMON_Org ||--o{ COMMON_Person : "Affiliates"
 ```
 
@@ -1046,7 +1050,7 @@ GO
 ### Phase 3: AI Epistemic Answer Grading, Pre-Post Synthesis & Interactive Game Builder
 1. Build **Pre-Post Ask-First Deflection Action** querying `ForumPost`, `ForumPlaybook`, and `MJ: Knowledge Hub`.
 2. Build **AI Epistemic Answer Rubric Agent** (`ForumAnswerPost.AICanonStatus`, `AIGradeScore`, `AIRubricGradeJSON`, supersession detection).
-3. Build **AI Interactive Post Builder Agent** that compiles natural-language prompts into `ForumInteractivePost.ComponentSpecJSON` for `<mj-react-component>` (`MJ PR #5257`).
+3. Build **AI Interactive Post Builder Agent** that compiles natural-language prompts into a `ComponentSpec` (`@memberjunction/interactive-component-types`) persisted as an **`MJ: Artifact` (`ArtifactType = 'Component'`) & `MJ: Artifact Version`**, linked via `ForumInteractivePost.ComponentArtifactID` and rendered through `@memberjunction/ng-artifacts` (`ComponentArtifactViewerComponent` / `<mj-artifact-type-plugin-viewer>`).
 
 ### Phase 4: MJ Core Docs/Slides/Sheets Co-Editing (`MJ PR #6215`) & `BizApps Forms` Integration
 1. Implement `ArtifactPostServerDriver` and `ArtifactPostUIDriver` (`ForumArtifactPost`) with delegated Yjs co-editing permissions, passage-anchored `MJ: Conversations` threads, and `Suggest` redlines.

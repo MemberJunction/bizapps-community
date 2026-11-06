@@ -98,7 +98,7 @@ In a multi-type community, **both root thread starters and nested replies are `F
 | `collaborative-deck` | `Both` | `ForumArtifactPost` (`DocumentKind='SlideDeck'`) | Same hard FKs to `__mj.Artifact`, `__mj.ArtifactVersion`, and `SpaceItem` |
 | `case-review` | `RootOnly` | `ForumCaseReviewPost` | Structured columns (`ContextMarkdown`, `ConstraintsMarkdown`, `AttemptedMarkdown`, `DecisionAskMarkdown`, `RubricTemplateFormID` -> `__mj_BizAppsForms.Form(ID)`) |
 | `live-ama` | `RootOnly` | `ForumAMAPost` | `HostUserID` -> `__mj.User(ID)`, `StartsAt`, `EndsAt`, `RecordingSpaceItemID` -> `__mj_BizAppsCollaboration.SpaceItem(ID)` |
-| `interactive-experience` | `Both` | `ForumInteractivePost` | `ComponentArtifactID` -> `__mj.Artifact(ID)`, `ComponentArtifactVersionID` -> `__mj.ArtifactVersion(ID)` |
+| `interactive-experience` | `Both` | `ForumInteractivePost` | `ComponentArtifactID` -> `__mj.Artifact(ID)`, `PinnedArtifactVersionID` -> `__mj.ArtifactVersion(ID)`, `SpaceItemID` -> `__mj_BizAppsCollaboration.SpaceItem(ID)` |
 
 ---
 
@@ -131,26 +131,37 @@ In MemberJunction (**[MJ PR #6215 — `plans/docs-slides-sheets.md`](https://git
 
 ---
 
-## 5. AI-Generated Interactive Games, Simulations & Mini-App Posts (`ForumInteractivePost`)
+## 5. AI-Generated Interactive Games, Simulations & Mini-App Posts via Interactive Component Artifacts (`ForumInteractivePost`)
 
-Building on **[MJ PR #5257 (`plans/sandboxed-component-host/proposal.md`)](https://github.com/MemberJunction/MJ/pull/5257)**, MJ runs agent-authored React components (`MJ: Artifacts` of type `Component`) inside an isolated, opaque-origin CSP iframe (`<mj-react-component>`) connected to the host via `BridgeDataProvider`.
+Rather than storing bespoke component code blobs in community tables or wiring post components directly to low-level `<mj-react-component>` hosts, `mj-bizapps-community` builds directly on **MemberJunction's Interactive Component Artifact architecture**:
+* **`MJ: Artifacts` & `MJ: Artifact Versions` (`ArtifactType = 'Component'`):** Every interactive experience is stored and versioned as a first-class MJ Artifact whose `ArtifactVersion.Content` holds a structured `ComponentSpec` (`@memberjunction/interactive-component-types`), loaded on demand via `ArtifactMetadataEngine.Instance.LoadVersionsForArtifact`.
+* **`@memberjunction/ng-artifacts` (`ComponentArtifactViewerComponent` / `<mj-artifact-type-plugin-viewer>`):** Renders the `Component` artifact through MJ's standard artifact plugin pipeline (`@RegisterClass(BaseArtifactViewerPluginComponent, 'ComponentArtifactViewerPlugin')`), which encapsulates the sandboxed `<mj-react-component>` host (**[MJ PR #5257](https://github.com/MemberJunction/MJ/pull/5257)**) while adding permission checks, version history, and structured feedback out of the box.
 
-In `mj-bizapps-community`, this powers **`PostType = 'interactive-experience'` (`ForumInteractivePost` IsA `ForumPost`)**:
+### 5.1 Why Using Interactive Component Artifacts Beats Direct `<mj-react-component>` Wiring
+1. **Zero Custom Code Storage + 100% Hard SQL Foreign Keys:**
+   * `ForumInteractivePost` (`IsA` `ForumPost`) holds enforced SQL Foreign Keys to `__mj.Artifact(ID)` (`ComponentArtifactID`), `__mj.ArtifactVersion(ID)` (`PinnedArtifactVersionID`), and `__mj_BizAppsCollaboration.SpaceItem(ID)` (`SpaceItemID`).
+   * Because the artifact can also be mounted as a `SpaceItem`, any interactive calculator, quiz, or simulator created in a forum thread automatically appears in the Collaboration Space's shared Library.
+2. **Immutable Version History & Iterative AI Refinement (`<mj-artifact-version-history>` & `<mj-component-feedback-panel>`):**
+   * When an author or moderator uses the built-in `<mj-component-feedback-panel>` to ask the AI Assistant to *"Add a 6th bonus question on HIPAA breach notification windows"* or *"Update the calculator for 2027 dues tiers"*, the agent writes a new `MJ: Artifact Version` (`v2`, `v3`, …) on the same `ComponentArtifactID`.
+   * Posts can either track the latest version (`PinnedArtifactVersionID IS NULL`) or pin a certified version (`PinnedArtifactVersionID = <v2.ID>`), with full 1-click rollback via `<mj-artifact-version-history>`.
+3. **Automatic Client-Side Permission Enforcement (`EvaluateComponentPermissions`):**
+   * Before mounting the interactive component, `ComponentArtifactViewerComponent` runs `EvaluateComponentPermissions(spec, currentUser)` against `spec.dataRequirements` (`entities` and `queries`), verifying `entityInfo.GetUserPermisions(currentUser).CanRead` and `queryInfo.UserCanRun(currentUser)`.
+   * Moderators and technical reviewers can also switch to `ComponentArtifactViewerComponent`'s built-in **Code**, **Functional Requirements**, **Technical Design**, and **Data Requirements** tabs to audit how the mini-app works before approving or pinning it.
 
-### 5.1 How It Works End-to-End
+### 5.2 How It Works End-to-End in a Forum
 1. **Prompting the Composer Assistant:**
-   * In any Forum that allows `interactive-experience` (or a subclassed `PostType` like `weekly-trivia-game` or `roi-simulator`), a user or community steward clicks **"✨ Build Interactive Post with AI"** and describes what they want:
+   * In any Forum that allows `interactive-experience` (or a subclassed `PostType` like `weekly-trivia-game` or `roi-simulator`), a member or community steward clicks **"✨ Build Interactive Post with AI"** and describes what they want:
      * *"Create a 5-question timed clinical diagnostic challenge based on this month's Cardiology Guidelines PDF, with instant explanations and a peer leaderboard."*
      * *"Build an interactive 'Staffing & Dues Calculator' where members enter their FTE count and operating budget to see how their ratios compare against the community median."*
      * *"Create a 16-seed single-elimination bracket where members vote head-to-head on the most overrated software patterns."*
-2. **AI Component Generation & Sandboxed Execution:**
-   * The Community Builder Agent generates a React component artifact (`ComponentArtifactID` FK -> `__mj.Artifact(ID)`) using MJ's `Component_*` tools and linter, and saves a `ForumInteractivePost` row with `InteractiveKind` (`'TriviaQuiz' | 'SimulationCalculator' | 'BracketTournament' | 'ScenarioRoleplay' | 'FlashcardChallenge' | 'CustomMiniApp'`) and `GameConfigJSON`.
-   * When members view the post in the feed or thread, `<mj-react-component>` mounts the interactive experience inside the sandboxed frame.
-3. **Structured Persistence & Live Leaderboards (`ForumInteractiveSession`):**
-   * When a member finishes a quiz round, submits a simulation run, or completes a scenario, the component calls the typed Remote Operation `Community.RecordInteractiveSession`, writing a row to `ForumInteractiveSession` (`InteractivePostID` FK -> `ForumInteractivePost(ID)`, `UserID` FK -> `__mj.User(ID)`, `Score`, `DurationMs`, `SessionStateJSON`).
-   * The post card renders a live **Community Leaderboard & Peer Distribution Histogram** right below the interactive canvas, awards outcome reputation points (`CommunityReputationEvent`), and lets members discuss strategies in the thread replies below!
-4. **1-Click "Promote to Reusable Post Type":**
-   * If an AI-generated interactive post is a hit, a Forum Admin can click **"Save as Reusable Post Type"**, registering a new `PostType` row (`BasePostTypeID` -> `interactive-experience`) so anyone in the community can launch new rounds of that game or calculator from a template!
+2. **Artifact Creation & `InteractivePostUIDriver` Rendering:**
+   * The Community Builder Agent generates a `ComponentSpec` (`@memberjunction/interactive-component-types`), persists it as an `MJ: Artifact` (`ArtifactType = 'Component'`) + initial `MJ: Artifact Version`, and creates the `ForumInteractivePost` row (`ComponentArtifactID`, `InteractiveKind`, `ScoringMode`).
+   * When members view the post in the feed or thread, `InteractivePostUIDriver` renders `<mj-artifact-type-plugin-viewer [artifactVersion]="resolvedVersion" [artifactTypeName]="'Component'">`.
+3. **Version-Tracked Persistence & Live Leaderboards (`ForumInteractiveSession`):**
+   * When a member finishes a quiz round, submits a simulation run, or completes a scenario, the component's host bridge records a row in `ForumInteractiveSession` with hard Foreign Keys to both `ForumInteractivePost(ID)` (`InteractivePostID`) and `__mj.ArtifactVersion(ID)` (`ArtifactVersionID`), alongside `UserID`, `Score`, `DurationSeconds`, and `ResultPayloadJSON`.
+   * The post card renders a live **Community Leaderboard & Peer Distribution Histogram** right below the artifact viewer, awards outcome reputation points (`CommunityReputationEvent`), and lets members discuss strategies in the thread replies below!
+4. **1-Click "Promote to Reusable Post Type" or Fork Artifact:**
+   * Because the underlying game or calculator is a standard `MJ: Artifact`, any authorized member can fork the artifact into their own Working Space, or a Forum Admin can click **"Save as Reusable Post Type"** (`BasePostTypeID` -> `interactive-experience`) so anyone can launch new rounds from that template!
 
 ---
 
