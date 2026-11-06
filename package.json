@@ -1,0 +1,24 @@
+{
+  "name": "bizapps-community",
+  "private": true,
+  "version": "0.1.0",
+  "description": "BizApps Community — AI-native discussions, living thread syntheses, and personalized digests built on BizApps Collaboration spaces.",
+  "license": "BUSL-1.1",
+  "devDependencies": {
+    "@memberjunction/cli": "6.2.0-edge.7",
+    "@memberjunction/core": "6.2.0-edge.7",
+    "@memberjunction/generic-database-provider": "6.2.0-edge.7",
+    "@memberjunction/ng-shared-generic": "6.2.0-edge.7",
+    "@memberjunction/sqlserver-dataprovider": "6.2.0-edge.7",
+    "@memberjunction/testing-integration": "6.2.0-edge.7",
+    "dotenv": "^16.4.7",
+    "mssql": "12.7.0"
+  },
+  "scripts": {
+    "test": "node --experimental-strip-types --test packages/Core/src/rules.test.ts",
+    "build": "pnpm --filter \"./packages/*\" run build",
+    "mj:migrate": "mj migrate --schema __mj_BizAppsCommunity",
+    "mj:push": "mj sync push --dir=metadata",
+    "mj:standards": "mj standards check"
+  }
+}

@@ -1,0 +1,304 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>BizApps Community — Interactive AI-Native "Collapsed Forum + Collaboration" UX Prototype</title>
+  <script src="https://www.gstatic.com/antigravity/web/dev/tailwindcss.min.js"></script>
+  <style>
+    :root {
+      --background: #f8fafc;
+      --card: #ffffff;
+      --foreground: #0f172a;
+      --muted-foreground: #475569;
+      --border: #e2e8f0;
+      --primary: #0d9488;
+      --primary-foreground: #ffffff;
+      --accent: #f1f5f9;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --background: #090d16;
+        --card: #111827;
+        --foreground: #f8fafc;
+        --muted-foreground: #94a3b8;
+        --border: #1e293b;
+        --primary: #14b8a6;
+        --primary-foreground: #090d16;
+        --accent: #1e293b;
+      }
+    }
+    .tab-active {
+      background: var(--primary);
+      color: var(--primary-foreground);
+    }
+    .mock-nav-active {
+      background: var(--accent);
+      color: var(--foreground);
+      font-weight: 600;
+    }
+  </style>
+</head>
+<body class="bg-[var(--background)] text-[var(--foreground)] antialiased p-6">
+  <div class="max-w-7xl mx-auto space-y-5">
+
+    <!-- Header & Interactive Mode Switcher -->
+    <div class="flex flex-wrap items-center justify-between gap-4 border-b border-[var(--border)] pb-4">
+      <div>
+        <div class="inline-flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-[var(--primary)]">
+          <span>✦</span> BizApps Community · Interactive UX Prototype
+        </div>
+        <h1 class="text-2xl font-extrabold tracking-tight mt-0.5">
+          The "Collapsed Forum" Experience: Clean, AI-Native &amp; Bound to Collaboration
+        </h1>
+        <p class="text-xs text-[var(--muted-foreground)] mt-1 max-w-3xl">
+          Multi-reply threads self-collapse into citation-backed <strong>Living Syntheses</strong>, the composer answers questions <em>before</em> duplicates are posted, and any thread can <strong>graduate into a working Collaboration Space (Tasks, Files, Committee) in one click</strong>.
+        </p>
+      </div>
+
+      <div class="flex flex-wrap items-center gap-1.5 bg-[var(--card)] p-1.5 rounded-xl border border-[var(--border)] shadow-sm">
+        <button onclick="switchMockupScreen('feed')" id="mock-btn-feed" class="mock-screen-btn tab-active px-3 py-1.5 rounded-lg text-xs font-semibold transition">
+          1. Collapsed Feed &amp; Ask-First
+        </button>
+        <button onclick="switchMockupScreen('thread')" id="mock-btn-thread" class="mock-screen-btn px-3 py-1.5 rounded-lg text-xs font-semibold text-[var(--muted-foreground)] hover:text-[var(--foreground)] transition">
+          2. Living Thread → Spin Up Space
+        </button>
+        <button onclick="switchMockupScreen('digest')" id="mock-btn-digest" class="mock-screen-btn px-3 py-1.5 rounded-lg text-xs font-semibold text-[var(--muted-foreground)] hover:text-[var(--foreground)] transition">
+          3. Personalized Digest &amp; Email Reply
+        </button>
+      </div>
+    </div>
+
+    <!-- Workspace Frame -->
+    <div class="rounded-2xl border-2 border-[var(--border)] bg-[var(--card)] shadow-xl overflow-hidden">
+
+      <!-- App Chrome Top Bar -->
+      <div class="bg-[var(--background)] border-b border-[var(--border)] px-4 py-2.5 flex flex-wrap items-center justify-between gap-3">
+        <div class="flex flex-wrap items-center gap-2.5">
+          <span class="text-xs font-semibold text-[var(--muted-foreground)]">Spaces</span>
+          <span class="text-xs text-[var(--muted-foreground)]">/</span>
+          <div class="flex items-center gap-2">
+            <span class="w-5 h-5 rounded bg-teal-500/15 text-teal-600 dark:text-teal-400 flex items-center justify-center font-bold text-xs">C</span>
+            <span class="font-bold text-xs">National Healthcare Compliance Community</span>
+          </div>
+          <span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium bg-teal-500/10 text-teal-600 dark:text-teal-400 border border-teal-500/25">
+            <span>👁️ Shared Band</span>
+            <span>·</span>
+            <span>4,820 Members</span>
+            <span>·</span>
+            <span>✦ AI Agents May Quote</span>
+          </span>
+        </div>
+        <span class="text-xs px-2.5 py-1 rounded-md bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 font-medium border border-emerald-500/20">
+          ● Governed by fnCollaborationAccess(@UserID)
+        </span>
+      </div>
+
+      <!-- Main 2-Column Workspace Layout -->
+      <div class="grid grid-cols-1 lg:grid-cols-12 min-h-[620px]">
+
+        <!-- Left Collaboration Space Rail -->
+        <aside class="lg:col-span-3 border-r border-[var(--border)] bg-[var(--background)]/60 p-4 flex flex-col justify-between space-y-6">
+          <div class="space-y-5">
+            <div class="space-y-1">
+              <div class="text-xs font-bold uppercase tracking-wider text-[var(--muted-foreground)] px-2 pb-1">Community Space</div>
+              <button onclick="switchMockupScreen('feed')" id="rail-btn-feed" class="rail-nav-btn w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs mock-nav-active transition">
+                <span class="flex items-center gap-2"><span>💬</span> <span>Discussions (Collapsed)</span></span>
+                <span class="px-1.5 py-0.5 rounded bg-[var(--primary)] text-[var(--primary-foreground)] text-xs font-bold">3 New</span>
+              </button>
+              <button onclick="switchMockupScreen('thread')" id="rail-btn-thread" class="rail-nav-btn w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs text-[var(--muted-foreground)] hover:bg-[var(--accent)] hover:text-[var(--foreground)] transition">
+                <span class="flex items-center gap-2"><span>✦</span> <span>Living Syntheses &amp; Canon</span></span>
+                <span class="text-xs font-mono">142</span>
+              </button>
+              <button onclick="switchMockupScreen('digest')" id="rail-btn-digest" class="rail-nav-btn w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs text-[var(--muted-foreground)] hover:bg-[var(--accent)] hover:text-[var(--foreground)] transition">
+                <span class="flex items-center gap-2"><span>📬</span> <span>Personalized Digest</span></span>
+                <span class="px-1.5 py-0.5 rounded bg-purple-500/15 text-purple-600 dark:text-purple-400 text-xs font-semibold">Daily</span>
+              </button>
+            </div>
+
+            <div class="space-y-1">
+              <div class="text-xs font-bold uppercase tracking-wider text-[var(--muted-foreground)] px-2 pb-1">Topic Channels</div>
+              <div class="px-3 py-1.5 rounded-lg text-xs font-medium bg-[var(--card)] border border-[var(--border)] flex items-center justify-between">
+                <span># 2026 CMS Audit Rules</span>
+                <span class="text-xs text-emerald-600 dark:text-emerald-400 font-semibold">Hot</span>
+              </div>
+              <div class="px-3 py-1.5 rounded-lg text-xs text-[var(--muted-foreground)] flex items-center justify-between">
+                <span># Billing &amp; Prior Auth</span>
+                <span class="text-xs font-mono">64</span>
+              </div>
+              <div class="px-3 py-1.5 rounded-lg text-xs text-[var(--muted-foreground)] flex items-center justify-between">
+                <span># Peer Templates &amp; SOPs</span>
+                <span class="text-xs font-mono">89</span>
+              </div>
+            </div>
+
+            <div class="space-y-1.5 pt-2 border-t border-[var(--border)]">
+              <div class="flex items-center justify-between px-2">
+                <span class="text-xs font-bold uppercase tracking-wider text-[var(--muted-foreground)]">Spun-Up Working Spaces</span>
+                <span class="text-xs text-[var(--primary)] font-semibold">Collab Bridge</span>
+              </div>
+              <div onclick="switchMockupScreen('thread'); toggleSpinUpModal(true);" class="p-2.5 rounded-lg bg-[var(--card)] border border-[var(--border)] hover:border-[var(--primary)] cursor-pointer transition space-y-1">
+                <div class="flex items-center justify-between text-xs font-semibold">
+                  <span>⚡ CMS Rule Task Force</span>
+                  <span class="px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-600 dark:text-amber-400 text-xs">Committee</span>
+                </div>
+                <p class="text-xs text-[var(--muted-foreground)]">Graduated from Thread #842 · 9 members · 3 active tasks</p>
+              </div>
+            </div>
+          </div>
+
+          <div class="p-3 rounded-xl bg-[var(--card)] border border-[var(--border)] space-y-1">
+            <div class="flex items-center gap-2 text-xs font-bold">
+              <span class="text-[var(--primary)]">✦</span> Shared Context Engine
+            </div>
+            <p class="text-xs text-[var(--muted-foreground)]">
+              Every approved post &amp; library file feeds your organization's Canon and AI agents under <code>fnCollaborationAccess</code>.
+            </p>
+          </div>
+        </aside>
+
+        <!-- Right Main Stage -->
+        <div class="lg:col-span-9 p-6">
+
+          <!-- Screen 1: Feed -->
+          <div id="mock-screen-feed" class="mock-screen space-y-6">
+            <div class="rounded-xl border-2 border-[var(--primary)]/40 bg-[var(--background)] p-4 space-y-3 shadow-sm">
+              <div class="flex flex-wrap items-center justify-between gap-2">
+                <div class="flex items-center gap-2 text-xs font-bold text-[var(--primary)]">
+                  <span>✦</span> Ask or Start a Discussion (AI checks existing threads, Canon &amp; Space Library files as you type)
+                </div>
+                <span class="text-xs text-[var(--muted-foreground)]">Audience: <strong>Shared Band (4,820 Members)</strong></span>
+              </div>
+              <div class="flex flex-col sm:flex-row gap-2">
+                <input
+                  id="ask-input"
+                  type="text"
+                  value="How are multi-state clinics handling the 2026 CMS 60-day overpayment audit lookback?"
+                  class="flex-1 px-3.5 py-2 rounded-lg bg-[var(--card)] border border-[var(--border)] text-sm font-medium focus:outline-none focus:border-[var(--primary)]"
+                />
+                <button onclick="switchMockupScreen('thread')" class="px-4 py-2 rounded-lg bg-[var(--primary)] text-[var(--primary-foreground)] text-xs font-semibold whitespace-nowrap hover:opacity-90 transition">
+                  Open Synthesized Thread →
+                </button>
+              </div>
+              <div class="p-3.5 rounded-lg bg-[var(--card)] border border-[var(--border)] space-y-2">
+                <div class="text-xs font-bold text-emerald-600 dark:text-emerald-400">
+                  ✦ Instant Synthesis Found · Grounded in 24 Peer Replies + 2 Library Templates
+                </div>
+                <p class="text-xs text-[var(--foreground)] leading-relaxed">
+                  <strong>Consensus Answer:</strong> Effective Jan 1, 2026, CMS aligned the 60-day clock with the <em>"credible information"</em> standard. 18 member clinics report using a <strong>2-Stage Intake Hold SOP</strong> (15-day preliminary probe + external counsel privilege toggle) rather than opening a formal 60-day docket on raw billing flags.
+                </p>
+              </div>
+            </div>
+
+            <!-- Collapsed Thread Card -->
+            <div class="rounded-xl border border-[var(--border)] bg-[var(--background)]/50 p-5 space-y-3">
+              <div class="flex flex-wrap items-start justify-between gap-2">
+                <div class="space-y-1">
+                  <div class="flex flex-wrap items-center gap-2">
+                    <span class="px-2 py-0.5 rounded bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 text-xs font-bold">✓ Canonized Consensus</span>
+                    <span class="px-2 py-0.5 rounded bg-amber-500/15 text-amber-600 dark:text-amber-400 text-xs font-semibold">⚡ Graduated to Task Force Space</span>
+                  </div>
+                  <h3 onclick="switchMockupScreen('thread')" class="font-bold text-base cursor-pointer hover:text-[var(--primary)] transition">
+                    2026 CMS 60-Day Overpayment Audit Lookback: How are multi-state clinics structuring intake SOPs?
+                  </h3>
+                </div>
+                <button onclick="switchMockupScreen('thread')" class="px-3 py-1.5 rounded-lg bg-[var(--card)] border border-[var(--border)] text-xs font-semibold hover:border-[var(--primary)] transition">
+                  Inspect Living Thread (24 → 3 Key Points) →
+                </button>
+              </div>
+              <div class="p-3.5 rounded-lg bg-[var(--card)] border border-[var(--border)] space-y-1.5 text-xs text-[var(--muted-foreground)]">
+                <div class="font-bold text-[var(--primary)]">✦ 24 Replies Collapsed into 3 Verified Takeaways (18 "+1 / Following" replies hidden)</div>
+                <p>• <strong>Intake Triage Gate:</strong> 15-day internal worksheet separating routine variances from audit triggers (@Maya Lin · +19 Helpful).</p>
+                <p>• <strong>EHR Hold Automation:</strong> Epic &amp; Athenahealth SQL scripts auto-filed into Space Library (@Marcus Vance · +14 Helpful).</p>
+                <p>• <strong>Working Task Force Spun Up:</strong> 9 contributors formed the <em>CMS Rule Task Force Space</em> to draft the official comment letter.</p>
+              </div>
+            </div>
+          </div>
+
+          <!-- Screen 2: Living Thread & Spin Up Space -->
+          <div id="mock-screen-thread" class="mock-screen hidden space-y-5">
+            <div class="flex flex-wrap items-center justify-between gap-2 border-b border-[var(--border)] pb-3">
+              <button onclick="switchMockupScreen('feed')" class="text-xs text-[var(--muted-foreground)] hover:text-[var(--foreground)] font-medium">
+                ← Back to Collapsed Feed
+              </button>
+              <div class="flex flex-wrap items-center gap-2">
+                <button onclick="toggleSpinUpModal()" class="px-3 py-1.5 rounded-lg bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-500/30 text-xs font-bold">
+                  ⚡ Spin Up Collaboration Working Space
+                </button>
+                <button onclick="promoteToCanon()" id="canon-btn" class="px-3 py-1.5 rounded-lg bg-[var(--primary)] text-[var(--primary-foreground)] text-xs font-bold">
+                  ✦ Promote Synthesis to Canon (GraphConcept)
+                </button>
+              </div>
+            </div>
+
+            <h3 class="text-xl font-extrabold tracking-tight">
+              2026 CMS 60-Day Overpayment Audit Lookback: How are multi-state clinics structuring intake SOPs?
+            </h3>
+
+            <div id="spin-up-drawer" class="rounded-xl border-2 border-amber-500/40 bg-amber-500/5 p-5 space-y-3 text-xs">
+              <div class="font-bold text-sm text-amber-600 dark:text-amber-400">⚡ 1-Click Graduation: Forum Thread → Collaboration Working Space</div>
+              <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+                <div class="p-3 rounded-lg bg-[var(--card)] border border-[var(--border)]">
+                  <div class="font-bold">1. Auto-Seed Space Roster</div>
+                  <p class="text-[var(--muted-foreground)] mt-1">Invites the 9 active thread contributors as <code>SpaceMember</code> seats.</p>
+                </div>
+                <div class="p-3 rounded-lg bg-[var(--card)] border border-[var(--border)]">
+                  <div class="font-bold">2. Mount Space Library</div>
+                  <p class="text-[var(--muted-foreground)] mt-1">Links shared thread attachments into the new Space's <code>SpaceItem</code> Library.</p>
+                </div>
+                <div class="p-3 rounded-lg bg-[var(--card)] border border-[var(--border)]">
+                  <div class="font-bold">3. Seed Starter Tasks</div>
+                  <p class="text-[var(--muted-foreground)] mt-1">Creates 3 <code>BizApps Tasks</code> assigned to task force volunteers.</p>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Screen 3: Personalized Digest -->
+          <div id="mock-screen-digest" class="mock-screen hidden space-y-4">
+            <h3 class="font-bold text-base">📬 Per-Member Personalized Brief + Zero-Login Inbound Email Reply</h3>
+            <div class="rounded-xl border border-[var(--border)] bg-[var(--background)] p-5 space-y-3 text-xs">
+              <div class="border-b border-[var(--border)] pb-2">
+                <strong>Subject:</strong> ✦ Your Wednesday Compliance Brief: 2026 CMS Lookback SOP + 1 Peer Question Matched to Your Expertise<br/>
+                <span class="text-[var(--muted-foreground)]">Reply-To: <code>reply+hmac_842_991a@community.example.org</code></span>
+              </div>
+              <p class="text-[var(--muted-foreground)]">
+                Hit <strong>Reply</strong> directly in your email client to contribute to any thread—MJ verifies the HMAC token, strips quoted signatures, checks <code>fnCollaborationAccess</code>, and posts your reply and attachments automatically.
+              </p>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    function switchMockupScreen(screenId) {
+      document.querySelectorAll('.mock-screen').forEach((el) => el.classList.add('hidden'));
+      document.getElementById('mock-screen-' + screenId).classList.remove('hidden');
+      document.querySelectorAll('.mock-screen-btn').forEach((btn) => {
+        btn.classList.remove('tab-active');
+        btn.classList.add('text-[var(--muted-foreground)]');
+      });
+      const activeBtn = document.getElementById('mock-btn-' + screenId);
+      if (activeBtn) {
+        activeBtn.classList.add('tab-active');
+        activeBtn.classList.remove('text-[var(--muted-foreground)]');
+      }
+    }
+    function toggleSpinUpModal(forceShow) {
+      const drawer = document.getElementById('spin-up-drawer');
+      if (typeof forceShow === 'boolean') {
+        drawer.classList.toggle('hidden', !forceShow);
+      } else {
+        drawer.classList.toggle('hidden');
+      }
+    }
+    function promoteToCanon() {
+      const btn = document.getElementById('canon-btn');
+      btn.textContent = '✓ Promoted to MJ Canon (GraphConcept)';
+    }
+  </script>
+</body>
+</html>
