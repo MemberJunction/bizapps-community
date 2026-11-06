@@ -1,6 +1,11 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import {
+  resolveEffectiveForumPermissions,
+  resolveForumConfiguration,
+  validatePostTypePlacement,
+} from './configuration.ts';
+import {
   canReadCommunityBand,
   computeCompositeAnswerRank,
   computeEffectiveIdeaVotes,
@@ -121,4 +126,110 @@ describe('bizapps-community core rules', () => {
     assert.equal(overBudget.valid, false);
     assert.equal(overBudget.errorCode, 'EXCEEDS_WALLET_BUDGET');
   });
+
+  it('cascades 4-level Forum configuration (AppSettings -> ForumType -> Space -> Forum/Sub-Forum)', () => {
+    const resolved = resolveForumConfiguration({
+      globalAppSettings: {
+        features: {
+          anonymousAccess: { mode: 'TeaserOnly', teaserReplyLimit: 2 },
+        },
+      },
+      forumTypeChain: [
+        {
+          allowedRootPostTypes: ['question', 'collaborative-artifact'],
+          allowedReplyPostTypes: ['answer', 'discussion', 'interactive-mini-app'],
+          defaultRootPostType: 'question',
+          features: {
+            qaGrading: { enabled: true, aiEpistemicGrading: true },
+          },
+        },
+      ],
+      communitySpaceConfig: {
+        features: {
+          moderation: { mode: 'FirstPostQueue' },
+        },
+      },
+      forumHierarchyChain: [
+        {
+          features: {
+            moderation: { allowScopedPseudonymousPosts: true },
+          },
+        },
+        {
+          // Sub-forum enables interactive AI games at root level too
+          allowedRootPostTypes: ['question', 'collaborative-artifact', 'interactive-mini-app'],
+        },
+      ],
+      forumBand: 'Shared',
+    });
+
+    assert.equal(resolved.defaultRootPostType, 'question');
+    assert.deepEqual(resolved.allowedRootPostTypes, [
+      'question',
+      'collaborative-artifact',
+      'interactive-mini-app',
+    ]);
+    assert.equal(resolved.features.anonymousAccess.mode, 'TeaserOnly');
+    assert.equal(resolved.features.anonymousAccess.teaserReplyLimit, 2);
+    assert.equal(resolved.features.moderation.mode, 'FirstPostQueue');
+    assert.equal(resolved.features.moderation.allowScopedPseudonymousPosts, true);
+
+    // Validate PostType placement against the resolved Forum configuration
+    assert.deepEqual(
+      validatePostTypePlacement(
+        { name: 'answer', allowedPlacement: 'ReplyOnly', isActive: true },
+        false,
+        resolved,
+      ),
+      { allowed: false, reason: 'ROOT_PLACEMENT_NOT_ALLOWED_BY_TYPE' },
+    );
+
+    assert.deepEqual(
+      validatePostTypePlacement(
+        { name: 'answer', allowedPlacement: 'ReplyOnly', isActive: true },
+        true,
+        resolved,
+      ),
+      { allowed: true },
+    );
+
+    assert.deepEqual(
+      validatePostTypePlacement(
+        { name: 'interactive-mini-app', allowedPlacement: 'Both', isActive: true },
+        false,
+        resolved,
+      ),
+      { allowed: true },
+    );
+  });
+
+  it('aggregates per-forum participant roles and expert vote weight multipliers', () => {
+    const perms = resolveEffectiveForumPermissions([
+      {
+        roleName: 'expert-reviewer',
+        canPinOrLock: false,
+        canModerateQueue: false,
+        canVerifyCanon: true,
+        canPromoteToSpace: false,
+        canConfigureForum: false,
+        voteWeightMultiplier: 3.0,
+      },
+      {
+        roleName: 'moderator',
+        canPinOrLock: true,
+        canModerateQueue: true,
+        canVerifyCanon: false,
+        canPromoteToSpace: true,
+        canConfigureForum: false,
+        voteWeightMultiplier: 1.5,
+      },
+    ]);
+
+    assert.deepEqual(perms.activeRoleNames, ['expert-reviewer', 'moderator']);
+    assert.equal(perms.canVerifyCanon, true);
+    assert.equal(perms.canModerateQueue, true);
+    assert.equal(perms.canConfigureForum, false);
+    assert.equal(perms.effectiveVoteWeightMultiplier, 3.0);
+  });
 });
+
