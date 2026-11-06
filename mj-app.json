@@ -26,6 +26,10 @@
     "mj-bizapps-collaboration": {
       "version": ">=0.1.0 <1.0.0",
       "repository": "https://github.com/MemberJunction/bizapps-collaboration"
+    },
+    "mj-bizapps-forms": {
+      "version": ">=0.16.0 <1.0.0",
+      "repository": "https://github.com/MemberJunction/bizapps-forms"
     }
   },
   "schema": {
