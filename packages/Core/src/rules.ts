@@ -1,298 +1,359 @@
 /**
  * Pure domain rules for BizApps Community:
- *  1. Low-signal noise collapsing ("+1", "Thanks!", etc.)
- *  2. Thread promotion candidate scoring (when to suggest spinning up a Working Space)
- *  3. Two-band (Shared vs Team) & Anonymous Access (None | TeaserOnly | FullRead) enforcement
- *  4. Stack Overflow + AI Epistemic Answer Ranking (Human votes + Expert weight + AI Rubric Grade)
- *  5. Participatory Point Allocation & Quadratic Voting (100-point wallets & sqrt(points) effective votes)
+ *  1. Visibility Band Ceiling (`Shared` vs. `Team` vs. `PrivateForum`)
+ *  2. Anonymous / Public Edge Read Redaction (`None`, `Teaser Only`, `Full Read`)
+ *  3. Ideation Campaign Allocation Math (`Point Allocation` & `Quadratic` where Cost = Votes^2)
+ *  4. Living Thread Synthesis Watermark Trigger
+ *  5. Post Placement Validation (`Root Only`, `Reply Only`, `Both` + MaxReplyDepth)
  */
 
-export type CollaborationBand = 'Shared' | 'Team';
-export type AnonymousAccessMode = 'None' | 'TeaserOnly' | 'FullRead';
-export type CategoryAnonymousOverride = 'Inherit' | AnonymousAccessMode;
-export type AICanonStatus =
-  | 'Unchecked'
-  | 'CanonVerified'
-  | 'NovelInsight'
-  | 'PartiallyOutdated'
-  | 'ConflictsWithCanon';
-export type IdeationVotingMechanism = 'PointAllocation' | 'Quadratic' | 'Approval';
+export type CommunityVisibilityBand = 'Shared' | 'Team';
+export type ForumVisibilityBand = 'Shared' | 'Team' | 'PrivateForum';
+export type AnonymousReadMode = 'None' | 'Teaser Only' | 'Full Read';
+export type IdeationAllocationMode = 'Point Allocation' | 'Quadratic';
+export type PostPlacementRule = 'Root Only' | 'Reply Only' | 'Both';
+export type EpistemicAnswerStatus =
+  | 'Canon Verified'
+  | 'Novel Insight'
+  | 'Partially Outdated'
+  | 'Conflicts With Canon';
 
-const LOW_SIGNAL_PATTERNS: readonly RegExp[] = [
-  /^\s*\+1\s*!*$/i,
-  /^\s*(thanks|thank you|thx|ty)\s*[!.]*$/i,
-  /^\s*(following|subscribed|bump|agreed|me too|same here)\s*[!.]*$/i,
-];
-
-/**
- * Determines whether a reply is low-signal conversational noise (e.g., "+1", "Thanks!", "Following")
- * that should be auto-collapsed into a reaction pill in the Collapsed Feed.
- */
-export function isLowSignalReply(markdownBody: string): boolean {
-  const trimmed = markdownBody.trim();
-  if (!trimmed || trimmed.length > 48) {
-    return false;
-  }
-  return LOW_SIGNAL_PATTERNS.some((pattern) => pattern.test(trimmed));
-}
-
-export interface ThreadPromotionSignalInput {
-  replyCount: number;
-  distinctParticipantCount: number;
-  attachmentCount: number;
-  alreadyPromoted: boolean;
-}
-
-/**
- * Determines whether a forum thread has crossed the velocity threshold where the UI
- * and AI facilitator should suggest spinning up a dedicated BizApps Collaboration Working Space.
- */
-export function shouldSuggestWorkingSpacePromotion(input: ThreadPromotionSignalInput): boolean {
-  if (input.alreadyPromoted) {
-    return false;
-  }
-  return (
-    (input.replyCount >= 8 && input.distinctParticipantCount >= 4) ||
-    (input.replyCount >= 5 && input.attachmentCount >= 2 && input.distinctParticipantCount >= 3)
-  );
-}
-
-/**
- * Enforces the BizApps Collaboration two-band visibility boundary (`Shared` vs `Team`)
- * when assembling posts for feed rendering or AI synthesis.
- */
-export function canReadCommunityBand(band: CollaborationBand, canSeeTeamBand: boolean): boolean {
-  if (band === 'Shared') {
-    return true;
-  }
-  return canSeeTeamBand;
-}
-
-/**
- * Resolves the effective anonymous access mode for a ForumCategory given its Space default,
- * category override, and band (`Team` band is NEVER readable anonymously).
- */
-export function resolveEffectiveAnonymousAccess(
-  spaceMode: AnonymousAccessMode,
-  categoryOverride: CategoryAnonymousOverride,
-  categoryBand: CollaborationBand,
-): AnonymousAccessMode {
-  if (categoryBand === 'Team') {
-    return 'None';
-  }
-  return categoryOverride === 'Inherit' ? spaceMode : categoryOverride;
-}
-
-export interface AnonymousReadablePost {
-  id: string;
-  band: CollaborationBand;
-  isRootPost?: boolean;
-  isAcceptedAnswer?: boolean;
-  aiCanonStatus?: AICanonStatus;
-}
-
-export interface AnonymousThreadViewResult<T extends AnonymousReadablePost> {
-  allowed: boolean;
-  effectiveMode: AnonymousAccessMode;
-  visiblePosts: T[];
-  hiddenPostCount: number;
-  requiresLoginForMore: boolean;
-}
-
-/**
- * Filters and truncates a thread's posts for an anonymous visitor on the public edge.
- * - `Team` band posts are stripped unconditionally.
- * - `None` returns `allowed: false` and zero posts.
- * - `TeaserOnly` keeps the root post, any Accepted or AI-CanonVerified answer, and up to
- *   `teaserReplyLimit` additional Shared replies, flagging `requiresLoginForMore: true` if truncated.
- * - `FullRead` returns all Shared-band posts.
- */
-export function filterPostsForAnonymousReader<T extends AnonymousReadablePost>(
-  posts: readonly T[],
-  effectiveMode: AnonymousAccessMode,
-  teaserReplyLimit = 3,
-): AnonymousThreadViewResult<T> {
-  if (effectiveMode === 'None') {
-    return {
-      allowed: false,
-      effectiveMode,
-      visiblePosts: [],
-      hiddenPostCount: posts.length,
-      requiresLoginForMore: true,
-    };
-  }
-
-  const sharedPosts = posts.filter((p) => p.band === 'Shared');
-
-  if (effectiveMode === 'FullRead') {
-    return {
-      allowed: true,
-      effectiveMode,
-      visiblePosts: sharedPosts,
-      hiddenPostCount: 0,
-      requiresLoginForMore: false,
-    };
-  }
-
-  // TeaserOnly mode: keep root post + accepted/AI-verified answers + up to teaserReplyLimit standard replies
-  const visiblePosts: T[] = [];
-  let standardRepliesIncluded = 0;
-
-  for (const post of sharedPosts) {
-    const isPriorityPost =
-      Boolean(post.isRootPost) ||
-      Boolean(post.isAcceptedAnswer) ||
-      post.aiCanonStatus === 'CanonVerified';
-
-    if (isPriorityPost) {
-      visiblePosts.push(post);
-    } else if (standardRepliesIncluded < Math.max(0, teaserReplyLimit)) {
-      visiblePosts.push(post);
-      standardRepliesIncluded += 1;
-    }
-  }
-
-  const hiddenPostCount = Math.max(0, sharedPosts.length - visiblePosts.length);
-  return {
-    allowed: true,
-    effectiveMode,
-    visiblePosts,
-    hiddenPostCount,
-    requiresLoginForMore: hiddenPostCount > 0,
+export interface ForumAccessInput {
+  spaceAccess: {
+    canReadSpace: boolean;
+    canSeeTeamBand: boolean;
+    isSpaceOpenForWrites: boolean;
   };
+  forum: {
+    visibilityBand: ForumVisibilityBand;
+    inheritsSpaceMembers: boolean;
+    postingPolicy: 'Open' | 'Moderated' | 'ReadOnly';
+    status: 'Active' | 'Archived' | 'Locked';
+  };
+  forumMembership?: {
+    status: 'Active' | 'Invited' | 'Muted' | 'Removed';
+    canConfigureForum: boolean;
+    canModerateQueue: boolean;
+    canCreateRootPost: boolean;
+    canReply: boolean;
+  } | null;
 }
 
-export interface AnswerRankingInput {
-  netVoteScore: number;
-  expertWeightedScore: number;
-  isAcceptedAnswer: boolean;
-  aiCanonStatus: AICanonStatus;
-  /** 0 to 100 composite quality/completeness grade from AI rubric */
-  aiGradeScore: number | null;
-  isSuperseded: boolean;
+export interface ForumAccessDecision {
+  canReadForum: boolean;
+  canSeeTeamPosts: boolean;
+  canCreateRootPost: boolean;
+  canReply: boolean;
+  canModerateQueue: boolean;
+  requiresModerationQueue: boolean;
 }
 
-/**
- * Computes the composite "Best Now" sort rank for a Q&A answer by combining:
- *  - Asker acceptance bonus
- *  - Human net upvotes/downvotes + verified domain-expert weighted votes
- *  - AI Epistemic Rubric grade & Canon verification status
- *  - Penalty when an older high-vote answer has been flagged as outdated/superseded
- */
-export function computeCompositeAnswerRank(input: AnswerRankingInput): number {
-  let score = input.netVoteScore * 2 + input.expertWeightedScore * 3;
-
-  if (input.isAcceptedAnswer) {
-    score += 40;
-  }
-
-  if (input.aiGradeScore !== null) {
-    score += (input.aiGradeScore / 100) * 25;
-  }
-
-  switch (input.aiCanonStatus) {
-    case 'CanonVerified':
-      score += 30;
-      break;
-    case 'NovelInsight':
-      score += 15;
-      break;
-    case 'PartiallyOutdated':
-      score -= 25;
-      break;
-    case 'ConflictsWithCanon':
-      score -= 45;
-      break;
-    case 'Unchecked':
-    default:
-      break;
-  }
-
-  if (input.isSuperseded) {
-    score -= 50;
-  }
-
-  return Number(score.toFixed(2));
-}
-
-/**
- * Computes effective votes from points spent in a `ForumIdeaCampaign`.
- * - In `PointAllocation` mode: 1 point = 1 effective vote.
- * - In `Quadratic` mode: Cost = Votes^2, so EffectiveVotes = sqrt(pointsSpent).
- * - In `Approval` mode: Any positive point allocation = 1 effective vote.
- */
-export function computeEffectiveIdeaVotes(
-  pointsSpent: number,
-  mechanism: IdeationVotingMechanism,
-): number {
-  if (pointsSpent <= 0) {
-    return 0;
-  }
-  switch (mechanism) {
-    case 'Quadratic':
-      return Number(Math.sqrt(pointsSpent).toFixed(4));
-    case 'Approval':
-      return 1;
-    case 'PointAllocation':
-    default:
-      return pointsSpent;
-  }
-}
-
-export interface IdeaAllocationValidationInput {
-  initialBudget: number;
-  pointsRefunded: number;
-  currentOtherAllocationsTotal: number;
-  requestedPointsForIdea: number;
-  maxPointsPerIdea?: number | null;
+export interface IdeaAllocationEntry {
+  ideaPostId: string;
+  pointsAllocated: number;
 }
 
 export interface IdeaAllocationValidationResult {
   valid: boolean;
-  remainingPointsAfter: number;
-  errorCode?: 'NON_POSITIVE_POINTS' | 'EXCEEDS_MAX_PER_IDEA' | 'EXCEEDS_WALLET_BUDGET';
+  totalPointsUsed: number;
+  remainingBudgetPoints: number;
+  effectiveVotesByIdea: Record<string, number>;
+  errorMessage?: string;
+}
+
+export interface PostPlacementInput {
+  placementRule: PostPlacementRule;
+  allowsNestedReplies: boolean;
+  maxReplyDepth: number;
+  isRootPost: boolean;
+  parentReplyDepth: number;
+}
+
+export interface PostPlacementDecision {
+  allowed: boolean;
+  computedReplyDepth: number;
+  reason?: string;
 }
 
 /**
- * Validates whether a member can allocate `requestedPointsForIdea` from their `ForumIdeaWallet`.
+ * Pure domain rule engine for BizApps Community.
+ * Keeps zero database or network dependencies so rules execute identically in
+ * server entity drivers, GraphQL resolvers, and Angular client components.
  */
-export function validateIdeaPointAllocation(
-  input: IdeaAllocationValidationInput,
-): IdeaAllocationValidationResult {
-  const totalAvailableBudget = input.initialBudget + input.pointsRefunded;
+export class CommunityRules {
+  /**
+   * Computes a member's effective access to a Forum inside a Collaboration Space.
+   * Outside members (`canSeeTeamBand === false`) are strictly blocked from `Team` forums and `Team` posts.
+   */
+  public static EvaluateForumAccess(input: ForumAccessInput): ForumAccessDecision {
+    const { spaceAccess, forum, forumMembership } = input;
+    const denied: ForumAccessDecision = {
+      canReadForum: false,
+      canSeeTeamPosts: false,
+      canCreateRootPost: false,
+      canReply: false,
+      canModerateQueue: false,
+      requiresModerationQueue: false,
+    };
 
-  if (input.requestedPointsForIdea <= 0) {
+    if (!spaceAccess.canReadSpace) {
+      return denied;
+    }
+
+    if (forumMembership && forumMembership.status === 'Removed') {
+      return denied;
+    }
+
+    let canReadForum = false;
+    if (forum.inheritsSpaceMembers) {
+      if (forum.visibilityBand === 'Shared') {
+        canReadForum = true;
+      } else if (forum.visibilityBand === 'Team' && spaceAccess.canSeeTeamBand) {
+        canReadForum = true;
+      }
+    }
+
+    if (!canReadForum && forumMembership?.status === 'Active') {
+      if (forum.visibilityBand !== 'Team' || spaceAccess.canSeeTeamBand) {
+        canReadForum = true;
+      }
+    }
+
+    if (!canReadForum) {
+      return denied;
+    }
+
+    const canSeeTeamPosts = spaceAccess.canSeeTeamBand;
+    const isWritableState = spaceAccess.isSpaceOpenForWrites && forum.status === 'Active';
+    const isMuted = forumMembership?.status === 'Muted';
+
+    const canConfigure = Boolean(forumMembership?.canConfigureForum);
+    const canModerateQueue = Boolean(forumMembership?.canModerateQueue || canConfigure);
+
+    if (!isWritableState || isMuted) {
+      return {
+        canReadForum: true,
+        canSeeTeamPosts,
+        canCreateRootPost: false,
+        canReply: false,
+        canModerateQueue,
+        requiresModerationQueue: false,
+      };
+    }
+
+    if (forum.postingPolicy === 'ReadOnly' && !canConfigure && !canModerateQueue) {
+      return {
+        canReadForum: true,
+        canSeeTeamPosts,
+        canCreateRootPost: false,
+        canReply: false,
+        canModerateQueue,
+        requiresModerationQueue: false,
+      };
+    }
+
+    const roleAllowsRoot = forumMembership ? forumMembership.canCreateRootPost : true;
+    const roleAllowsReply = forumMembership ? forumMembership.canReply : true;
+
     return {
-      valid: false,
-      remainingPointsAfter: totalAvailableBudget - input.currentOtherAllocationsTotal,
-      errorCode: 'NON_POSITIVE_POINTS',
+      canReadForum: true,
+      canSeeTeamPosts,
+      canCreateRootPost: roleAllowsRoot,
+      canReply: roleAllowsReply,
+      canModerateQueue,
+      requiresModerationQueue: forum.postingPolicy === 'Moderated' && !canModerateQueue,
     };
   }
 
-  if (
-    input.maxPointsPerIdea != null &&
-    input.requestedPointsForIdea > input.maxPointsPerIdea
-  ) {
+  /**
+   * Enforces the Collaboration band ceiling on a post inside a forum:
+   *  - A post inside a `Team` forum is promoted to `Team`.
+   *  - An outside member (`canSeeTeamBand = false`) can never author a `Team` post.
+   */
+  public static ResolvePostVisibilityBand(params: {
+    forumVisibilityBand: ForumVisibilityBand;
+    requestedBand: CommunityVisibilityBand;
+    authorCanSeeTeamBand: boolean;
+  }): CommunityVisibilityBand {
+    if (params.forumVisibilityBand === 'Team') {
+      if (!params.authorCanSeeTeamBand) {
+        throw new Error('Outside members cannot post in a Team-band forum.');
+      }
+      return 'Team';
+    }
+    if (params.requestedBand === 'Team' && !params.authorCanSeeTeamBand) {
+      throw new Error('Outside members cannot create Team-band posts.');
+    }
+    return params.requestedBand;
+  }
+
+  /**
+   * Validates a member's point wallet allocations across ideas in an `Ideation Campaign` forum
+   * and computes effective votes under either `Point Allocation` or `Quadratic` (Votes = sqrt(Points)).
+   */
+  public static ValidateIdeaAllocations(params: {
+    mode: IdeationAllocationMode;
+    budgetPoints: number;
+    maxPointsPerIdea?: number | null;
+    voteWeightMultiplier?: number;
+    allocations: ReadonlyArray<IdeaAllocationEntry>;
+  }): IdeaAllocationValidationResult {
+    const multiplier = params.voteWeightMultiplier ?? 1;
+    let totalPointsUsed = 0;
+    const effectiveVotesByIdea: Record<string, number> = {};
+
+    for (const item of params.allocations) {
+      if (!Number.isInteger(item.pointsAllocated) || item.pointsAllocated <= 0) {
+        return {
+          valid: false,
+          totalPointsUsed,
+          remainingBudgetPoints: params.budgetPoints - totalPointsUsed,
+          effectiveVotesByIdea: {},
+          errorMessage: `Points allocated to idea ${item.ideaPostId} must be a positive integer.`,
+        };
+      }
+
+      if (params.maxPointsPerIdea != null && item.pointsAllocated > params.maxPointsPerIdea) {
+        return {
+          valid: false,
+          totalPointsUsed,
+          remainingBudgetPoints: params.budgetPoints - totalPointsUsed,
+          effectiveVotesByIdea: {},
+          errorMessage: `Allocation of ${item.pointsAllocated} points exceeds MaxPointsPerIdea (${params.maxPointsPerIdea}).`,
+        };
+      }
+
+      totalPointsUsed += item.pointsAllocated;
+      const rawVotes =
+        params.mode === 'Quadratic' ? Math.sqrt(item.pointsAllocated) : item.pointsAllocated;
+      effectiveVotesByIdea[item.ideaPostId] = Number((rawVotes * multiplier).toFixed(2));
+    }
+
+    if (totalPointsUsed > params.budgetPoints) {
+      return {
+        valid: false,
+        totalPointsUsed,
+        remainingBudgetPoints: params.budgetPoints - totalPointsUsed,
+        effectiveVotesByIdea: {},
+        errorMessage: `Total allocated points (${totalPointsUsed}) exceed campaign wallet budget (${params.budgetPoints}).`,
+      };
+    }
+
     return {
-      valid: false,
-      remainingPointsAfter: totalAvailableBudget - input.currentOtherAllocationsTotal,
-      errorCode: 'EXCEEDS_MAX_PER_IDEA',
+      valid: true,
+      totalPointsUsed,
+      remainingBudgetPoints: params.budgetPoints - totalPointsUsed,
+      effectiveVotesByIdea,
     };
   }
 
-  const newTotalAllocated = input.currentOtherAllocationsTotal + input.requestedPointsForIdea;
-  const remainingPointsAfter = totalAvailableBudget - newTotalAllocated;
-
-  if (remainingPointsAfter < 0) {
-    return {
-      valid: false,
-      remainingPointsAfter,
-      errorCode: 'EXCEEDS_WALLET_BUDGET',
-    };
+  /**
+   * Determines whether a root post's Living Thread Synthesis (`SummaryMarkdown`) should be regenerated.
+   */
+  public static ShouldRefreshThreadSynthesis(params: {
+    replyCount: number;
+    summaryReplyWatermark: number;
+    initialThreshold?: number;
+    deltaStep?: number;
+  }): boolean {
+    const threshold = params.initialThreshold ?? 4;
+    const deltaStep = params.deltaStep ?? 3;
+    if (params.replyCount < threshold) {
+      return false;
+    }
+    if (params.summaryReplyWatermark === 0) {
+      return true;
+    }
+    return params.replyCount - params.summaryReplyWatermark >= deltaStep;
   }
 
-  return {
-    valid: true,
-    remainingPointsAfter,
-  };
+  /**
+   * Validates whether a post of a given PostType can be placed at the requested depth in a thread.
+   */
+  public static ValidatePostPlacement(input: PostPlacementInput): PostPlacementDecision {
+    if (input.isRootPost) {
+      if (input.placementRule === 'Reply Only') {
+        return {
+          allowed: false,
+          computedReplyDepth: 0,
+          reason: 'This post type can only be used as a reply inside an existing thread.',
+        };
+      }
+      return { allowed: true, computedReplyDepth: 0 };
+    }
+
+    if (input.placementRule === 'Root Only') {
+      return {
+        allowed: false,
+        computedReplyDepth: 0,
+        reason: 'This post type can only be created as a top-level root post.',
+      };
+    }
+
+    const nextDepth = input.parentReplyDepth + 1;
+    if (nextDepth > 1 && !input.allowsNestedReplies) {
+      return {
+        allowed: false,
+        computedReplyDepth: nextDepth,
+        reason: 'This post type does not allow nested replies beyond depth 1.',
+      };
+    }
+
+    if (nextDepth > input.maxReplyDepth) {
+      return {
+        allowed: false,
+        computedReplyDepth: nextDepth,
+        reason: `Reply depth (${nextDepth}) exceeds the forum maximum depth (${input.maxReplyDepth}).`,
+      };
+    }
+
+    return { allowed: true, computedReplyDepth: nextDepth };
+  }
+
+  /**
+   * Redacts a post body for unauthenticated visitors when `AnonymousReadMode` is `'Teaser Only'` or `'None'`.
+   */
+  public static RedactForAnonymousEdge(params: {
+    spaceVisibility: 'Private' | 'Listed' | 'Open';
+    spaceAnonymousReadMode: AnonymousReadMode;
+    forumAnonymousReadMode?: AnonymousReadMode | null;
+    forumVisibilityBand: ForumVisibilityBand;
+    postVisibilityBand: CommunityVisibilityBand;
+    bodyMarkdown: string;
+    teaserMaxChars?: number;
+  }): { visible: boolean; isTeaser: boolean; contentMarkdown: string } {
+    if (
+      params.spaceVisibility !== 'Open' ||
+      params.forumVisibilityBand !== 'Shared' ||
+      params.postVisibilityBand !== 'Shared'
+    ) {
+      return { visible: false, isTeaser: false, contentMarkdown: '' };
+    }
+
+    const effectiveMode = params.forumAnonymousReadMode ?? params.spaceAnonymousReadMode;
+    if (effectiveMode === 'None') {
+      return { visible: false, isTeaser: false, contentMarkdown: '' };
+    }
+
+    if (effectiveMode === 'Full Read') {
+      return { visible: true, isTeaser: false, contentMarkdown: params.bodyMarkdown };
+    }
+
+    const maxChars = params.teaserMaxChars ?? 280;
+    const trimmed = params.bodyMarkdown.trim();
+    const contentMarkdown =
+      trimmed.length <= maxChars ? trimmed : `${trimmed.slice(0, maxChars).trimEnd()}…`;
+    return {
+      visible: true,
+      isTeaser: true,
+      contentMarkdown,
+    };
+  }
 }
+
+export const evaluateForumAccess = CommunityRules.EvaluateForumAccess;
+export const resolvePostVisibilityBand = CommunityRules.ResolvePostVisibilityBand;
+export const validateIdeaAllocations = CommunityRules.ValidateIdeaAllocations;
+export const shouldRefreshThreadSynthesis = CommunityRules.ShouldRefreshThreadSynthesis;
+export const validatePostPlacement = CommunityRules.ValidatePostPlacement;
+export const redactForAnonymousEdge = CommunityRules.RedactForAnonymousEdge;

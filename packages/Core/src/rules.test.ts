@@ -1,235 +1,194 @@
-import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
+import assert from 'node:assert/strict';
 import {
-  resolveEffectiveForumPermissions,
-  resolveForumConfiguration,
-  validatePostTypePlacement,
-} from './configuration.ts';
-import {
-  canReadCommunityBand,
-  computeCompositeAnswerRank,
-  computeEffectiveIdeaVotes,
-  filterPostsForAnonymousReader,
-  isLowSignalReply,
-  resolveEffectiveAnonymousAccess,
-  shouldSuggestWorkingSpacePromotion,
-  validateIdeaPointAllocation,
-} from './rules.ts';
+  CommunityRules,
+  CommunityConfigurationResolver,
+  evaluateForumAccess,
+  redactForAnonymousEdge,
+  resolvePostVisibilityBand,
+  shouldRefreshThreadSynthesis,
+  validateIdeaAllocations,
+  validatePostPlacement,
+} from './index.ts';
 
-describe('bizapps-community core rules', () => {
-  it('identifies low-signal noise replies for auto-collapsing', () => {
-    assert.equal(isLowSignalReply('+1'), true);
-    assert.equal(isLowSignalReply('Thanks!!'), true);
-    assert.equal(isLowSignalReply('Following.'), true);
-    assert.equal(
-      isLowSignalReply('We updated Section 4.2 of the state compliance checklist to cover this.'),
-      false,
+describe('@mj-biz-apps/community-core domain rules', () => {
+  it('blocks outside members (canSeeTeamBand = false) from Team-band forums and Team posts', () => {
+    const decision = evaluateForumAccess({
+      spaceAccess: {
+        canReadSpace: true,
+        canSeeTeamBand: false,
+        isSpaceOpenForWrites: true,
+      },
+      forum: {
+        visibilityBand: 'Team',
+        inheritsSpaceMembers: true,
+        postingPolicy: 'Open',
+        status: 'Active',
+      },
+      forumMembership: null,
+    });
+
+    assert.equal(decision.canReadForum, false);
+    assert.equal(decision.canCreateRootPost, false);
+
+    assert.throws(
+      () =>
+        resolvePostVisibilityBand({
+          forumVisibilityBand: 'Shared',
+          requestedBand: 'Team',
+          authorCanSeeTeamBand: false,
+        }),
+      /Outside members cannot create Team-band posts/,
     );
   });
 
-  it('flags high-velocity threads for Working Space promotion', () => {
-    assert.equal(
-      shouldSuggestWorkingSpacePromotion({
-        replyCount: 9,
-        distinctParticipantCount: 5,
-        attachmentCount: 0,
-        alreadyPromoted: false,
-      }),
-      true,
-    );
-
-    assert.equal(
-      shouldSuggestWorkingSpacePromotion({
-        replyCount: 9,
-        distinctParticipantCount: 5,
-        attachmentCount: 2,
-        alreadyPromoted: true,
-      }),
-      false,
-    );
-  });
-
-  it('enforces Collaboration Shared vs Team band visibility', () => {
-    assert.equal(canReadCommunityBand('Shared', false), true);
-    assert.equal(canReadCommunityBand('Team', false), false);
-    assert.equal(canReadCommunityBand('Team', true), true);
-  });
-
-  it('resolves anonymous access and strips Team posts or truncates TeaserOnly threads', () => {
-    assert.equal(resolveEffectiveAnonymousAccess('FullRead', 'Inherit', 'Team'), 'None');
-    assert.equal(resolveEffectiveAnonymousAccess('TeaserOnly', 'Inherit', 'Shared'), 'TeaserOnly');
-    assert.equal(resolveEffectiveAnonymousAccess('FullRead', 'None', 'Shared'), 'None');
-
-    const samplePosts = [
-      { id: 'root', band: 'Shared' as const, isRootPost: true },
-      { id: 'r1', band: 'Shared' as const },
-      { id: 'r2', band: 'Team' as const },
-      { id: 'r3', band: 'Shared' as const, isAcceptedAnswer: true },
-      { id: 'r4', band: 'Shared' as const },
-      { id: 'r5', band: 'Shared' as const },
-    ];
-
-    const teaser = filterPostsForAnonymousReader(samplePosts, 'TeaserOnly', 1);
-    assert.equal(teaser.allowed, true);
-    assert.deepEqual(
-      teaser.visiblePosts.map((p) => p.id),
-      ['root', 'r1', 'r3'],
-    );
-    assert.equal(teaser.hiddenPostCount, 2);
-    assert.equal(teaser.requiresLoginForMore, true);
-  });
-
-  it('ranks fresh Canon-verified answers above stale high-upvote answers', () => {
-    const staleEarlyAnswer = computeCompositeAnswerRank({
-      netVoteScore: 25,
-      expertWeightedScore: 5,
-      isAcceptedAnswer: false,
-      aiCanonStatus: 'PartiallyOutdated',
-      aiGradeScore: 60,
-      isSuperseded: true,
+  it('allows Space members into Shared forums and flags Moderated forums for queue review', () => {
+    const decision = CommunityRules.EvaluateForumAccess({
+      spaceAccess: {
+        canReadSpace: true,
+        canSeeTeamBand: false,
+        isSpaceOpenForWrites: true,
+      },
+      forum: {
+        visibilityBand: 'Shared',
+        inheritsSpaceMembers: true,
+        postingPolicy: 'Moderated',
+        status: 'Active',
+      },
+      forumMembership: null,
     });
 
-    const freshCanonExpertAnswer = computeCompositeAnswerRank({
-      netVoteScore: 6,
-      expertWeightedScore: 10,
-      isAcceptedAnswer: true,
-      aiCanonStatus: 'CanonVerified',
-      aiGradeScore: 96,
-      isSuperseded: false,
-    });
-
-    assert.ok(freshCanonExpertAnswer > staleEarlyAnswer);
+    assert.equal(decision.canReadForum, true);
+    assert.equal(decision.canSeeTeamPosts, false);
+    assert.equal(decision.canCreateRootPost, true);
+    assert.equal(decision.requiresModerationQueue, true);
   });
 
-  it('calculates point-allocation and quadratic voting math accurately', () => {
-    assert.equal(computeEffectiveIdeaVotes(25, 'PointAllocation'), 25);
-    assert.equal(computeEffectiveIdeaVotes(25, 'Quadratic'), 5);
-    assert.equal(computeEffectiveIdeaVotes(9, 'Quadratic'), 3);
-
-    const validAlloc = validateIdeaPointAllocation({
-      initialBudget: 100,
-      pointsRefunded: 0,
-      currentOtherAllocationsTotal: 60,
-      requestedPointsForIdea: 30,
-      maxPointsPerIdea: 50,
+  it('validates 100-Point Wallet and Quadratic Voting math accurately', () => {
+    const quadratic = validateIdeaAllocations({
+      mode: 'Quadratic',
+      budgetPoints: 100,
+      maxPointsPerIdea: 64,
+      voteWeightMultiplier: 1,
+      allocations: [
+        { ideaPostId: 'idea-1', pointsAllocated: 64 },
+        { ideaPostId: 'idea-2', pointsAllocated: 25 },
+        { ideaPostId: 'idea-3', pointsAllocated: 9 },
+      ],
     });
-    assert.equal(validAlloc.valid, true);
-    assert.equal(validAlloc.remainingPointsAfter, 10);
 
-    const overBudget = validateIdeaPointAllocation({
-      initialBudget: 100,
-      pointsRefunded: 0,
-      currentOtherAllocationsTotal: 80,
-      requestedPointsForIdea: 30,
-      maxPointsPerIdea: 50,
+    assert.equal(quadratic.valid, true);
+    assert.equal(quadratic.totalPointsUsed, 98);
+    assert.equal(quadratic.remainingBudgetPoints, 2);
+    assert.equal(quadratic.effectiveVotesByIdea['idea-1'], 8);
+    assert.equal(quadratic.effectiveVotesByIdea['idea-2'], 5);
+    assert.equal(quadratic.effectiveVotesByIdea['idea-3'], 3);
+  });
+
+  it('rejects allocations exceeding the member point budget', () => {
+    const overBudget = validateIdeaAllocations({
+      mode: 'Point Allocation',
+      budgetPoints: 100,
+      allocations: [
+        { ideaPostId: 'idea-1', pointsAllocated: 70 },
+        { ideaPostId: 'idea-2', pointsAllocated: 40 },
+      ],
     });
+
     assert.equal(overBudget.valid, false);
-    assert.equal(overBudget.errorCode, 'EXCEEDS_WALLET_BUDGET');
+    assert.match(overBudget.errorMessage ?? '', /exceed campaign wallet budget/);
   });
 
-  it('cascades 4-level Forum configuration (AppSettings -> ForumType -> Space -> Forum/Sub-Forum)', () => {
-    const resolved = resolveForumConfiguration({
-      globalAppSettings: {
-        features: {
-          anonymousAccess: { mode: 'TeaserOnly', teaserReplyLimit: 2 },
-        },
-      },
-      forumTypeChain: [
-        {
-          allowedRootPostTypes: ['question', 'collaborative-artifact'],
-          allowedReplyPostTypes: ['answer', 'discussion', 'interactive-mini-app'],
-          defaultRootPostType: 'question',
-          features: {
-            qaGrading: { enabled: true, aiEpistemicGrading: true },
-          },
-        },
-      ],
-      communitySpaceConfig: {
-        features: {
-          moderation: { mode: 'FirstPostQueue' },
-        },
-      },
-      forumHierarchyChain: [
-        {
-          features: {
-            moderation: { allowScopedPseudonymousPosts: true },
-          },
-        },
-        {
-          // Sub-forum enables interactive AI games at root level too
-          allowedRootPostTypes: ['question', 'collaborative-artifact', 'interactive-mini-app'],
-        },
-      ],
-      forumBand: 'Shared',
+  it('triggers Living Thread Synthesis at initial threshold and every deltaStep replies thereafter', () => {
+    assert.equal(shouldRefreshThreadSynthesis({ replyCount: 3, summaryReplyWatermark: 0 }), false);
+    assert.equal(shouldRefreshThreadSynthesis({ replyCount: 4, summaryReplyWatermark: 0 }), true);
+    assert.equal(shouldRefreshThreadSynthesis({ replyCount: 5, summaryReplyWatermark: 4 }), false);
+    assert.equal(shouldRefreshThreadSynthesis({ replyCount: 7, summaryReplyWatermark: 4 }), true);
+  });
+
+  it('enforces PostType placement rules and maximum reply depth', () => {
+    const rootOnlyInReply = validatePostPlacement({
+      placementRule: 'Root Only',
+      allowsNestedReplies: true,
+      maxReplyDepth: 5,
+      isRootPost: false,
+      parentReplyDepth: 0,
+    });
+    assert.equal(rootOnlyInReply.allowed, false);
+
+    const commentNestedTooDeep = validatePostPlacement({
+      placementRule: 'Reply Only',
+      allowsNestedReplies: false,
+      maxReplyDepth: 5,
+      isRootPost: false,
+      parentReplyDepth: 1,
+    });
+    assert.equal(commentNestedTooDeep.allowed, false);
+  });
+
+  it('redacts anonymous public edge posts when in Teaser Only mode and hides Team posts completely', () => {
+    const teaser = redactForAnonymousEdge({
+      spaceVisibility: 'Open',
+      spaceAnonymousReadMode: 'Teaser Only',
+      forumVisibilityBand: 'Shared',
+      postVisibilityBand: 'Shared',
+      bodyMarkdown: 'A'.repeat(400),
+      teaserMaxChars: 120,
     });
 
-    assert.equal(resolved.defaultRootPostType, 'question');
-    assert.deepEqual(resolved.allowedRootPostTypes, [
-      'question',
-      'collaborative-artifact',
-      'interactive-mini-app',
-    ]);
-    assert.equal(resolved.features.anonymousAccess.mode, 'TeaserOnly');
-    assert.equal(resolved.features.anonymousAccess.teaserReplyLimit, 2);
-    assert.equal(resolved.features.moderation.mode, 'FirstPostQueue');
-    assert.equal(resolved.features.moderation.allowScopedPseudonymousPosts, true);
+    assert.equal(teaser.visible, true);
+    assert.equal(teaser.isTeaser, true);
+    assert.equal(teaser.contentMarkdown.length, 121);
 
-    // Validate PostType placement against the resolved Forum configuration
-    assert.deepEqual(
-      validatePostTypePlacement(
-        { name: 'answer', allowedPlacement: 'ReplyOnly', isActive: true },
-        false,
-        resolved,
-      ),
-      { allowed: false, reason: 'ROOT_PLACEMENT_NOT_ALLOWED_BY_TYPE' },
-    );
+    const hiddenTeam = redactForAnonymousEdge({
+      spaceVisibility: 'Open',
+      spaceAnonymousReadMode: 'Full Read',
+      forumVisibilityBand: 'Shared',
+      postVisibilityBand: 'Team',
+      bodyMarkdown: 'Internal staff note',
+    });
 
-    assert.deepEqual(
-      validatePostTypePlacement(
-        { name: 'answer', allowedPlacement: 'ReplyOnly', isActive: true },
-        true,
-        resolved,
-      ),
-      { allowed: true },
-    );
-
-    assert.deepEqual(
-      validatePostTypePlacement(
-        { name: 'interactive-mini-app', allowedPlacement: 'Both', isActive: true },
-        false,
-        resolved,
-      ),
-      { allowed: true },
-    );
+    assert.equal(hiddenTeam.visible, false);
+    assert.equal(hiddenTeam.contentMarkdown, '');
   });
 
-  it('aggregates per-forum participant roles and expert vote weight multipliers', () => {
-    const perms = resolveEffectiveForumPermissions([
+  it('enforces ForumOverridable whitelist in the 4-tier configuration cascade', () => {
+    const resolved = CommunityConfigurationResolver.Resolve(
+      { ThreadSynthesisThreshold: 4 },
       {
-        roleName: 'expert-reviewer',
-        canPinOrLock: false,
-        canModerateQueue: false,
-        canVerifyCanon: true,
-        canPromoteToSpace: false,
-        canConfigureForum: false,
-        voteWeightMultiplier: 3.0,
+        Posts: {
+          AllowedPostTypeCodes: ['question', 'answer', 'comment'],
+          DefaultRootPostTypeCode: 'question',
+          MaxReplyDepth: 2,
+        },
+        Synthesis: {
+          AutoSummarizeThreshold: 3,
+          AskFirstDeflection: true,
+          DeflectionMinConfidence: 0.8,
+        },
+        ForumOverridable: ['Synthesis.AutoSummarizeThreshold'],
       },
       {
-        roleName: 'moderator',
-        canPinOrLock: true,
-        canModerateQueue: true,
-        canVerifyCanon: false,
-        canPromoteToSpace: true,
-        canConfigureForum: false,
-        voteWeightMultiplier: 1.5,
+        Posts: {
+          AllowedPostTypeCodes: ['discussion'],
+          DefaultRootPostTypeCode: 'discussion',
+          MaxReplyDepth: 99,
+        },
+        Synthesis: {
+          AutoSummarizeThreshold: 6,
+          AskFirstDeflection: false,
+          DeflectionMinConfidence: 0.2,
+        },
       },
-    ]);
+    );
 
-    assert.deepEqual(perms.activeRoleNames, ['expert-reviewer', 'moderator']);
-    assert.equal(perms.canVerifyCanon, true);
-    assert.equal(perms.canModerateQueue, true);
-    assert.equal(perms.canConfigureForum, false);
-    assert.equal(perms.effectiveVoteWeightMultiplier, 3.0);
+    // AllowedPostTypeCodes and MaxReplyDepth were NOT in ForumOverridable, so ForumType wins
+    assert.deepEqual(resolved.Posts.AllowedPostTypeCodes, ['question', 'answer', 'comment']);
+    assert.equal(resolved.Posts.MaxReplyDepth, 2);
+    // AutoSummarizeThreshold WAS in ForumOverridable, so Forum override wins
+    assert.equal(resolved.Synthesis.AutoSummarizeThreshold, 6);
+    assert.equal(resolved.ThreadSynthesisThreshold, 6);
+    // AskFirstDeflection was NOT in ForumOverridable, so ForumType wins
+    assert.equal(resolved.Synthesis.AskFirstDeflection, true);
   });
 });
-

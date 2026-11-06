@@ -1,293 +1,140 @@
-# Community Extensibility: `ForumType` & `PostType` as Plug-ins, 4-Level Configuration Cascade, MJ Docs/Slides/Sheets & Interactive AI Sandbox Posts
+# BizApps Community — Extensibility Plan (`ForumType`, `PostType`, `ForumRoleType` & Peer `SpaceType` Interop)
 
-This document defines the multi-axis extensibility architecture for **BizApps Community** (`mj-bizapps-community`), modeled directly after [BizApps Collaboration's Extensibility Plan](https://github.com/MemberJunction/bizapps-collaboration/blob/next/docs/EXTENSIBILITY_PLAN.md) (`SpaceType` drivers, IsA subtypes, and hierarchical `Configuration` resolution).
+> **Architectural Companion to [`plans/plan.md`](../plans/plan.md)**
+> Modeled directly on the proven extensibility architecture of [`bizapps-collaboration`](https://github.com/MemberJunction/bizapps-collaboration) (`SpaceType` & `SpaceRoleType`) and peer Collaboration apps like `bizapps-committees` (`committee` & `committee-term`).
 
----
+Just as `bizapps-collaboration` makes **Spaces** extensible without schema rewrites via metadata-driven `SpaceType` and `SpaceRoleType` tables paired with `ServerDriverClass`, `UIDriverClass`, `SpaceExtensionEntity` (`IsA`), and a 4-tier JSON `Configuration` cascade, **`bizapps-community` applies the exact same extensibility pattern to Forums and Posts**:
 
-## 1. Core Architectural Decisions
-
-| # | Decision | Rationale |
-|---|---|---|
-| **D1** | **Zero Poly Soft Keys — 100% Enforced SQL Foreign Keys + IsA Subtypes.** | Untyped UUID columns without `FOREIGN KEY` constraints forfeit MJ CodeGen's automatic relationship discovery, base-view label joins, delete checks, GraphQL resolvers, and `IS-A` hydration. Every relationship in `__mj_BizAppsCommunity` uses a real SQL `FOREIGN KEY`. |
-| **D2** | **Four Hard Dependencies (`Common`, `Tasks`, `Collaboration`, `Forms`).** | Polls, surveys, and structured intakes are core to every community, so `mj-bizapps-forms` is a hard dependency alongside `mj-bizapps-common`, `mj-bizapps-tasks`, and `mj-bizapps-collaboration`. This gives built-in `ForumFormPost` rows enforced SQL FKs to `__mj_BizAppsForms.Form(ID)` and `FormDistribution(ID)`. |
-| **D3** | **Two Plug-In Type Axes: `ForumType` (Container Axis) and `PostType` (Content Axis).** | Just as `SpaceType` names `ServerDriverClass`, `UIDriverClass`, and `SpaceExtensionEntity` (IsA `Space`), **`ForumType`** extends `Forum` and **`PostType`** extends `ForumPost`. Downstream apps can declare new `ForumType`s, subclass existing `PostType`s (`BasePostTypeID`), and attach IsA tables with hard FKs. |
-| **D4** | **Downstream Bridge Open Apps for Optional Domains (`Voting`, `Issues`, `Credentialing`, `Committees`).** | Community core stays blind to optional sibling BizApps (`scripts/check-downstream-names.mjs` enforces this in CI). Integration with `BizApps Voting` lives in `mj-bizapps-community-voting`, which depends on both apps and declares IsA subtype tables (`ForumVotingAssembly` IsA `Forum`, `ForumBallotPost` IsA `ForumPost`) with hard SQL FKs to `__mj_BizAppsVoting.Election(ID)`. |
-| **D5** | **`BizApps Sonar` is Purely Downstream via Runtime Introspection.** | Sonar is an ingest/scoring engine that introspects MJ entity metadata dynamically (`EntityID`, `ModelRelatedEntity`, `Factor`). Community needs zero references to Sonar. |
-| **D6** | **Native Integration with MJ Core Docs, Slides & Sheets (MJ PR #6215).** | MJ Docs, Slides, and Sheets are core `MJ: Artifacts` with live Yjs co-editing, passage-anchored `MJ: Conversations` comment threads, agent co-editor tools (`DocumentToolLibrary`, `SlidesToolLibrary`, `SheetsToolLibrary`), and `BaseDocumentBlock` embeds. Community wires directly into `MJ: Artifacts` via `ForumArtifactPost` (IsA `ForumPost`) and contributes custom Community Document Blocks. |
-| **D7** | **AI-Generated Interactive Games, Simulations & Mini-Apps via Sandboxed Component Host (MJ PR #5257).** | `ForumInteractivePost` (IsA `ForumPost`) links via hard FK to an `MJ: Artifact` of type `Component` rendered inside MJ's opaque-origin `<mj-react-component>` sandbox (`BridgeDataProvider`), with player scores, turns, and benchmark inputs stored in `ForumInteractiveSession`. |
-| **D8** | **4-Level Settings Cascade (`ResolveForumConfiguration`).** | Settings resolve deterministically from: **(1) MJ Generic `Application Settings`** → **(2) `ForumType.Configuration`** → **(3) `CommunitySpace.Configuration`** → **(4) `Forum.Configuration` (walking the `ParentForumID` ancestor chain)** → narrowed by `BaseForumTypeServerDriver.AdjustRules`. |
-| **D9** | **Per-Forum Participant Roles (`ForumRoleType` & `ForumMemberRole`).** | Layered on top of `fnCollaborationAccess`, individual Forums and Sub-Forums grant scoped roles (`forum-admin`, `moderator`, `topic-host`, `expert-reviewer`, `contributor`, `observer`, `muted`) that optionally inherit to Sub-Forums (`InheritsToSubForums`). |
+1. **`ForumType`** — defines what kinds of channels exist inside a Community Space (`General Discussion`, `Q&A Knowledge Base`, `Ideation Campaign`, `Playbooks & Collaborative Docs`, `Peer Case Rounds`, `Live Events & AMAs`, or custom customer/vertical forum types).
+2. **`PostType`** — defines what kinds of root posts and replies can be authored (`Discussion`, `Reply`, `Comment`, `Question`, `Answer`, `Idea Proposal`, `Poll or Form`, `Collaborative Document`, `Collaborative Spreadsheet`, `Collaborative Presentation`, `Peer Case Review`, `Live AMA`, `Interactive Experience`, or custom vertical post types).
+3. **`ForumRoleType`** — defines role capabilities inside a forum (`Forum Admin`, `Moderator`, `Topic Host`, `Expert Reviewer`, `Contributor`, `Observer`, `Muted`) with explicit capability bit flags.
+4. **Peer Collaboration `SpaceType` Interoperability** — `CommunitySpace` is one peer `SpaceType` (`code = 'community'`) under `__mj_BizAppsCollaboration.Space` alongside **Committees** (`committee`, `committee-term`), **Working Groups** (`working-group`), **Cohorts** (`cohort`), **Projects** (`project`), and **Events** (`event`). High-momentum threads can graduate into any allowed Collaboration `SpaceType` via `ThreadGraduationService`.
 
 ---
 
-## 2. The Two-Axis Plug-In Model (`ForumType` & `PostType`)
+## 1. The Three Extensibility Catalog Tables (`__mj_BizAppsCommunity`)
 
-```mermaid
-flowchart TB
-  subgraph "Axis 1: ForumType & Hierarchical Forums"
-    FT["ForumType row (metadata)<br/>Code, ServerDriverClass, UIDriverClass,<br/>ForumExtensionEntity, Configuration"]
-    FSD["BaseForumTypeServerDriver<br/>AdjustRules, ValidateForumChange,<br/>OnForumChanged, BuildAgentContext"]
-    FUD["BaseForumTypeUIDriver<br/>GetFeedLayout, GetHeaderWidgets,<br/>GetSettingsSections, GetDetailsForm"]
-    FEXT["Forum IsA Subtype Entity<br/>• Built-in: ForumIdeaCampaign<br/>• Plugin: ForumVotingAssembly (FK -> Voting)<br/>• Plugin: ForumIssueTracker (FK -> Issues)"]
-    F["Forum row (Tree via ParentForumID)<br/>SpaceID, ForumTypeID, Band, Configuration"]
+### 1.1 `ForumType` Table
 
-    FT -- ServerDriverClass --> FSD
-    FT -- UIDriverClass --> FUD
-    FT -- ForumExtensionEntity --> FEXT
-    F -- ForumTypeID --> FT
-    F -. "1:1 IsA (same ID)" .- FEXT
-  end
-
-  subgraph "Axis 2: PostType & Unified ForumPost (Root Topics + Replies)"
-    PT["PostType row (metadata)<br/>Code, BasePostTypeID, AllowedPlacement,<br/>ServerDriverClass, UIDriverClass,<br/>PostExtensionEntity, Configuration"]
-    PSD["BasePostTypeServerDriver<br/>ValidatePostChange, OnPostSaved,<br/>ComputeRankScore, BuildAgentContext"]
-    PUD["BasePostTypeUIDriver<br/>GetComposerComponent, GetFeedCardComponent,<br/>GetDetailComponent"]
-    PEXT["ForumPost IsA Subtype Entity (100% Hard FKs)<br/>• ForumQuestionPost & ForumAnswerPost<br/>• ForumIdeaPost (FK -> ForumIdeaCampaign)<br/>• ForumFormPost (FK -> __mj_BizAppsForms.Form)<br/>• ForumArtifactPost (FK -> __mj.Artifact [Docs/Slides/Sheets])<br/>• ForumInteractivePost (FK -> __mj.Artifact [React Sandbox])<br/>• Plugin: ForumBallotPost (FK -> __mj_BizAppsVoting.Election)"]
-    P["ForumPost row<br/>ForumID, PostTypeID, RootPostID, ParentPostID"]
-
-    PT -- ServerDriverClass --> PSD
-    PT -- UIDriverClass --> PUD
-    PT -- PostExtensionEntity --> PEXT
-    P -- PostTypeID --> PT
-    P -. "1:1 IsA (same ID)" .- PEXT
-  end
-
-  FT -- "Configuration.AllowedPostTypeCodes<br/>(narrowed by Forum.Configuration)" --> PT
+```sql
+CREATE TABLE [${flyway:defaultSchema}].[ForumType] (
+    [ID] UNIQUEIDENTIFIER NOT NULL CONSTRAINT [DF_ForumType_ID] DEFAULT (NEWSEQUENTIALID()),
+    [Code] NVARCHAR(100) NOT NULL,
+    [Name] NVARCHAR(100) NOT NULL,
+    [Description] NVARCHAR(MAX) NULL,
+    [Icon] NVARCHAR(100) NULL,
+    [ServerDriverClass] NVARCHAR(200) NULL,
+    [UIDriverClass] NVARCHAR(200) NULL,
+    [ExtensionEntity] NVARCHAR(255) NULL,
+    [Configuration] NVARCHAR(MAX) NULL,
+    [Sequence] INT NOT NULL CONSTRAINT [DF_ForumType_Sequence] DEFAULT (0),
+    [IsActive] BIT NOT NULL CONSTRAINT [DF_ForumType_IsActive] DEFAULT (1),
+    CONSTRAINT [PK_ForumType] PRIMARY KEY ([ID]),
+    CONSTRAINT [UQ_ForumType_Code] UNIQUE ([Code]),
+    CONSTRAINT [UQ_ForumType_Name] UNIQUE ([Name]),
+    CONSTRAINT [CK_ForumType_Configuration_JSON] CHECK ([Configuration] IS NULL OR ISJSON([Configuration]) = 1)
+);
+GO
 ```
 
-### 2.1 Why `ForumPost` Unifies Root Threads and Replies
-In a multi-type community, **both root thread starters and nested replies are `ForumPost` rows**:
-* **Root Post (`ParentPostID IS NULL`, `RootPostID IS NULL`):** Starts a topic in a `Forum`. Its `PostTypeID` determines what kind of topic it is (`discussion`, `question`, `idea-proposal`, `poll-or-form`, `collaborative-doc`, `collaborative-sheet`, `collaborative-deck`, `live-ama`, `case-review`, `interactive-experience`, or a downstream plugin type like `formal-ballot-motion`).
-* **Reply Post (`ParentPostID IS NOT NULL`, `RootPostID = <RootForumPost.ID>`):** Replies within the thread. Its `PostTypeID` must be in the root post type's `AllowedReplyPostTypeCodes` (intersected with the Forum's `AllowedPostTypeCodes`).
-  * Example 1: A `question` root post (`ForumQuestionPost`) allows replies of type `answer` (`ForumAnswerPost`—which carries `+1/-1` votes, `IsAcceptedAnswer`, and the AI Epistemic Rubric Grade) and `comment` (lightweight clarification).
-  * Example 2: A `discussion` root post allows standard `reply` posts, inline `poll-or-form` posts (`ForumFormPost`), co-editable `collaborative-doc` attachments (`ForumArtifactPost`), and even AI-generated `interactive-experience` mini-apps (`ForumInteractivePost`)!
+### 1.2 `PostType` Table
 
-### 2.2 Subclassing Existing `PostType`s (`PostType.BasePostTypeID`)
-`PostType` includes a self-referencing `BasePostTypeID` foreign key (`FOREIGN KEY REFERENCES [__mj_BizAppsCommunity].[PostType]([ID])`):
-* Just as `MJ: Artifact Types` walks `ParentID` in `ArtifactToolManager.ts` to inherit viewers and agent tools until overridden, a specialized `PostType` (for example, `'clinical-grand-rounds'` or `'friday-trivia-challenge'`) can point `BasePostTypeID` at `'case-review'` or `'interactive-experience'`.
-* When `ServerDriverClass`, `UIDriverClass`, or `PostExtensionEntity` is `NULL` on the child `PostType`, the `PostTypeEngine` walks `BasePostTypeID` to inherit the parent's driver and IsA extension table while applying the child's specialized `Configuration` (custom prompt instructions, JSON schema, rubric weights, or template artifact).
-
----
-
-## 3. Built-In `ForumType` & `PostType` Catalog
-
-### 3.1 Shipped `ForumType`s
-
-| `ForumType.Code` | `ForumExtensionEntity` (IsA `Forum`) | Default `AllowedPostTypeCodes` | Purpose |
-|---|---|---|---|
-| `general-discussion` | *(None — plain `Forum`)* | `["discussion", "question", "poll-or-form", "collaborative-doc", "interactive-experience", "reply"]` | Open member discourse with Living AI Synthesis and low-signal noise collapsing. |
-| `qa-knowledge-base` | *(None — plain `Forum`)* | `["question", "answer", "comment", "collaborative-doc"]` | Stack Overflow + AI Rubric Graded Q&A with bounties and Canon verification. |
-| `ideation-campaign` | `MJ: BizApps Community: Forum Idea Campaigns` (`ForumIdeaCampaign`) | `["idea-proposal", "reply", "poll-or-form"]` | 100-Point Wallet & Quadratic Voting ($\text{Cost} = \text{Votes}^2$) feature/topic prioritization. |
-| `playbooks-and-docs` | *(None — plain `Forum`)* | `["collaborative-doc", "collaborative-sheet", "collaborative-deck", "reply"]` | Co-edited MJ Docs, Slides, Sheets & forkable community playbooks. |
-| `peer-case-rounds` | *(None — plain `Forum`)* | `["case-review", "answer", "reply", "poll-or-form"]` | Structured peer review ("Grand Rounds", architecture teardowns, executive clinics). |
-| `live-events-and-amas` | *(None — plain `Forum`)* | `["live-ama", "question", "answer", "interactive-experience"]` | Scheduled AMAs, office hours, and live interactive community challenges. |
-
-### 3.2 Shipped `PostType`s & Their Hard-FK IsA Subtype Tables
-
-| `PostType.Code` | `AllowedPlacement` | `PostExtensionEntity` (IsA `ForumPost`) | Hard SQL Foreign Keys on the IsA Table |
-|---|---|---|---|
-| `discussion` | `RootOnly` | *(None — base `ForumPost`)* | Base `ForumPost` FKs (`ForumID`, `SpaceID`, `PromotedSpaceID`, `PromotedTaskID`) |
-| `reply` | `ReplyOnly` | *(None — base `ForumPost`)* | `RootPostID` -> `ForumPost(ID)`, `ParentPostID` -> `ForumPost(ID)` |
-| `comment` | `ReplyOnly` | *(None — base `ForumPost`)* | Lightweight clarification under a `question` or `answer` |
-| `question` | `RootOnly` | `ForumQuestionPost` | `AcceptedAnswerPostID` -> `ForumPost(ID)`, `AIVerifiedAnswerPostID` -> `ForumPost(ID)` |
-| `answer` | `ReplyOnly` | `ForumAnswerPost` | `QuestionPostID` -> `ForumQuestionPost(ID)`, `SupersededByAnswerPostID` -> `ForumAnswerPost(ID)` |
-| `idea-proposal` | `RootOnly` | `ForumIdeaPost` | `CampaignForumID` -> `ForumIdeaCampaign(ID)` |
-| `poll-or-form` | `Both` | `ForumFormPost` | `FormID` -> `__mj_BizAppsForms.Form(ID)`, `FormDistributionID` -> `__mj_BizAppsForms.FormDistribution(ID)` |
-| `collaborative-doc` | `Both` | `ForumArtifactPost` | `ArtifactID` -> `__mj.Artifact(ID)`, `PinnedArtifactVersionID` -> `__mj.ArtifactVersion(ID)`, `SpaceItemID` -> `__mj_BizAppsCollaboration.SpaceItem(ID)`, `ParentArtifactPostID` -> `ForumArtifactPost(ID)` |
-| `collaborative-sheet` | `Both` | `ForumArtifactPost` (`DocumentKind='Sheet'`) | Same hard FKs to `__mj.Artifact`, `__mj.ArtifactVersion`, and `SpaceItem` |
-| `collaborative-deck` | `Both` | `ForumArtifactPost` (`DocumentKind='SlideDeck'`) | Same hard FKs to `__mj.Artifact`, `__mj.ArtifactVersion`, and `SpaceItem` |
-| `case-review` | `RootOnly` | `ForumCaseReviewPost` | Structured columns (`ContextMarkdown`, `ConstraintsMarkdown`, `AttemptedMarkdown`, `DecisionAskMarkdown`, `RubricTemplateFormID` -> `__mj_BizAppsForms.Form(ID)`) |
-| `live-ama` | `RootOnly` | `ForumAMAPost` | `HostUserID` -> `__mj.User(ID)`, `StartsAt`, `EndsAt`, `RecordingSpaceItemID` -> `__mj_BizAppsCollaboration.SpaceItem(ID)` |
-| `interactive-experience` | `Both` | `ForumInteractivePost` | `ComponentArtifactID` -> `__mj.Artifact(ID)`, `PinnedArtifactVersionID` -> `__mj.ArtifactVersion(ID)`, `SpaceItemID` -> `__mj_BizAppsCollaboration.SpaceItem(ID)` |
-
----
-
-## 4. Deep Integration with MJ Docs, Slides & Sheets (MJ PR #6215)
-
-In MemberJunction (**[MJ PR #6215 — `plans/docs-slides-sheets.md`](https://github.com/MemberJunction/MJ/pull/6215)**), Docs, Slides, and Sheets are built into MJ Core on top of `MJ: Artifacts` and `MJ: Artifact Versions`:
-* **Live Yjs Co-Editing + Saved Checkpoints:** `y-prosemirror` (TipTap MIT core) for Docs, 16:9 layout regions for Slides (`Presentation`), and multi-tab formula workbooks for Sheets (`Excel Spreadsheet`), with checkpoints saved back to `MJ: Artifact Versions`.
-* **Agents as Co-Editors:** `DocumentToolLibrary`, `SlidesToolLibrary`, and `SheetsToolLibrary` allow MJ Agents to read outlines and edit specific paragraphs, slide regions, or sheet ranges by stable ID with revision checks and automatic before/after version checkpoints.
-* **Live Reference Blocks (`@RegisterClass(BaseDocumentBlock, '<Kind>')`):** Docs, Slides, and Sheets embed live MJ Queries, Views, Records, Charts, and Interactive Components that evaluate under each reader's permissions (or freeze explicitly on publish).
-* **Delegated Permissions (§ 3.3) & Passage Conversations (§ 3.5):** An artifact delegates read/edit permissions to its owning record (a Collaboration `SpaceItem` or Community `ForumArtifactPost`), and every inline passage/slide/cell comment thread is an `MJ: Conversations` row where `@-mentioning` an agent runs it in context.
-
-### How `mj-bizapps-community` Extends MJ Docs, Slides & Sheets:
-1. **`ForumArtifactPost` IsA Subtype (Replacing Static Notes & Disconnected Wiki Pages):**
-   * Any post of type `collaborative-doc`, `collaborative-sheet`, or `collaborative-deck` creates or links an `MJ: Artifact` (and registers it as a `SpaceItem` in the parent Collaboration Space).
-   * **`CoEditPermissionMode` on `ForumArtifactPost`:** Controls who can co-edit the live Yjs document right inside the community thread:
-     * `'AuthorOnly'` (author + agents they invoke)
-     * `'ForumModerators'` (author + users with `CanCoEditDocs = 1` in `ForumMemberRole`)
-     * `'HighTrustMembers'` (members with `CommunityMemberProfile.TrustLevel >= 3`)
-     * `'AllContributors'` (true community wiki / collaborative RFC mode—anyone with `CanContribute` in the Forum can co-edit live!)
-2. **AI Consensus-to-Redline Loop ("Living RFCs"):**
-   * When a committee or working group posts a draft policy or technical standard as a `collaborative-doc` root post, members debate in the replies below AND open anchored `MJ: Conversations` threads on specific paragraphs.
-   * Clicking **"Ask Assistant to Propose Redlines from Consensus"** invokes `SynthesizeConsensusIntoDocAction`, which reads the Bridging Consensus clusters from the replies and uses `DocumentToolLibrary`'s **Suggest** tool (PR #6215 § 3.6) to insert tracked paragraph proposals directly into the live MJ Doc for the author/chair to accept or reject in 1 click!
-3. **Forkable Playbooks with Version Lineage:**
-   * When `ForumArtifactPost.IsForkablePlaybook = 1`, any member can click **"Fork Playbook to My Space"**. This clones the underlying MJ Doc, Slide Deck, or Sheet (including its live MJ Query/View blocks, which automatically re-scope to the cloner's own organization/chapter permissions!) into their target Collaboration `Space` and records `ParentArtifactPostID` lineage.
-4. **Custom Community `BaseDocumentBlock` Registrations:**
-   * `mj-bizapps-community` registers three custom blocks via `@RegisterClass(BaseDocumentBlock, ...)` so **any MJ Doc, Slide Deck, or Sheet across the entire platform** can embed live community intelligence:
-     * `CommunityThreadSynthesisBlock`: Embeds a live-updating AI Synthesis & Consensus card from a `ForumPost` thread into a Board Slide Deck or Executive Brief Doc.
-     * `CommunityCanonAnswerBlock`: Embeds a `CanonVerified` `ForumAnswerPost` into an SOP Doc (showing a live freshness badge if superseded).
-     * `CommunityIdeaLeaderboardBlock`: Embeds a live 100-Point / Quadratic `ForumIdeaCampaign` table or chart into a strategy Doc or Sheet.
-
----
-
-## 5. AI-Generated Interactive Games, Simulations & Mini-App Posts via Interactive Component Artifacts (`ForumInteractivePost`)
-
-Rather than storing bespoke component code blobs in community tables or wiring post components directly to low-level `<mj-react-component>` hosts, `mj-bizapps-community` builds directly on **MemberJunction's Interactive Component Artifact architecture**:
-* **`MJ: Artifacts` & `MJ: Artifact Versions` (`ArtifactType = 'Component'`):** Every interactive experience is stored and versioned as a first-class MJ Artifact whose `ArtifactVersion.Content` holds a structured `ComponentSpec` (`@memberjunction/interactive-component-types`), loaded on demand via `ArtifactMetadataEngine.Instance.LoadVersionsForArtifact`.
-* **`@memberjunction/ng-artifacts` (`ComponentArtifactViewerComponent` / `<mj-artifact-type-plugin-viewer>`):** Renders the `Component` artifact through MJ's standard artifact plugin pipeline (`@RegisterClass(BaseArtifactViewerPluginComponent, 'ComponentArtifactViewerPlugin')`), which encapsulates the sandboxed `<mj-react-component>` host (**[MJ PR #5257](https://github.com/MemberJunction/MJ/pull/5257)**) while adding permission checks, version history, and structured feedback out of the box.
-
-### 5.1 Why Using Interactive Component Artifacts Beats Direct `<mj-react-component>` Wiring
-1. **Zero Custom Code Storage + 100% Hard SQL Foreign Keys:**
-   * `ForumInteractivePost` (`IsA` `ForumPost`) holds enforced SQL Foreign Keys to `__mj.Artifact(ID)` (`ComponentArtifactID`), `__mj.ArtifactVersion(ID)` (`PinnedArtifactVersionID`), and `__mj_BizAppsCollaboration.SpaceItem(ID)` (`SpaceItemID`).
-   * Because the artifact can also be mounted as a `SpaceItem`, any interactive calculator, quiz, or simulator created in a forum thread automatically appears in the Collaboration Space's shared Library.
-2. **Immutable Version History & Iterative AI Refinement (`<mj-artifact-version-history>` & `<mj-component-feedback-panel>`):**
-   * When an author or moderator uses the built-in `<mj-component-feedback-panel>` to ask the AI Assistant to *"Add a 6th bonus question on HIPAA breach notification windows"* or *"Update the calculator for 2027 dues tiers"*, the agent writes a new `MJ: Artifact Version` (`v2`, `v3`, …) on the same `ComponentArtifactID`.
-   * Posts can either track the latest version (`PinnedArtifactVersionID IS NULL`) or pin a certified version (`PinnedArtifactVersionID = <v2.ID>`), with full 1-click rollback via `<mj-artifact-version-history>`.
-3. **Automatic Client-Side Permission Enforcement (`EvaluateComponentPermissions`):**
-   * Before mounting the interactive component, `ComponentArtifactViewerComponent` runs `EvaluateComponentPermissions(spec, currentUser)` against `spec.dataRequirements` (`entities` and `queries`), verifying `entityInfo.GetUserPermisions(currentUser).CanRead` and `queryInfo.UserCanRun(currentUser)`.
-   * Moderators and technical reviewers can also switch to `ComponentArtifactViewerComponent`'s built-in **Code**, **Functional Requirements**, **Technical Design**, and **Data Requirements** tabs to audit how the mini-app works before approving or pinning it.
-
-### 5.2 How It Works End-to-End in a Forum
-1. **Prompting the Composer Assistant:**
-   * In any Forum that allows `interactive-experience` (or a subclassed `PostType` like `weekly-trivia-game` or `roi-simulator`), a member or community steward clicks **"✨ Build Interactive Post with AI"** and describes what they want:
-     * *"Create a 5-question timed clinical diagnostic challenge based on this month's Cardiology Guidelines PDF, with instant explanations and a peer leaderboard."*
-     * *"Build an interactive 'Staffing & Dues Calculator' where members enter their FTE count and operating budget to see how their ratios compare against the community median."*
-     * *"Create a 16-seed single-elimination bracket where members vote head-to-head on the most overrated software patterns."*
-2. **Artifact Creation & `InteractivePostUIDriver` Rendering:**
-   * The Community Builder Agent generates a `ComponentSpec` (`@memberjunction/interactive-component-types`), persists it as an `MJ: Artifact` (`ArtifactType = 'Component'`) + initial `MJ: Artifact Version`, and creates the `ForumInteractivePost` row (`ComponentArtifactID`, `InteractiveKind`, `ScoringMode`).
-   * When members view the post in the feed or thread, `InteractivePostUIDriver` renders `<mj-artifact-type-plugin-viewer [artifactVersion]="resolvedVersion" [artifactTypeName]="'Component'">`.
-3. **Version-Tracked Persistence & Live Leaderboards (`ForumInteractiveSession`):**
-   * When a member finishes a quiz round, submits a simulation run, or completes a scenario, the component's host bridge records a row in `ForumInteractiveSession` with hard Foreign Keys to both `ForumInteractivePost(ID)` (`InteractivePostID`) and `__mj.ArtifactVersion(ID)` (`ArtifactVersionID`), alongside `UserID`, `Score`, `DurationSeconds`, and `ResultPayloadJSON`.
-   * The post card renders a live **Community Leaderboard & Peer Distribution Histogram** right below the artifact viewer, awards outcome reputation points (`CommunityReputationEvent`), and lets members discuss strategies in the thread replies below!
-4. **1-Click "Promote to Reusable Post Type" or Fork Artifact:**
-   * Because the underlying game or calculator is a standard `MJ: Artifact`, any authorized member can fork the artifact into their own Working Space, or a Forum Admin can click **"Save as Reusable Post Type"** (`BasePostTypeID` -> `interactive-experience`) so anyone can launch new rounds from that template!
-
----
-
-## 6. The 4-Level Hierarchical Settings Cascade (`ResolveForumConfiguration`)
-
-Every setting in `mj-bizapps-community` follows the same rule established in `BizApps Collaboration`:
-* **If SQL reads it** (row-level security, `fnCommunityAccess`, foreign keys), it is a typed table column (stamped from resolved settings when needed).
-* **Everything else** lives in a typed JSONType `Configuration` bag (`ICommunitySettings`) shared across all four levels of the hierarchy and resolved by a single pure function in `@mj-biz-apps/community-core`:
-
-```mermaid
-flowchart TD
-  L1["Level 1: MJ Application Settings<br/>(Global defaults for mj-bizapps-community)"]
-  L2["Level 2: ForumType.Configuration<br/>(Type defaults, AllowedPostTypeCodes,<br/>AllowedChildForumTypeCodes, ForumOverridable)"]
-  L3["Level 3: CommunitySpace.Configuration<br/>(Space-wide overrides within ForumOverridable)"]
-  L4["Level 4: Forum & Sub-Forum Ancestor Chain<br/>(ParentForumID -> ... -> Forum.Configuration,<br/>restarting if ForumTypeID changes)"]
-  DRV["Level 5: BaseForumTypeServerDriver.AdjustRules()<br/>(Code hook that may only NARROW effective rules)"]
-
-  L1 --> L2 --> L3 --> L4 --> DRV
+```sql
+CREATE TABLE [${flyway:defaultSchema}].[PostType] (
+    [ID] UNIQUEIDENTIFIER NOT NULL CONSTRAINT [DF_PostType_ID] DEFAULT (NEWSEQUENTIALID()),
+    [Code] NVARCHAR(100) NOT NULL,
+    [Name] NVARCHAR(100) NOT NULL,
+    [Description] NVARCHAR(MAX) NULL,
+    [Icon] NVARCHAR(100) NULL,
+    [ServerDriverClass] NVARCHAR(200) NULL,
+    [UIDriverClass] NVARCHAR(200) NULL,
+    [ExtensionEntity] NVARCHAR(255) NULL,
+    [PlacementRule] NVARCHAR(20) NOT NULL CONSTRAINT [DF_PostType_PlacementRule] DEFAULT (N'Both'),
+    [AllowsNestedReplies] BIT NOT NULL CONSTRAINT [DF_PostType_AllowsNestedReplies] DEFAULT (1),
+    [TriggersThreadSynthesis] BIT NOT NULL CONSTRAINT [DF_PostType_TriggersThreadSynthesis] DEFAULT (1),
+    [IndexedInCorpus] BIT NOT NULL CONSTRAINT [DF_PostType_IndexedInCorpus] DEFAULT (1),
+    [Configuration] NVARCHAR(MAX) NULL,
+    [Sequence] INT NOT NULL CONSTRAINT [DF_PostType_Sequence] DEFAULT (0),
+    [IsActive] BIT NOT NULL CONSTRAINT [DF_PostType_IsActive] DEFAULT (1),
+    CONSTRAINT [PK_PostType] PRIMARY KEY ([ID]),
+    CONSTRAINT [UQ_PostType_Code] UNIQUE ([Code]),
+    CONSTRAINT [UQ_PostType_Name] UNIQUE ([Name]),
+    CONSTRAINT [CK_PostType_PlacementRule] CHECK ([PlacementRule] IN (N'Root Only', N'Reply Only', N'Both')),
+    CONSTRAINT [CK_PostType_Configuration_JSON] CHECK ([Configuration] IS NULL OR ISJSON([Configuration]) = 1)
+);
+GO
 ```
 
-### 6.1 Shared Configuration Interface (`packages/Core/src/configuration.ts`)
+### 1.3 `ForumRoleType` Table
 
-```ts
-export interface ICommunitySettings {
-  /** PostType codes allowed in this forum. A child level may narrow this list (or extend it only if 'PostTypes.AllowedCodes' is in ForumOverridable). */
-  PostTypes?: {
-    AllowedCodes?: string[];
-    DefaultRootCode?: string;
-    AllowAIInteractivePostCreation?: boolean;
-  };
-  /** Anonymous access policy for Shared-band content. */
-  AnonymousAccess?: {
-    Mode?: 'None' | 'TeaserOnly' | 'FullRead';
-    AllowAnonymousAskFirstSearch?: boolean;
-    TeaserReplyLimit?: number;
-  };
-  /** Moderation & trust-level gates. */
-  Moderation?: {
-    Policy?: 'PostFirst' | 'AIQuarantineLowTrust' | 'PreModerateAll';
-    MinTrustLevelToCreateRootPost?: number;
-    MinTrustLevelToCreateInteractivePost?: number;
-    MinTrustLevelToCoEditDocs?: number;
-    AutoCollapseLowSignalReplies?: boolean;
-  };
-  /** AI synthesis, epistemic grading, and Ask-First deflection switches. */
-  AI?: {
-    EnableAskFirstDeflection?: boolean;
-    EnableLivingThreadSynthesis?: boolean;
-    SynthesisReplyThreshold?: number;
-    EnableAnswerRubricGrading?: boolean;
-    EnableBridgingConsensus?: boolean;
-  };
-  /** Digest & inbound email defaults. */
-  Digest?: {
-    DefaultFrequency?: 'None' | 'Daily' | 'Weekly' | 'Realtime';
-    AllowInboundEmailReply?: boolean;
-  };
-  /** Arbitrary plugin/driver settings keyed by owning Open App name. */
-  Extensions?: Record<string, Record<string, unknown>>;
-}
-
-export interface IForumTypeConfiguration extends ICommunitySettings {
-  /** Which ForumType codes may be created as sub-forums under a forum of this type. */
-  SubForums?: {
-    AllowedForumTypeCodes?: string[];
-    MaxDepth?: number;
-  };
-  /** Dotted setting paths that a Space or Forum is permitted to override (e.g., 'Moderation.Policy', 'PostTypes.AllowedCodes', 'AnonymousAccess'). */
-  ForumOverridable?: string[];
-}
+```sql
+CREATE TABLE [${flyway:defaultSchema}].[ForumRoleType] (
+    [ID] UNIQUEIDENTIFIER NOT NULL CONSTRAINT [DF_ForumRoleType_ID] DEFAULT (NEWSEQUENTIALID()),
+    [Code] NVARCHAR(100) NOT NULL,
+    [Name] NVARCHAR(100) NOT NULL,
+    [Description] NVARCHAR(MAX) NULL,
+    [Level] INT NOT NULL CONSTRAINT [DF_ForumRoleType_Level] DEFAULT (100),
+    [CanConfigureForum] BIT NOT NULL CONSTRAINT [DF_ForumRoleType_CanConfigureForum] DEFAULT (0),
+    [CanModerateQueue] BIT NOT NULL CONSTRAINT [DF_ForumRoleType_CanModerateQueue] DEFAULT (0),
+    [CanPinOrLock] BIT NOT NULL CONSTRAINT [DF_ForumRoleType_CanPinOrLock] DEFAULT (0),
+    [CanAcceptAnswers] BIT NOT NULL CONSTRAINT [DF_ForumRoleType_CanAcceptAnswers] DEFAULT (0),
+    [CanVerifyCanon] BIT NOT NULL CONSTRAINT [DF_ForumRoleType_CanVerifyCanon] DEFAULT (0),
+    [CanPromoteToSpace] BIT NOT NULL CONSTRAINT [DF_ForumRoleType_CanPromoteToSpace] DEFAULT (0),
+    [CanCreateRootPost] BIT NOT NULL CONSTRAINT [DF_ForumRoleType_CanCreateRootPost] DEFAULT (1),
+    [CanReply] BIT NOT NULL CONSTRAINT [DF_ForumRoleType_CanReply] DEFAULT (1),
+    [CanCoEditDocs] BIT NOT NULL CONSTRAINT [DF_ForumRoleType_CanCoEditDocs] DEFAULT (0),
+    [VoteWeightMultiplier] DECIMAL(5,2) NOT NULL CONSTRAINT [DF_ForumRoleType_VoteWeightMultiplier] DEFAULT (1.00),
+    [Sequence] INT NOT NULL CONSTRAINT [DF_ForumRoleType_Sequence] DEFAULT (0),
+    [IsActive] BIT NOT NULL CONSTRAINT [DF_ForumRoleType_IsActive] DEFAULT (1),
+    CONSTRAINT [PK_ForumRoleType] PRIMARY KEY ([ID]),
+    CONSTRAINT [UQ_ForumRoleType_Code] UNIQUE ([Code]),
+    CONSTRAINT [UQ_ForumRoleType_Name] UNIQUE ([Name])
+);
+GO
 ```
 
 ---
 
-## 7. Per-Forum Participant Roles & Scoped Moderation (`ForumRoleType` & `ForumMemberRole`)
+## 2. Dynamic `IsA` Subtype Resolution (`EntitySubtypeResolver` + `BaseSingleton` Directory)
 
-While `BizApps Collaboration` (`SpaceMember` + `fnCollaborationAccess`) governs who can reach the `Space` and whether they see the `Team` band, individual `Forum`s and Sub-Forums within a `CommunitySpace` often have their own volunteer leaders, moderators, or subject-matter reviewers:
+Just as `bizapps-collaboration` registers `SpaceSubtypeResolver` for `MJ_BizApps_Collaboration: Spaces` backed by `SpaceSubtypeDirectory` (`BaseSingleton`), `bizapps-community` provides two singleton directories and resolvers in `@mj-biz-apps/community-entities`:
 
-| `ForumRoleType.Code` | `Level` | `CanConfigureForum` | `CanModeratePosts` | `CanPinAndLock` | `CanAcceptAnswers` | `CanEndorseCanon` | `CanCreateRootPost` | `CanReply` | `CanCoEditDocs` |
-|---|---|---|---|---|---|---|---|---|---|
-| `forum-admin` | 40 | `1` | `1` | `1` | `1` | `1` | `1` | `1` | `1` |
-| `moderator` | 30 | `0` | `1` | `1` | `1` | `1` | `1` | `1` | `1` |
-| `topic-host` | 25 | `0` | `0` | `1` | `1` | `0` | `1` | `1` | `1` |
-| `expert-reviewer` | 20 | `0` | `0` | `0` | `0` | `1` | `1` | `1` | `1` |
-| `contributor` | 10 | `0` | `0` | `0` | `0` | `0` | `1` | `1` | `0` |
-| `observer` | 5 | `0` | `0` | `0` | `0` | `0` | `0` | `0` | `0` |
-| `muted` | 0 | `0` | `0` | `0` | `0` | `0` | `0` | `0` | `0` |
+1. **`ForumSubtypeDirectory` & `ForumSubtypeResolver` (`MJ_BizApps_Community: Forums`)**:
+   - Inspects `Forum.ForumTypeID`, looks up the cached `ForumType` in `ForumSubtypeDirectory.Instance`, and returns `ForumType.ExtensionEntity` (e.g., `'MJ_BizApps_Community: Forum Idea Campaigns'`).
+2. **`PostSubtypeDirectory` & `ForumPostSubtypeResolver` (`MJ_BizApps_Community: Forum Posts`)**:
+   - Inspects `ForumPost.PostTypeID`, looks up the cached `PostType` in `PostSubtypeDirectory.Instance`, and returns `PostType.ExtensionEntity` (`'MJ_BizApps_Community: Forum Question Posts'`, `'MJ_BizApps_Community: Forum Answer Posts'`, `'MJ_BizApps_Community: Forum Idea Posts'`, `'MJ_BizApps_Community: Forum Form Posts'`, `'MJ_BizApps_Community: Forum Artifact Posts'`, `'MJ_BizApps_Community: Forum Case Posts'`, `'MJ_BizApps_Community: Forum AMA Posts'`, or `'MJ_BizApps_Community: Forum Interactive Posts'`).
 
-* **Inheritance down `ParentForumID`:** When a user holds a `ForumMemberRole` on a parent `Forum` with `InheritsToSubForums = 1`, `fnCommunityForumAccess(@UserID)` automatically projects that role onto its descendant sub-forums (unless overridden by a more specific `ForumMemberRole` row on the child `Forum`).
-* **Space Owners & Admins:** A user whose `SpaceRoleType.IsOwnerRole = 1` on the enclosing Collaboration `Space` automatically receives `forum-admin` capabilities across all Forums in that Space.
+### Built-In `ForumType` Seed Matrix
+
+| `Code` | `Name` | `ExtensionEntity` (`IsA` Child of `Forum`) | Default Allowed `PostType` Codes | Purpose |
+|---|---|---|---|---|
+| `general-discussion` | `General Discussion` | `NULL` | `["discussion", "reply", "comment", "poll-or-form", "collaborative-doc", "collaborative-sheet", "collaborative-deck", "interactive-experience"]` | Open topical forum with Living Thread Synthesis, inline polls, co-authored docs, and interactive mini-apps. |
+| `qa-knowledge-base` | `Q&A Knowledge Base` | `NULL` | `["question", "answer", "comment"]` | Structured Q&A with dual human + AI epistemic answer verification and freshness decay. |
+| `ideation-campaign` | `Ideation Campaign` | `MJ_BizApps_Community: Forum Idea Campaigns` | `["idea-proposal", "reply", "poll-or-form"]` | 100-Point Wallet & Quadratic Voting ($\text{Cost} = \text{Votes}^2$) prioritization. |
+| `playbooks-and-docs` | `Playbooks & Collaborative Docs` | `NULL` | `["collaborative-doc", "collaborative-sheet", "collaborative-deck", "reply", "comment"]` | Co-authoring channel where root posts are live Yjs MJ Artifacts (`Document`, `Spreadsheet`, `Presentation`). |
+| `peer-case-rounds` | `Peer Case Rounds` | `NULL` | `["case-review", "reply", "comment"]` | Structured Situation / Action / Outcome case reviews with optional anonymization. |
+| `live-events-and-amas` | `Live Events & AMAs` | `NULL` | `["live-ama", "question", "reply", "poll-or-form", "interactive-experience"]` | Scheduled Ask-Me-Anything sessions, town halls, and live member trivia. |
 
 ---
 
-## 8. Downstream Plugin Open Apps (100% Hard SQL Foreign Keys)
+## 3. The 4-Tier Configuration Cascade (`CommunityConfigurationResolver`)
 
-Because `ForumType` and `PostType` are open metadata catalogs backed by ClassFactory drivers and IsA extension entities, any integration with optional sibling BizApps ships as a small, focused bridge Open App with **real SQL Foreign Keys**:
+Implemented in `@mj-biz-apps/community-core`, configuration resolves through 4 tiers:
 
-### 8.1 `mj-bizapps-community-voting` (Schema: `__mj_BizAppsCommunityVoting`)
-* **Dependencies:** `mj-bizapps-community`, `mj-bizapps-voting`
-* **Ships `ForumType`:** `deliberation-assembly` (`ForumExtensionEntity = 'MJ: BizApps Community Voting: Forum Voting Assemblies'`)
-  * **IsA Table `ForumVotingAssembly`:**
-    * `ID` (`UNIQUEIDENTIFIER PK`, `FOREIGN KEY REFERENCES [__mj_BizAppsCommunity].[Forum]([ID])`)
-    * `DefaultElectionTypeID` (`UNIQUEIDENTIFIER NOT NULL`, `FOREIGN KEY REFERENCES [__mj_BizAppsVoting].[ElectionType]([ID])`)
-    * `DefaultSecrecyMode` (`NVARCHAR(20) NOT NULL`)
-* **Ships `PostType`:** `formal-ballot-motion` (`PostExtensionEntity = 'MJ: BizApps Community Voting: Forum Ballot Posts'`)
-  * **IsA Table `ForumBallotPost`:**
-    * `ID` (`UNIQUEIDENTIFIER PK`, `FOREIGN KEY REFERENCES [__mj_BizAppsCommunity].[ForumPost]([ID])`)
-    * `ElectionID` (`UNIQUEIDENTIFIER NOT NULL`, `FOREIGN KEY REFERENCES [__mj_BizAppsVoting].[Election]([ID])`)
-    * `PrimaryContestID` (`UNIQUEIDENTIFIER NULL`, `FOREIGN KEY REFERENCES [__mj_BizAppsVoting].[Contest]([ID])`)
-    * `FrozenArtifactVersionID` (`UNIQUEIDENTIFIER NULL`, `FOREIGN KEY REFERENCES [__mj].[ArtifactVersion]([ID])` — pins the exact MJ Doc version being ratified!)
-* **UI Driver (`BallotPostUIDriver`):** Renders `<mj-ballot>` inline inside the community thread and auto-posts an `OfficialStatusUpdate` reply when `OnResultsCertified` fires!
+```
+DEFAULT_COMMUNITY_CONFIGURATION
+  -> Application Settings ("CommunitySettings")
+    -> ForumType.Configuration
+      -> Forum.Configuration (filtered strictly through ForumType.Configuration.ForumOverridable)
+```
 
-### 8.2 `mj-bizapps-community-issues` (Schema: `__mj_BizAppsCommunityIssues`)
-* **Dependencies:** `mj-bizapps-community`, `mj-bizapps-issues`
-* **Ships `ForumType`:** `issue-and-bug-tracker` (`ForumExtensionEntity = 'MJ: BizApps Community Issues: Forum Issue Trackers'`)
-  * **IsA Table `ForumIssueTracker`:**
-    * `ID` (`UNIQUEIDENTIFIER PK`, `FOREIGN KEY REFERENCES [__mj_BizAppsCommunity].[Forum]([ID])`)
-    * `DefaultIssueTypeID` (`UNIQUEIDENTIFIER NOT NULL`, `FOREIGN KEY REFERENCES [__mj_BizAppsIssues].[IssueType]([ID])`)
-* **Ships `PostType`:** `tracked-issue-post` (`PostExtensionEntity = 'MJ: BizApps Community Issues: Forum Issue Posts'`)
-  * **IsA Table `ForumIssuePost`:**
-    * `ID` (`UNIQUEIDENTIFIER PK`, `FOREIGN KEY REFERENCES [__mj_BizAppsCommunity].[ForumPost]([ID])`)
-    * `IssueID` (`UNIQUEIDENTIFIER NOT NULL`, `FOREIGN KEY REFERENCES [__mj_BizAppsIssues].[Issue]([ID])`)
-    * `SyncStatusToPost` (`BIT NOT NULL DEFAULT 1`)
+If a `Forum` attempts to override a setting path (such as `Posts.AllowedPostTypeCodes` or `Posts.MaxReplyDepth`) that is not listed in its `ForumType.Configuration.ForumOverridable` whitelist, `CommunityConfigurationResolver.Resolve()` ignores the unauthorized override and preserves the `ForumType` rule.
 
-### 8.3 `mj-bizapps-community-credentialing` (Schema: `__mj_BizAppsCommunityCredentialing`)
-* **Dependencies:** `mj-bizapps-community`, `mj-bizapps-credentialing`
-* **Ships Tables with Hard FKs:**
-  * `ForumCredentialDomain` (`ForumID` FK -> `__mj_BizAppsCommunity.Forum(ID)`, `CredentialTypeID` FK -> `__mj_BizAppsCredentialing.CredentialType(ID)`, `VoteWeightMultiplier` `DECIMAL(5,2)`): automatically marks voters holding that active credential as `IsVerifiedDomainExpert = 1` on `ForumPostVote`!
-  * `ForumCECreditAward` (`ID` PK, `AnswerPostID` FK -> `__mj_BizAppsCommunity.ForumAnswerPost(ID)`, `ReputationEventID` FK -> `__mj_BizAppsCommunity.CommunityReputationEvent(ID)`, `CredentialHolderID` FK -> `__mj_BizAppsCredentialing.CredentialHolder(ID)`, `CreditHours` `DECIMAL(5,2)`): awards verifiable Continuing Education micro-credits when an expert authors a Canon-Verified answer!
+---
+
+## 4. Peer Collaboration `SpaceType` Interoperability (Committees, Working Groups, Secure Messaging)
+
+Because `CommunitySpace` is an `IsA` child of `MJ_BizApps_Collaboration: Spaces`, it sits alongside peer `SpaceType`s in the Collaboration tree:
+- **Committees & Terms (`committee`, `committee-term` from `bizapps-committees`)**: Governance committees with formal rosters, `Tasks` meetings, motions, and sealed/open ballots.
+- **Working Groups (`working-group`), Projects (`project`), Cohorts (`cohort`), and Events (`event`)**: Core Collaboration space types.
+- **Thread Graduation (`ThreadGraduationService`)**: Any root `ForumPost` can graduate into a child Collaboration Space of any `SpaceType` code permitted by `SpaceType.Configuration.Children.AllowedTypeCodes` (e.g., spinning up a `working-group` or referring a policy thread to a `committee`), carrying over participants, a synthesized charter, and an optional initial `Task`.

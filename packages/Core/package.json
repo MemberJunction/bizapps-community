@@ -1,18 +1,28 @@
 {
   "name": "@mj-biz-apps/community-core",
-  "version": "0.1.0",
-  "description": "Pure domain rules for BizApps Community — low-signal reply auto-collapse, per-member personalized digest scoring, and thread-to-space graduation.",
-  "license": "BUSL-1.1",
   "type": "module",
-  "main": "./dist/index.js",
-  "types": "./dist/index.d.ts",
-  "exports": {
-    ".": {
-      "types": "./dist/index.d.ts",
-      "default": "./dist/index.js"
-    }
+  "version": "0.1.0",
+  "description": "Pure domain rules for BizApps Community: forum reach, band ceiling, quadratic & point-wallet ideation math, thread synthesis triggers, and anonymous read redaction.",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "publishConfig": {
+    "access": "public"
   },
+  "files": [
+    "/dist"
+  ],
   "scripts": {
+    "build": "tsc",
     "test": "node --experimental-strip-types --test src/rules.test.ts"
-  }
+  },
+  "license": "UNLICENSED",
+  "devDependencies": {
+    "@types/node": "24.10.11",
+    "typescript": "5.9.3"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/MemberJunction/bizapps-community"
+  },
+  "mjUILayer": "runtime"
 }

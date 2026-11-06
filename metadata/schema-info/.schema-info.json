@@ -1,0 +1,18 @@
+[
+  {
+    "_comments": [
+      "Matched by schema name. EntityNamePrefix is 'MJ_BizApps_Community: ' (22 chars, within nvarchar(25))."
+    ],
+    "primaryKey": {
+      "ID": "@lookup:MJ: Schema Info.SchemaName=__mj_BizAppsCommunity"
+    },
+    "fields": {
+      "SchemaName": "__mj_BizAppsCommunity",
+      "EntityIDMin": 10300001,
+      "EntityIDMax": 10399999,
+      "EntityNamePrefix": "MJ_BizApps_Community: ",
+      "Comments": null,
+      "Description": "MemberJunction: BizApps Community. Member-driven forums, Q&A knowledge bases, ideation campaigns, live document co-authoring, and interactive AI experiences built on BizApps Collaboration."
+    }
+  }
+]

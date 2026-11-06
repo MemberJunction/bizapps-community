@@ -1,0 +1,1861 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>BizApps Community — 3 Divergent UX Concepts (Community + Committees + Collaboration + Secure Messaging)</title>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" />
+  <style>
+    :root,
+    [data-theme="light"] {
+      --mj-bg-page: #f4f6fb;
+      --mj-bg-surface: #ffffff;
+      --mj-bg-surface-elevated: #f8fafc;
+      --mj-bg-surface-sunken: #eef2f9;
+      --mj-bg-glass: rgba(255, 255, 255, 0.88);
+      --mj-text-primary: #0f172a;
+      --mj-text-secondary: #475569;
+      --mj-text-muted: #64748b;
+      --mj-border-default: #e2e8f0;
+      --mj-border-strong: #cbd5e1;
+      --mj-brand-primary: #4f46e5;
+      --mj-brand-primary-hover: #4338ca;
+      --mj-brand-soft: #eef2ff;
+      --mj-accent-ai: #7c3aed;
+      --mj-accent-ai-soft: #f5f3ff;
+      --mj-status-success: #059669;
+      --mj-status-success-soft: #ecfdf5;
+      --mj-status-warning: #d97706;
+      --mj-status-warning-soft: #fffbeb;
+      --mj-status-danger: #dc2626;
+      --mj-status-danger-soft: #fef2f2;
+      --mj-status-info: #0284c7;
+      --mj-status-info-soft: #f0f9ff;
+      --mj-shadow-sm: 0 1px 3px rgba(15, 23, 42, 0.06);
+      --mj-shadow-md: 0 8px 24px rgba(15, 23, 42, 0.08);
+      --mj-shadow-lg: 0 20px 40px rgba(15, 23, 42, 0.14);
+      --mj-radius-sm: 8px;
+      --mj-radius-md: 12px;
+      --mj-radius-lg: 16px;
+      --mj-radius-xl: 22px;
+    }
+
+    [data-theme="dark"] {
+      --mj-bg-page: #090d16;
+      --mj-bg-surface: #111827;
+      --mj-bg-surface-elevated: #1e293b;
+      --mj-bg-surface-sunken: #0b1120;
+      --mj-bg-glass: rgba(17, 24, 39, 0.88);
+      --mj-text-primary: #f8fafc;
+      --mj-text-secondary: #cbd5e1;
+      --mj-text-muted: #94a3b8;
+      --mj-border-default: #1f2937;
+      --mj-border-strong: #334155;
+      --mj-brand-primary: #6366f1;
+      --mj-brand-primary-hover: #818cf8;
+      --mj-brand-soft: rgba(99, 102, 241, 0.16);
+      --mj-accent-ai: #a78bfa;
+      --mj-accent-ai-soft: rgba(167, 139, 250, 0.15);
+      --mj-status-success: #10b981;
+      --mj-status-success-soft: rgba(16, 185, 129, 0.15);
+      --mj-status-warning: #f59e0b;
+      --mj-status-warning-soft: rgba(245, 158, 11, 0.15);
+      --mj-status-danger: #ef4444;
+      --mj-status-danger-soft: rgba(239, 68, 68, 0.15);
+      --mj-status-info: #38bdf8;
+      --mj-status-info-soft: rgba(56, 189, 248, 0.15);
+      --mj-shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.35);
+      --mj-shadow-md: 0 10px 28px rgba(0, 0, 0, 0.45);
+      --mj-shadow-lg: 0 24px 48px rgba(0, 0, 0, 0.65);
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", Roboto, sans-serif;
+      background: var(--mj-bg-page);
+      color: var(--mj-text-primary);
+      line-height: 1.5;
+      min-height: 100vh;
+    }
+
+    /* Top Concept & Persona Switcher Bar */
+    .ux-director-bar {
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      padding: 10px 20px;
+      background: var(--mj-bg-glass);
+      backdrop-filter: blur(14px);
+      border-bottom: 1px solid var(--mj-border-default);
+      box-shadow: var(--mj-shadow-sm);
+      flex-wrap: wrap;
+    }
+
+    .brand-cluster {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .brand-logo {
+      width: 36px;
+      height: 36px;
+      border-radius: 10px;
+      background: linear-gradient(135deg, var(--mj-brand-primary), var(--mj-accent-ai));
+      color: #fff;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 700;
+      font-size: 16px;
+      box-shadow: var(--mj-shadow-sm);
+    }
+
+    .brand-title {
+      font-weight: 700;
+      font-size: 14px;
+      letter-spacing: -0.01em;
+    }
+
+    .brand-subtitle {
+      font-size: 11px;
+      color: var(--mj-text-muted);
+    }
+
+    .concept-switcher {
+      display: flex;
+      align-items: center;
+      background: var(--mj-bg-surface-sunken);
+      padding: 4px;
+      border-radius: 999px;
+      border: 1px solid var(--mj-border-default);
+      gap: 4px;
+    }
+
+    .concept-tab {
+      border: none;
+      background: transparent;
+      color: var(--mj-text-secondary);
+      padding: 7px 14px;
+      border-radius: 999px;
+      font-size: 12.5px;
+      font-weight: 600;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      transition: all 0.16s ease;
+    }
+
+    .concept-tab:hover {
+      color: var(--mj-text-primary);
+    }
+
+    .concept-tab.active {
+      background: var(--mj-bg-surface);
+      color: var(--mj-brand-primary);
+      box-shadow: var(--mj-shadow-sm);
+    }
+
+    .concept-tab .badge-num {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 18px;
+      height: 18px;
+      border-radius: 50%;
+      font-size: 11px;
+      background: var(--mj-brand-soft);
+      color: var(--mj-brand-primary);
+    }
+
+    .global-controls {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .pill-btn {
+      border: 1px solid var(--mj-border-default);
+      background: var(--mj-bg-surface);
+      color: var(--mj-text-secondary);
+      padding: 6px 12px;
+      border-radius: 999px;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      transition: all 0.15s ease;
+    }
+
+    .pill-btn:hover {
+      border-color: var(--mj-brand-primary);
+      color: var(--mj-brand-primary);
+    }
+
+    .pill-btn.active-band {
+      background: var(--mj-status-info-soft);
+      border-color: var(--mj-status-info);
+      color: var(--mj-status-info);
+    }
+
+    .pill-btn.secure-btn {
+      background: var(--mj-status-success-soft);
+      border-color: var(--mj-status-success);
+      color: var(--mj-status-success);
+    }
+
+    /* Concept Banner */
+    .concept-explainer {
+      max-width: 1480px;
+      margin: 14px auto 0;
+      padding: 0 20px;
+    }
+
+    .explainer-card {
+      background: linear-gradient(120deg, var(--mj-brand-soft), var(--mj-accent-ai-soft));
+      border: 1px solid var(--mj-border-default);
+      border-radius: var(--mj-radius-md);
+      padding: 12px 18px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      flex-wrap: wrap;
+    }
+
+    .explainer-text {
+      font-size: 13px;
+      color: var(--mj-text-primary);
+    }
+
+    .explainer-text strong {
+      color: var(--mj-brand-primary);
+    }
+
+    .explainer-chips {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .mini-chip {
+      font-size: 11px;
+      font-weight: 600;
+      padding: 3px 9px;
+      border-radius: 999px;
+      background: var(--mj-bg-surface);
+      border: 1px solid var(--mj-border-default);
+      color: var(--mj-text-secondary);
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+    }
+
+    /* Concept View Containers */
+    .concept-view {
+      display: none;
+      max-width: 1480px;
+      margin: 16px auto 48px;
+      padding: 0 20px;
+    }
+
+    .concept-view.active {
+      display: block;
+    }
+
+    /* ==========================================================================
+       CONCEPT 1: THE CALM KNOWLEDGE STREAM (3-Column Unified Collaboration Shell)
+       ========================================================================== */
+    .c1-grid {
+      display: grid;
+      grid-template-columns: 270px minmax(0, 1fr) 330px;
+      gap: 18px;
+      align-items: start;
+    }
+
+    @media (max-width: 1180px) {
+      .c1-grid {
+        grid-template-columns: 240px minmax(0, 1fr);
+      }
+      .c1-right-rail {
+        display: none;
+      }
+    }
+
+    .panel-card {
+      background: var(--mj-bg-surface);
+      border: 1px solid var(--mj-border-default);
+      border-radius: var(--mj-radius-lg);
+      box-shadow: var(--mj-shadow-sm);
+    }
+
+    .rail-section {
+      padding: 14px;
+      border-bottom: 1px solid var(--mj-border-default);
+    }
+
+    .rail-section:last-child {
+      border-bottom: none;
+    }
+
+    .rail-heading {
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--mj-text-muted);
+      margin-bottom: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .rail-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      padding: 8px 10px;
+      border-radius: var(--mj-radius-sm);
+      font-size: 13px;
+      color: var(--mj-text-secondary);
+      cursor: pointer;
+      transition: all 0.14s ease;
+      margin-bottom: 2px;
+    }
+
+    .rail-item:hover {
+      background: var(--mj-bg-surface-sunken);
+      color: var(--mj-text-primary);
+    }
+
+    .rail-item.active {
+      background: var(--mj-brand-soft);
+      color: var(--mj-brand-primary);
+      font-weight: 600;
+    }
+
+    .rail-item-left {
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      min-width: 0;
+    }
+
+    .rail-item-left span {
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .badge-pill {
+      font-size: 10.5px;
+      font-weight: 700;
+      padding: 2px 7px;
+      border-radius: 999px;
+      background: var(--mj-bg-surface-sunken);
+      color: var(--mj-text-muted);
+    }
+
+    .badge-pill.team-band {
+      background: var(--mj-status-warning-soft);
+      color: var(--mj-status-warning);
+    }
+
+    .badge-pill.live-ballot {
+      background: var(--mj-status-danger-soft);
+      color: var(--mj-status-danger);
+    }
+
+    .badge-pill.e2ee {
+      background: var(--mj-status-success-soft);
+      color: var(--mj-status-success);
+    }
+
+    /* Ask-First Smart Bar */
+    .ask-first-card {
+      padding: 18px;
+      margin-bottom: 16px;
+      background: linear-gradient(180deg, var(--mj-bg-surface) 0%, var(--mj-bg-surface-elevated) 100%);
+      border: 1px solid var(--mj-border-strong);
+      border-radius: var(--mj-radius-lg);
+      box-shadow: var(--mj-shadow-md);
+    }
+
+    .ask-input-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      background: var(--mj-bg-surface);
+      border: 1.5px solid var(--mj-brand-primary);
+      border-radius: var(--mj-radius-md);
+      padding: 10px 14px;
+    }
+
+    .ask-input-row input {
+      border: none;
+      background: transparent;
+      color: var(--mj-text-primary);
+      font-size: 14px;
+      width: 100%;
+      outline: none;
+    }
+
+    .ask-quick-actions {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      margin-top: 10px;
+      flex-wrap: wrap;
+    }
+
+    .intent-chips {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      flex-wrap: wrap;
+    }
+
+    .intent-chip {
+      border: 1px solid var(--mj-border-default);
+      background: var(--mj-bg-surface);
+      color: var(--mj-text-secondary);
+      font-size: 11.5px;
+      padding: 4px 10px;
+      border-radius: 999px;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+    }
+
+    .intent-chip:hover {
+      border-color: var(--mj-brand-primary);
+      color: var(--mj-brand-primary);
+    }
+
+    .deflection-drawer {
+      margin-top: 14px;
+      padding: 14px;
+      border-radius: var(--mj-radius-md);
+      background: var(--mj-accent-ai-soft);
+      border: 1px solid var(--mj-accent-ai);
+      display: none;
+    }
+
+    .deflection-drawer.open {
+      display: block;
+    }
+
+    /* Stream Filter Bar */
+    .stream-filter-bar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 12px;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
+    .filter-pills {
+      display: flex;
+      gap: 6px;
+      flex-wrap: wrap;
+    }
+
+    .filter-pill {
+      border: 1px solid var(--mj-border-default);
+      background: var(--mj-bg-surface);
+      color: var(--mj-text-secondary);
+      padding: 5px 12px;
+      border-radius: 999px;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+
+    .filter-pill.active {
+      background: var(--mj-brand-primary);
+      border-color: var(--mj-brand-primary);
+      color: #fff;
+    }
+
+    /* Thread Cards */
+    .thread-card {
+      background: var(--mj-bg-surface);
+      border: 1px solid var(--mj-border-default);
+      border-radius: var(--mj-radius-lg);
+      padding: 18px;
+      margin-bottom: 14px;
+      box-shadow: var(--mj-shadow-sm);
+      transition: border-color 0.15s ease;
+    }
+
+    .thread-card:hover {
+      border-color: var(--mj-border-strong);
+    }
+
+    .thread-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      margin-bottom: 8px;
+      flex-wrap: wrap;
+    }
+
+    .thread-badges {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      flex-wrap: wrap;
+    }
+
+    .post-type-badge {
+      font-size: 11px;
+      font-weight: 700;
+      padding: 3px 9px;
+      border-radius: 999px;
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+    }
+
+    .badge-qa {
+      background: var(--mj-status-success-soft);
+      color: var(--mj-status-success);
+    }
+
+    .badge-idea {
+      background: var(--mj-status-warning-soft);
+      color: var(--mj-status-warning);
+    }
+
+    .badge-doc {
+      background: var(--mj-status-info-soft);
+      color: var(--mj-status-info);
+    }
+
+    .badge-game {
+      background: var(--mj-accent-ai-soft);
+      color: var(--mj-accent-ai);
+    }
+
+    .badge-committee {
+      background: var(--mj-brand-soft);
+      color: var(--mj-brand-primary);
+    }
+
+    .thread-title {
+      font-size: 16px;
+      font-weight: 700;
+      margin: 4px 0 8px;
+      color: var(--mj-text-primary);
+      cursor: pointer;
+    }
+
+    .ai-tldr-box {
+      background: var(--mj-bg-surface-elevated);
+      border-left: 3px solid var(--mj-accent-ai);
+      padding: 10px 14px;
+      border-radius: 0 var(--mj-radius-sm) var(--mj-radius-sm) 0;
+      font-size: 13px;
+      color: var(--mj-text-secondary);
+      margin-bottom: 12px;
+    }
+
+    .thread-footer {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      flex-wrap: wrap;
+      padding-top: 10px;
+      border-top: 1px solid var(--mj-border-default);
+      font-size: 12px;
+      color: var(--mj-text-muted);
+    }
+
+    .thread-actions {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .action-btn {
+      border: 1px solid var(--mj-border-default);
+      background: var(--mj-bg-surface-elevated);
+      color: var(--mj-text-secondary);
+      padding: 5px 10px;
+      border-radius: var(--mj-radius-sm);
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+    }
+
+    .action-btn:hover {
+      border-color: var(--mj-brand-primary);
+      color: var(--mj-brand-primary);
+    }
+
+    .action-btn.primary {
+      background: var(--mj-brand-primary);
+      border-color: var(--mj-brand-primary);
+      color: #fff;
+    }
+
+    .expandable-section {
+      display: none;
+      margin-top: 14px;
+      padding-top: 14px;
+      border-top: 1px dashed var(--mj-border-strong);
+    }
+
+    .expandable-section.open {
+      display: block;
+    }
+
+    /* Quadratic Slider Box */
+    .qv-box {
+      background: var(--mj-bg-surface-elevated);
+      border: 1px solid var(--mj-border-default);
+      border-radius: var(--mj-radius-md);
+      padding: 12px 14px;
+      margin-bottom: 12px;
+    }
+
+    .qv-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+
+    /* Interactive Mini-App Sandbox Box */
+    .sandbox-widget {
+      background: linear-gradient(135deg, var(--mj-bg-surface-elevated), var(--mj-accent-ai-soft));
+      border: 1px solid var(--mj-border-strong);
+      border-radius: var(--mj-radius-md);
+      padding: 14px;
+      margin-bottom: 12px;
+    }
+
+    .quiz-options {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+      gap: 8px;
+      margin-top: 10px;
+    }
+
+    .quiz-btn {
+      border: 1px solid var(--mj-border-strong);
+      background: var(--mj-bg-surface);
+      color: var(--mj-text-primary);
+      padding: 9px 12px;
+      border-radius: var(--mj-radius-sm);
+      font-size: 12.5px;
+      text-align: left;
+      cursor: pointer;
+      font-weight: 500;
+    }
+
+    .quiz-btn.correct {
+      background: var(--mj-status-success-soft);
+      border-color: var(--mj-status-success);
+      color: var(--mj-status-success);
+      font-weight: 700;
+    }
+
+    .quiz-btn.wrong {
+      background: var(--mj-status-danger-soft);
+      border-color: var(--mj-status-danger);
+      color: var(--mj-status-danger);
+    }
+
+    /* ==========================================================================
+       CONCEPT 2: ADAPTIVE BENTO HUB + SPLIT WORKBENCH
+       ========================================================================== */
+    .bento-top-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 16px;
+      margin-bottom: 18px;
+    }
+
+    @media (max-width: 1024px) {
+      .bento-top-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    .bento-card {
+      background: var(--mj-bg-surface);
+      border: 1px solid var(--mj-border-default);
+      border-radius: var(--mj-radius-lg);
+      padding: 16px;
+      box-shadow: var(--mj-shadow-sm);
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+    }
+
+    .bento-workbench {
+      display: grid;
+      grid-template-columns: 390px minmax(0, 1fr);
+      gap: 18px;
+      align-items: start;
+    }
+
+    @media (max-width: 1024px) {
+      .bento-workbench {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    .compact-stream-item {
+      padding: 13px 15px;
+      border-bottom: 1px solid var(--mj-border-default);
+      cursor: pointer;
+      transition: background 0.14s ease;
+    }
+
+    .compact-stream-item:hover {
+      background: var(--mj-bg-surface-elevated);
+    }
+
+    .compact-stream-item.active {
+      background: var(--mj-brand-soft);
+      border-left: 3px solid var(--mj-brand-primary);
+    }
+
+    .stage-tabs {
+      display: flex;
+      gap: 6px;
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--mj-border-default);
+      background: var(--mj-bg-surface-elevated);
+      border-radius: var(--mj-radius-lg) var(--mj-radius-lg) 0 0;
+      flex-wrap: wrap;
+    }
+
+    .stage-pane {
+      display: none;
+      padding: 20px;
+    }
+
+    .stage-pane.active {
+      display: block;
+    }
+
+    /* ==========================================================================
+       CONCEPT 3: CONCIERGE-LED CONVERSATIONAL PORTAL + LIVING CANON ATLAS
+       ========================================================================== */
+    .concierge-hero {
+      max-width: 920px;
+      margin: 8px auto 24px;
+      text-align: center;
+      padding: 28px 24px;
+      background: var(--mj-bg-surface);
+      border: 1px solid var(--mj-border-default);
+      border-radius: var(--mj-radius-xl);
+      box-shadow: var(--mj-shadow-md);
+    }
+
+    .concierge-prompt-box {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      background: var(--mj-bg-surface-elevated);
+      border: 2px solid var(--mj-brand-primary);
+      border-radius: 999px;
+      padding: 10px 18px;
+      max-width: 720px;
+      margin: 16px auto;
+    }
+
+    .concierge-prompt-box input {
+      border: none;
+      background: transparent;
+      color: var(--mj-text-primary);
+      font-size: 15px;
+      width: 100%;
+      outline: none;
+    }
+
+    .atlas-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 18px;
+      max-width: 1280px;
+      margin: 0 auto;
+    }
+
+    @media (max-width: 1024px) {
+      .atlas-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    /* Slide-over Secure Messaging Drawer & Graduation Modal */
+    .drawer-backdrop {
+      position: fixed;
+      inset: 0;
+      background: rgba(15, 23, 42, 0.52);
+      z-index: 200;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+    }
+
+    .drawer-backdrop.open {
+      display: flex;
+    }
+
+    .modal-box {
+      background: var(--mj-bg-surface);
+      border: 1px solid var(--mj-border-strong);
+      border-radius: var(--mj-radius-lg);
+      max-width: 560px;
+      width: 100%;
+      padding: 22px;
+      box-shadow: var(--mj-shadow-lg);
+    }
+
+    .poll-bar-track {
+      height: 8px;
+      background: var(--mj-bg-surface-sunken);
+      border-radius: 999px;
+      overflow: hidden;
+      margin-top: 4px;
+    }
+
+    .poll-bar-fill {
+      height: 100%;
+      background: var(--mj-brand-primary);
+      border-radius: 999px;
+      transition: width 0.3s ease;
+    }
+  </style>
+</head>
+<body>
+  <!-- TOP DIRECTOR & PERSONA SWITCHER -->
+  <header class="ux-director-bar">
+    <div class="brand-cluster">
+      <div class="brand-logo"><i class="fa-solid fa-comments"></i></div>
+      <div>
+        <div class="brand-title">BizApps Community + Committees + Collaboration</div>
+        <div class="brand-subtitle">3 Divergent UX Concepts • Blending Amazing Power with Effortless Simplicity</div>
+      </div>
+    </div>
+
+    <nav class="concept-switcher" aria-label="UX Concept Switcher">
+      <button class="concept-tab active" onclick="switchConcept('c1', this)">
+        <span class="badge-num">1</span> Calm Knowledge Stream
+      </button>
+      <button class="concept-tab" onclick="switchConcept('c2', this)">
+        <span class="badge-num">2</span> Adaptive Bento + Split Workbench
+      </button>
+      <button class="concept-tab" onclick="switchConcept('c3', this)">
+        <span class="badge-num">3</span> AI Concierge + Canon Atlas
+      </button>
+    </nav>
+
+    <div class="global-controls">
+      <button id="bandToggleBtn" class="pill-btn active-band" onclick="toggleBandMode()">
+        <i class="fa-solid fa-shield-halved"></i>
+        <span id="bandToggleLabel">View: Full Member (Shared + Team)</span>
+      </button>
+      <button class="pill-btn secure-btn" onclick="openSecureDrawer()">
+        <i class="fa-solid fa-lock"></i> Secure Messages (2)
+      </button>
+      <button class="pill-btn" onclick="openGraduationModal('ASC 606 Multi-Year Dues Recognition Standard')">
+        <i class="fa-solid fa-rocket"></i> Graduate Thread
+      </button>
+      <button class="pill-btn" onclick="toggleTheme()">
+        <i id="themeIcon" class="fa-solid fa-moon"></i> Theme
+      </button>
+    </div>
+  </header>
+
+  <!-- CONCEPT EXPLAINER BANNER -->
+  <section class="concept-explainer">
+    <div class="explainer-card">
+      <div class="explainer-text" id="conceptSummaryText">
+        <strong>Concept 1 — The Calm Knowledge Stream:</strong> Feels as effortless as Linear or Slack, while quietly housing Q&amp;A Canon, 100-Point Wallets, Live Yjs Docs, AI Mini-Apps, Peer Committees, and Secure Messaging in one unified Collaboration shell.
+      </div>
+      <div class="explainer-chips">
+        <span class="mini-chip"><i class="fa-solid fa-wand-magic-sparkles"></i> Ask-First AI Deflection</span>
+        <span class="mini-chip"><i class="fa-solid fa-gavel"></i> Committees C4 Integration</span>
+        <span class="mini-chip"><i class="fa-solid fa-file-signature"></i> Yjs Docs/Sheets/Slides</span>
+        <span class="mini-chip"><i class="fa-solid fa-lock"></i> Privileged Secure Messaging</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- ========================================================================
+       CONCEPT 1: THE CALM KNOWLEDGE STREAM
+       ======================================================================== -->
+  <main id="view-c1" class="concept-view active">
+    <div class="c1-grid">
+      <!-- LEFT UNIFIED COLLABORATION RAIL -->
+      <aside class="panel-card">
+        <div class="rail-section">
+          <div class="rail-heading">
+            <span>Community Forums</span>
+            <span class="badge-pill">community</span>
+          </div>
+          <div class="rail-item active" onclick="filterStream('all', this)">
+            <div class="rail-item-left"><i class="fa-solid fa-layer-group"></i><span>All Community Stream</span></div>
+            <span class="badge-pill">14</span>
+          </div>
+          <div class="rail-item" onclick="filterStream('qa', this)">
+            <div class="rail-item-left"><i class="fa-solid fa-circle-question"></i><span>Regulatory Q&amp;A Canon</span></div>
+            <span class="badge-pill">Canon</span>
+          </div>
+          <div class="rail-item" onclick="filterStream('idea', this)">
+            <div class="rail-item-left"><i class="fa-solid fa-lightbulb"></i><span>2027 Roadmap Ideation</span></div>
+            <span class="badge-pill">36 pts left</span>
+          </div>
+          <div class="rail-item" onclick="filterStream('doc', this)">
+            <div class="rail-item-left"><i class="fa-solid fa-file-signature"></i><span>Playbooks &amp; Co-Authored Docs</span></div>
+            <span class="badge-pill">Yjs Live</span>
+          </div>
+          <div class="rail-item" onclick="filterStream('game', this)">
+            <div class="rail-item-left"><i class="fa-solid fa-gamepad"></i><span>Interactive Challenges &amp; AMAs</span></div>
+            <span class="badge-pill">Mini-App</span>
+          </div>
+          <div class="rail-item team-only-row" onclick="filterStream('team', this)">
+            <div class="rail-item-left"><i class="fa-solid fa-user-shield"></i><span>Staff &amp; Moderators Lounge</span></div>
+            <span class="badge-pill team-band">Team Band</span>
+          </div>
+        </div>
+
+        <div class="rail-section">
+          <div class="rail-heading">
+            <span>Peer Committees (C4)</span>
+            <span class="badge-pill">committee</span>
+          </div>
+          <div class="rail-item" onclick="filterStream('committee', this)">
+            <div class="rail-item-left"><i class="fa-solid fa-gavel"></i><span>Standards &amp; Ethics Committee</span></div>
+            <span class="badge-pill live-ballot">1 Open Vote</span>
+          </div>
+          <div class="rail-item" onclick="filterStream('committee', this)">
+            <div class="rail-item-left"><i class="fa-solid fa-calendar-check"></i><span> Term 2026–2027 Docket</span></div>
+            <span class="badge-pill">Seat: Voting</span>
+          </div>
+        </div>
+
+        <div class="rail-section">
+          <div class="rail-heading">
+            <span>Graduated Working Spaces</span>
+            <span class="badge-pill">spaces</span>
+          </div>
+          <div class="rail-item" onclick="openGraduationModal('AI Governance Charter Working Group')">
+            <div class="rail-item-left"><i class="fa-solid fa-people-group"></i><span>AI Charter Working Group</span></div>
+            <span class="badge-pill">4 Tasks</span>
+          </div>
+          <div class="rail-item" onclick="openGraduationModal('Q4 Audit Cohort')">
+            <div class="rail-item-left"><i class="fa-solid fa-graduation-cap"></i><span>Fall Benchmarking Cohort</span></div>
+            <span class="badge-pill">Cohort</span>
+          </div>
+        </div>
+
+        <div class="rail-section">
+          <div class="rail-heading">
+            <span>Secure Messaging</span>
+            <span class="badge-pill e2ee"><i class="fa-solid fa-lock"></i> E2EE</span>
+          </div>
+          <div class="rail-item" onclick="openSecureDrawer()">
+            <div class="rail-item-left"><i class="fa-solid fa-user-lock"></i><span>General Counsel Ethics Desk</span></div>
+            <span class="badge-pill e2ee">Sealed</span>
+          </div>
+          <div class="rail-item" onclick="openSecureDrawer()">
+            <div class="rail-item-left"><i class="fa-solid fa-shield"></i><span>Peer Case #409 Redaction Room</span></div>
+            <span class="badge-pill">2 unread</span>
+          </div>
+        </div>
+      </aside>
+
+      <!-- CENTER STREAM CANVAS -->
+      <section>
+        <!-- Ask-First Smart Bar -->
+        <div class="ask-first-card">
+          <div class="ask-input-row">
+            <i class="fa-solid fa-wand-magic-sparkles" style="color: var(--mj-accent-ai); font-size: 16px;"></i>
+            <input
+              id="askFirstInput"
+              type="text"
+              placeholder="Ask a question, start a discussion, launch a poll, or type '/app' to build an interactive mini-app..."
+              value="How do we recognize multi-year chapter dues with bundled conference passes under ASC 606?"
+            />
+            <button class="action-btn primary" onclick="triggerAskFirst()">
+              <i class="fa-solid fa-bolt"></i> Instant Check
+            </button>
+          </div>
+          <div class="ask-quick-actions">
+            <div class="intent-chips">
+              <button class="intent-chip" onclick="triggerAskFirst()">
+                <i class="fa-solid fa-check-double"></i> Check Verified Canon First
+              </button>
+              <button class="intent-chip" onclick="openGraduationModal('New Cross-Committee Initiative')">
+                <i class="fa-solid fa-square-poll-horizontal"></i> + Inline BizApps Form / Poll
+              </button>
+              <button class="intent-chip" onclick="openSecureDrawer()">
+                <i class="fa-solid fa-lock"></i> Ask Confidentially via Secure Message
+              </button>
+            </div>
+            <span style="font-size: 11.5px; color: var(--mj-text-muted);">
+              <i class="fa-solid fa-envelope-open-text"></i> Reply-by-Email enabled
+            </span>
+          </div>
+
+          <!-- Instant AI Deflection Drawer -->
+          <div id="askFirstDrawer" class="deflection-drawer open">
+            <div style="display: flex; justify-content: space-between; align-items: start; gap: 12px;">
+              <div>
+                <div style="font-size: 12px; font-weight: 700; color: var(--mj-accent-ai); margin-bottom: 4px;">
+                  <i class="fa-solid fa-wand-magic-sparkles"></i> INSTANT CANON SYNTHESIS (94% CONFIDENCE — MAY SAVE YOU A DUPLICATE POST)
+                </div>
+                <div style="font-size: 13.5px; color: var(--mj-text-primary);">
+                  Under <strong>Canon Playbook #18 (v4.2)</strong> and <strong>Standards Committee Motion M-2026-09</strong>, bundled conference passes must be bifurcated as a separate performance obligation at standalone selling price, while core chapter dues are recognized ratably over the 24- or 36-month term.
+                </div>
+                <div style="display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap;">
+                  <button class="action-btn primary" onclick="markDeflected(this)">
+                    <i class="fa-solid fa-circle-check"></i> This Answered My Question (Solved!)
+                  </button>
+                  <button class="action-btn" onclick="document.getElementById('askFirstDrawer').classList.remove('open')">
+                    <i class="fa-solid fa-paper-plane"></i> My Case Has Nuance — Post to Forum Anyway
+                  </button>
+                </div>
+              </div>
+              <button class="action-btn" onclick="document.getElementById('askFirstDrawer').classList.remove('open')">✕</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Stream Filter Pills -->
+        <div class="stream-filter-bar">
+          <div class="filter-pills">
+            <button class="filter-pill active" onclick="filterStream('all', this)">All Activity</button>
+            <button class="filter-pill" onclick="filterStream('qa', this)">Q&amp;A Canon</button>
+            <button class="filter-pill" onclick="filterStream('committee', this)">Committee Motions &amp; Ballots</button>
+            <button class="filter-pill" onclick="filterStream('idea', this)">Ideation Wallet</button>
+            <button class="filter-pill" onclick="filterStream('doc', this)">Live Yjs Docs</button>
+            <button class="filter-pill" onclick="filterStream('game', this)">AI Mini-Apps</button>
+          </div>
+          <div style="font-size: 12px; color: var(--mj-text-muted);">
+            Showing collapsed threads • Click any card to expand replies
+          </div>
+        </div>
+
+        <!-- CARD 1: PEER COMMITTEE MOTION & INLINE BALLOT (Committees C4 + Voting + Community Discussion) -->
+        <article class="thread-card" data-category="committee">
+          <div class="thread-header">
+            <div class="thread-badges">
+              <span class="post-type-badge badge-committee"><i class="fa-solid fa-gavel"></i> Standards Committee • Motion M-2026-14</span>
+              <span class="badge-pill live-ballot">Open Ballot • Quorum 82% (9/11 Seats)</span>
+            </div>
+            <span style="font-size: 12px; color: var(--mj-text-muted);">Graduated from Regulatory Q&amp;A • Closes in 18h</span>
+          </div>
+          <h3 class="thread-title">Adopt Unified AI Audit Trail Standard for Member Credentialing &amp; Continuing Education</h3>
+          <div class="ai-tldr-box">
+            <strong><i class="fa-solid fa-wand-magic-sparkles"></i> Living Synthesis (19 replies + Committee Meeting Minutes):</strong>
+            Broad consensus among chapter chairs and legal counsel to require cryptographic provenance on AI-graded CE credits. <strong>Open question resolved:</strong> 90-day grace period added for small chapters.
+          </div>
+
+          <div class="qv-box">
+            <div class="qv-row">
+              <div>
+                <div style="font-size: 12.5px; font-weight: 700;">Your Committee Seat Ballot (Voting Member — Term 2026–2027)</div>
+                <div style="font-size: 12px; color: var(--mj-text-muted);" id="motionVoteStatus">
+                  Current tally: 8 Yea • 1 Nay • 0 Abstain (Requires Simple Majority)
+                </div>
+              </div>
+              <div style="display: flex; gap: 8px;">
+                <button class="action-btn primary" onclick="castMotionVote('Yea')"><i class="fa-solid fa-check"></i> Vote Yea</button>
+                <button class="action-btn" onclick="castMotionVote('Nay')"><i class="fa-solid fa-xmark"></i> Vote Nay</button>
+                <button class="action-btn" onclick="castMotionVote('Abstain')">Abstain</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="thread-footer">
+            <span><i class="fa-solid fa-users"></i> Sponsored by Dr. Aris Thorne (Chair) &amp; Elena Rostova</span>
+            <div class="thread-actions">
+              <button class="action-btn" onclick="toggleExpand('expand-c1-1')">
+                <i class="fa-solid fa-comments"></i> 19 Replies &amp; Redlines
+              </button>
+              <button class="action-btn" onclick="openSecureDrawer()">
+                <i class="fa-solid fa-lock"></i> Private Counsel Caucus
+              </button>
+            </div>
+          </div>
+          <div id="expand-c1-1" class="expandable-section">
+            <div style="font-size: 13px; color: var(--mj-text-secondary); display: flex; flex-direction: column; gap: 10px;">
+              <div><strong>Elena Rostova, CPA (Treasurer Seat):</strong> "Section 4.2's 90-day grace period solves the regional chapter onboarding concern. I've updated the linked Tasks Meeting action item."</div>
+              <div><strong>Marcus Vance (Outside Legal Observer — Shared Band):</strong> "Confirmed that the de-identified audit schema satisfies EU/US cross-border privacy rules."</div>
+            </div>
+          </div>
+        </article>
+
+        <!-- CARD 2: DUAL HUMAN + AI EPISTEMIC Q&A CANON + INLINE BIZAPPS FORM POLL -->
+        <article class="thread-card" data-category="qa">
+          <div class="thread-header">
+            <div class="thread-badges">
+              <span class="post-type-badge badge-qa"><i class="fa-solid fa-check-double"></i> Accepted Answer + AI Canon Verified (0.97)</span>
+              <span class="badge-pill">Freshness Checked: Today</span>
+            </div>
+            <span style="font-size: 12px; color: var(--mj-text-muted);">Regulatory Q&amp;A • 14 Replies</span>
+          </div>
+          <h3 class="thread-title">Multi-State Sales &amp; SaaS Nexus Thresholds for Hybrid Association Conferences</h3>
+          <div class="ai-tldr-box">
+            <strong><i class="fa-solid fa-shield-check"></i> Verified Canon Answer (Elena Rostova + AI Epistemic Grader):</strong>
+            Physical attendance by chapter staff establishes nexus for on-site merchandise, while virtual streaming access is taxed based on attendee billing zip code in 28 states.
+          </div>
+
+          <!-- Embedded BizApps Forms Live Poll -->
+          <div class="qv-box">
+            <div style="font-size: 12.5px; font-weight: 700; margin-bottom: 8px;">
+              <i class="fa-solid fa-square-poll-horizontal" style="color: var(--mj-brand-primary);"></i>
+              Embedded BizApps Form Poll — How does your chapter handle virtual ticket tax apportionment? (68 responses)
+            </div>
+            <div style="display: flex; flex-direction: column; gap: 8px; font-size: 12.5px;">
+              <div onclick="voteInlinePoll(0)" style="cursor: pointer;">
+                <div style="display: flex; justify-content: space-between;">
+                  <span>Automated via ERP / Billing Address Rule</span>
+                  <strong id="poll-pct-0">62%</strong>
+                </div>
+                <div class="poll-bar-track"><div id="poll-bar-0" class="poll-bar-fill" style="width: 62%;"></div></div>
+              </div>
+              <div onclick="voteInlinePoll(1)" style="cursor: pointer;">
+                <div style="display: flex; justify-content: space-between;">
+                  <span>Bundled as Tax-Exempt Educational Dues</span>
+                  <strong id="poll-pct-1">24%</strong>
+                </div>
+                <div class="poll-bar-track"><div id="poll-bar-1" class="poll-bar-fill" style="width: 24%;"></div></div>
+              </div>
+              <div onclick="voteInlinePoll(2)" style="cursor: pointer;">
+                <div style="display: flex; justify-content: space-between;">
+                  <span>Manual Quarterly State Filing</span>
+                  <strong id="poll-pct-2">14%</strong>
+                </div>
+                <div class="poll-bar-track"><div id="poll-bar-2" class="poll-bar-fill" style="width: 14%;"></div></div>
+              </div>
+            </div>
+          </div>
+
+          <div class="thread-footer">
+            <span><i class="fa-solid fa-award" style="color: var(--mj-status-success);"></i> +50 Reputation Bounty Awarded</span>
+            <div class="thread-actions">
+              <button class="action-btn" onclick="openGraduationModal('Multi-State Nexus Task Force')">
+                <i class="fa-solid fa-rocket"></i> Graduate to Working Group
+              </button>
+            </div>
+          </div>
+        </article>
+
+        <!-- CARD 3: 100-POINT WALLET & QUADRATIC VOTING IDEATION CAMPAIGN -->
+        <article class="thread-card" data-category="idea">
+          <div class="thread-header">
+            <div class="thread-badges">
+              <span class="post-type-badge badge-idea"><i class="fa-solid fa-lightbulb"></i> Ideation Campaign • Quadratic Voting (Cost = Votes²)</span>
+              <span class="badge-pill" id="walletRemainingBadge">Your Wallet: 36 / 100 pts remaining</span>
+            </div>
+            <span style="font-size: 12px; color: var(--mj-text-muted);">Status: Planned for Q3</span>
+          </div>
+          <h3 class="thread-title">One-Click Committee Packet &amp; Community Canon Export to Co-Authored Slide Decks</h3>
+          <div class="qv-box">
+            <div class="qv-row">
+              <div>
+                <div style="font-size: 13px; font-weight: 700;">
+                  Allocate Quadratic Votes: <span id="qvVotesDisplay" style="color: var(--mj-brand-primary);">8.0 Effective Votes</span>
+                  (<span id="qvPointsDisplay">64</span> points spent)
+                </div>
+                <div style="font-size: 11.5px; color: var(--mj-text-muted);">
+                  Drag slider: 1 vote = 1 pt • 4 votes = 16 pts • 8 votes = 64 pts • 10 votes = 100 pts
+                </div>
+              </div>
+              <input
+                id="qvSlider"
+                type="range"
+                min="1"
+                max="10"
+                value="8"
+                oninput="updateQuadraticAllocation(this.value)"
+                style="width: 210px; accent-color: var(--mj-brand-primary);"
+              />
+            </div>
+          </div>
+          <div class="thread-footer">
+            <span><strong>142 Backers</strong> • 618.5 Total Quadratic Score</span>
+            <div class="thread-actions">
+              <button class="action-btn" onclick="openGraduationModal('Slide Deck Export Working Group')">
+                <i class="fa-solid fa-people-group"></i> Spin Up Working Space
+              </button>
+            </div>
+          </div>
+        </article>
+
+        <!-- CARD 4: LIVE YJS COLLABORATIVE PLAYBOOK DOCUMENT (MJ PR #6215) + SANDBOXED AI MINI-APP (MJ PR #5257) -->
+        <article class="thread-card" data-category="doc game">
+          <div class="thread-header">
+            <div class="thread-badges">
+              <span class="post-type-badge badge-doc"><i class="fa-solid fa-file-word"></i> Co-Authored MJ Artifact (Yjs Live)</span>
+              <span class="post-type-badge badge-game"><i class="fa-solid fa-gamepad"></i> Embedded AI Compliance Simulator</span>
+            </div>
+            <span style="font-size: 12px; color: var(--mj-status-success); font-weight: 600;">
+              ● 4 Members Co-Editing in Suggest Mode
+            </span>
+          </div>
+          <h3 class="thread-title">2026 Chapter Treasurer Playbook + Interactive 60-Second Reserve Ratio Simulator</h3>
+          <div class="ai-tldr-box">
+            <strong><i class="fa-solid fa-file-signature"></i> Mounted in Space Library (`SpaceItem`):</strong>
+            Co-authored playbook with live `CommunityCanonAnswerBlock` embeds and an interactive sandboxed MJ Component Artifact (`ForumInteractivePost`) below.
+          </div>
+
+          <!-- Playable Sandboxed Component Artifact Mini-App -->
+          <div class="sandbox-widget">
+            <div style="display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap;">
+              <div>
+                <div style="font-size: 12px; font-weight: 700; color: var(--mj-accent-ai);">
+                  <i class="fa-solid fa-cube"></i> SANDBOXED MJ COMPONENT ARTIFACT (`ComponentArtifactID` • v2)
+                </div>
+                <div style="font-size: 13.5px; font-weight: 700; margin-top: 2px;">
+                  Quick Scenario: A chapter has $420k annual operating expenses and $95k in unrestricted liquid reserves. What is its reserve policy status?
+                </div>
+              </div>
+              <span class="badge-pill" id="quizScoreBadge">184 Plays • Best Streak: 9</span>
+            </div>
+            <div class="quiz-options">
+              <button class="quiz-btn" onclick="answerQuiz(this, false)">
+                A) Green Tier (&gt; 6 months coverage)
+              </button>
+              <button class="quiz-btn" onclick="answerQuiz(this, true)">
+                B) Amber Watchlist (2.7 months — requires 12-month rebuild plan)
+              </button>
+              <button class="quiz-btn" onclick="answerQuiz(this, false)">
+                C) Immediate Charter Suspension
+              </button>
+            </div>
+            <div id="quizFeedback" style="font-size: 12px; margin-top: 8px; color: var(--mj-text-secondary);"></div>
+          </div>
+
+          <div class="thread-footer">
+            <span><i class="fa-solid fa-code-branch"></i> Version 4.2 pinned • 29 Clones across Chapters</span>
+            <div class="thread-actions">
+              <button class="action-btn"><i class="fa-solid fa-pen-to-square"></i> Open Full Yjs Editor</button>
+            </div>
+          </div>
+        </article>
+
+        <!-- CARD 5: TEAM-BAND INTERNAL MODERATOR & STAFF THREAD (Hidden when switched to Outside Guest) -->
+        <article class="thread-card team-only-row" data-category="team" style="border-left: 4px solid var(--mj-status-warning);">
+          <div class="thread-header">
+            <div class="thread-badges">
+              <span class="badge-pill team-band"><i class="fa-solid fa-eye-slash"></i> TEAM BAND ONLY — Hidden from Outside Members</span>
+              <span class="badge-pill">Staff &amp; Moderators Lounge</span>
+            </div>
+            <span style="font-size: 12px; color: var(--mj-text-muted);">Internal Coordination</span>
+          </div>
+          <h3 class="thread-title">Pre-Review of Anonymized Peer Case #409 Before Publishing to Shared Round</h3>
+          <div class="ai-tldr-box">
+            <strong>Moderator Note:</strong> AI PII scrubber removed 2 hospital identifiers. Ready for Dr. Thorne's sign-off (`RedactionConfirmedByUserID`).
+          </div>
+        </article>
+      </section>
+
+      <!-- RIGHT CONTEXT & GOVERNANCE RAIL -->
+      <aside class="panel-card c1-right-rail">
+        <div class="rail-section">
+          <div class="rail-heading">
+            <span>Your Personalized Pulse</span>
+            <span class="badge-pill">Daily Digest</span>
+          </div>
+          <div style="font-size: 12.5px; color: var(--mj-text-secondary); display: flex; flex-direction: column; gap: 10px;">
+            <div style="padding: 10px; border-radius: var(--mj-radius-sm); background: var(--mj-bg-surface-elevated);">
+              <strong style="color: var(--mj-brand-primary);">1 Action Required (Committee):</strong>
+              Cast your seat vote on <em>Motion M-2026-14</em> before tomorrow's 5:00 PM close.
+            </div>
+            <div style="padding: 10px; border-radius: var(--mj-radius-sm); background: var(--mj-bg-surface-elevated);">
+              <strong style="color: var(--mj-status-success);">Expertise Match (96%):</strong>
+              2 unanswered questions in <em>ASC 606 &amp; Audit</em> match your verified credentials.
+            </div>
+          </div>
+        </div>
+
+        <div class="rail-section">
+          <div class="rail-heading">
+            <span>Upcoming Committee &amp; Space Meetings</span>
+            <span class="badge-pill">Tasks</span>
+          </div>
+          <div style="font-size: 12.5px; display: flex; flex-direction: column; gap: 8px;">
+            <div style="display: flex; justify-content: space-between;">
+              <span><strong>Standards Committee</strong> (Agenda: 4 items)</span>
+              <span style="color: var(--mj-brand-primary); font-weight: 600;">Thu 2:00 PM</span>
+            </div>
+            <div style="display: flex; justify-content: space-between;">
+              <span><strong>Live AMA:</strong> 2027 Tax &amp; AI Rules</span>
+              <span style="color: var(--mj-status-success); font-weight: 600;">Fri 11:00 AM</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="rail-section">
+          <div class="rail-heading">
+            <span>Space Library Highlights</span>
+            <span class="badge-pill">SpaceItem</span>
+          </div>
+          <div style="font-size: 12.5px; color: var(--mj-text-secondary); display: flex; flex-direction: column; gap: 6px;">
+            <div><i class="fa-solid fa-file-word" style="color: var(--mj-status-info);"></i> 2026 Treasurer Playbook (v4.2)</div>
+            <div><i class="fa-solid fa-table" style="color: var(--mj-status-success);"></i> 50-State Nexus Matrix (Sheet)</div>
+            <div><i class="fa-solid fa-display" style="color: var(--mj-status-warning);"></i> Board Q3 Briefing Deck (Slides)</div>
+          </div>
+        </div>
+      </aside>
+    </div>
+  </main>
+
+  <!-- ========================================================================
+       CONCEPT 2: ADAPTIVE BENTO HUB + SPLIT WORKBENCH
+       ======================================================================== -->
+  <main id="view-c2" class="concept-view">
+    <!-- Top 3-Card Personal Bento Cockpit -->
+    <div class="bento-top-grid">
+      <div class="bento-card">
+        <div>
+          <div class="rail-heading">
+            <span><i class="fa-solid fa-wand-magic-sparkles" style="color: var(--mj-accent-ai);"></i> 60-Second Morning Brief</span>
+            <span class="badge-pill">AI Synthesized</span>
+          </div>
+          <div style="font-size: 14px; font-weight: 700; margin-bottom: 6px;">
+            3 Threads Settled into Canon • 1 Committee Ballot Open
+          </div>
+          <div style="font-size: 12.5px; color: var(--mj-text-secondary);">
+            Since yesterday, the <em>Multi-State Nexus</em> question reached verified consensus across 14 replies, and the <em>Standards Committee</em> opened voting on Motion M-2026-14.
+          </div>
+        </div>
+        <div style="margin-top: 12px; display: flex; gap: 8px;">
+          <button class="action-btn primary" onclick="switchWorkbenchStage('stage-synthesis', this)">Read Full Synthesis</button>
+          <button class="action-btn" onclick="openSecureDrawer()"><i class="fa-solid fa-lock"></i> 2 Secure Messages</button>
+        </div>
+      </div>
+
+      <div class="bento-card">
+        <div>
+          <div class="rail-heading">
+            <span><i class="fa-solid fa-gavel" style="color: var(--mj-brand-primary);"></i> Governance &amp; Ideation Cockpit</span>
+            <span class="badge-pill live-ballot">1 Vote Due</span>
+          </div>
+          <div style="font-size: 14px; font-weight: 700; margin-bottom: 6px;">
+            Standards Committee Motion M-2026-14 + 36 Ideation Points
+          </div>
+          <div style="font-size: 12.5px; color: var(--mj-text-secondary);">
+            You hold a Voting Seat on the Standards Committee (Term 2026–2027) and have 36 unallocated points in the Q3 Roadmap Wallet.
+          </div>
+        </div>
+        <div style="margin-top: 12px; display: flex; gap: 8px;">
+          <button class="action-btn primary" onclick="switchWorkbenchStage('stage-committee', this)">Open Ballot &amp; Docket</button>
+          <button class="action-btn" onclick="switchWorkbenchStage('stage-doc', this)">Open Co-Authored Playbook</button>
+        </div>
+      </div>
+
+      <div class="bento-card">
+        <div>
+          <div class="rail-heading">
+            <span><i class="fa-solid fa-compass-drafting" style="color: var(--mj-status-success);"></i> Needs Your Expertise</span>
+            <span class="badge-pill">96% Match</span>
+          </div>
+          <div style="font-size: 14px; font-weight: 700; margin-bottom: 6px;">
+            "How should regional chapters structure AI vendor indemnification?"
+          </div>
+          <div style="font-size: 12.5px; color: var(--mj-text-secondary);">
+            Asked 22m ago in <em>Legal &amp; Risk Round</em> • +100 Reputation Bounty • Can be answered publicly or via Privileged Secure Message.
+          </div>
+        </div>
+        <div style="margin-top: 12px; display: flex; gap: 8px;">
+          <button class="action-btn primary" onclick="switchWorkbenchStage('stage-synthesis', this)">Draft Verified Answer</button>
+          <button class="action-btn" onclick="openSecureDrawer()"><i class="fa-solid fa-user-lock"></i> Reply 1:1 Encrypted</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Split-Pane Workbench -->
+    <div class="bento-workbench">
+      <!-- Left Compact Feed List -->
+      <div class="panel-card" style="overflow: hidden;">
+        <div style="padding: 12px 15px; border-bottom: 1px solid var(--mj-border-default); display: flex; justify-content: space-between; align-items: center;">
+          <strong style="font-size: 13px;">Unified Channel &amp; Committee Feed</strong>
+          <span class="badge-pill">Split View</span>
+        </div>
+        <div class="compact-stream-item active" onclick="switchWorkbenchStage('stage-synthesis', this)">
+          <div style="display: flex; justify-content: space-between; font-size: 11px; color: var(--mj-status-success); font-weight: 700;">
+            <span><i class="fa-solid fa-check-double"></i> Q&amp;A CANON VERIFIED</span>
+            <span>14 replies</span>
+          </div>
+          <div style="font-weight: 700; font-size: 13.5px; margin: 3px 0;">Multi-State Sales &amp; SaaS Nexus Thresholds</div>
+          <div style="font-size: 12px; color: var(--mj-text-muted);">AI synthesis + BizApps Form Poll + Playbook link</div>
+        </div>
+
+        <div class="compact-stream-item" onclick="switchWorkbenchStage('stage-doc', this)">
+          <div style="display: flex; justify-content: space-between; font-size: 11px; color: var(--mj-status-info); font-weight: 700;">
+            <span><i class="fa-solid fa-file-signature"></i> LIVE YJS ARTIFACT + MINI-APP</span>
+            <span>4 editing</span>
+          </div>
+          <div style="font-weight: 700; font-size: 13.5px; margin: 3px 0;">2026 Chapter Treasurer Playbook (v4.2)</div>
+          <div style="font-size: 12px; color: var(--mj-text-muted);">Co-authored Doc + Reserve Ratio Simulator</div>
+        </div>
+
+        <div class="compact-stream-item" onclick="switchWorkbenchStage('stage-committee', this)">
+          <div style="display: flex; justify-content: space-between; font-size: 11px; color: var(--mj-brand-primary); font-weight: 700;">
+            <span><i class="fa-solid fa-gavel"></i> STANDARDS COMMITTEE (C4)</span>
+            <span>Ballot Open</span>
+          </div>
+          <div style="font-weight: 700; font-size: 13.5px; margin: 3px 0;">Motion M-2026-14: AI Audit Trail Standard</div>
+          <div style="font-size: 12px; color: var(--mj-text-muted);">Graduated from Community • 9/11 seats voted</div>
+        </div>
+      </div>
+
+      <!-- Right Multi-Modal Live Workbench Stage -->
+      <div class="panel-card">
+        <div class="stage-tabs">
+          <button class="action-btn primary" id="tab-btn-synthesis" onclick="switchWorkbenchStage('stage-synthesis', this)">
+            <i class="fa-solid fa-wand-magic-sparkles"></i> Living Synthesis &amp; Q&amp;A
+          </button>
+          <button class="action-btn" id="tab-btn-doc" onclick="switchWorkbenchStage('stage-doc', this)">
+            <i class="fa-solid fa-file-word"></i> Co-Authored Yjs Doc &amp; Mini-App
+          </button>
+          <button class="action-btn" id="tab-btn-committee" onclick="switchWorkbenchStage('stage-committee', this)">
+            <i class="fa-solid fa-gavel"></i> Committee Docket &amp; Graduation
+          </button>
+        </div>
+
+        <!-- Stage Pane 1: Synthesis -->
+        <div id="stage-synthesis" class="stage-pane active">
+          <div style="display: flex; justify-content: space-between; align-items: start; gap: 12px; flex-wrap: wrap;">
+            <div>
+              <span class="post-type-badge badge-qa"><i class="fa-solid fa-check-double"></i> Dual Verified: Author Accepted + AI Canon (0.97)</span>
+              <h2 style="margin: 8px 0;">Multi-State Sales &amp; SaaS Nexus Thresholds for Hybrid Conferences</h2>
+            </div>
+            <button class="action-btn" onclick="openGraduationModal('Multi-State Nexus Task Force')">
+              <i class="fa-solid fa-rocket"></i> Graduate to Working Space
+            </button>
+          </div>
+          <div class="ai-tldr-box">
+            <strong>Executive Takeaway:</strong> Physical staff presence triggers on-site nexus; virtual streaming access follows attendee billing address in 28 states. Embedded into <em>2026 Treasurer Playbook</em> as a live `CommunityCanonAnswerBlock`.
+          </div>
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 14px;">
+            <div class="qv-box">
+              <strong><i class="fa-solid fa-circle-check" style="color: var(--mj-status-success);"></i> Points of Consensus</strong>
+              <ul style="margin: 6px 0 0 18px; padding: 0; font-size: 13px; color: var(--mj-text-secondary);">
+                <li>Bifurcate virtual streaming pass from tax-exempt membership dues.</li>
+                <li>Use 200-transaction / $100k economic nexus safe harbor table.</li>
+              </ul>
+            </div>
+            <div class="qv-box">
+              <strong><i class="fa-solid fa-triangle-exclamation" style="color: var(--mj-status-warning);"></i> Open Edge Cases</strong>
+              <ul style="margin: 6px 0 0 18px; padding: 0; font-size: 13px; color: var(--mj-text-secondary);">
+                <li>Bundled CE credit vouchers redeemed in a subsequent fiscal year.</li>
+                <li>Canadian GST/HST treatment for cross-border chapter members.</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+
+        <!-- Stage Pane 2: Live Yjs Co-Authored Document -->
+        <div id="stage-doc" class="stage-pane">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+            <div>
+              <span class="post-type-badge badge-doc"><i class="fa-solid fa-file-word"></i> MJ Artifact Co-Editor (`Suggest` Mode)</span>
+              <h3 style="margin: 6px 0 0;">2026 Chapter Treasurer Playbook — Section 3: Reserve &amp; Nexus Policy</h3>
+            </div>
+            <span class="badge-pill">Yjs CRDT Synced • 4 Cursors Active</span>
+          </div>
+          <div style="padding: 16px; border: 1px solid var(--mj-border-default); border-radius: var(--mj-radius-md); background: var(--mj-bg-surface-elevated); font-size: 13.5px;">
+            <p style="margin-top: 0;"><strong>3.1 Operating Reserve Floor:</strong> Every regional chapter shall maintain liquid reserves equal to at least <del style="color: var(--mj-status-danger);">2.0 months</del> <ins style="color: var(--mj-status-success); font-weight: 600;">3.0 months (Suggested by Elena Rostova)</ins> of recurring operating expenses.</p>
+            <div style="padding: 10px 12px; border-left: 3px solid var(--mj-brand-primary); background: var(--mj-bg-surface); border-radius: 6px;">
+              <div style="font-size: 11px; font-weight: 700; color: var(--mj-brand-primary);">EMBEDDED `CommunityCanonAnswerBlock` (Auto-Synced from Q&amp;A Thread #104)</div>
+              <div style="font-size: 12.5px; margin-top: 3px;">Virtual conference streaming passes must be separated from core dues at standalone selling price.</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Stage Pane 3: Committee Docket & Motion -->
+        <div id="stage-committee" class="stage-pane">
+          <span class="post-type-badge badge-committee"><i class="fa-solid fa-gavel"></i> Standards &amp; Ethics Committee (`committee` SpaceType)</span>
+          <h3 style="margin: 8px 0;">Motion M-2026-14: Adopt Unified AI Audit Trail Standard</h3>
+          <p style="font-size: 13.5px; color: var(--mj-text-secondary);">
+            This motion originated as a Community Q&amp;A thread, graduated into a Working Group charter, and is now on the Standards Committee docket with a live ballot and linked `Tasks` Meeting agenda item.
+          </p>
+          <div style="display: flex; gap: 10px; flex-wrap: wrap;">
+            <button class="action-btn primary" onclick="castMotionVote('Yea')"><i class="fa-solid fa-check"></i> Cast Yea Ballot</button>
+            <button class="action-btn" onclick="openSecureDrawer()"><i class="fa-solid fa-lock"></i> Open Privileged Counsel Chat</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <!-- ========================================================================
+       CONCEPT 3: AI CONCIERGE PORTAL + LIVING CANON ATLAS
+       ======================================================================== -->
+  <main id="view-c3" class="concept-view">
+    <section class="concierge-hero">
+      <span class="post-type-badge badge-game" style="margin-bottom: 8px;">
+        <i class="fa-solid fa-wand-magic-sparkles"></i> Zero-Navigation Executive Concierge
+      </span>
+      <h1 style="font-size: 26px; margin: 6px 0 8px;">Good morning, Alex. What would you like to solve, vote on, or co-author today?</h1>
+      <p style="font-size: 14px; color: var(--mj-text-secondary); max-width: 680px; margin: 0 auto;">
+        One conversational surface across <strong>Community Forums</strong>, <strong>Committee Dockets</strong>, <strong>Co-Authored Playbooks</strong>, and <strong>Secure Messaging</strong>.
+      </p>
+
+      <div class="concierge-prompt-box">
+        <i class="fa-solid fa-sparkles" style="color: var(--mj-brand-primary);"></i>
+        <input
+          id="conciergeInput"
+          type="text"
+          value="Summarize open committee motions and show me where my expertise is needed today"
+        />
+        <button class="action-btn primary" onclick="runConciergePrompt()">
+          <i class="fa-solid fa-arrow-right"></i> Ask Concierge
+        </button>
+      </div>
+
+      <div id="conciergeResponseBox" style="text-align: left; max-width: 780px; margin: 14px auto 0; padding: 16px; border-radius: var(--mj-radius-md); background: var(--mj-bg-surface-elevated); border: 1px solid var(--mj-border-strong);">
+        <div style="font-size: 12px; font-weight: 700; color: var(--mj-brand-primary); margin-bottom: 6px;">
+          <i class="fa-solid fa-robot"></i> PERSONALIZED CONCIERGE BRIEFING (3 ITEMS)
+        </div>
+        <ol style="margin: 0; padding-left: 18px; font-size: 13.5px; color: var(--mj-text-primary); display: flex; flex-direction: column; gap: 8px;">
+          <li>
+            <strong>Standards Committee Ballot Open:</strong> <em>Motion M-2026-14 (AI Audit Trail Standard)</em> has 8 Yea / 1 Nay votes and closes in 18 hours.
+            <button class="action-btn primary" style="margin-left: 8px; padding: 2px 8px;" onclick="castMotionVote('Yea')">Vote Yea Inline</button>
+          </li>
+          <li>
+            <strong>High-Signal Question Matching Your CPA Credential:</strong> <em>Multi-State Hybrid Conference Nexus</em> — your verified answer was cited 19 times this week.
+          </li>
+          <li>
+            <strong>Confidential Peer Case #409:</strong> General Counsel shared a redacted draft in your encrypted room.
+            <button class="action-btn" style="margin-left: 8px; padding: 2px 8px;" onclick="openSecureDrawer()"><i class="fa-solid fa-lock"></i> Open Secure Room</button>
+          </li>
+        </ol>
+      </div>
+    </section>
+
+    <!-- Living Canon Atlas Grid -->
+    <section class="atlas-grid">
+      <div class="panel-card" style="padding: 18px;">
+        <div class="rail-heading">
+          <span>Verified Knowledge Canon</span>
+          <span class="badge-pill">Auto-Curated</span>
+        </div>
+        <h3 style="margin: 6px 0 8px; font-size: 16px;">Finance, Tax &amp; Audit Playbooks</h3>
+        <p style="font-size: 13px; color: var(--mj-text-secondary);">
+          42 AI + Moderator verified answers and 6 live Yjs playbooks. Freshness-monitored every 90 days.
+        </p>
+        <button class="action-btn" onclick="switchConcept('c1', document.querySelectorAll('.concept-tab')[0])">
+          Browse 42 Canon Answers →
+        </button>
+      </div>
+
+      <div class="panel-card" style="padding: 18px;">
+        <div class="rail-heading">
+          <span>Active Governance &amp; Committees</span>
+          <span class="badge-pill live-ballot">1 Open Vote</span>
+        </div>
+        <h3 style="margin: 6px 0 8px; font-size: 16px;">Standards &amp; Ethics Committee (2026–2027)</h3>
+        <p style="font-size: 13px; color: var(--mj-text-secondary);">
+          Seamless `committee` and `committee-term` Spaces with formal rosters, `Tasks` meetings, and Community thread referrals.
+        </p>
+        <button class="action-btn primary" onclick="castMotionVote('Yea')">
+          Cast Ballot on Motion M-2026-14
+        </button>
+      </div>
+
+      <div class="panel-card" style="padding: 18px;">
+        <div class="rail-heading">
+          <span>Member Priority Wallet</span>
+          <span class="badge-pill">Quadratic</span>
+        </div>
+        <h3 style="margin: 6px 0 8px; font-size: 16px;">2027 Member Roadmap Campaign</h3>
+        <p style="font-size: 13px; color: var(--mj-text-secondary);">
+          You have <strong>36 / 100 points</strong> available. Allocate points with quadratic weighting or spin up a Working Group.
+        </p>
+        <button class="action-btn" onclick="openGraduationModal('2027 Roadmap Working Group')">
+          Graduate Top Idea to Space →
+        </button>
+      </div>
+    </section>
+  </main>
+
+  <!-- ========================================================================
+       MODAL 1: 1-CLICK THREAD GRADUATION TO PEER COLLABORATION SPACE
+       ======================================================================== -->
+  <div id="graduationModal" class="drawer-backdrop" onclick="if(event.target===this) closeGraduationModal()">
+    <div class="modal-box">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+        <span class="post-type-badge badge-committee"><i class="fa-solid fa-rocket"></i> Thread-to-Space Graduation (`PromotedToSpaceID`)</span>
+        <button class="action-btn" onclick="closeGraduationModal()">✕</button>
+      </div>
+      <h3 style="margin: 4px 0 8px;" id="gradModalTitle">Graduate Thread into a Child Collaboration Space</h3>
+      <p style="font-size: 13px; color: var(--mj-text-secondary); margin-top: 0;">
+        Creates a child `__mj_BizAppsCollaboration.Space`, invites thread participants, mounts attached `SpaceItem` artifacts, and seeds an initial `BizApps Tasks` deliverable.
+      </p>
+
+      <div style="display: flex; flex-direction: column; gap: 10px; margin: 14px 0;">
+        <label style="font-size: 12px; font-weight: 700;">Target Peer Collaboration `SpaceType`:</label>
+        <select id="gradSpaceTypeSelect" style="padding: 9px 12px; border-radius: var(--mj-radius-sm); border: 1px solid var(--mj-border-strong); background: var(--mj-bg-surface); color: var(--mj-text-primary); font-size: 13px;">
+          <option value="working-group">Working Group (`working-group` — Fast Action Team)</option>
+          <option value="committee">Governance Committee (`committee` — Formal Roster, Motions &amp; Ballots)</option>
+          <option value="cohort">Peer Cohort (`cohort` — Time-Boxed Learning Group)</option>
+          <option value="project">Project Space (`project` — Deliverable &amp; Milestone Driven)</option>
+        </select>
+
+        <label style="font-size: 12px; font-weight: 700;">Initial `BizApps Tasks` Deliverable:</label>
+        <input type="text" value="Publish v1 Standard &amp; Present to Committee Docket" style="padding: 9px 12px; border-radius: var(--mj-radius-sm); border: 1px solid var(--mj-border-strong); background: var(--mj-bg-surface); color: var(--mj-text-primary); font-size: 13px;" />
+      </div>
+
+      <div id="gradSuccessBanner" style="display: none; padding: 10px 12px; border-radius: var(--mj-radius-sm); background: var(--mj-status-success-soft); color: var(--mj-status-success); font-size: 12.5px; font-weight: 600; margin-bottom: 12px;"></div>
+
+      <div style="display: flex; justify-content: flex-end; gap: 8px;">
+        <button class="action-btn" onclick="closeGraduationModal()">Cancel</button>
+        <button class="action-btn primary" onclick="confirmGraduation()">
+          <i class="fa-solid fa-check"></i> Create Child Space &amp; Link Thread
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ========================================================================
+       MODAL 2: SECURE MESSAGING (E2EE / PRIVILEGED COUNSEL ESCALATION)
+       ======================================================================== -->
+  <div id="secureDrawer" class="drawer-backdrop" onclick="if(event.target===this) closeSecureDrawer()">
+    <div class="modal-box">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+        <span class="badge-pill e2ee"><i class="fa-solid fa-lock"></i> BizApps Secure Messaging • End-to-End Sealed Room</span>
+        <button class="action-btn" onclick="closeSecureDrawer()">✕</button>
+      </div>
+      <h3 style="margin: 4px 0 6px;">Privileged Counsel &amp; Peer Case Redaction Room</h3>
+      <p style="font-size: 12.5px; color: var(--mj-text-muted); margin-top: 0;">
+        Zero-leakage boundary: Messages here are never indexed by Community RAG or visible in `Shared` forums unless explicitly de-identified and published.
+      </p>
+
+      <div id="secureChatLog" style="background: var(--mj-bg-surface-sunken); border: 1px solid var(--mj-border-default); border-radius: var(--mj-radius-md); padding: 12px; display: flex; flex-direction: column; gap: 10px; font-size: 13px; max-height: 240px; overflow-y: auto; margin-bottom: 12px;">
+        <div>
+          <strong style="color: var(--mj-status-success);">Sarah Jenkins (General Counsel):</strong>
+          "I reviewed the indemnification clause from Peer Case #409. Keep the counterparty name sealed in this Secure Message room; we can publish the sanitized 3-point checklist to the Community Playbook."
+        </div>
+        <div>
+          <strong style="color: var(--mj-brand-primary);">Dr. Aris Thorne (Committee Chair):</strong>
+          "Agreed. I've approved the de-identified summary for the Standards Committee docket."
+        </div>
+      </div>
+
+      <div style="display: flex; gap: 8px;">
+        <input id="secureReplyInput" type="text" placeholder="Send encrypted reply to Counsel &amp; Chair..." style="flex: 1; padding: 9px 12px; border-radius: var(--mj-radius-sm); border: 1px solid var(--mj-border-strong); background: var(--mj-bg-surface); color: var(--mj-text-primary); font-size: 13px;" />
+        <button class="action-btn primary" onclick="sendSecureMessage()">
+          <i class="fa-solid fa-paper-plane"></i> Send Sealed
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const conceptDescriptions = {
+      c1: '<strong>Concept 1 — The Calm Knowledge Stream:</strong> Feels as effortless as Linear or Slack, while quietly housing Q&amp;A Canon, 100-Point Wallets, Live Yjs Docs, AI Mini-Apps, Peer Committees, and Secure Messaging in one unified Collaboration shell.',
+      c2: '<strong>Concept 2 — Adaptive Bento + Split Workbench:</strong> Opens with a 3-card personal morning cockpit (60-Second Brief, Committee Ballot, Expertise Match) above a side-by-side Split Workbench for deep co-authoring and governance.',
+      c3: '<strong>Concept 3 — AI Concierge Portal + Living Canon Atlas:</strong> Zero-navigation executive simplicity. Ask anything or click an action pill to vote on Committee motions, check verified canon, or open a Secure Message in one click.'
+    };
+
+    function switchConcept(conceptId, btnEl) {
+      document.querySelectorAll('.concept-view').forEach(v => v.classList.remove('active'));
+      document.getElementById('view-' + conceptId).classList.add('active');
+      document.querySelectorAll('.concept-tab').forEach(b => b.classList.remove('active'));
+      if (btnEl) btnEl.classList.add('active');
+      document.getElementById('conceptSummaryText').innerHTML = conceptDescriptions[conceptId];
+    }
+
+    function toggleTheme() {
+      const html = document.documentElement;
+      const next = html.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
+      html.setAttribute('data-theme', next);
+      document.getElementById('themeIcon').className = next === 'dark' ? 'fa-solid fa-sun' : 'fa-solid fa-moon';
+    }
+
+    let isFullMemberBand = true;
+    function toggleBandMode() {
+      isFullMemberBand = !isFullMemberBand;
+      const label = document.getElementById('bandToggleLabel');
+      const btn = document.getElementById('bandToggleBtn');
+      const teamRows = document.querySelectorAll('.team-only-row');
+      if (isFullMemberBand) {
+        label.textContent = 'View: Full Member (Shared + Team)';
+        btn.classList.add('active-band');
+        teamRows.forEach(el => (el.style.display = ''));
+      } else {
+        label.textContent = 'View: Outside Guest (Shared Only — Team Hidden)';
+        btn.classList.remove('active-band');
+        teamRows.forEach(el => (el.style.display = 'none'));
+      }
+    }
+
+    function triggerAskFirst() {
+      document.getElementById('askFirstDrawer').classList.add('open');
+    }
+
+    function markDeflected(btn) {
+      btn.innerHTML = '<i class="fa-solid fa-check-double"></i> Deflected! Saved a Duplicate Thread (+DeflectionCount)';
+      btn.style.background = 'var(--mj-status-success)';
+      btn.style.borderColor = 'var(--mj-status-success)';
+    }
+
+    function filterStream(category, btnEl) {
+      if (btnEl && btnEl.classList.contains('filter-pill')) {
+        document.querySelectorAll('.filter-pill').forEach(p => p.classList.remove('active'));
+        btnEl.classList.add('active');
+      }
+      document.querySelectorAll('#view-c1 .thread-card').forEach(card => {
+        const cats = (card.getAttribute('data-category') || '').split(' ');
+        if (category === 'all' || cats.includes(category)) {
+          if (cats.includes('team') && !isFullMemberBand) {
+            card.style.display = 'none';
+          } else {
+            card.style.display = 'block';
+          }
+        } else {
+          card.style.display = 'none';
+        }
+      });
+    }
+
+    function toggleExpand(id) {
+      document.getElementById(id).classList.toggle('open');
+    }
+
+    function updateQuadraticAllocation(votesStr) {
+      const votes = parseInt(votesStr, 10);
+      const cost = votes * votes;
+      const remaining = 100 - cost;
+      document.getElementById('qvVotesDisplay').textContent = votes.toFixed(1) + ' Effective Votes';
+      document.getElementById('qvPointsDisplay').textContent = String(cost);
+      document.getElementById('walletRemainingBadge').textContent =
+        'Your Wallet: ' + remaining + ' / 100 pts remaining';
+    }
+
+    function castMotionVote(choice) {
+      const el = document.getElementById('motionVoteStatus');
+      if (el) {
+        el.innerHTML =
+          '<strong style="color: var(--mj-status-success);"><i class="fa-solid fa-circle-check"></i> Your Seat Ballot Recorded (' +
+          choice +
+          ')!</strong> Updated tally: 9 Yea • 1 Nay • 0 Abstain (Quorum 91%)';
+      }
+    }
+
+    const pollCounts = [42, 16, 10];
+    function voteInlinePoll(index) {
+      pollCounts[index] += 1;
+      const total = pollCounts[0] + pollCounts[1] + pollCounts[2];
+      for (let i = 0; i < 3; i++) {
+        const pct = Math.round((pollCounts[i] / total) * 100);
+        document.getElementById('poll-pct-' + i).textContent = pct + '%';
+        document.getElementById('poll-bar-' + i).style.width = pct + '%';
+      }
+    }
+
+    function answerQuiz(btnEl, isCorrect) {
+      const parent = btnEl.parentElement;
+      parent.querySelectorAll('.quiz-btn').forEach(b => {
+        b.classList.remove('correct', 'wrong');
+      });
+      btnEl.classList.add(isCorrect ? 'correct' : 'wrong');
+      const feedback = document.getElementById('quizFeedback');
+      if (isCorrect) {
+        feedback.innerHTML =
+          '<strong style="color: var(--mj-status-success);">✔ Correct!</strong> $95k / ($420k / 12) = 2.71 months coverage (Amber Watchlist). Score recorded in `ForumInteractiveSession`!';
+        document.getElementById('quizScoreBadge').textContent = '185 Plays • Your Streak: 10 🔥';
+      } else {
+        feedback.innerHTML =
+          '<strong style="color: var(--mj-status-danger);">Not quite:</strong> $420k/yr is $35k/mo, so $95k covers 2.71 months (Amber Watchlist tier).';
+      }
+    }
+
+    function switchWorkbenchStage(stageId, btnEl) {
+      document.querySelectorAll('#view-c2 .stage-pane').forEach(p => p.classList.remove('active'));
+      const target = document.getElementById(stageId);
+      if (target) target.classList.add('active');
+      document.querySelectorAll('#view-c2 .stage-tabs .action-btn').forEach(b => b.classList.remove('primary'));
+      if (stageId === 'stage-synthesis') document.getElementById('tab-btn-synthesis').classList.add('primary');
+      if (stageId === 'stage-doc') document.getElementById('tab-btn-doc').classList.add('primary');
+      if (stageId === 'stage-committee') document.getElementById('tab-btn-committee').classList.add('primary');
+    }
+
+    function runConciergePrompt() {
+      const input = document.getElementById('conciergeInput').value;
+      const box = document.getElementById('conciergeResponseBox');
+      box.style.borderColor = 'var(--mj-accent-ai)';
+      box.querySelector('div').innerHTML =
+        '<i class="fa-solid fa-wand-magic-sparkles"></i> LIVE SYNTHESIS FOR: "' + input.replace(/</g, '&lt;') + '"';
+    }
+
+    function openGraduationModal(threadTitle) {
+      document.getElementById('gradModalTitle').textContent = 'Graduate: ' + threadTitle;
+      document.getElementById('gradSuccessBanner').style.display = 'none';
+      document.getElementById('graduationModal').classList.add('open');
+    }
+
+    function closeGraduationModal() {
+      document.getElementById('graduationModal').classList.remove('open');
+    }
+
+    function confirmGraduation() {
+      const select = document.getElementById('gradSpaceTypeSelect');
+      const banner = document.getElementById('gradSuccessBanner');
+      banner.style.display = 'block';
+      banner.innerHTML =
+        '<i class="fa-solid fa-circle-check"></i> Created child `' +
+        select.value +
+        '` Space under Collaboration, linked `PromotedToSpaceID`, invited 8 thread contributors, and seeded initial Task!';
+    }
+
+    function openSecureDrawer() {
+      document.getElementById('secureDrawer').classList.add('open');
+    }
+
+    function closeSecureDrawer() {
+      document.getElementById('secureDrawer').classList.remove('open');
+    }
+
+    function sendSecureMessage() {
+      const input = document.getElementById('secureReplyInput');
+      if (!input.value.trim()) return;
+      const log = document.getElementById('secureChatLog');
+      const div = document.createElement('div');
+      div.innerHTML =
+        '<strong style="color: var(--mj-text-primary);">You (Sealed E2EE):</strong> "' +
+        input.value.replace(/</g, '&lt;') +
+        '"';
+      log.appendChild(div);
+      log.scrollTop = log.scrollHeight;
+      input.value = '';
+    }
+  </script>
+</body>
+</html>

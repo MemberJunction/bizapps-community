@@ -1,0 +1,54 @@
+{
+  "ISARelationships": [
+    {
+      "ChildEntity": "MJ_BizApps_Community: Community Spaces",
+      "ParentEntity": "MJ_BizApps_Collaboration: Spaces",
+      "SchemaName": "__mj_BizAppsCommunity"
+    },
+    {
+      "ChildEntity": "MJ_BizApps_Community: Forum Idea Campaigns",
+      "ParentEntity": "MJ_BizApps_Community: Forums",
+      "SchemaName": "__mj_BizAppsCommunity"
+    },
+    {
+      "ChildEntity": "MJ_BizApps_Community: Forum Question Posts",
+      "ParentEntity": "MJ_BizApps_Community: Forum Posts",
+      "SchemaName": "__mj_BizAppsCommunity"
+    },
+    {
+      "ChildEntity": "MJ_BizApps_Community: Forum Answer Posts",
+      "ParentEntity": "MJ_BizApps_Community: Forum Posts",
+      "SchemaName": "__mj_BizAppsCommunity"
+    },
+    {
+      "ChildEntity": "MJ_BizApps_Community: Forum Idea Posts",
+      "ParentEntity": "MJ_BizApps_Community: Forum Posts",
+      "SchemaName": "__mj_BizAppsCommunity"
+    },
+    {
+      "ChildEntity": "MJ_BizApps_Community: Forum Form Posts",
+      "ParentEntity": "MJ_BizApps_Community: Forum Posts",
+      "SchemaName": "__mj_BizAppsCommunity"
+    },
+    {
+      "ChildEntity": "MJ_BizApps_Community: Forum Artifact Posts",
+      "ParentEntity": "MJ_BizApps_Community: Forum Posts",
+      "SchemaName": "__mj_BizAppsCommunity"
+    },
+    {
+      "ChildEntity": "MJ_BizApps_Community: Forum Case Posts",
+      "ParentEntity": "MJ_BizApps_Community: Forum Posts",
+      "SchemaName": "__mj_BizAppsCommunity"
+    },
+    {
+      "ChildEntity": "MJ_BizApps_Community: Forum AMA Posts",
+      "ParentEntity": "MJ_BizApps_Community: Forum Posts",
+      "SchemaName": "__mj_BizAppsCommunity"
+    },
+    {
+      "ChildEntity": "MJ_BizApps_Community: Forum Interactive Posts",
+      "ParentEntity": "MJ_BizApps_Community: Forum Posts",
+      "SchemaName": "__mj_BizAppsCommunity"
+    }
+  ]
+}

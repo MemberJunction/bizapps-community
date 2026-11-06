@@ -1,0 +1,19 @@
+[
+  {
+    "_comments": [
+      "The BizApps Community Application"
+    ],
+    "primaryKey": {
+      "ID": "C8A17000-4E12-4B8F-9A10-100000000001"
+    },
+    "fields": {
+      "Name": "Community",
+      "Description": "AI-synthesized member communities, Q&A canon, ideation wallets, and collaborative knowledge spaces.",
+      "Icon": "fa-solid fa-comments",
+      "Path": "community",
+      "DefaultForNewUser": true,
+      "Status": "Active",
+      "DefaultNavItems": "[{\"Label\":\"Community Hub\",\"Icon\":\"fa-solid fa-comments\",\"ResourceType\":\"Custom\",\"DriverClass\":\"CommunityHubResource\",\"isDefault\":true}]"
+    }
+  }
+]
