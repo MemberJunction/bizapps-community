@@ -1,0 +1,13 @@
+{
+  "entity": "MJ: Row Level Security Filters",
+  "filePattern": "**/.*.json",
+  "pull": {
+    "createNewFileIfNotFound": true,
+    "newFileName": ".row-level-security-filters.json",
+    "appendRecordsToExistingFile": true,
+    "updateExistingRecords": true,
+    "filter": "Name LIKE 'Community:%'",
+    "ignoreNullFields": true,
+    "ignoreVirtualFields": true
+  }
+}

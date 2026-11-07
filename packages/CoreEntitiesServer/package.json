@@ -1,0 +1,41 @@
+{
+  "name": "@mj-biz-apps/community-core-entities-server",
+  "type": "module",
+  "version": "0.1.0",
+  "description": "Server drivers, registries, and CommunityEngine for BizApps Community.",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "publishConfig": {
+    "access": "public"
+  },
+  "files": [
+    "/dist"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "test": "node --experimental-strip-types --test src/server-drivers.test.ts"
+  },
+  "license": "UNLICENSED",
+  "dependencies": {
+    "@mj-biz-apps/community-core": "0.1.0",
+    "@mj-biz-apps/community-entities": "0.1.0"
+  },
+  "peerDependencies": {
+    "@memberjunction/core": "^6.1.2",
+    "@memberjunction/global": "^6.1.2",
+    "@mj-biz-apps/collaboration-core": "^0.1.0",
+    "@mj-biz-apps/collaboration-core-entities-server": "^0.1.0",
+    "@mj-biz-apps/collaboration-entities": "^0.1.0"
+  },
+  "devDependencies": {
+    "@memberjunction/core": "6.1.3",
+    "@memberjunction/global": "6.1.3",
+    "@types/node": "24.10.11",
+    "typescript": "5.9.3"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/MemberJunction/bizapps-community"
+  },
+  "mjUILayer": "runtime"
+}

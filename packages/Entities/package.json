@@ -1,0 +1,38 @@
+{
+  "name": "@mj-biz-apps/community-entities",
+  "type": "module",
+  "version": "0.1.0",
+  "description": "Entity contracts, IsA subtype directories, and EntitySubtypeResolver registrations for BizApps Community.",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "publishConfig": {
+    "access": "public"
+  },
+  "files": [
+    "/dist"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "test": "node --experimental-strip-types --test src/subtype-resolvers.test.ts"
+  },
+  "license": "UNLICENSED",
+  "peerDependencies": {
+    "@memberjunction/core": "^6.1.2",
+    "@memberjunction/global": "^6.1.2"
+  },
+  "dependencies": {
+    "@mj-biz-apps/community-core": "0.1.0",
+    "zod": "3.25.76"
+  },
+  "devDependencies": {
+    "@memberjunction/core": "6.1.3",
+    "@memberjunction/global": "6.1.3",
+    "@types/node": "24.10.11",
+    "typescript": "5.9.3"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/MemberJunction/bizapps-community"
+  },
+  "mjUILayer": "runtime"
+}

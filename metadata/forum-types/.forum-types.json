@@ -1,0 +1,104 @@
+[
+  {
+    "primaryKey": {
+      "ID": "C8A17100-4E12-4B8F-9A10-100000000001"
+    },
+    "fields": {
+      "Code": "general-discussion",
+      "Name": "General Discussion",
+      "Description": "Open topical forum supporting threaded discussion, inline forms/polls, collaborative artifacts, and AI-generated interactive experiences.",
+      "Icon": "fa-solid fa-comments",
+      "ServerDriverClass": null,
+      "UIDriverClass": "GeneralForumUIDriver",
+      "ExtensionEntity": null,
+      "Configuration": "{\"Posts\":{\"AllowedPostTypeCodes\":[\"discussion\",\"reply\",\"comment\",\"poll-or-form\",\"collaborative-doc\",\"collaborative-sheet\",\"collaborative-deck\",\"interactive-experience\"],\"DefaultRootPostTypeCode\":\"discussion\",\"MaxReplyDepth\":5},\"Synthesis\":{\"AutoSummarizeThreshold\":4,\"AskFirstDeflection\":true},\"ForumOverridable\":[\"Posts.AllowedPostTypeCodes\",\"Posts.MaxReplyDepth\",\"Synthesis.AutoSummarizeThreshold\",\"Synthesis.AskFirstDeflection\"]}",
+      "Sequence": 10,
+      "IsActive": true
+    }
+  },
+  {
+    "primaryKey": {
+      "ID": "C8A17100-4E12-4B8F-9A10-100000000002"
+    },
+    "fields": {
+      "Code": "qa-knowledge-base",
+      "Name": "Q&A Knowledge Base",
+      "Description": "Structured question-and-answer forum with dual human + AI epistemic answer verification and freshness tracking.",
+      "Icon": "fa-solid fa-circle-question",
+      "ServerDriverClass": "QAForumServerDriver",
+      "UIDriverClass": "QAForumUIDriver",
+      "ExtensionEntity": null,
+      "Configuration": "{\"Posts\":{\"AllowedPostTypeCodes\":[\"question\",\"answer\",\"comment\"],\"DefaultRootPostTypeCode\":\"question\",\"MaxReplyDepth\":2},\"Synthesis\":{\"AutoSummarizeThreshold\":3,\"AskFirstDeflection\":true},\"ForumOverridable\":[\"Synthesis.AutoSummarizeThreshold\",\"Synthesis.AskFirstDeflection\"]}",
+      "Sequence": 20,
+      "IsActive": true
+    }
+  },
+  {
+    "primaryKey": {
+      "ID": "C8A17100-4E12-4B8F-9A10-100000000003"
+    },
+    "fields": {
+      "Code": "ideation-campaign",
+      "Name": "Ideation Campaign",
+      "Description": "Feature and topic prioritization forum with 100-Point Wallets and Quadratic allocation.",
+      "Icon": "fa-solid fa-lightbulb",
+      "ServerDriverClass": "IdeaCampaignForumServerDriver",
+      "UIDriverClass": "IdeaCampaignForumUIDriver",
+      "ExtensionEntity": "MJ_BizApps_Community: Forum Idea Campaigns",
+      "Configuration": "{\"Posts\":{\"AllowedPostTypeCodes\":[\"idea-proposal\",\"reply\",\"poll-or-form\"],\"DefaultRootPostTypeCode\":\"idea-proposal\",\"MaxReplyDepth\":3},\"Synthesis\":{\"AutoSummarizeThreshold\":5,\"AskFirstDeflection\":true},\"ForumOverridable\":[\"Posts.MaxReplyDepth\",\"Synthesis.AutoSummarizeThreshold\"]}",
+      "Sequence": 30,
+      "IsActive": true
+    }
+  },
+  {
+    "primaryKey": {
+      "ID": "C8A17100-4E12-4B8F-9A10-100000000004"
+    },
+    "fields": {
+      "Code": "playbooks-and-docs",
+      "Name": "Playbooks & Collaborative Docs",
+      "Description": "Co-authoring channel for living playbooks, spreadsheets, and slide decks backed by MJ Artifacts and Yjs.",
+      "Icon": "fa-solid fa-file-signature",
+      "ServerDriverClass": "PlaybooksForumServerDriver",
+      "UIDriverClass": "PlaybooksForumUIDriver",
+      "ExtensionEntity": null,
+      "Configuration": "{\"Posts\":{\"AllowedPostTypeCodes\":[\"collaborative-doc\",\"collaborative-sheet\",\"collaborative-deck\",\"reply\",\"comment\"],\"DefaultRootPostTypeCode\":\"collaborative-doc\",\"MaxReplyDepth\":4},\"Synthesis\":{\"AutoSummarizeThreshold\":4,\"AskFirstDeflection\":true},\"ForumOverridable\":[\"Posts.AllowedPostTypeCodes\"]}",
+      "Sequence": 40,
+      "IsActive": true
+    }
+  },
+  {
+    "primaryKey": {
+      "ID": "C8A17100-4E12-4B8F-9A10-100000000005"
+    },
+    "fields": {
+      "Code": "peer-case-rounds",
+      "Name": "Peer Case Rounds",
+      "Description": "Structured Situation / Action / Outcome case reviews with optional anonymization and redaction guardrails.",
+      "Icon": "fa-solid fa-briefcase-medical",
+      "ServerDriverClass": "CaseRoundsForumServerDriver",
+      "UIDriverClass": "CaseRoundsForumUIDriver",
+      "ExtensionEntity": null,
+      "Configuration": "{\"Posts\":{\"AllowedPostTypeCodes\":[\"case-review\",\"reply\",\"comment\"],\"DefaultRootPostTypeCode\":\"case-review\",\"MaxReplyDepth\":3},\"Synthesis\":{\"AutoSummarizeThreshold\":3,\"AskFirstDeflection\":true},\"ForumOverridable\":[\"Synthesis.AutoSummarizeThreshold\"]}",
+      "Sequence": 50,
+      "IsActive": true
+    }
+  },
+  {
+    "primaryKey": {
+      "ID": "C8A17100-4E12-4B8F-9A10-100000000006"
+    },
+    "fields": {
+      "Code": "live-events-and-amas",
+      "Name": "Live Events & AMAs",
+      "Description": "Scheduled Ask-Me-Anything sessions, town halls, and interactive member trivia or simulations.",
+      "Icon": "fa-solid fa-tower-broadcast",
+      "ServerDriverClass": "LiveEventsForumServerDriver",
+      "UIDriverClass": "LiveEventsForumUIDriver",
+      "ExtensionEntity": null,
+      "Configuration": "{\"Posts\":{\"AllowedPostTypeCodes\":[\"live-ama\",\"question\",\"reply\",\"poll-or-form\",\"interactive-experience\"],\"DefaultRootPostTypeCode\":\"live-ama\",\"MaxReplyDepth\":3},\"Synthesis\":{\"AutoSummarizeThreshold\":5,\"AskFirstDeflection\":false},\"ForumOverridable\":[\"Synthesis.AskFirstDeflection\"]}",
+      "Sequence": 60,
+      "IsActive": true
+    }
+  }
+]

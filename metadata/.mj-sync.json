@@ -1,0 +1,23 @@
+{
+  "version": "1.0.0",
+  "push": {
+    "autoCreateMissingRecords": true
+  },
+  "directoryOrder": [
+    "schema-info",
+    "applications",
+    "application-settings",
+    "space-types",
+    "forum-types",
+    "post-types",
+    "forum-role-types",
+    "row-level-security-filters",
+    "entity-permissions"
+  ],
+  "emitSyncNotes": false,
+  "sqlLogging": {
+    "enabled": true,
+    "outputDirectory": "./sql_logging",
+    "formatAsMigration": true
+  }
+}

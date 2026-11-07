@@ -2,23 +2,33 @@
   "name": "bizapps-community",
   "private": true,
   "version": "0.1.0",
-  "description": "BizApps Community — AI-native discussions, living thread syntheses, and personalized digests built on BizApps Collaboration spaces.",
-  "license": "BUSL-1.1",
+  "description": "BizApps Community — AI-synthesized, member-driven online community built on BizApps Collaboration.",
+  "license": "UNLICENSED",
   "devDependencies": {
-    "@memberjunction/cli": "6.2.0-edge.7",
-    "@memberjunction/core": "6.2.0-edge.7",
-    "@memberjunction/generic-database-provider": "6.2.0-edge.7",
-    "@memberjunction/ng-shared-generic": "6.2.0-edge.7",
-    "@memberjunction/sqlserver-dataprovider": "6.2.0-edge.7",
-    "@memberjunction/testing-integration": "6.2.0-edge.7",
-    "dotenv": "^16.4.7",
-    "mssql": "12.7.0"
+    "@memberjunction/cli": "6.1.3",
+    "@memberjunction/core": "6.1.3",
+    "@memberjunction/global": "6.1.3",
+    "typescript": "5.9.3"
   },
   "scripts": {
-    "test": "node --experimental-strip-types --test packages/Core/src/rules.test.ts",
-    "build": "pnpm --filter \"./packages/*\" run build",
+    "build": "pnpm --filter @mj-biz-apps/community-core run build && pnpm --filter @mj-biz-apps/community-entities run build && pnpm --filter @mj-biz-apps/community-core-entities-server run build && pnpm --filter @mj-biz-apps/community-actions run build && pnpm --filter @mj-biz-apps/community-server run build && pnpm --filter @mj-biz-apps/community-ng-widgets run build && pnpm --filter @mj-biz-apps/community-ng run build",
+    "test": "pnpm run build && node scripts/check-downstream-names.mjs && node --test scripts/check-downstream-names.test.mjs && node --experimental-strip-types --test packages/Core/src/rules.test.ts packages/Entities/src/subtype-resolvers.test.ts packages/CoreEntitiesServer/src/server-drivers.test.ts packages/Server/src/server.test.ts packages/AngularWidgets/src/ui-drivers.test.ts packages/Angular/src/client-bootstrap.test.ts",
     "mj:migrate": "mj migrate --schema __mj_BizAppsCommunity",
     "mj:push": "mj sync push --dir=metadata",
     "mj:standards": "mj standards check"
+  },
+  "pnpm": {
+    "overrides": {
+      "@types/node": "24.10.11",
+      "@angular/animations": "21.2.22",
+      "@angular/common": "21.2.22",
+      "@angular/compiler": "21.2.22",
+      "@angular/compiler-cli": "21.2.22",
+      "@angular/core": "21.2.22",
+      "@angular/forms": "21.2.22",
+      "@angular/platform-browser": "21.2.22",
+      "@angular/router": "21.2.22",
+      "@angular/cdk": "21.2.14"
+    }
   }
 }

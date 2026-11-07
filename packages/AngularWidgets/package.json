@@ -1,0 +1,42 @@
+{
+  "name": "@mj-biz-apps/community-ng-widgets",
+  "type": "module",
+  "version": "0.1.0",
+  "description": "Embeddable Angular widgets and UI driver registries (BaseForumUIDriver, BasePostUIDriver, CommunitySpaceUIDriver) for BizApps Community.",
+  "main": "dist/public-api.js",
+  "types": "dist/public-api.d.ts",
+  "mjUILayer": "widgets",
+  "publishConfig": {
+    "access": "public"
+  },
+  "files": [
+    "/dist"
+  ],
+  "license": "UNLICENSED",
+  "scripts": {
+    "build": "tsc",
+    "test": "node --experimental-strip-types --test src/ui-drivers.test.ts"
+  },
+  "dependencies": {
+    "@mj-biz-apps/community-core": "0.1.0",
+    "@mj-biz-apps/community-entities": "0.1.0"
+  },
+  "peerDependencies": {
+    "@angular/common": "^21.2.22",
+    "@angular/core": "^21.2.22",
+    "@angular/forms": "^21.2.22",
+    "@memberjunction/core": "^6.1.2",
+    "@memberjunction/global": "^6.1.2",
+    "@mj-biz-apps/collaboration-ng-widgets": "^0.1.0"
+  },
+  "devDependencies": {
+    "@memberjunction/core": "6.1.3",
+    "@memberjunction/global": "6.1.3",
+    "@types/node": "24.10.11",
+    "typescript": "5.9.3"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/MemberJunction/bizapps-community"
+  }
+}

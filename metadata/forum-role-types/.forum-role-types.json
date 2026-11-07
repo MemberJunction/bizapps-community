@@ -1,0 +1,149 @@
+[
+  {
+    "primaryKey": { "ID": "C8A17300-4E12-4B8F-9A10-100000000001" },
+    "fields": {
+      "Code": "forum-admin",
+      "Name": "Forum Admin",
+      "Description": "Full control over forum settings, moderation queue, canon verification, and thread-to-space promotion.",
+      "Level": 1000,
+      "CanConfigureForum": true,
+      "CanModerateQueue": true,
+      "CanPinOrLock": true,
+      "CanAcceptAnswers": true,
+      "CanVerifyCanon": true,
+      "CanPromoteToSpace": true,
+      "CanCreateRootPost": true,
+      "CanReply": true,
+      "CanCoEditDocs": true,
+      "VoteWeightMultiplier": 1.0,
+      "Sequence": 10,
+      "IsActive": true
+    }
+  },
+  {
+    "primaryKey": { "ID": "C8A17300-4E12-4B8F-9A10-100000000002" },
+    "fields": {
+      "Code": "moderator",
+      "Name": "Moderator",
+      "Description": "Reviews flagged posts, pins/locks threads, verifies canon answers, and graduates threads to child spaces.",
+      "Level": 800,
+      "CanConfigureForum": false,
+      "CanModerateQueue": true,
+      "CanPinOrLock": true,
+      "CanAcceptAnswers": true,
+      "CanVerifyCanon": true,
+      "CanPromoteToSpace": true,
+      "CanCreateRootPost": true,
+      "CanReply": true,
+      "CanCoEditDocs": true,
+      "VoteWeightMultiplier": 1.0,
+      "Sequence": 20,
+      "IsActive": true
+    }
+  },
+  {
+    "primaryKey": { "ID": "C8A17300-4E12-4B8F-9A10-100000000003" },
+    "fields": {
+      "Code": "topic-host",
+      "Name": "Topic Host",
+      "Description": "Subject-matter host who can pin threads, accept answers, and co-edit living documents.",
+      "Level": 600,
+      "CanConfigureForum": false,
+      "CanModerateQueue": false,
+      "CanPinOrLock": true,
+      "CanAcceptAnswers": true,
+      "CanVerifyCanon": false,
+      "CanPromoteToSpace": true,
+      "CanCreateRootPost": true,
+      "CanReply": true,
+      "CanCoEditDocs": true,
+      "VoteWeightMultiplier": 1.0,
+      "Sequence": 30,
+      "IsActive": true
+    }
+  },
+  {
+    "primaryKey": { "ID": "C8A17300-4E12-4B8F-9A10-100000000004" },
+    "fields": {
+      "Code": "expert-reviewer",
+      "Name": "Expert Reviewer",
+      "Description": "Subject-matter expert authorized to verify AI/Human canon answers and co-edit playbooks.",
+      "Level": 500,
+      "CanConfigureForum": false,
+      "CanModerateQueue": false,
+      "CanPinOrLock": false,
+      "CanAcceptAnswers": true,
+      "CanVerifyCanon": true,
+      "CanPromoteToSpace": false,
+      "CanCreateRootPost": true,
+      "CanReply": true,
+      "CanCoEditDocs": true,
+      "VoteWeightMultiplier": 1.25,
+      "Sequence": 40,
+      "IsActive": true
+    }
+  },
+  {
+    "primaryKey": { "ID": "C8A17300-4E12-4B8F-9A10-100000000005" },
+    "fields": {
+      "Code": "contributor",
+      "Name": "Contributor",
+      "Description": "Standard active member who can start threads, reply, vote, and suggest edits on collaborative documents.",
+      "Level": 200,
+      "CanConfigureForum": false,
+      "CanModerateQueue": false,
+      "CanPinOrLock": false,
+      "CanAcceptAnswers": false,
+      "CanVerifyCanon": false,
+      "CanPromoteToSpace": false,
+      "CanCreateRootPost": true,
+      "CanReply": true,
+      "CanCoEditDocs": false,
+      "VoteWeightMultiplier": 1.0,
+      "Sequence": 50,
+      "IsActive": true
+    }
+  },
+  {
+    "primaryKey": { "ID": "C8A17300-4E12-4B8F-9A10-100000000006" },
+    "fields": {
+      "Code": "observer",
+      "Name": "Observer",
+      "Description": "Read-only participant who can browse and subscribe to digests without posting.",
+      "Level": 100,
+      "CanConfigureForum": false,
+      "CanModerateQueue": false,
+      "CanPinOrLock": false,
+      "CanAcceptAnswers": false,
+      "CanVerifyCanon": false,
+      "CanPromoteToSpace": false,
+      "CanCreateRootPost": false,
+      "CanReply": false,
+      "CanCoEditDocs": false,
+      "VoteWeightMultiplier": 0.0,
+      "Sequence": 60,
+      "IsActive": true
+    }
+  },
+  {
+    "primaryKey": { "ID": "C8A17300-4E12-4B8F-9A10-100000000007" },
+    "fields": {
+      "Code": "muted",
+      "Name": "Muted",
+      "Description": "Temporarily restricted from creating posts, replies, or reactions in the forum.",
+      "Level": 0,
+      "CanConfigureForum": false,
+      "CanModerateQueue": false,
+      "CanPinOrLock": false,
+      "CanAcceptAnswers": false,
+      "CanVerifyCanon": false,
+      "CanPromoteToSpace": false,
+      "CanCreateRootPost": false,
+      "CanReply": false,
+      "CanCoEditDocs": false,
+      "VoteWeightMultiplier": 0.0,
+      "Sequence": 70,
+      "IsActive": true
+    }
+  }
+]

@@ -1,303 +1,947 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>BizApps Community — Interactive AI-Native "Collapsed Forum + Collaboration" UX Prototype</title>
-  <script src="https://www.gstatic.com/antigravity/web/dev/tailwindcss.min.js"></script>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>More Cheese · Guild Commons (Option 1: Calm Editorial Stream)</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sora:wght@600;700&family=Nunito+Sans:wght@400;600;700;800&display=swap" />
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" />
   <style>
     :root {
-      --background: #f8fafc;
-      --card: #ffffff;
-      --foreground: #0f172a;
-      --muted-foreground: #475569;
-      --border: #e2e8f0;
-      --primary: #0d9488;
-      --primary-foreground: #ffffff;
-      --accent: #f1f5f9;
+      --paper: #FFFDF7;
+      --cream: #FBF6EA;
+      --soft: #FBE7A6;
+      --yellow: #F4C430;
+      --butter: #E3AE1B;
+      --gold: #8A5A00;
+      --ink: #2A1F17;
+      --body: #4A3E33;
+      --cocoa2: #3D2E23;
+      --line: #E4D9C3;
+      --muted: #7A6E60;
+      --sage: #1E6B4E;
+      --sage-soft: #E9F5EE;
+      --berry: #9E2A2B;
+      --berry-soft: #FCEEEF;
+      --r: 18px;
+      --rs: 12px;
     }
-    @media (prefers-color-scheme: dark) {
-      :root {
-        --background: #090d16;
-        --card: #111827;
-        --foreground: #f8fafc;
-        --muted-foreground: #94a3b8;
-        --border: #1e293b;
-        --primary: #14b8a6;
-        --primary-foreground: #090d16;
-        --accent: #1e293b;
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      background: var(--cream);
+      color: var(--ink);
+      font-family: 'Nunito Sans', -apple-system, sans-serif;
+      -webkit-font-smoothing: antialiased;
+      line-height: 1.55;
+    }
+
+    /* Official MoreCheese Header */
+    .site-header {
+      position: sticky;
+      top: 0;
+      z-index: 50;
+      background: var(--paper);
+      border-bottom: 1.5px solid var(--line);
+      box-shadow: 0 4px 20px -12px rgba(42, 31, 23, 0.18);
+    }
+
+    .header-inner {
+      max-width: 1380px;
+      margin: 0 auto;
+      padding: 12px 28px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 24px;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      text-decoration: none;
+      color: var(--ink);
+    }
+
+    .brand-name {
+      font-family: 'Sora', sans-serif;
+      font-weight: 700;
+      font-size: 20px;
+      letter-spacing: -0.03em;
+    }
+
+    .brand-tag {
+      font-size: 11px;
+      font-weight: 800;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      padding: 3px 9px;
+      border-radius: 999px;
+      background: var(--soft);
+      color: var(--ink);
+    }
+
+    .search-ask-bar {
+      flex: 1;
+      max-width: 540px;
+      position: relative;
+    }
+
+    .search-input-wrap {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      background: var(--cream);
+      border: 1.5px solid var(--line);
+      border-radius: 999px;
+      padding: 8px 16px;
+      transition: border-color 0.15s ease, background 0.15s ease;
+    }
+
+    .search-input-wrap:focus-within {
+      background: var(--paper);
+      border-color: var(--ink);
+    }
+
+    .search-input-wrap input {
+      border: none;
+      background: transparent;
+      width: 100%;
+      font: inherit;
+      font-size: 14.5px;
+      color: var(--ink);
+      outline: none;
+    }
+
+    .betty-badge {
+      background: var(--ink);
+      color: var(--yellow);
+      font-family: 'Sora', sans-serif;
+      font-weight: 700;
+      font-size: 11px;
+      padding: 4px 10px;
+      border-radius: 999px;
+      white-space: nowrap;
+      cursor: pointer;
+      border: none;
+    }
+
+    .header-right {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+    }
+
+    .member-pill {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 5px 12px 5px 6px;
+      border-radius: 999px;
+      border: 1.5px solid var(--line);
+      background: var(--paper);
+      font-size: 13.5px;
+      font-weight: 700;
+    }
+
+    .avatar {
+      width: 30px;
+      height: 30px;
+      border-radius: 50%;
+      background: var(--ink);
+      color: var(--yellow);
+      font-family: 'Sora', sans-serif;
+      font-weight: 700;
+      font-size: 13px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+    }
+
+    /* Main 3-Column Layout */
+    .shell {
+      max-width: 1380px;
+      margin: 0 auto;
+      padding: 28px;
+      display: grid;
+      grid-template-columns: 250px minmax(0, 1fr) 340px;
+      gap: 28px;
+      align-items: start;
+    }
+
+    @media (max-width: 1120px) {
+      .shell {
+        grid-template-columns: 230px minmax(0, 1fr);
       }
+      .right-col { display: none; }
     }
-    .tab-active {
-      background: var(--primary);
-      color: var(--primary-foreground);
+
+    /* Left Navigation */
+    .nav-group {
+      margin-bottom: 26px;
     }
-    .mock-nav-active {
-      background: var(--accent);
-      color: var(--foreground);
+
+    .nav-label {
+      font-size: 11px;
+      font-weight: 800;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--muted);
+      padding: 0 12px;
+      margin-bottom: 8px;
+    }
+
+    .nav-link {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 9px 12px;
+      border-radius: var(--rs);
+      color: var(--body);
       font-weight: 600;
+      font-size: 14.5px;
+      cursor: pointer;
+      transition: all 0.15s ease;
+      margin-bottom: 2px;
+    }
+
+    .nav-link:hover {
+      background: rgba(42, 31, 23, 0.05);
+      color: var(--ink);
+    }
+
+    .nav-link.active {
+      background: var(--ink);
+      color: var(--cream);
+      font-weight: 700;
+    }
+
+    .nav-link.active .nav-count {
+      background: var(--yellow);
+      color: var(--ink);
+    }
+
+    .nav-link-left {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .nav-count {
+      font-size: 11.5px;
+      font-weight: 800;
+      padding: 2px 8px;
+      border-radius: 999px;
+      background: var(--paper);
+      border: 1px solid var(--line);
+      color: var(--body);
+    }
+
+    /* Center Stream */
+    .welcome-banner {
+      background: var(--yellow);
+      border-radius: var(--r);
+      padding: 22px 26px;
+      margin-bottom: 22px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 20px;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .welcome-banner h1 {
+      font-family: 'Sora', sans-serif;
+      font-size: 22px;
+      margin: 0 0 4px;
+      letter-spacing: -0.025em;
+    }
+
+    .welcome-banner p {
+      margin: 0;
+      font-size: 14.5px;
+      color: var(--ink);
+      opacity: 0.9;
+    }
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      font: inherit;
+      font-weight: 700;
+      font-size: 14px;
+      padding: 10px 20px;
+      border-radius: 999px;
+      cursor: pointer;
+      border: 1.5px solid transparent;
+      text-decoration: none;
+      white-space: nowrap;
+    }
+
+    .btn-ink {
+      background: var(--ink);
+      color: var(--cream);
+    }
+
+    .btn-butter {
+      background: var(--yellow);
+      color: var(--ink);
+      border-color: var(--ink);
+    }
+
+    .btn-outline {
+      background: var(--paper);
+      border-color: var(--line);
+      color: var(--ink);
+    }
+
+    .btn-outline:hover {
+      border-color: var(--ink);
+    }
+
+    /* Filter Chips */
+    .stream-toolbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 16px;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+
+    .chip-row {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .chip {
+      padding: 6px 14px;
+      border-radius: 999px;
+      font-size: 13px;
+      font-weight: 700;
+      border: 1.5px solid var(--line);
+      background: var(--paper);
+      color: var(--body);
+      cursor: pointer;
+    }
+
+    .chip.active {
+      background: var(--ink);
+      color: var(--cream);
+      border-color: var(--ink);
+    }
+
+    /* Clean Uncluttered Feed Cards */
+    .feed-card {
+      background: var(--paper);
+      border: 1.5px solid var(--line);
+      border-radius: var(--r);
+      padding: 22px 24px;
+      margin-bottom: 16px;
+      cursor: pointer;
+      transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease;
+    }
+
+    .feed-card:hover {
+      transform: translateY(-2px);
+      border-color: var(--ink);
+      box-shadow: 0 12px 24px -14px rgba(42, 31, 23, 0.25);
+    }
+
+    .card-meta {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      margin-bottom: 10px;
+      font-size: 13px;
+      color: var(--muted);
+    }
+
+    .author-line {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-weight: 700;
+      color: var(--body);
+    }
+
+    .pill {
+      font-size: 11px;
+      font-weight: 800;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      padding: 3px 10px;
+      border-radius: 999px;
+    }
+
+    .pill-canon { background: var(--sage-soft); color: var(--sage); }
+    .pill-committee { background: var(--soft); color: var(--gold); }
+    .pill-playbook { background: var(--cream); border: 1px solid var(--line); color: var(--body); }
+    .pill-vote { background: var(--berry-soft); color: var(--berry); }
+
+    .card-title {
+      font-family: 'Sora', sans-serif;
+      font-size: 18px;
+      font-weight: 600;
+      margin: 0 0 8px;
+      letter-spacing: -0.02em;
+      color: var(--ink);
+    }
+
+    .betty-summary {
+      background: var(--cream);
+      border-left: 3px solid var(--butter);
+      padding: 10px 14px;
+      border-radius: 0 10px 10px 0;
+      font-size: 14px;
+      color: var(--body);
+      margin-bottom: 14px;
+    }
+
+    .card-footer {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: 13px;
+      color: var(--muted);
+      padding-top: 12px;
+      border-top: 1px solid var(--line);
+    }
+
+    .card-stats {
+      display: flex;
+      gap: 16px;
+      font-weight: 600;
+    }
+
+    /* Right Column Cards */
+    .side-card {
+      background: var(--paper);
+      border: 1.5px solid var(--line);
+      border-radius: var(--r);
+      padding: 20px;
+      margin-bottom: 18px;
+    }
+
+    .side-card--ink {
+      background: var(--ink);
+      color: var(--cream);
+      border-color: var(--ink);
+    }
+
+    .eyebrow {
+      font-size: 11px;
+      font-weight: 800;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      color: var(--gold);
+      display: block;
+      margin-bottom: 6px;
+    }
+
+    .side-card--ink .eyebrow {
+      color: var(--yellow);
+    }
+
+    /* Slide-Over Detail Sheet (Progressive Disclosure) */
+    .sheet-backdrop {
+      position: fixed;
+      inset: 0;
+      background: rgba(42, 31, 23, 0.45);
+      z-index: 100;
+      display: none;
+      justify-content: flex-end;
+    }
+
+    .sheet-backdrop.open {
+      display: flex;
+    }
+
+    .detail-sheet {
+      width: min(680px, 100vw);
+      height: 100vh;
+      background: var(--paper);
+      border-left: 1.5px solid var(--line);
+      padding: 28px 32px;
+      overflow-y: auto;
+      box-shadow: -20px 0 40px rgba(42, 31, 23, 0.25);
+    }
+
+    /* Floating UX Option Switcher */
+    .ux-switcher-float {
+      position: fixed;
+      bottom: 20px;
+      right: 20px;
+      z-index: 90;
+      background: var(--ink);
+      color: var(--cream);
+      padding: 6px;
+      border-radius: 999px;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      box-shadow: 0 12px 28px rgba(42, 31, 23, 0.38);
+      border: 1.5px solid var(--butter);
+    }
+
+    .ux-switcher-float a {
+      color: var(--cream);
+      text-decoration: none;
+      font-size: 12px;
+      font-weight: 700;
+      padding: 6px 12px;
+      border-radius: 999px;
+    }
+
+    .ux-switcher-float a.active {
+      background: var(--yellow);
+      color: var(--ink);
     }
   </style>
 </head>
-<body class="bg-[var(--background)] text-[var(--foreground)] antialiased p-6">
-  <div class="max-w-7xl mx-auto space-y-5">
+<body>
+  <!-- Official MoreCheese Top Bar -->
+  <header class="site-header">
+    <div class="header-inner">
+      <a href="#" class="brand">
+        <svg width="34" height="34" viewBox="0 0 96 96" aria-hidden="true">
+          <rect x="2" y="2" width="92" height="92" rx="24" fill="#2A1F17"></rect>
+          <path d="M48,48 L75.252,38.082 A29,29 0 1 1 53.036,19.441 Z" fill="#F4C430"></path>
+        </svg>
+        <span class="brand-name">More Cheese</span>
+        <span class="brand-tag">Guild Commons</span>
+      </a>
 
-    <!-- Header & Interactive Mode Switcher -->
-    <div class="flex flex-wrap items-center justify-between gap-4 border-b border-[var(--border)] pb-4">
-      <div>
-        <div class="inline-flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-[var(--primary)]">
-          <span>✦</span> BizApps Community · Interactive UX Prototype
+      <div class="search-ask-bar">
+        <div class="search-input-wrap">
+          <i class="fa-solid fa-magnifying-glass" style="color: var(--muted);"></i>
+          <input
+            id="askBettyInput"
+            type="text"
+            placeholder="Search 3,058 makers, playbooks & standards — or ask Betty before posting..."
+            onkeydown="if(event.key==='Enter') openSheet('betty')"
+          />
+          <button class="betty-badge" onclick="openSheet('betty')">Ask Betty</button>
         </div>
-        <h1 class="text-2xl font-extrabold tracking-tight mt-0.5">
-          The "Collapsed Forum" Experience: Clean, AI-Native &amp; Bound to Collaboration
-        </h1>
-        <p class="text-xs text-[var(--muted-foreground)] mt-1 max-w-3xl">
-          Multi-reply threads self-collapse into citation-backed <strong>Living Syntheses</strong>, the composer answers questions <em>before</em> duplicates are posted, and any thread can <strong>graduate into a working Collaboration Space (Tasks, Files, Committee) in one click</strong>.
+      </div>
+
+      <div class="header-right">
+        <button class="btn btn-outline" style="padding: 7px 14px; font-size: 13px;" onclick="openSheet('messages')">
+          <i class="fa-solid fa-lock" style="color: var(--sage);"></i> Steward Inbox (2)
+        </button>
+        <div class="member-pill">
+          <span class="avatar">AB</span>
+          <span>Aisha Bell · Quincewick Creamery</span>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <div class="shell">
+    <!-- Left Navigation Rail -->
+    <aside>
+      <div class="nav-group">
+        <div class="nav-label">Guild Forums</div>
+        <div class="nav-link active" onclick="filterFeed('all', this)">
+          <span class="nav-link-left"><i class="fa-solid fa-compass"></i> All Guild Activity</span>
+          <span class="nav-count">18</span>
+        </div>
+        <div class="nav-link" onclick="filterFeed('affinage', this)">
+          <span class="nav-link-left"><i class="fa-solid fa-temperature-low"></i> Cave Aging &amp; Affinage</span>
+          <span class="nav-count">Canon</span>
+        </div>
+        <div class="nav-link" onclick="filterFeed('haccp', this)">
+          <span class="nav-link-left"><i class="fa-solid fa-shield-heart"></i> Raw-Milk &amp; HACCP Q&amp;A</span>
+          <span class="nav-count">6</span>
+        </div>
+        <div class="nav-link" onclick="filterFeed('playbooks', this)">
+          <span class="nav-link-left"><i class="fa-solid fa-book-open"></i> Creamery Playbooks</span>
+          <span class="nav-count">Live</span>
+        </div>
+        <div class="nav-link" onclick="filterFeed('priorities', this)">
+          <span class="nav-link-left"><i class="fa-solid fa-seedling"></i> 2027 Guild Priorities</span>
+          <span class="nav-count">40 pts</span>
+        </div>
+      </div>
+
+      <div class="nav-group">
+        <div class="nav-label">Committees &amp; Working Spaces</div>
+        <div class="nav-link" onclick="filterFeed('committee', this)">
+          <span class="nav-link-left"><i class="fa-solid fa-gavel"></i> Cave Standards Committee</span>
+          <span class="nav-count" style="background: var(--berry-soft); color: var(--berry);">1 Vote</span>
+        </div>
+        <div class="nav-link" onclick="openSheet('working-group')">
+          <span class="nav-link-left"><i class="fa-solid fa-people-group"></i> Listeria Swab-Map Group</span>
+          <span class="nav-count">4 Tasks</span>
+        </div>
+        <div class="nav-link" onclick="openSheet('working-group')">
+          <span class="nav-link-left"><i class="fa-solid fa-graduation-cap"></i> CCP Autumn Study Cohort</span>
+          <span class="nav-count">Cohort</span>
+        </div>
+      </div>
+
+      <div class="nav-group">
+        <div class="nav-label">Confidential Rooms</div>
+        <div class="nav-link" onclick="openSheet('messages')">
+          <span class="nav-link-left"><i class="fa-solid fa-lock"></i> FDA Inspection Counsel</span>
+          <span class="nav-count">Sealed</span>
+        </div>
+      </div>
+    </aside>
+
+    <!-- Center Editorial Stream -->
+    <main>
+      <div class="welcome-banner">
+        <div>
+          <h1>Good morning, Aisha.</h1>
+          <p>Your Monday brief is ready: 1 open ballot in the Cave Standards Committee and 2 new answers in Washed-Rind Affinage.</p>
+        </div>
+        <button class="btn btn-ink" onclick="openSheet('compose')">
+          <i class="fa-solid fa-plus"></i> Start a Post
+        </button>
+      </div>
+
+      <div class="stream-toolbar">
+        <div class="chip-row">
+          <button class="chip active" onclick="filterFeed('all', this)">Everything</button>
+          <button class="chip" onclick="filterFeed('affinage', this)">Verified Q&amp;A</button>
+          <button class="chip" onclick="filterFeed('committee', this)">Committee Motions</button>
+          <button class="chip" onclick="filterFeed('playbooks', this)">Co-Authored Playbooks</button>
+          <button class="chip" onclick="filterFeed('priorities', this)">2027 Member Priorities</button>
+        </div>
+      </div>
+
+      <!-- Feed Card 1: Committee Motion -->
+      <article class="feed-card" data-cat="committee" onclick="openSheet('motion')">
+        <div class="card-meta">
+          <div class="author-line">
+            <span class="avatar" style="width:24px;height:24px;font-size:11px;">CV</span>
+            <span>Claire Vance · Damsonwick Fine Cheese</span>
+            <span>· Cave Standards Committee</span>
+          </div>
+          <span class="pill pill-vote">Open Ballot · Closes Tomorrow</span>
+        </div>
+        <h2 class="card-title">Motion M-2026-08: Adopt Standardized Environmental Swab Zones for Natural-Rind Caves</h2>
+        <div class="betty-summary">
+          <strong>Synthesis of 16 replies:</strong> Consensus reached on 4 mandatory swab zones (drains, cedar shelving, brine tanks, and aging hooks) with a 90-day onboarding window for farmstead creameries under 20,000 lbs/year.
+        </div>
+        <div class="card-footer">
+          <div class="card-stats">
+            <span><i class="fa-solid fa-check-to-slot"></i> 9 of 11 Committee Seats Voted</span>
+            <span><i class="fa-regular fa-comment"></i> 16 Replies</span>
+          </div>
+          <span style="color: var(--gold); font-weight: 800;">Review &amp; Cast Your Vote →</span>
+        </div>
+      </article>
+
+      <!-- Feed Card 2: Verified Q&A Canon -->
+      <article class="feed-card" data-cat="affinage haccp" onclick="openSheet('qa')">
+        <div class="card-meta">
+          <div class="author-line">
+            <span class="avatar" style="width:24px;height:24px;font-size:11px;">ML</span>
+            <span>Mateo Lindqvist · Bellows &amp; Brine Creamery</span>
+            <span>· Cave Aging &amp; Affinage</span>
+          </div>
+          <span class="pill pill-canon"><i class="fa-solid fa-check"></i> Verified Guild Canon</span>
+        </div>
+        <h2 class="card-title">Preventing late-stage Geotrichum slip on 60-day washed-rind wheels at 94% RH</h2>
+        <div class="betty-summary">
+          <strong>Accepted Solution:</strong> Step down cave humidity from 94% to 89% at day 28 and reduce morge wash salinity from 4.5% to 3.0% once the initial smear sets. Verified against ICF Affinage Standard §3.2.
+        </div>
+        <div class="card-footer">
+          <div class="card-stats">
+            <span><i class="fa-solid fa-award" style="color: var(--sage);"></i> Answered by Soraia Moreau</span>
+            <span><i class="fa-regular fa-comment"></i> 12 Replies</span>
+          </div>
+          <span style="color: var(--gold); font-weight: 800;">Read Solution &amp; Cave Log →</span>
+        </div>
+      </article>
+
+      <!-- Feed Card 3: Co-Authored Playbook + Interactive Calculator -->
+      <article class="feed-card" data-cat="playbooks" onclick="openSheet('playbook')">
+        <div class="card-meta">
+          <div class="author-line">
+            <span class="avatar" style="width:24px;height:24px;font-size:11px;">SM</span>
+            <span>Soraia Moreau · Sorrelgate Cheese Co.</span>
+            <span>· Creamery Playbooks</span>
+          </div>
+          <span class="pill pill-playbook"><i class="fa-solid fa-sliders"></i> Live Playbook + Brine Calculator</span>
+        </div>
+        <h2 class="card-title">2026 Artisan Brine Tank Maintenance Guide &amp; Interactive Salinity Calculator</h2>
+        <div class="betty-summary">
+          <strong>Co-authored by 6 head makers:</strong> Includes temperature-corrected Baumé tables, pH buffering targets (5.15–5.25), and an interactive calculator to size salt additions by wheel weight.
+        </div>
+        <div class="card-footer">
+          <div class="card-stats">
+            <span><i class="fa-solid fa-users"></i> 4 Makers Editing v3.4</span>
+            <span><i class="fa-solid fa-calculator"></i> 214 Calculator Runs</span>
+          </div>
+          <span style="color: var(--gold); font-weight: 800;">Open Playbook &amp; Calculator →</span>
+        </div>
+      </article>
+
+      <!-- Feed Card 4: 2027 Member Priorities (100-Point Wallet) -->
+      <article class="feed-card" data-cat="priorities" onclick="openSheet('priorities')">
+        <div class="card-meta">
+          <div class="author-line">
+            <span class="avatar" style="width:24px;height:24px;font-size:11px;">CO</span>
+            <span>Chidi Okonkwo · Okonkwo &amp; Daughters Fine Cheese</span>
+            <span>· 2027 Guild Priorities</span>
+          </div>
+          <span class="pill pill-committee">Member Priority Wallet · 40 Pts Left</span>
+        </div>
+        <h2 class="card-title">Shared Cold-Chain LTL Freight Co-Op for Regional Creameries Entering the 2026 World Cheese Cup</h2>
+        <div class="betty-summary">
+          <strong>118 Creameries Backing:</strong> Pool refrigerated LTL pallets from Vermont, Wisconsin, Oregon, and Pennsylvania hubs to cut competition and retail sample shipping costs by 38%.
+        </div>
+        <div class="card-footer">
+          <div class="card-stats">
+            <span><i class="fa-solid fa-coins"></i> 540 Points Backed</span>
+            <span><i class="fa-regular fa-comment"></i> 24 Replies</span>
+          </div>
+          <span style="color: var(--gold); font-weight: 800;">Allocate Your Points →</span>
+        </div>
+      </article>
+    </main>
+
+    <!-- Right Context Column -->
+    <aside class="right-col">
+      <div class="side-card side-card--ink">
+        <span class="eyebrow">Needs Your Expertise</span>
+        <h3 style="font-family:'Sora',sans-serif;font-size:17px;margin:0 0 8px;">Cedar plank steam-sanitizing temperatures</h3>
+        <p style="margin:0 0 14px;font-size:13.5px;opacity:0.9;">
+          New farmstead maker in Vermont asked how Quincewick Creamery sanitizes white-pine and cedar boards without warping.
         </p>
-      </div>
-
-      <div class="flex flex-wrap items-center gap-1.5 bg-[var(--card)] p-1.5 rounded-xl border border-[var(--border)] shadow-sm">
-        <button onclick="switchMockupScreen('feed')" id="mock-btn-feed" class="mock-screen-btn tab-active px-3 py-1.5 rounded-lg text-xs font-semibold transition">
-          1. Collapsed Feed &amp; Ask-First
-        </button>
-        <button onclick="switchMockupScreen('thread')" id="mock-btn-thread" class="mock-screen-btn px-3 py-1.5 rounded-lg text-xs font-semibold text-[var(--muted-foreground)] hover:text-[var(--foreground)] transition">
-          2. Living Thread → Spin Up Space
-        </button>
-        <button onclick="switchMockupScreen('digest')" id="mock-btn-digest" class="mock-screen-btn px-3 py-1.5 rounded-lg text-xs font-semibold text-[var(--muted-foreground)] hover:text-[var(--foreground)] transition">
-          3. Personalized Digest &amp; Email Reply
+        <button class="btn btn-butter" style="width:100%;justify-content:center;" onclick="openSheet('qa')">
+          Share Your Protocol
         </button>
       </div>
-    </div>
 
-    <!-- Workspace Frame -->
-    <div class="rounded-2xl border-2 border-[var(--border)] bg-[var(--card)] shadow-xl overflow-hidden">
-
-      <!-- App Chrome Top Bar -->
-      <div class="bg-[var(--background)] border-b border-[var(--border)] px-4 py-2.5 flex flex-wrap items-center justify-between gap-3">
-        <div class="flex flex-wrap items-center gap-2.5">
-          <span class="text-xs font-semibold text-[var(--muted-foreground)]">Spaces</span>
-          <span class="text-xs text-[var(--muted-foreground)]">/</span>
-          <div class="flex items-center gap-2">
-            <span class="w-5 h-5 rounded bg-teal-500/15 text-teal-600 dark:text-teal-400 flex items-center justify-center font-bold text-xs">C</span>
-            <span class="font-bold text-xs">National Healthcare Compliance Community</span>
+      <div class="side-card">
+        <span class="eyebrow">Upcoming Guild Meetings</span>
+        <div style="display:flex;flex-direction:column;gap:12px;margin-top:8px;font-size:13.5px;">
+          <div style="padding-bottom:10px;border-bottom:1px solid var(--line);">
+            <div style="font-weight:800;color:var(--ink);">Cave Standards Committee</div>
+            <div style="color:var(--muted);">Thursday · 2:00 PM EDT · 4 Agenda Items</div>
           </div>
-          <span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium bg-teal-500/10 text-teal-600 dark:text-teal-400 border border-teal-500/25">
-            <span>👁️ Shared Band</span>
-            <span>·</span>
-            <span>4,820 Members</span>
-            <span>·</span>
-            <span>✦ AI Agents May Quote</span>
-          </span>
-        </div>
-        <span class="text-xs px-2.5 py-1 rounded-md bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 font-medium border border-emerald-500/20">
-          ● Governed by fnCollaborationAccess(@UserID)
-        </span>
-      </div>
-
-      <!-- Main 2-Column Workspace Layout -->
-      <div class="grid grid-cols-1 lg:grid-cols-12 min-h-[620px]">
-
-        <!-- Left Collaboration Space Rail -->
-        <aside class="lg:col-span-3 border-r border-[var(--border)] bg-[var(--background)]/60 p-4 flex flex-col justify-between space-y-6">
-          <div class="space-y-5">
-            <div class="space-y-1">
-              <div class="text-xs font-bold uppercase tracking-wider text-[var(--muted-foreground)] px-2 pb-1">Community Space</div>
-              <button onclick="switchMockupScreen('feed')" id="rail-btn-feed" class="rail-nav-btn w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs mock-nav-active transition">
-                <span class="flex items-center gap-2"><span>💬</span> <span>Discussions (Collapsed)</span></span>
-                <span class="px-1.5 py-0.5 rounded bg-[var(--primary)] text-[var(--primary-foreground)] text-xs font-bold">3 New</span>
-              </button>
-              <button onclick="switchMockupScreen('thread')" id="rail-btn-thread" class="rail-nav-btn w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs text-[var(--muted-foreground)] hover:bg-[var(--accent)] hover:text-[var(--foreground)] transition">
-                <span class="flex items-center gap-2"><span>✦</span> <span>Living Syntheses &amp; Canon</span></span>
-                <span class="text-xs font-mono">142</span>
-              </button>
-              <button onclick="switchMockupScreen('digest')" id="rail-btn-digest" class="rail-nav-btn w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs text-[var(--muted-foreground)] hover:bg-[var(--accent)] hover:text-[var(--foreground)] transition">
-                <span class="flex items-center gap-2"><span>📬</span> <span>Personalized Digest</span></span>
-                <span class="px-1.5 py-0.5 rounded bg-purple-500/15 text-purple-600 dark:text-purple-400 text-xs font-semibold">Daily</span>
-              </button>
-            </div>
-
-            <div class="space-y-1">
-              <div class="text-xs font-bold uppercase tracking-wider text-[var(--muted-foreground)] px-2 pb-1">Topic Channels</div>
-              <div class="px-3 py-1.5 rounded-lg text-xs font-medium bg-[var(--card)] border border-[var(--border)] flex items-center justify-between">
-                <span># 2026 CMS Audit Rules</span>
-                <span class="text-xs text-emerald-600 dark:text-emerald-400 font-semibold">Hot</span>
-              </div>
-              <div class="px-3 py-1.5 rounded-lg text-xs text-[var(--muted-foreground)] flex items-center justify-between">
-                <span># Billing &amp; Prior Auth</span>
-                <span class="text-xs font-mono">64</span>
-              </div>
-              <div class="px-3 py-1.5 rounded-lg text-xs text-[var(--muted-foreground)] flex items-center justify-between">
-                <span># Peer Templates &amp; SOPs</span>
-                <span class="text-xs font-mono">89</span>
-              </div>
-            </div>
-
-            <div class="space-y-1.5 pt-2 border-t border-[var(--border)]">
-              <div class="flex items-center justify-between px-2">
-                <span class="text-xs font-bold uppercase tracking-wider text-[var(--muted-foreground)]">Spun-Up Working Spaces</span>
-                <span class="text-xs text-[var(--primary)] font-semibold">Collab Bridge</span>
-              </div>
-              <div onclick="switchMockupScreen('thread'); toggleSpinUpModal(true);" class="p-2.5 rounded-lg bg-[var(--card)] border border-[var(--border)] hover:border-[var(--primary)] cursor-pointer transition space-y-1">
-                <div class="flex items-center justify-between text-xs font-semibold">
-                  <span>⚡ CMS Rule Task Force</span>
-                  <span class="px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-600 dark:text-amber-400 text-xs">Committee</span>
-                </div>
-                <p class="text-xs text-[var(--muted-foreground)]">Graduated from Thread #842 · 9 members · 3 active tasks</p>
-              </div>
-            </div>
+          <div>
+            <div style="font-weight:800;color:var(--ink);">Live Office Hours: World Cheese Cup</div>
+            <div style="color:var(--muted);">Friday · 11:00 AM EDT · Blind Judging Q&amp;A</div>
           </div>
-
-          <div class="p-3 rounded-xl bg-[var(--card)] border border-[var(--border)] space-y-1">
-            <div class="flex items-center gap-2 text-xs font-bold">
-              <span class="text-[var(--primary)]">✦</span> Shared Context Engine
-            </div>
-            <p class="text-xs text-[var(--muted-foreground)]">
-              Every approved post &amp; library file feeds your organization's Canon and AI agents under <code>fnCollaborationAccess</code>.
-            </p>
-          </div>
-        </aside>
-
-        <!-- Right Main Stage -->
-        <div class="lg:col-span-9 p-6">
-
-          <!-- Screen 1: Feed -->
-          <div id="mock-screen-feed" class="mock-screen space-y-6">
-            <div class="rounded-xl border-2 border-[var(--primary)]/40 bg-[var(--background)] p-4 space-y-3 shadow-sm">
-              <div class="flex flex-wrap items-center justify-between gap-2">
-                <div class="flex items-center gap-2 text-xs font-bold text-[var(--primary)]">
-                  <span>✦</span> Ask or Start a Discussion (AI checks existing threads, Canon &amp; Space Library files as you type)
-                </div>
-                <span class="text-xs text-[var(--muted-foreground)]">Audience: <strong>Shared Band (4,820 Members)</strong></span>
-              </div>
-              <div class="flex flex-col sm:flex-row gap-2">
-                <input
-                  id="ask-input"
-                  type="text"
-                  value="How are multi-state clinics handling the 2026 CMS 60-day overpayment audit lookback?"
-                  class="flex-1 px-3.5 py-2 rounded-lg bg-[var(--card)] border border-[var(--border)] text-sm font-medium focus:outline-none focus:border-[var(--primary)]"
-                />
-                <button onclick="switchMockupScreen('thread')" class="px-4 py-2 rounded-lg bg-[var(--primary)] text-[var(--primary-foreground)] text-xs font-semibold whitespace-nowrap hover:opacity-90 transition">
-                  Open Synthesized Thread →
-                </button>
-              </div>
-              <div class="p-3.5 rounded-lg bg-[var(--card)] border border-[var(--border)] space-y-2">
-                <div class="text-xs font-bold text-emerald-600 dark:text-emerald-400">
-                  ✦ Instant Synthesis Found · Grounded in 24 Peer Replies + 2 Library Templates
-                </div>
-                <p class="text-xs text-[var(--foreground)] leading-relaxed">
-                  <strong>Consensus Answer:</strong> Effective Jan 1, 2026, CMS aligned the 60-day clock with the <em>"credible information"</em> standard. 18 member clinics report using a <strong>2-Stage Intake Hold SOP</strong> (15-day preliminary probe + external counsel privilege toggle) rather than opening a formal 60-day docket on raw billing flags.
-                </p>
-              </div>
-            </div>
-
-            <!-- Collapsed Thread Card -->
-            <div class="rounded-xl border border-[var(--border)] bg-[var(--background)]/50 p-5 space-y-3">
-              <div class="flex flex-wrap items-start justify-between gap-2">
-                <div class="space-y-1">
-                  <div class="flex flex-wrap items-center gap-2">
-                    <span class="px-2 py-0.5 rounded bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 text-xs font-bold">✓ Canonized Consensus</span>
-                    <span class="px-2 py-0.5 rounded bg-amber-500/15 text-amber-600 dark:text-amber-400 text-xs font-semibold">⚡ Graduated to Task Force Space</span>
-                  </div>
-                  <h3 onclick="switchMockupScreen('thread')" class="font-bold text-base cursor-pointer hover:text-[var(--primary)] transition">
-                    2026 CMS 60-Day Overpayment Audit Lookback: How are multi-state clinics structuring intake SOPs?
-                  </h3>
-                </div>
-                <button onclick="switchMockupScreen('thread')" class="px-3 py-1.5 rounded-lg bg-[var(--card)] border border-[var(--border)] text-xs font-semibold hover:border-[var(--primary)] transition">
-                  Inspect Living Thread (24 → 3 Key Points) →
-                </button>
-              </div>
-              <div class="p-3.5 rounded-lg bg-[var(--card)] border border-[var(--border)] space-y-1.5 text-xs text-[var(--muted-foreground)]">
-                <div class="font-bold text-[var(--primary)]">✦ 24 Replies Collapsed into 3 Verified Takeaways (18 "+1 / Following" replies hidden)</div>
-                <p>• <strong>Intake Triage Gate:</strong> 15-day internal worksheet separating routine variances from audit triggers (@Maya Lin · +19 Helpful).</p>
-                <p>• <strong>EHR Hold Automation:</strong> Epic &amp; Athenahealth SQL scripts auto-filed into Space Library (@Marcus Vance · +14 Helpful).</p>
-                <p>• <strong>Working Task Force Spun Up:</strong> 9 contributors formed the <em>CMS Rule Task Force Space</em> to draft the official comment letter.</p>
-              </div>
-            </div>
-          </div>
-
-          <!-- Screen 2: Living Thread & Spin Up Space -->
-          <div id="mock-screen-thread" class="mock-screen hidden space-y-5">
-            <div class="flex flex-wrap items-center justify-between gap-2 border-b border-[var(--border)] pb-3">
-              <button onclick="switchMockupScreen('feed')" class="text-xs text-[var(--muted-foreground)] hover:text-[var(--foreground)] font-medium">
-                ← Back to Collapsed Feed
-              </button>
-              <div class="flex flex-wrap items-center gap-2">
-                <button onclick="toggleSpinUpModal()" class="px-3 py-1.5 rounded-lg bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-500/30 text-xs font-bold">
-                  ⚡ Spin Up Collaboration Working Space
-                </button>
-                <button onclick="promoteToCanon()" id="canon-btn" class="px-3 py-1.5 rounded-lg bg-[var(--primary)] text-[var(--primary-foreground)] text-xs font-bold">
-                  ✦ Promote Synthesis to Canon (GraphConcept)
-                </button>
-              </div>
-            </div>
-
-            <h3 class="text-xl font-extrabold tracking-tight">
-              2026 CMS 60-Day Overpayment Audit Lookback: How are multi-state clinics structuring intake SOPs?
-            </h3>
-
-            <div id="spin-up-drawer" class="rounded-xl border-2 border-amber-500/40 bg-amber-500/5 p-5 space-y-3 text-xs">
-              <div class="font-bold text-sm text-amber-600 dark:text-amber-400">⚡ 1-Click Graduation: Forum Thread → Collaboration Working Space</div>
-              <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
-                <div class="p-3 rounded-lg bg-[var(--card)] border border-[var(--border)]">
-                  <div class="font-bold">1. Auto-Seed Space Roster</div>
-                  <p class="text-[var(--muted-foreground)] mt-1">Invites the 9 active thread contributors as <code>SpaceMember</code> seats.</p>
-                </div>
-                <div class="p-3 rounded-lg bg-[var(--card)] border border-[var(--border)]">
-                  <div class="font-bold">2. Mount Space Library</div>
-                  <p class="text-[var(--muted-foreground)] mt-1">Links shared thread attachments into the new Space's <code>SpaceItem</code> Library.</p>
-                </div>
-                <div class="p-3 rounded-lg bg-[var(--card)] border border-[var(--border)]">
-                  <div class="font-bold">3. Seed Starter Tasks</div>
-                  <p class="text-[var(--muted-foreground)] mt-1">Creates 3 <code>BizApps Tasks</code> assigned to task force volunteers.</p>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <!-- Screen 3: Personalized Digest -->
-          <div id="mock-screen-digest" class="mock-screen hidden space-y-4">
-            <h3 class="font-bold text-base">📬 Per-Member Personalized Brief + Zero-Login Inbound Email Reply</h3>
-            <div class="rounded-xl border border-[var(--border)] bg-[var(--background)] p-5 space-y-3 text-xs">
-              <div class="border-b border-[var(--border)] pb-2">
-                <strong>Subject:</strong> ✦ Your Wednesday Compliance Brief: 2026 CMS Lookback SOP + 1 Peer Question Matched to Your Expertise<br/>
-                <span class="text-[var(--muted-foreground)]">Reply-To: <code>reply+hmac_842_991a@community.example.org</code></span>
-              </div>
-              <p class="text-[var(--muted-foreground)]">
-                Hit <strong>Reply</strong> directly in your email client to contribute to any thread—MJ verifies the HMAC token, strips quoted signatures, checks <code>fnCollaborationAccess</code>, and posts your reply and attachments automatically.
-              </p>
-            </div>
-          </div>
-
         </div>
       </div>
-    </div>
+
+      <div class="side-card">
+        <span class="eyebrow">Quick Poll · 84 Creameries Voted</span>
+        <div style="font-weight:800;font-size:14.5px;margin-bottom:10px;">
+          Primary milk type entering your autumn cave batch?
+        </div>
+        <div style="display:flex;flex-direction:column;gap:8px;font-size:13px;">
+          <div onclick="voteQuickPoll(this, '58%')" style="cursor:pointer;padding:8px 10px;border-radius:8px;background:var(--cream);display:flex;justify-content:space-between;font-weight:700;">
+            <span>Raw &amp; Pasteurized Cow</span><span>58%</span>
+          </div>
+          <div onclick="voteQuickPoll(this, '26%')" style="cursor:pointer;padding:8px 10px;border-radius:8px;background:var(--cream);display:flex;justify-content:space-between;font-weight:700;">
+            <span>Pasture-Raised Goat</span><span>26%</span>
+          </div>
+          <div onclick="voteQuickPoll(this, '16%')" style="cursor:pointer;padding:8px 10px;border-radius:8px;background:var(--cream);display:flex;justify-content:space-between;font-weight:700;">
+            <span>Sheep &amp; Mixed Flock</span><span>16%</span>
+          </div>
+        </div>
+      </div>
+    </aside>
   </div>
 
+  <!-- Slide-Over Progressive Detail Sheet -->
+  <div id="sheetBackdrop" class="sheet-backdrop" onclick="if(event.target===this) closeSheet()">
+    <div class="detail-sheet" id="sheetContent"></div>
+  </div>
+
+  <!-- Unobtrusive Switcher Between the 3 Separate Branded UIs -->
+  <nav class="ux-switcher-float" aria-label="Switch UX Prototype">
+    <a href="./morecheese-option-1-guild-commons.html" class="active">1 · Guild Commons</a>
+    <a href="./morecheese-option-2-makers-workbench.html">2 · Maker's Workbench</a>
+    <a href="./morecheese-option-3-chapter-hub.html">3 · Chapter &amp; Practice Hub</a>
+  </nav>
+
   <script>
-    function switchMockupScreen(screenId) {
-      document.querySelectorAll('.mock-screen').forEach((el) => el.classList.add('hidden'));
-      document.getElementById('mock-screen-' + screenId).classList.remove('hidden');
-      document.querySelectorAll('.mock-screen-btn').forEach((btn) => {
-        btn.classList.remove('tab-active');
-        btn.classList.add('text-[var(--muted-foreground)]');
+    function filterFeed(cat, el) {
+      if (el) {
+        const group = el.parentElement;
+        group.querySelectorAll('.active').forEach(n => n.classList.remove('active'));
+        el.classList.add('active');
+      }
+      document.querySelectorAll('.feed-card').forEach(card => {
+        const cats = card.getAttribute('data-cat') || '';
+        card.style.display = (cat === 'all' || cats.includes(cat)) ? 'block' : 'none';
       });
-      const activeBtn = document.getElementById('mock-btn-' + screenId);
-      if (activeBtn) {
-        activeBtn.classList.add('tab-active');
-        activeBtn.classList.remove('text-[var(--muted-foreground)]');
-      }
     }
-    function toggleSpinUpModal(forceShow) {
-      const drawer = document.getElementById('spin-up-drawer');
-      if (typeof forceShow === 'boolean') {
-        drawer.classList.toggle('hidden', !forceShow);
-      } else {
-        drawer.classList.toggle('hidden');
-      }
+
+    function voteQuickPoll(el, pct) {
+      el.style.background = 'var(--soft)';
+      el.style.border = '1.5px solid var(--ink)';
     }
-    function promoteToCanon() {
-      const btn = document.getElementById('canon-btn');
-      btn.textContent = '✓ Promoted to MJ Canon (GraphConcept)';
+
+    const sheets = {
+      motion: `
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
+          <span class="pill pill-vote">Cave Standards Committee · Open Ballot</span>
+          <button class="btn btn-outline" style="padding:6px 14px;" onclick="closeSheet()">Close ✕</button>
+        </div>
+        <h2 style="font-family:'Sora',sans-serif;font-size:24px;margin:0 0 12px;">Motion M-2026-08: Standardized Environmental Swab Zones</h2>
+        <p style="color:var(--body);font-size:15px;">
+          Proposed by <strong>Claire Vance (Chair)</strong> and seconded by <strong>Aisha Bell</strong> following the Listeria Swab-Map Working Group's 6-month trial across 14 creameries.
+        </p>
+        <div style="background:var(--cream);border:1.5px solid var(--line);border-radius:14px;padding:18px;margin:18px 0;">
+          <div style="font-weight:800;margin-bottom:8px;">Cast Your Committee Seat Ballot (Quincewick Creamery Seat)</div>
+          <div id="ballotResultBox" style="font-size:13.5px;color:var(--muted);margin-bottom:12px;">Current Tally: 9 Yea · 0 Nay · 0 Abstain (Quorum Met)</div>
+          <div style="display:flex;gap:10px;flex-wrap:wrap;">
+            <button class="btn btn-ink" onclick="document.getElementById('ballotResultBox').innerHTML='<strong style=color:var(--sage)>✓ Your Yea Vote is Recorded (10 Yea · 0 Nay)</strong>'">Vote Yea</button>
+            <button class="btn btn-outline" onclick="document.getElementById('ballotResultBox').innerHTML='Vote Recorded: Nay'">Vote Nay</button>
+            <button class="btn btn-outline" onclick="document.getElementById('ballotResultBox').innerHTML='Vote Recorded: Abstain'">Abstain</button>
+          </div>
+        </div>
+        <h4 style="font-family:'Sora',sans-serif;margin:20px 0 10px;">Cited Discussion Highlights (16 Replies)</h4>
+        <div style="display:flex;flex-direction:column;gap:12px;font-size:14px;color:var(--body);">
+          <div style="padding:12px;background:var(--cream);border-radius:10px;">
+            <strong>Mateo Lindqvist (Bellows &amp; Brine):</strong> "Adding the 90-day grace period for seasonal sheep-milk creameries makes this 100% workable for our chapter."
+          </div>
+          <div style="padding:12px;background:var(--cream);border-radius:10px;">
+            <strong>Soraia Moreau (Sorrelgate Cheese Co.):</strong> "Attached the updated Zone 1–4 diagram to the Committee Library."
+          </div>
+        </div>
+      `,
+      qa: `
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
+          <span class="pill pill-canon">✓ Verified Guild Canon</span>
+          <button class="btn btn-outline" style="padding:6px 14px;" onclick="closeSheet()">Close ✕</button>
+        </div>
+        <h2 style="font-family:'Sora',sans-serif;font-size:24px;margin:0 0 12px;">Preventing late-stage Geotrichum slip on 60-day washed-rind wheels at 94% RH</h2>
+        <div class="betty-summary">
+          <strong>Verified Answer by Soraia Moreau (Sorrelgate Cheese Co.):</strong> Step down cave relative humidity from 94% to 89% at day 28 and lower morge wash brine from 4.5% to 3.0% once <em>B. linens</em> coloration establishes.
+        </div>
+        <div style="display:flex;gap:10px;margin-top:18px;">
+          <button class="btn btn-ink" onclick="openSheet('working-group')"><i class="fa-solid fa-people-group"></i> Spin Up Working Group from Thread</button>
+          <button class="btn btn-outline" onclick="openSheet('messages')"><i class="fa-solid fa-lock"></i> Message Author Privately</button>
+        </div>
+      `,
+      playbook: `
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
+          <span class="pill pill-playbook">Co-Authored Playbook + Interactive Tool</span>
+          <button class="btn btn-outline" style="padding:6px 14px;" onclick="closeSheet()">Close ✕</button>
+        </div>
+        <h2 style="font-family:'Sora',sans-serif;font-size:24px;margin:0 0 12px;">2026 Artisan Brine Tank Maintenance Guide &amp; Salinity Calculator</h2>
+        <div style="background:var(--soft);border:1.5px solid var(--butter);border-radius:14px;padding:18px;margin-bottom:18px;">
+          <div style="font-weight:800;font-size:15px;margin-bottom:10px;">Interactive Brine Recharge Calculator</div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;font-size:13.5px;">
+            <label>Batch Weight (lbs): <input id="calcLbs" type="number" value="450" oninput="runBrineCalc()" style="width:100%;padding:8px;border-radius:8px;border:1.5px solid var(--line);margin-top:4px;font:inherit;"></label>
+            <label>Target Brine Saturation (%): <input id="calcSat" type="number" value="21" oninput="runBrineCalc()" style="width:100%;padding:8px;border-radius:8px;border:1.5px solid var(--line);margin-top:4px;font:inherit;"></label>
+          </div>
+          <div id="calcOutput" style="margin-top:12px;font-weight:800;font-size:15px;color:var(--ink);">
+            Recommended Recharge: Add 11.8 lbs non-iodized solar salt + 18 mL food-grade CaCl₂
+          </div>
+        </div>
+        <p style="font-size:14.5px;color:var(--body);">
+          <strong>Section 2.1 (Suggested edit by Aisha Bell):</strong> Skim surface protein film after every third brining cycle and filter through 50-micron food-grade mesh before UV treatment.
+        </p>
+      `,
+      priorities: `
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
+          <span class="pill pill-committee">2027 Guild Member Priorities · 100-Point Wallet</span>
+          <button class="btn btn-outline" style="padding:6px 14px;" onclick="closeSheet()">Close ✕</button>
+        </div>
+        <h2 style="font-family:'Sora',sans-serif;font-size:24px;margin:0 0 8px;">Allocate Your Creamery's Priority Points</h2>
+        <p style="color:var(--body);font-size:14.5px;">Drag the slider to back this initiative from your 100-point annual guild budget.</p>
+        <div style="background:var(--cream);border:1.5px solid var(--line);border-radius:14px;padding:18px;margin:16px 0;">
+          <div style="font-weight:800;font-size:16px;margin-bottom:6px;">Shared Cold-Chain LTL Freight Co-Op</div>
+          <input type="range" min="5" max="60" value="25" oninput="document.getElementById('ptsVal').textContent=this.value+' pts'" style="width:100%;accent-color:var(--ink);" />
+          <div style="display:flex;justify-content:space-between;font-size:13.5px;font-weight:700;margin-top:6px;">
+            <span>Your Allocation: <strong id="ptsVal">25 pts</strong></span>
+            <span>Remaining Wallet: 40 / 100 pts</span>
+          </div>
+        </div>
+      `,
+      betty: `
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
+          <span class="pill pill-committee">Ask Betty · Instant Guild Answer</span>
+          <button class="btn btn-outline" style="padding:6px 14px;" onclick="closeSheet()">Close ✕</button>
+        </div>
+        <h2 style="font-family:'Sora',sans-serif;font-size:22px;margin:0 0 10px;">We found a verified Guild answer before you post</h2>
+        <div class="betty-summary">
+          <strong>From ICF Cave Aging Playbook v3.4 &amp; Claire Vance's Verified Answer:</strong>
+          For 60-day washed rinds, step cave humidity down to 89% RH once Geotrichum candidum forms a uniform felt around day 25–28.
+        </div>
+        <div style="display:flex;gap:10px;margin-top:16px;">
+          <button class="btn btn-ink" onclick="closeSheet()">✓ That Answered My Question</button>
+          <button class="btn btn-outline" onclick="openSheet('compose')">My Question is Different — Start New Thread</button>
+        </div>
+      `,
+      compose: `
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
+          <span class="pill pill-playbook">New Guild Post</span>
+          <button class="btn btn-outline" style="padding:6px 14px;" onclick="closeSheet()">Close ✕</button>
+        </div>
+        <h2 style="font-family:'Sora',sans-serif;font-size:22px;margin:0 0 14px;">Start a Discussion, Question, Poll, or Playbook</h2>
+        <div style="display:flex;flex-direction:column;gap:12px;">
+          <input type="text" placeholder="Title of your question, discussion, or playbook..." style="padding:12px;border-radius:10px;border:1.5px solid var(--line);font:inherit;font-size:15px;">
+          <textarea rows="5" placeholder="Share batch details, cave temperature/RH, or attach swab logs..." style="padding:12px;border-radius:10px;border:1.5px solid var(--line);font:inherit;font-size:14.5px;"></textarea>
+          <button class="btn btn-ink" onclick="closeSheet()">Publish to Guild Commons</button>
+        </div>
+      `,
+      'working-group': `
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
+          <span class="pill pill-canon">Graduated Working Group Space</span>
+          <button class="btn btn-outline" style="padding:6px 14px;" onclick="closeSheet()">Close ✕</button>
+        </div>
+        <h2 style="font-family:'Sora',sans-serif;font-size:22px;margin:0 0 10px;">Listeria Swab-Map Working Group</h2>
+        <p style="font-size:14.5px;color:var(--body);">Spun up from the Cave Aging forum thread. 14 creameries collaborating on shared swab templates and quarterly lab benchmarks.</p>
+        <div style="background:var(--cream);border:1.5px solid var(--line);border-radius:12px;padding:16px;margin-top:12px;">
+          <div style="font-weight:800;margin-bottom:8px;">Active Working Group Tasks</div>
+          <ul style="margin:0;padding-left:18px;font-size:14px;color:var(--body);">
+            <li>Publish Zone 1–4 Cedar Shelf Swab Template (Aisha Bell · Due Fri)</li>
+            <li>Present Motion M-2026-08 to Cave Standards Committee (Claire Vance · In Vote)</li>
+          </ul>
+        </div>
+      `,
+      messages: `
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
+          <span class="pill pill-canon"><i class="fa-solid fa-lock"></i> Sealed Steward &amp; Counsel Room</span>
+          <button class="btn btn-outline" style="padding:6px 14px;" onclick="closeSheet()">Close ✕</button>
+        </div>
+        <h2 style="font-family:'Sora',sans-serif;font-size:22px;margin:0 0 8px;">FDA Inspection Rapid-Response Counsel</h2>
+        <p style="font-size:13.5px;color:var(--muted);margin-top:0;">End-to-end confidential channel with ICF Food Safety Counsel. Never indexed in public search.</p>
+        <div style="background:var(--cream);border:1.5px solid var(--line);border-radius:12px;padding:16px;margin:14px 0;font-size:14px;display:flex;flex-direction:column;gap:10px;">
+          <div><strong>Claire Vance (Food Safety Chair):</strong> "Aisha, I reviewed your Quincewick Zone 2 swab log. Your corrective action report exceeds the FDA CFR 117 requirement."</div>
+          <div><strong>Aisha Bell (You):</strong> "Thank you Claire — can we share the anonymized template with the Working Group?"</div>
+        </div>
+      `
+    };
+
+    function openSheet(key) {
+      document.getElementById('sheetContent').innerHTML = sheets[key] || sheets.qa;
+      document.getElementById('sheetBackdrop').classList.add('open');
+    }
+
+    function closeSheet() {
+      document.getElementById('sheetBackdrop').classList.remove('open');
+    }
+
+    function runBrineCalc() {
+      const lbs = parseFloat(document.getElementById('calcLbs')?.value || '450');
+      const sat = parseFloat(document.getElementById('calcSat')?.value || '21');
+      const salt = ((lbs * sat) / 800).toFixed(1);
+      const cacl = Math.round(lbs * 0.04);
+      document.getElementById('calcOutput').textContent =
+        'Recommended Recharge: Add ' + salt + ' lbs non-iodized solar salt + ' + cacl + ' mL food-grade CaCl₂';
     }
   </script>
 </body>

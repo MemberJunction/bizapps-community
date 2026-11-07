@@ -1,0 +1,13 @@
+[
+  {
+    "primaryKey": {
+      "ID": "C8A17000-4E12-4B8F-9A10-100000000002"
+    },
+    "fields": {
+      "ApplicationID": "@lookup:MJ: Applications.Name=Community",
+      "Name": "CommunitySettings",
+      "Value": "{\"AskFirstEnabled\":true,\"ThreadSynthesisThreshold\":4,\"DeflectionMinConfidence\":0.75,\"DefaultAnonymousReadMode\":\"Teaser Only\",\"DefaultDigestCadence\":\"Daily Digest\",\"EnableInteractiveArtifacts\":true}",
+      "Comments": "Default settings configuration for the BizApps Community application."
+    }
+  }
+]

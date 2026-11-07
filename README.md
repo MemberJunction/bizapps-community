@@ -210,8 +210,9 @@ See [**Extensibility Architecture (`docs/EXTENSIBILITY_PLAN.md`)**](docs/EXTENSI
 
 ## Documentation
 
-- [**Master Architecture, Full IsA Schema & Work Plan (`plans/plan.md`)**](plans/plan.md) — Complete 33-table SQL DDL, Mermaid ERDs, anonymous access TVF, and phased engineering plan.
-- [**ForumType & PostType Extensibility Plan (`docs/EXTENSIBILITY_PLAN.md`)**](docs/EXTENSIBILITY_PLAN.md) — Deep dive into `IsA` hard-FK subtype tables, 4-level configuration cascade, per-forum roles, MJ Docs/Slides/Sheets integration, Interactive Component Artifacts, and downstream bridge Open Apps.
+- [**Master Architecture, Full IsA Schema & Work Plan (`plans/plan.md`)**](plans/plan.md) — Complete SQL DDL, Mermaid ERDs, anonymous access TVF, and phased engineering plan.
+- [**ForumType, PostType & Peer SpaceType Extensibility Plan (`docs/EXTENSIBILITY_PLAN.md`)**](docs/EXTENSIBILITY_PLAN.md) — Deep dive into `IsA` hard-FK subtype tables, 4-level configuration cascade (`ForumOverridable`), per-forum roles, MJ Docs/Slides/Sheets integration, Interactive Component Artifacts, and peer Collaboration `SpaceType` interop.
+- [**3 Divergent Interactive UX Concepts (`docs/ux/community-3-divergent-ux-concepts.html`)**](docs/ux/community-3-divergent-ux-concepts.html) — Interactive HTML showcase comparing 3 divergent UX philosophies (*Calm Knowledge Stream*, *Adaptive Bento + Split Workbench*, and *AI Concierge Portal + Canon Atlas*) uniting Community, Committees, Core Collaboration, and Secure Messaging.
 - [**Interactive AI-Native Community UX Prototype (`docs/ux/interactive-community-prototype.html`)**](docs/ux/interactive-community-prototype.html) — Self-contained interactive HTML prototype of the Collapsed Forum, Ask-First Composer, Living Thread Synthesis, and Collaboration Space graduation flow.
 - [**CLAUDE.md**](CLAUDE.md) — Metadata, migration, and workspace authoring rules.
 

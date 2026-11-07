@@ -1,0 +1,26 @@
+[
+  {
+    "primaryKey": { "ID": "C8A17400-4E12-4B8F-9A10-100000000001" },
+    "fields": {
+      "Name": "Community: Visible Forums",
+      "Description": "Limits Forum rows to those reachable by the current user via fnCommunityForumAccess.",
+      "FilterText": "EXISTS (SELECT 1 FROM [__mj_BizAppsCommunity].[fnCommunityForumAccess]('{{UserID}}') AS fa WHERE fa.ForumID = [ID])"
+    }
+  },
+  {
+    "primaryKey": { "ID": "C8A17400-4E12-4B8F-9A10-100000000002" },
+    "fields": {
+      "Name": "Community: Visible Forum Posts",
+      "Description": "Limits ForumPost rows to reachable forums, enforcing Team band visibility and moderation queue visibility.",
+      "FilterText": "EXISTS (SELECT 1 FROM [__mj_BizAppsCommunity].[fnCommunityForumAccess]('{{UserID}}') AS fa WHERE fa.ForumID = [ForumID] AND ([VisibilityBand] = N'Shared' OR ([VisibilityBand] = N'Team' AND fa.CanSeeTeam = 1)) AND ([Status] IN (N'Published', N'Answered', N'Resolved', N'Archived') OR [AuthorUserID] = '{{UserID}}' OR fa.CanModerate = 1))"
+    }
+  },
+  {
+    "primaryKey": { "ID": "C8A17400-4E12-4B8F-9A10-100000000003" },
+    "fields": {
+      "Name": "Community: Visible Forum Post Children",
+      "Description": "Limits child rows of ForumPost (tags, reactions, attachments) to those whose parent post is visible.",
+      "FilterText": "EXISTS (SELECT 1 FROM [__mj_BizAppsCommunity].[ForumPost] AS fp INNER JOIN [__mj_BizAppsCommunity].[fnCommunityForumAccess]('{{UserID}}') AS fa ON fa.ForumID = fp.ForumID WHERE fp.ID = [PostID] AND (fp.VisibilityBand = N'Shared' OR (fp.VisibilityBand = N'Team' AND fa.CanSeeTeam = 1)))"
+    }
+  }
+]

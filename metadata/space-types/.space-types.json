@@ -1,0 +1,28 @@
+[
+  {
+    "_comments": [
+      "Upgrades the Collaboration 'community' SpaceType seed row with CommunitySpaceServerDriver, CommunitySpaceUIDriver, and the IsA SpaceExtensionEntity."
+    ],
+    "primaryKey": {
+      "ID": "2B2C14A8-CCD6-4835-A1BD-969C54236D57"
+    },
+    "fields": {
+      "Code": "community",
+      "Name": "Community",
+      "Description": "A standing community of practice with forums, Q&A canon, ideation campaigns, live document co-authoring, and interactive AI experiences.",
+      "Icon": "fa-solid fa-comments",
+      "DefaultVisibility": "Listed",
+      "DefaultJoinMode": "SelfServe",
+      "DefaultAllowOutsideMembers": true,
+      "RequiresExpiresAt": false,
+      "PostCloseAccess": "ReadOnly",
+      "PostCloseAccessDays": null,
+      "ServerDriverClass": "CommunitySpaceServerDriver",
+      "UIDriverClass": "CommunitySpaceUIDriver",
+      "SpaceExtensionEntity": "MJ_BizApps_Community: Community Spaces",
+      "Configuration": "{\n  \"Children\": {\n    \"AllowedTypeCodes\": [\"working-group\", \"cohort\", \"project\", \"event\", \"community\"]\n  },\n  \"Chats\": {\n    \"WhoCanStart\": \"Anyone\",\n    \"AgentReplyMode\": \"MentionOrOneToOne\"\n  },\n  \"Extensions\": {\n    \"community\": {\n      \"AskFirstEnabled\": true,\n      \"ThreadSynthesisThreshold\": 4,\n      \"DefaultDigestCadence\": \"Daily Digest\",\n      \"AnonymousReadMode\": \"Teaser Only\"\n    }\n  },\n  \"SpaceOverridable\": [\"Chats.WhoCanStart\", \"Chats.AgentReplyMode\", \"Extensions.community\"]\n}",
+      "Sequence": 40,
+      "IsActive": true
+    }
+  }
+]

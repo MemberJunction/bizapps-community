@@ -1,0 +1,236 @@
+[
+  {
+    "primaryKey": { "ID": "C8A17200-4E12-4B8F-9A10-100000000001" },
+    "fields": {
+      "Code": "discussion",
+      "Name": "Discussion",
+      "Description": "Standard root discussion thread with AI Living Thread Synthesis.",
+      "Icon": "fa-solid fa-message",
+      "ServerDriverClass": null,
+      "UIDriverClass": "DiscussionPostUIDriver",
+      "ExtensionEntity": null,
+      "PlacementRule": "Root Only",
+      "AllowsNestedReplies": true,
+      "TriggersThreadSynthesis": true,
+      "IndexedInCorpus": true,
+      "Sequence": 10,
+      "IsActive": true
+    }
+  },
+  {
+    "primaryKey": { "ID": "C8A17200-4E12-4B8F-9A10-100000000002" },
+    "fields": {
+      "Code": "reply",
+      "Name": "Reply",
+      "Description": "Threaded response to a root post or parent reply.",
+      "Icon": "fa-solid fa-reply",
+      "ServerDriverClass": null,
+      "UIDriverClass": "ReplyPostUIDriver",
+      "ExtensionEntity": null,
+      "PlacementRule": "Reply Only",
+      "AllowsNestedReplies": true,
+      "TriggersThreadSynthesis": true,
+      "IndexedInCorpus": true,
+      "Sequence": 20,
+      "IsActive": true
+    }
+  },
+  {
+    "primaryKey": { "ID": "C8A17200-4E12-4B8F-9A10-100000000003" },
+    "fields": {
+      "Code": "comment",
+      "Name": "Comment",
+      "Description": "Lightweight inline clarification comment on a question or answer.",
+      "Icon": "fa-regular fa-comment-dots",
+      "ServerDriverClass": null,
+      "UIDriverClass": "CommentPostUIDriver",
+      "ExtensionEntity": null,
+      "PlacementRule": "Reply Only",
+      "AllowsNestedReplies": false,
+      "TriggersThreadSynthesis": false,
+      "IndexedInCorpus": true,
+      "Sequence": 30,
+      "IsActive": true
+    }
+  },
+  {
+    "primaryKey": { "ID": "C8A17200-4E12-4B8F-9A10-100000000004" },
+    "fields": {
+      "Code": "question",
+      "Name": "Question",
+      "Description": "Root question post supporting human accepted answers and AI Canon Answers.",
+      "Icon": "fa-solid fa-circle-question",
+      "ServerDriverClass": "QuestionPostServerDriver",
+      "UIDriverClass": "QuestionPostUIDriver",
+      "ExtensionEntity": "MJ_BizApps_Community: Forum Question Posts",
+      "PlacementRule": "Root Only",
+      "AllowsNestedReplies": true,
+      "TriggersThreadSynthesis": true,
+      "IndexedInCorpus": true,
+      "Sequence": 40,
+      "IsActive": true
+    }
+  },
+  {
+    "primaryKey": { "ID": "C8A17200-4E12-4B8F-9A10-100000000005" },
+    "fields": {
+      "Code": "answer",
+      "Name": "Answer",
+      "Description": "Structured answer to a Question post with epistemic status grading.",
+      "Icon": "fa-solid fa-check-double",
+      "ServerDriverClass": "AnswerPostServerDriver",
+      "UIDriverClass": "AnswerPostUIDriver",
+      "ExtensionEntity": "MJ_BizApps_Community: Forum Answer Posts",
+      "PlacementRule": "Reply Only",
+      "AllowsNestedReplies": true,
+      "TriggersThreadSynthesis": true,
+      "IndexedInCorpus": true,
+      "Sequence": 50,
+      "IsActive": true
+    }
+  },
+  {
+    "primaryKey": { "ID": "C8A17200-4E12-4B8F-9A10-100000000006" },
+    "fields": {
+      "Code": "idea-proposal",
+      "Name": "Idea Proposal",
+      "Description": "Prioritizable idea card with 100-Point Wallet and Quadratic allocation.",
+      "Icon": "fa-solid fa-lightbulb",
+      "ServerDriverClass": "IdeaPostServerDriver",
+      "UIDriverClass": "IdeaPostUIDriver",
+      "ExtensionEntity": "MJ_BizApps_Community: Forum Idea Posts",
+      "PlacementRule": "Root Only",
+      "AllowsNestedReplies": true,
+      "TriggersThreadSynthesis": true,
+      "IndexedInCorpus": true,
+      "Sequence": 60,
+      "IsActive": true
+    }
+  },
+  {
+    "primaryKey": { "ID": "C8A17200-4E12-4B8F-9A10-100000000007" },
+    "fields": {
+      "Code": "poll-or-form",
+      "Name": "Poll or Form",
+      "Description": "Inline poll or multi-question survey powered by BizApps Forms.",
+      "Icon": "fa-solid fa-square-poll-horizontal",
+      "ServerDriverClass": "FormPostServerDriver",
+      "UIDriverClass": "FormPostUIDriver",
+      "ExtensionEntity": "MJ_BizApps_Community: Forum Form Posts",
+      "PlacementRule": "Both",
+      "AllowsNestedReplies": true,
+      "TriggersThreadSynthesis": true,
+      "IndexedInCorpus": true,
+      "Sequence": 70,
+      "IsActive": true
+    }
+  },
+  {
+    "primaryKey": { "ID": "C8A17200-4E12-4B8F-9A10-100000000008" },
+    "fields": {
+      "Code": "collaborative-doc",
+      "Name": "Collaborative Document",
+      "Description": "Live Yjs co-authored document backed by MJ Artifacts and mounted in the Space Library.",
+      "Icon": "fa-solid fa-file-word",
+      "ServerDriverClass": "ArtifactPostServerDriver",
+      "UIDriverClass": "ArtifactPostUIDriver",
+      "ExtensionEntity": "MJ_BizApps_Community: Forum Artifact Posts",
+      "PlacementRule": "Both",
+      "AllowsNestedReplies": true,
+      "TriggersThreadSynthesis": true,
+      "IndexedInCorpus": true,
+      "Sequence": 80,
+      "IsActive": true
+    }
+  },
+  {
+    "primaryKey": { "ID": "C8A17200-4E12-4B8F-9A10-100000000009" },
+    "fields": {
+      "Code": "collaborative-sheet",
+      "Name": "Collaborative Spreadsheet",
+      "Description": "Live Yjs co-authored workbook backed by MJ Artifacts and mounted in the Space Library.",
+      "Icon": "fa-solid fa-table",
+      "ServerDriverClass": "ArtifactPostServerDriver",
+      "UIDriverClass": "ArtifactPostUIDriver",
+      "ExtensionEntity": "MJ_BizApps_Community: Forum Artifact Posts",
+      "PlacementRule": "Both",
+      "AllowsNestedReplies": true,
+      "TriggersThreadSynthesis": true,
+      "IndexedInCorpus": true,
+      "Sequence": 90,
+      "IsActive": true
+    }
+  },
+  {
+    "primaryKey": { "ID": "C8A17200-4E12-4B8F-9A10-100000000010" },
+    "fields": {
+      "Code": "collaborative-deck",
+      "Name": "Collaborative Presentation",
+      "Description": "Live Yjs co-authored slide deck backed by MJ Artifacts and mounted in the Space Library.",
+      "Icon": "fa-solid fa-display",
+      "ServerDriverClass": "ArtifactPostServerDriver",
+      "UIDriverClass": "ArtifactPostUIDriver",
+      "ExtensionEntity": "MJ_BizApps_Community: Forum Artifact Posts",
+      "PlacementRule": "Both",
+      "AllowsNestedReplies": true,
+      "TriggersThreadSynthesis": true,
+      "IndexedInCorpus": true,
+      "Sequence": 100,
+      "IsActive": true
+    }
+  },
+  {
+    "primaryKey": { "ID": "C8A17200-4E12-4B8F-9A10-100000000011" },
+    "fields": {
+      "Code": "case-review",
+      "Name": "Peer Case Review",
+      "Description": "Structured Situation / Action / Outcome case review with optional anonymization.",
+      "Icon": "fa-solid fa-clipboard-check",
+      "ServerDriverClass": "CasePostServerDriver",
+      "UIDriverClass": "CasePostUIDriver",
+      "ExtensionEntity": "MJ_BizApps_Community: Forum Case Posts",
+      "PlacementRule": "Root Only",
+      "AllowsNestedReplies": true,
+      "TriggersThreadSynthesis": true,
+      "IndexedInCorpus": true,
+      "Sequence": 110,
+      "IsActive": true
+    }
+  },
+  {
+    "primaryKey": { "ID": "C8A17200-4E12-4B8F-9A10-100000000012" },
+    "fields": {
+      "Code": "live-ama",
+      "Name": "Live AMA / Town Hall",
+      "Description": "Scheduled Ask-Me-Anything thread with pre-submitted questions, live answers, and AI recap.",
+      "Icon": "fa-solid fa-microphone-lines",
+      "ServerDriverClass": "AMAPostServerDriver",
+      "UIDriverClass": "AMAPostUIDriver",
+      "ExtensionEntity": "MJ_BizApps_Community: Forum AMA Posts",
+      "PlacementRule": "Root Only",
+      "AllowsNestedReplies": true,
+      "TriggersThreadSynthesis": true,
+      "IndexedInCorpus": true,
+      "Sequence": 120,
+      "IsActive": true
+    }
+  },
+  {
+    "primaryKey": { "ID": "C8A17200-4E12-4B8F-9A10-100000000013" },
+    "fields": {
+      "Code": "interactive-experience",
+      "Name": "Interactive Experience / Mini-App",
+      "Description": "Sandboxed MJ Component Artifact mini-app, calculator, quiz, trivia game, or simulation with optional leaderboard.",
+      "Icon": "fa-solid fa-gamepad",
+      "ServerDriverClass": "InteractivePostServerDriver",
+      "UIDriverClass": "InteractivePostUIDriver",
+      "ExtensionEntity": "MJ_BizApps_Community: Forum Interactive Posts",
+      "PlacementRule": "Both",
+      "AllowsNestedReplies": true,
+      "TriggersThreadSynthesis": true,
+      "IndexedInCorpus": true,
+      "Sequence": 130,
+      "IsActive": true
+    }
+  }
+]

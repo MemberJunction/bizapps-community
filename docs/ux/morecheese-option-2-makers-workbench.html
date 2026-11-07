@@ -1,0 +1,975 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>More Cheese Guild — Option 2: The Maker's Workbench</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Nunito+Sans:ital,opsz,wght@0,6..12,400..800;1,6..12,400..700&family=Sora:wght@600;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --paper: #FFFDF7;
+      --cream: #FBF6EA;
+      --soft: #FBE7A6;
+      --yellow: #F4C430;
+      --butter: #E3AE1B;
+      --gold: #8A5A00;
+      --ink: #2A1F17;
+      --body: #4A3E33;
+      --cocoa2: #3D2E23;
+      --line: #E4D9C3;
+      --muted: #7A6E60;
+      --sage: #1E6B4E;
+      --sage-soft: #E9F5EE;
+      --berry: #9E2A2B;
+      --berry-soft: #FCEEEF;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body {
+      height: 100%;
+      overflow: hidden;
+      background: var(--paper);
+      color: var(--body);
+      font-family: 'Nunito Sans', system-ui, -apple-system, sans-serif;
+      font-size: 15px;
+      line-height: 1.55;
+      -webkit-font-smoothing: antialiased;
+    }
+    h1, h2, h3, h4 {
+      font-family: 'Sora', sans-serif;
+      color: var(--ink);
+      letter-spacing: -0.025em;
+      line-height: 1.25;
+    }
+    a { color: inherit; text-decoration: none; }
+    button, input, select, textarea { font: inherit; }
+
+    /* Top Bar */
+    .topbar {
+      height: 62px;
+      background: rgba(255, 253, 247, 0.96);
+      border-bottom: 1px solid var(--line);
+      padding: 0 22px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 20px;
+    }
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 11px;
+      color: var(--ink);
+      font-family: 'Sora', sans-serif;
+      font-weight: 700;
+      font-size: 18px;
+      letter-spacing: -0.03em;
+    }
+    .brand small {
+      display: block;
+      font-family: 'Nunito Sans', sans-serif;
+      font-size: 11.5px;
+      font-weight: 700;
+      color: var(--muted);
+      letter-spacing: 0.01em;
+    }
+    .top-search {
+      flex: 1;
+      max-width: 480px;
+      position: relative;
+    }
+    .top-search input {
+      width: 100%;
+      padding: 9px 14px 9px 36px;
+      border-radius: 999px;
+      border: 1px solid var(--line);
+      background: var(--cream);
+      color: var(--ink);
+      font-size: 14px;
+      outline: none;
+    }
+    .top-search input:focus {
+      background: #fff;
+      border-color: var(--gold);
+    }
+    .top-search svg {
+      position: absolute;
+      left: 13px;
+      top: 50%;
+      transform: translateY(-50%);
+      color: var(--muted);
+    }
+    .top-actions {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 15px;
+      border-radius: 999px;
+      font-weight: 800;
+      font-size: 13.5px;
+      border: 1px solid transparent;
+      cursor: pointer;
+      transition: all 0.14s ease;
+    }
+    .btn-primary {
+      background: var(--yellow);
+      color: var(--ink);
+      border-color: #E2B11C;
+    }
+    .btn-primary:hover { background: var(--butter); }
+    .btn-secondary {
+      background: #fff;
+      color: var(--ink);
+      border-color: var(--line);
+    }
+    .btn-secondary:hover { background: var(--cream); }
+    .btn-ink {
+      background: var(--ink);
+      color: var(--paper);
+    }
+    .avatar {
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      background: var(--ink);
+      color: var(--yellow);
+      display: grid;
+      place-items: center;
+      font-weight: 800;
+      font-size: 12px;
+      flex-shrink: 0;
+    }
+
+    /* 3-Pane Workbench */
+    .workbench {
+      display: grid;
+      grid-template-columns: 236px 360px 1fr;
+      height: calc(100vh - 62px);
+    }
+
+    /* Pane 1: Spaces & Committees */
+    .rail {
+      background: var(--cream);
+      border-right: 1px solid var(--line);
+      padding: 18px 14px;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+    }
+    .rail-label {
+      font-size: 11px;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--muted);
+      padding: 0 10px;
+      margin-bottom: 4px;
+    }
+    .rail-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      width: 100%;
+      padding: 8px 10px;
+      border-radius: 10px;
+      border: none;
+      background: transparent;
+      color: var(--body);
+      font-weight: 700;
+      font-size: 13.5px;
+      cursor: pointer;
+      text-align: left;
+    }
+    .rail-item:hover {
+      background: rgba(42, 31, 23, 0.05);
+      color: var(--ink);
+    }
+    .rail-item.active {
+      background: var(--soft);
+      color: var(--ink);
+      font-weight: 800;
+    }
+    .rail-count {
+      font-size: 11.5px;
+      font-weight: 800;
+      padding: 1px 7px;
+      border-radius: 999px;
+      background: rgba(42, 31, 23, 0.08);
+      color: var(--ink);
+    }
+    .rail-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      display: inline-block;
+      margin-right: 8px;
+    }
+
+    /* Pane 2: Thread List */
+    .list-pane {
+      background: var(--paper);
+      border-right: 1px solid var(--line);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+    .list-header {
+      padding: 16px 18px 12px;
+      border-bottom: 1px solid var(--line);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .list-header h2 {
+      font-size: 16px;
+    }
+    .list-scroll {
+      flex: 1;
+      overflow-y: auto;
+    }
+    .thread-row {
+      padding: 16px 18px;
+      border-bottom: 1px solid var(--line);
+      cursor: pointer;
+      transition: background 0.12s ease;
+    }
+    .thread-row:hover {
+      background: var(--cream);
+    }
+    .thread-row.active {
+      background: #FFF9E6;
+      border-left: 4px solid var(--yellow);
+      padding-left: 14px;
+    }
+    .row-top {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      margin-bottom: 6px;
+    }
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 2px 8px;
+      border-radius: 999px;
+      font-size: 11px;
+      font-weight: 800;
+    }
+    .badge-sage { background: var(--sage-soft); color: var(--sage); }
+    .badge-gold { background: var(--soft); color: var(--ink); }
+    .badge-berry { background: var(--berry-soft); color: var(--berry); }
+    .badge-outline { background: var(--cream); color: var(--muted); border: 1px solid var(--line); }
+
+    .thread-row h3 {
+      font-size: 14.5px;
+      margin-bottom: 5px;
+      line-height: 1.35;
+    }
+    .thread-row p {
+      font-size: 13px;
+      color: var(--muted);
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+      margin-bottom: 8px;
+    }
+    .row-meta {
+      font-size: 12px;
+      color: var(--muted);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-weight: 700;
+    }
+
+    /* Pane 3: Focused Reader & Action Canvas */
+    .reader-pane {
+      background: #fff;
+      overflow-y: auto;
+      padding: 36px 48px 90px;
+    }
+    .reader-inner {
+      max-width: 760px;
+      margin: 0 auto;
+    }
+    .reader-eyebrow {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 14px;
+      flex-wrap: wrap;
+    }
+    .reader-title {
+      font-size: 27px;
+      margin-bottom: 16px;
+    }
+    .author-bar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding-bottom: 20px;
+      margin-bottom: 24px;
+      border-bottom: 1px solid var(--line);
+    }
+    .author-info {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .author-info strong {
+      color: var(--ink);
+      font-size: 14.5px;
+      display: block;
+    }
+    .author-info span {
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .prose p {
+      font-size: 15.5px;
+      line-height: 1.68;
+      margin-bottom: 14px;
+      color: var(--body);
+    }
+
+    .callout-card {
+      background: var(--cream);
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      padding: 22px 24px;
+      margin: 22px 0;
+    }
+    .callout-sage {
+      background: var(--sage-soft);
+      border: 1px solid #B7DEC9;
+      border-radius: 16px;
+      padding: 22px 24px;
+      margin: 22px 0;
+    }
+
+    .calc-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 12px;
+      margin: 16px 0;
+    }
+    .calc-field {
+      background: #fff;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 12px;
+    }
+    .calc-field label {
+      display: block;
+      font-size: 11.5px;
+      font-weight: 800;
+      color: var(--muted);
+      margin-bottom: 4px;
+    }
+    .calc-field input, .calc-field select {
+      width: 100%;
+      border: none;
+      font-family: 'Sora', sans-serif;
+      font-size: 17px;
+      font-weight: 700;
+      color: var(--ink);
+      outline: none;
+      background: transparent;
+    }
+    .calc-output {
+      background: var(--ink);
+      color: var(--paper);
+      border-radius: 12px;
+      padding: 14px 18px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .calc-output strong {
+      font-family: 'Sora', sans-serif;
+      font-size: 20px;
+      color: var(--yellow);
+    }
+
+    .reply-item {
+      padding: 18px 0;
+      border-top: 1px solid var(--line);
+    }
+
+    /* Concept Switcher Bar */
+    .concept-switcher {
+      position: fixed;
+      bottom: 20px;
+      right: 24px;
+      z-index: 95;
+      background: var(--ink);
+      color: var(--paper);
+      padding: 8px 10px 8px 16px;
+      border-radius: 999px;
+      box-shadow: 0 14px 36px rgba(42, 31, 23, 0.28);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 12.5px;
+    }
+    .concept-switcher span {
+      color: var(--soft);
+      font-weight: 800;
+      margin-right: 4px;
+    }
+    .concept-switcher a {
+      padding: 6px 12px;
+      border-radius: 999px;
+      font-weight: 800;
+      color: rgba(255, 253, 247, 0.78);
+      transition: all 0.15s ease;
+    }
+    .concept-switcher a:hover {
+      color: #fff;
+      background: rgba(255, 255, 255, 0.1);
+    }
+    .concept-switcher a.active {
+      background: var(--yellow);
+      color: var(--ink);
+    }
+
+    /* Toast */
+    .toast {
+      position: fixed;
+      bottom: 24px;
+      left: 24px;
+      z-index: 100;
+      background: var(--ink);
+      color: var(--paper);
+      padding: 12px 18px;
+      border-radius: 12px;
+      font-weight: 700;
+      font-size: 13.5px;
+      box-shadow: 0 12px 30px rgba(42, 31, 23, 0.25);
+      display: none;
+      align-items: center;
+      gap: 10px;
+    }
+    .toast.show { display: inline-flex; }
+  </style>
+</head>
+<body>
+
+  <!-- Top Bar -->
+  <header class="topbar">
+    <a href="#" class="brand">
+      <svg width="32" height="32" viewBox="0 0 96 96" aria-hidden="true">
+        <rect x="2" y="2" width="92" height="92" rx="24" fill="#2A1F17"/>
+        <path d="M48,48 L75.252,38.082 A29,29 0 1 1 53.036,19.441 Z" fill="#F4C430"/>
+      </svg>
+      <div>
+        More Cheese
+        <small>Maker's Workbench · International Cheese Federation</small>
+      </div>
+    </a>
+
+    <div class="top-search">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+      <input type="search" id="searchInput" placeholder="Filter discussions, cave playbooks, committee motions..." oninput="renderList()" />
+    </div>
+
+    <div class="top-actions">
+      <button class="btn btn-primary" onclick="showToast('New Guild Post composer opened')">+ New Post</button>
+      <div class="avatar" title="Aisha Bell · Quincewick Creamery">AB</div>
+    </div>
+  </header>
+
+  <!-- 3-Pane Master-Detail Workbench -->
+  <div class="workbench">
+
+    <!-- Left Rail -->
+    <aside class="rail">
+      <div>
+        <div class="rail-label">Guild Views</div>
+        <button class="rail-item active" onclick="setSpace('all', this)">
+          <span>All Guild Activity</span>
+          <span class="rail-count">6</span>
+        </button>
+        <button class="rail-item" onclick="setSpace('qa', this)">
+          <span>Cave & HACCP Q&amp;A</span>
+          <span class="rail-count">2</span>
+        </button>
+        <button class="rail-item" onclick="setSpace('playbook', this)">
+          <span>Creamery Playbooks</span>
+          <span class="rail-count">1</span>
+        </button>
+        <button class="rail-item" onclick="setSpace('priorities', this)">
+          <span>2027 Guild Priorities</span>
+          <span class="rail-count" style="background:var(--yellow)">60 pts</span>
+        </button>
+      </div>
+
+      <div>
+        <div class="rail-label">Committees &amp; Groups</div>
+        <button class="rail-item" onclick="setSpace('committee', this)">
+          <span><i class="rail-dot" style="background:var(--gold)"></i>Cave Standards Comm.</span>
+          <span class="rail-count" style="background:var(--berry-soft);color:var(--berry)">Vote</span>
+        </button>
+        <button class="rail-item" onclick="setSpace('wg', this)">
+          <span><i class="rail-dot" style="background:var(--sage)"></i>Listeria Swab-Map WG</span>
+          <span class="rail-count">Active</span>
+        </button>
+      </div>
+
+      <div>
+        <div class="rail-label">Private Counsel</div>
+        <button class="rail-item" onclick="setSpace('counsel', this)">
+          <span>🔒 Steward &amp; FDA Counsel</span>
+          <span class="rail-count">1</span>
+        </button>
+      </div>
+    </aside>
+
+    <!-- Middle Scannable List -->
+    <section class="list-pane">
+      <div class="list-header">
+        <h2 id="listHeading">All Guild Activity</h2>
+        <span style="font-size:12px;color:var(--muted);font-weight:700" id="listCount">6 items</span>
+      </div>
+      <div class="list-scroll" id="threadList"></div>
+    </section>
+
+    <!-- Right Focused Reading & Action Canvas -->
+    <main class="reader-pane">
+      <div class="reader-inner" id="readerCanvas"></div>
+    </main>
+
+  </div>
+
+  <!-- Toast -->
+  <div class="toast" id="toast">
+    <span style="color:var(--yellow)">●</span>
+    <span id="toastText">Saved</span>
+  </div>
+
+  <!-- Switcher between the 3 Options -->
+  <nav class="concept-switcher" aria-label="UX Concept Options">
+    <span>UX Options:</span>
+    <a href="./morecheese-option-1-guild-commons.html">1 · Guild Commons</a>
+    <a href="./morecheese-option-2-makers-workbench.html" class="active">2 · Maker's Workbench</a>
+    <a href="./morecheese-option-3-chapter-hub.html">3 · Chapter &amp; Practice Hub</a>
+  </nav>
+
+  <script>
+    const ITEMS = [
+      {
+        id: 'motion',
+        space: 'committee',
+        badge: 'Committee Ballot · Open',
+        badgeClass: 'badge-berry',
+        title: 'Motion M-2026-08: Adopt Standardized Wooden-Board Heat-Sanitation Protocol (68°C / 15 min)',
+        preview: 'Formal Cave Standards Committee ballot before publishing to all 641 member creameries. 9 of 12 seats cast.',
+        author: 'Claire Vance',
+        role: 'Chair, Cave Standards Committee · Damsonwick Fine Cheese',
+        initials: 'CV',
+        time: 'Closes Friday 5:00 PM UTC'
+      },
+      {
+        id: 'geotrichum',
+        space: 'qa',
+        badge: '✓ Verified Answer',
+        badgeClass: 'badge-sage',
+        title: 'Preventing late-stage Geotrichum slip on 60-day washed-rind wheels at 94% RH?',
+        preview: 'Accepted solution by Microbiologist Soraia Moreau on lowering room humidity to 91% RH at Day 28 and buffering morge brine to 3.2% salinity.',
+        author: 'Mateo Lindqvist',
+        role: 'Master Cheesemaker · Bellows & Brine Creamery',
+        initials: 'ML',
+        time: '2h ago · 14 replies'
+      },
+      {
+        id: 'brine',
+        space: 'playbook',
+        badge: 'Living Playbook + Calculator',
+        badgeClass: 'badge-gold',
+        title: '2026 Artisan Brine Tank Maintenance & Salinity Correction Guide',
+        preview: 'Includes interactive wheel-weight brine calculator, CaCl₂ equilibrium ratios, and monthly filtration checklist.',
+        author: 'Soraia Moreau',
+        role: 'Microbiologist · Sorrelgate Cheese Co.',
+        initials: 'SM',
+        time: 'Updated yesterday · v2.4'
+      },
+      {
+        id: 'priorities',
+        space: 'priorities',
+        badge: '100-Point Creamery Wallet',
+        badgeClass: 'badge-gold',
+        title: '2027 Guild Member Priorities: Allocate Quincewick Creamery’s 100 Points',
+        preview: 'Direct the Federation’s 2027 research grants and legal templates across Cold-Chain Freight, Raw-Milk Lab Subsidies, and CCP Prep.',
+        author: 'ICF Board of Stewards',
+        role: 'Annual Member Priority Allocation',
+        initials: 'IC',
+        time: '60 pts remaining'
+      },
+      {
+        id: 'wg',
+        space: 'wg',
+        badge: 'Working Group · 5 Creameries',
+        badgeClass: 'badge-sage',
+        title: 'Listeria Environmental Swab-Map Template Working Group (Deliverable Review)',
+        preview: 'Spun out of the floor-drain Listeria Q&A thread. Reviewing the 3-Zone Drain Diagram before submitting to the Cave Standards Committee.',
+        author: 'Aisha Bell',
+        role: 'Working Group Lead · Quincewick Creamery',
+        initials: 'AB',
+        time: 'Deliverable due Oct 18'
+      },
+      {
+        id: 'counsel',
+        space: 'counsel',
+        badge: '🔒 Sealed Steward Counsel',
+        badgeClass: 'badge-outline',
+        title: 'Confidential Pre-Inspection Review: Zone 2 Trench Drain Swab Schedule',
+        preview: 'Private room between Quincewick Creamery and ICF Regulatory Steward Dr. H. Vance.',
+        author: 'Dr. Henrik Vance',
+        role: 'ICF Regulatory Steward (On-Call)',
+        initials: 'HV',
+        time: 'Private · Today 10:14 AM'
+      }
+    ];
+
+    let activeSpace = 'all';
+    let activeId = 'motion';
+    let currentVote = 'Yea';
+    let points = { freight: 25, lab: 15, ccp: 0 };
+
+    function setSpace(space, btn) {
+      activeSpace = space;
+      document.querySelectorAll('.rail-item').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      const titles = {
+        all: 'All Guild Activity',
+        qa: 'Cave & HACCP Q&A',
+        playbook: 'Creamery Playbooks',
+        priorities: '2027 Guild Priorities',
+        committee: 'Cave Standards Committee',
+        wg: 'Listeria Swab-Map WG',
+        counsel: 'Steward & FDA Counsel'
+      };
+      document.getElementById('listHeading').textContent = titles[space] || 'All Guild Activity';
+      renderList();
+    }
+
+    function renderList() {
+      const q = (document.getElementById('searchInput').value || '').toLowerCase();
+      const filtered = ITEMS.filter(item => {
+        const spaceMatch = activeSpace === 'all' || item.space === activeSpace;
+        const qMatch = !q || item.title.toLowerCase().includes(q) || item.preview.toLowerCase().includes(q);
+        return spaceMatch && qMatch;
+      });
+
+      document.getElementById('listCount').textContent = `${filtered.length} item${filtered.length === 1 ? '' : 's'}`;
+      if (filtered.length > 0 && !filtered.some(i => i.id === activeId)) {
+        activeId = filtered[0].id;
+      }
+
+      const listEl = document.getElementById('threadList');
+      listEl.innerHTML = filtered.map(item => `
+        <div class="thread-row ${item.id === activeId ? 'active' : ''}" onclick="selectItem('${item.id}')">
+          <div class="row-top">
+            <span class="badge ${item.badgeClass}">${item.badge}</span>
+          </div>
+          <h3>${item.title}</h3>
+          <p>${item.preview}</p>
+          <div class="row-meta">
+            <span>${item.author}</span>
+            <span>${item.time}</span>
+          </div>
+        </div>
+      `).join('');
+
+      renderReader();
+    }
+
+    function selectItem(id) {
+      activeId = id;
+      renderList();
+    }
+
+    function renderReader() {
+      const item = ITEMS.find(i => i.id === activeId) || ITEMS[0];
+      const canvas = document.getElementById('readerCanvas');
+
+      if (item.id === 'motion') {
+        canvas.innerHTML = `
+          <div class="reader-eyebrow">
+            <span class="badge badge-berry">Cave Standards Committee · Motion M-2026-08</span>
+            <span class="badge badge-outline">Quorum: 9 of 12 Seats Cast</span>
+          </div>
+          <h1 class="reader-title">${item.title}</h1>
+          <div class="author-bar">
+            <div class="author-info">
+              <div class="avatar">${item.initials}</div>
+              <div>
+                <strong>${item.author}</strong>
+                <span>${item.role}</span>
+              </div>
+            </div>
+            <button class="btn btn-secondary" onclick="showToast('Thursday 2:00 PM UTC Committee Review added to calendar')">Thu 2:00 PM UTC · Join Review</button>
+          </div>
+
+          <div class="prose">
+            <p>Following 14 weeks of microbial swab trials across 9 member creameries in Vermont, Savoie, and Somerset, this motion adopts the standardized <strong>68°C / 15-minute kiln-steam cycle</strong> for aged spruce shelving boards without stripping resident beneficial <em>Geotrichum</em> biofilms.</p>
+            <p>Once ratified by committee ballot, this protocol will be published to the public Guild Playbook Library and linked to the 2026 FDA/FSMA Inspector Reference Packet.</p>
+          </div>
+
+          <div class="callout-card">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
+              <strong style="color:var(--ink);font-size:15px">Your Seat Ballot · Aisha Bell (Voting Member, Seat #4)</strong>
+              <span class="badge badge-sage" id="ballotBadge">Recorded: ${currentVote.toUpperCase()}</span>
+            </div>
+            <div style="display:flex;gap:10px;margin-bottom:16px">
+              <button class="btn ${currentVote === 'Yea' ? 'btn-primary' : 'btn-secondary'}" onclick="castVote('Yea')">✓ Vote Yea (8)</button>
+              <button class="btn ${currentVote === 'Nay' ? 'btn-primary' : 'btn-secondary'}" onclick="castVote('Nay')">✕ Vote Nay (0)</button>
+              <button class="btn ${currentVote === 'Abstain' ? 'btn-primary' : 'btn-secondary'}" onclick="castVote('Abstain')">— Abstain (1)</button>
+            </div>
+            <p style="font-size:13px;color:var(--muted)">Supporting lab appendices: <em>Vermont &amp; Savoie 9-Creamery Swab Data (PDF)</em> · <em>Spruce Core Thermal Penetration Log</em>.</p>
+          </div>
+        `;
+      } else if (item.id === 'geotrichum') {
+        canvas.innerHTML = `
+          <div class="reader-eyebrow">
+            <span class="badge badge-sage">✓ Verified Answer</span>
+            <span class="badge badge-outline">Washed-Rind &amp; Smear</span>
+            <span class="badge badge-outline">Cave Aging</span>
+          </div>
+          <h1 class="reader-title">${item.title}</h1>
+          <div class="author-bar">
+            <div class="author-info">
+              <div class="avatar">${item.initials}</div>
+              <div>
+                <strong>${item.author}</strong>
+                <span>${item.role}</span>
+              </div>
+            </div>
+            <button class="btn btn-secondary" onclick="showToast('Working Group spun up with Mateo & Soraia')">Spin Up Working Group</button>
+          </div>
+
+          <div class="prose">
+            <p>Our autumn batch of 2.5 kg semi-soft washed-rind wheels is showing classic toad-skin slip right around Day 42. Make-room drain pH is 4.95, salting at 1.9% dry weight, and cave conditions sit at 11.5°C / 94% RH with 3x weekly 3% morge washes.</p>
+            <p>Has anyone adjusted their <em>KL71 / Geo 15</em> ratio or stepped down humidity mid-affinage to lock the rind before proteolytic breakdown accelerates?</p>
+          </div>
+
+          <div class="callout-sage">
+            <div style="font-size:11.5px;font-weight:800;text-transform:uppercase;color:var(--sage);margin-bottom:6px">✓ Accepted Guild Answer · Soraia Moreau (Microbiologist, Sorrelgate Cheese Co.)</div>
+            <p style="font-size:15px;color:var(--ink);margin-bottom:10px"><strong>Step down humidity at Day 28 and buffer your morge salinity:</strong></p>
+            <p style="font-size:14.5px;color:var(--body)">At 94% RH past Day 30, <em>Geotrichum candidum</em> over-hydrates the sub-rind paste faster than <em>B. linens</em> can knit the surface protein matrix. Move wheels to an <strong>89–91% RH</strong> zone at Day 28, raise your morge wash from 3.0% to <strong>3.4% NaCl + 0.05% CaCl₂</strong>, and switch from woven linen to perforated mats for Days 28–45.</p>
+          </div>
+
+          <div class="reply-item">
+            <strong style="color:var(--ink);font-size:14px">Claire Vance · Damsonwick Fine Cheese</strong>
+            <p style="font-size:14px;margin-top:4px">Seconding Soraia’s perforated mat switch at Day 28. Flipping every 48 hours during Days 28–38 also eliminated bottom-face rind slip in our Cellar #2 trials.</p>
+          </div>
+        `;
+      } else if (item.id === 'brine') {
+        canvas.innerHTML = `
+          <div class="reader-eyebrow">
+            <span class="badge badge-gold">Living Guild Playbook · v2.4</span>
+            <span class="badge badge-outline">19 Creamery Contributors</span>
+          </div>
+          <h1 class="reader-title">${item.title}</h1>
+          <div class="author-bar">
+            <div class="author-info">
+              <div class="avatar">${item.initials}</div>
+              <div>
+                <strong>${item.author}</strong>
+                <span>${item.role}</span>
+              </div>
+            </div>
+            <button class="btn btn-secondary" onclick="showToast('Suggested edit submitted to Playbook Stewards')">Suggest Playbook Edit</button>
+          </div>
+
+          <div class="prose">
+            <p>Saturated brine tanks require tight calcium and pH equilibrium (` + '`pH 5.15–5.25`' + `, ` + '`0.08% CaCl₂`' + `) to prevent slimy rind leaching (weak calcium) or horn-rind cracking (over-acidified brine). Use the calculator below to size salt additions and immersion times for your make sheet.</p>
+          </div>
+
+          <div class="callout-card">
+            <h3 style="font-size:16px;margin-bottom:6px">Interactive Brine &amp; Immersion Calculator</h3>
+            <p style="font-size:13px;color:var(--muted);margin-bottom:12px">Adjust batch weight, wheel format, and target salinity:</p>
+            <div class="calc-grid">
+              <div class="calc-field">
+                <label>Batch Weight (kg)</label>
+                <input type="number" id="cWeight" value="180" min="10" max="2000" oninput="updateCalc()" />
+              </div>
+              <div class="calc-field">
+                <label>Target Brine (%)</label>
+                <input type="number" id="cSalinity" value="21" min="16" max="24" oninput="updateCalc()" />
+              </div>
+              <div class="calc-field">
+                <label>Wheel Format</label>
+                <select id="cFormat" onchange="updateCalc()">
+                  <option value="1.0">2.5 kg Washed-Rind</option>
+                  <option value="1.6">6 kg Tomme</option>
+                  <option value="2.8">14 kg Alpine Wheel</option>
+                </select>
+              </div>
+            </div>
+            <div class="calc-output">
+              <div>
+                <div style="font-size:12px;color:var(--soft);font-weight:700">Recommended Brine Immersion &amp; Salt Addition</div>
+                <div style="font-size:13px;opacity:0.9" id="cSub">Buffer with 144g food-grade CaCl₂ at pH 5.20</div>
+              </div>
+              <strong id="cResult">37.8 kg NaCl · 14 hrs</strong>
+            </div>
+          </div>
+        `;
+      } else if (item.id === 'priorities') {
+        const used = points.freight + points.lab + points.ccp;
+        const left = 100 - used;
+        canvas.innerHTML = `
+          <div class="reader-eyebrow">
+            <span class="badge badge-gold">2027 Guild Member Priorities</span>
+            <span class="badge badge-sage">${left} of 100 Points Remaining</span>
+          </div>
+          <h1 class="reader-title">${item.title}</h1>
+          <div class="prose">
+            <p>Each member creamery receives <strong>100 priority points</strong> for the 2027 budget cycle. Allocate your points across proposed guild initiatives below:</p>
+          </div>
+
+          <div class="callout-card" style="display:flex;justify-content:space-between;align-items:center">
+            <div style="padding-right:20px">
+              <h3 style="font-size:16px;margin-bottom:4px">1. Shared Cold-Chain LTL Freight Co-Op (Midwest → East Coast)</h3>
+              <p style="font-size:13.5px;color:var(--muted)">Consolidate palletized 4°C specialty cheese freight across 48 regional creameries.</p>
+            </div>
+            <div style="display:flex;align-items:center;gap:10px;flex-shrink:0">
+              <button class="btn btn-secondary" onclick="adjPts('freight', -5)">−</button>
+              <strong style="font-family:'Sora';font-size:18px;min-width:64px;text-align:center">${points.freight} pts</strong>
+              <button class="btn btn-primary" onclick="adjPts('freight', 5)">+</button>
+            </div>
+          </div>
+
+          <div class="callout-card" style="display:flex;justify-content:space-between;align-items:center">
+            <div style="padding-right:20px">
+              <h3 style="font-size:16px;margin-bottom:4px">2. Subsidized Raw-Milk PCR Pathogen Lab Vouchers</h3>
+              <p style="font-size:13.5px;color:var(--muted)">Negotiate $18 flat-rate Listeria &amp; STEC environmental swab panels with partner dairy labs.</p>
+            </div>
+            <div style="display:flex;align-items:center;gap:10px;flex-shrink:0">
+              <button class="btn btn-secondary" onclick="adjPts('lab', -5)">−</button>
+              <strong style="font-family:'Sora';font-size:18px;min-width:64px;text-align:center">${points.lab} pts</strong>
+              <button class="btn btn-primary" onclick="adjPts('lab', 5)">+</button>
+            </div>
+          </div>
+
+          <div class="callout-card" style="display:flex;justify-content:space-between;align-items:center">
+            <div style="padding-right:20px">
+              <h3 style="font-size:16px;margin-bottom:4px">3. Interactive Sensory Defect Atlas for CCP Candidates</h3>
+              <p style="font-size:13.5px;color:var(--muted)">High-resolution paste and rind defect reference guide for mongers and apprentices.</p>
+            </div>
+            <div style="display:flex;align-items:center;gap:10px;flex-shrink:0">
+              <button class="btn btn-secondary" onclick="adjPts('ccp', -5)">−</button>
+              <strong style="font-family:'Sora';font-size:18px;min-width:64px;text-align:center">${points.ccp} pts</strong>
+              <button class="btn btn-primary" onclick="adjPts('ccp', 5)">+</button>
+            </div>
+          </div>
+        `;
+      } else if (item.id === 'wg') {
+        canvas.innerHTML = `
+          <div class="reader-eyebrow">
+            <span class="badge badge-sage">Working Group · 5 Creameries</span>
+            <span class="badge badge-outline">Deliverable Due Oct 18</span>
+          </div>
+          <h1 class="reader-title">${item.title}</h1>
+          <div class="author-bar">
+            <div class="author-info">
+              <div class="avatar">${item.initials}</div>
+              <div>
+                <strong>${item.author}</strong>
+                <span>${item.role}</span>
+              </div>
+            </div>
+            <button class="btn btn-primary" onclick="showToast('Draft submitted to Cave Standards Committee for formal review')">Submit to Committee</button>
+          </div>
+          <div class="prose">
+            <p>This working group was spun out of the Guild Q&amp;A thread on Zone 2 floor-drain swab schedules. Five creameries are co-authoring the standardized 3-Zone Floor Drain Diagram for small-batch aging rooms.</p>
+          </div>
+          <div class="callout-card">
+            <h3 style="font-size:15.5px;margin-bottom:10px">Milestone Checklist</h3>
+            <p style="font-size:14px;margin-bottom:8px">✓ <strong>Milestone 1:</strong> Collect 90-day swab logs from 5 member creameries (Complete)</p>
+            <p style="font-size:14px;margin-bottom:8px">✓ <strong>Milestone 2:</strong> Draft Zone 1–3 drain diagram &amp; peracetic foam SOP (Complete)</p>
+            <p style="font-size:14px;color:var(--gold);font-weight:700">● <strong>Milestone 3:</strong> Final sign-off before Cave Standards Committee submission (In Review)</p>
+          </div>
+        `;
+      } else {
+        canvas.innerHTML = `
+          <div class="reader-eyebrow">
+            <span class="badge badge-outline">🔒 Sealed 1:1 Steward Counsel</span>
+            <span class="badge badge-sage">End-to-End Confidential</span>
+          </div>
+          <h1 class="reader-title">${item.title}</h1>
+          <div class="author-bar">
+            <div class="author-info">
+              <div class="avatar">${item.initials}</div>
+              <div>
+                <strong>${item.author}</strong>
+                <span>${item.role}</span>
+              </div>
+            </div>
+          </div>
+          <div class="callout-card">
+            <strong style="color:var(--ink)">Dr. Henrik Vance (ICF Regulatory Steward) · 10:14 AM</strong>
+            <p style="margin-top:8px;font-size:14.5px">Hi Aisha — I reviewed your floor-plan PDF for Quincewick’s Aging Cellar #2. Your trench drain sits 1.8m from the lower spruce rack, which places it squarely in <strong>Zone 2</strong>. Have your team run a weekly ATP + Listeria spp. sponge swab 2 hours post-washdown on Tuesdays, and log the peracetic acid foam concentration at 250 ppm.</p>
+          </div>
+          <div style="display:flex;gap:10px;margin-top:18px">
+            <input type="text" id="counselMsg" placeholder="Write a confidential reply to Dr. Vance..." style="flex:1;padding:11px 16px;border-radius:999px;border:1px solid var(--line);outline:none" />
+            <button class="btn btn-primary" onclick="showToast('Confidential reply sent to Dr. Henrik Vance')">Send</button>
+          </div>
+        `;
+      }
+    }
+
+    function castVote(v) {
+      currentVote = v;
+      renderReader();
+      showToast(`Ballot updated: ${v.toUpperCase()} recorded for Motion M-2026-08`);
+    }
+
+    function updateCalc() {
+      const w = parseFloat(document.getElementById('cWeight').value) || 100;
+      const s = parseFloat(document.getElementById('cSalinity').value) || 21;
+      const f = parseFloat(document.getElementById('cFormat').value) || 1.0;
+      const saltKg = ((w * (s / 100)) * 1.0).toFixed(1);
+      const hrs = Math.round(14 * f);
+      const cacl = Math.round(w * 0.8);
+      document.getElementById('cResult').textContent = `${saltKg} kg NaCl · ${hrs} hrs`;
+      document.getElementById('cSub').textContent = `Buffer with ${cacl}g food-grade CaCl₂ at pH 5.20`;
+    }
+
+    function adjPts(key, delta) {
+      const used = points.freight + points.lab + points.ccp;
+      if (delta > 0 && used + delta > 100) {
+        showToast('All 100 priority points are allocated');
+        return;
+      }
+      if (points[key] + delta < 0) return;
+      points[key] += delta;
+      renderReader();
+    }
+
+    let toastTimer;
+    function showToast(msg) {
+      const t = document.getElementById('toast');
+      document.getElementById('toastText').textContent = msg;
+      t.classList.add('show');
+      clearTimeout(toastTimer);
+      toastTimer = setTimeout(() => t.classList.remove('show'), 2800);
+    }
+
+    renderList();
+  </script>
+</body>
+</html>

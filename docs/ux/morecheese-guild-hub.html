@@ -1,0 +1,2118 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>More Cheese · Guild Community Hub (Interactive Prototype)</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Nunito+Sans:ital,opsz,wght@0,6..12,400..800;1,6..12,400..700&family=Sora:wght@600;700&display=swap" rel="stylesheet">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            paper: '#FFFDF7',
+            cream: '#FBF6EA',
+            soft: '#FBE7A6',
+            yellow: '#F4C430',
+            butter: '#E3AE1B',
+            gold: '#8A5A00',
+            ink: '#2A1F17',
+            body: '#4A3E33',
+            cocoa: '#3D2E23',
+            line: '#E4D9C3',
+            muted: '#7A6E60',
+            sage: '#1E6B4E',
+            'sage-soft': '#E9F5EE',
+            berry: '#9E2A2B',
+            'berry-soft': '#FCEEEF'
+          },
+          fontFamily: {
+            display: ['Sora', 'sans-serif'],
+            sans: ['Nunito Sans', 'system-ui', '-apple-system', 'sans-serif']
+          }
+        }
+      }
+    };
+  </script>
+  <style>
+    :root {
+      --paper: #FFFDF7;
+      --cream: #FBF6EA;
+      --soft: #FBE7A6;
+      --yellow: #F4C430;
+      --butter: #E3AE1B;
+      --gold: #8A5A00;
+      --ink: #2A1F17;
+      --body: #4A3E33;
+      --line: #E4D9C3;
+      --muted: #7A6E60;
+      --sage: #1E6B4E;
+      --sage-soft: #E9F5EE;
+      --berry: #9E2A2B;
+      --berry-soft: #FCEEEF;
+    }
+    body {
+      background-color: var(--paper);
+      color: var(--body);
+      font-family: 'Nunito Sans', system-ui, -apple-system, sans-serif;
+      -webkit-font-smoothing: antialiased;
+    }
+    h1, h2, h3, h4, .font-display {
+      font-family: 'Sora', sans-serif;
+      letter-spacing: -0.025em;
+    }
+    .hero-gradient {
+      background: radial-gradient(900px 380px at 88% -10%, #FBE7A6 0%, transparent 65%), #FBF6EA;
+    }
+    .custom-scroll::-webkit-scrollbar { width: 6px; height: 6px; }
+    .custom-scroll::-webkit-scrollbar-track { background: transparent; }
+    .custom-scroll::-webkit-scrollbar-thumb { background: #D9CCB3; border-radius: 999px; }
+  </style>
+</head>
+<body class="min-h-screen flex flex-col selection:bg-soft selection:text-ink">
+
+  <!-- TOP NAVIGATION BAR (Option 3 Editorial Nav + Global Actions) -->
+  <header class="sticky top-0 z-40 bg-paper/95 backdrop-blur-md border-b border-line">
+    <div class="max-w-[1380px] mx-auto px-6 h-[68px] flex items-center justify-between gap-4">
+      <!-- Brand -->
+      <div class="flex items-center gap-3">
+        <a href="#top" onclick="setTopSection('hub'); return false;" class="flex items-center gap-3 group">
+          <svg width="36" height="36" viewBox="0 0 96 96" aria-hidden="true" class="shrink-0 transition-transform group-hover:scale-105">
+            <rect x="2" y="2" width="92" height="92" rx="24" fill="#2A1F17"/>
+            <path d="M48,48 L75.252,38.082 A29,29 0 1 1 53.036,19.441 Z" fill="#F4C430"/>
+          </svg>
+          <div>
+            <div class="flex items-center gap-2">
+              <span class="font-display font-bold text-lg text-ink tracking-tight">More Cheese</span>
+              <span class="text-[11px] font-extrabold uppercase tracking-wider px-2 py-0.5 rounded-full bg-soft text-ink border border-butter/40">Guild Hub</span>
+            </div>
+            <p class="text-xs font-bold text-muted hidden sm:block">International Cheese Federation · 3,058 Makers &amp; 641 Creameries</p>
+          </div>
+        </a>
+      </div>
+
+      <!-- Top-Level Mode Tabs (Option 3 Entry Doors) -->
+      <nav aria-label="Guild Sections" class="hidden xl:flex items-center gap-1 bg-cream p-1 rounded-full border border-line">
+        <button type="button" data-top-tab="hub" onclick="setTopSection('hub')" class="top-tab px-4 py-1.5 rounded-full text-xs font-extrabold transition-all bg-ink text-paper">
+          Guild Hub &amp; Commons
+        </button>
+        <button type="button" data-top-tab="playbooks" onclick="setTopSection('playbooks')" class="top-tab px-4 py-1.5 rounded-full text-xs font-extrabold transition-all text-body hover:text-ink">
+          Playbooks &amp; Make-Room Tools
+        </button>
+        <button type="button" data-top-tab="committees" onclick="setTopSection('committees')" class="top-tab px-4 py-1.5 rounded-full text-xs font-extrabold transition-all text-body hover:text-ink flex items-center gap-1.5">
+          Committees &amp; Working Groups
+          <span id="navBallotBadge" class="px-1.5 py-0.2 rounded-full text-[10px] bg-berry-soft text-berry font-extrabold">1 Vote</span>
+        </button>
+        <button type="button" data-top-tab="priorities" onclick="setTopSection('priorities')" class="top-tab px-4 py-1.5 rounded-full text-xs font-extrabold transition-all text-body hover:text-ink flex items-center gap-1.5">
+          2027 Priority Board
+          <span id="navWalletBadge" class="px-1.5 py-0.2 rounded-full text-[10px] bg-soft text-ink font-extrabold">60 pts</span>
+        </button>
+      </nav>
+
+      <!-- Search + Actions -->
+      <div class="flex items-center gap-2.5">
+        <div class="relative hidden md:block w-64">
+          <svg class="w-4 h-4 text-muted absolute left-3.5 top-1/2 -translate-y-1/2" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+          <input
+            id="globalSearchInput"
+            type="search"
+            placeholder="Search cave Q&amp;A, brine, motions..."
+            oninput="handleGlobalSearch(this.value)"
+            class="w-full pl-9 pr-3 py-1.5 rounded-full bg-cream border border-line text-sm text-ink placeholder:text-muted focus:outline-none focus:bg-white focus:border-gold"
+          />
+        </div>
+
+        <!-- Confidential Steward & Peer Counsel Inbox -->
+        <button
+          type="button"
+          onclick="openCounselDrawer()"
+          class="inline-flex items-center gap-2 px-3.5 py-2 rounded-full bg-white border border-line hover:bg-cream text-ink text-xs font-extrabold transition"
+          title="Sealed 1:1 Steward &amp; Peer Counsel"
+        >
+          <span>🔒 Steward Counsel</span>
+          <span id="counselUnreadBadge" class="px-1.5 py-0.5 rounded-full bg-sage-soft text-sage text-[11px] font-extrabold">2</span>
+        </button>
+
+        <!-- Primary Ask or Share CTA -->
+        <button
+          type="button"
+          onclick="openComposerModal()"
+          class="inline-flex items-center gap-1.5 px-4 py-2 rounded-full bg-yellow hover:bg-butter text-ink border border-[#E2B11C] text-xs font-extrabold shadow-sm transition"
+        >
+          <span>+ Ask or Share</span>
+        </button>
+
+        <!-- Member Profile Pill -->
+        <div class="flex items-center gap-2 pl-1">
+          <div class="w-9 h-9 rounded-full bg-ink text-yellow font-display font-bold text-xs grid place-items-center border-2 border-soft" title="Aisha Bell · Head Affineur, Quincewick Creamery (Seat #4, Cave Standards Committee)">
+            AB
+          </div>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <!-- MAIN CONTENT CONTAINER -->
+  <main id="top" class="flex-1 max-w-[1380px] w-full mx-auto px-6 py-7">
+
+    <!-- ===================================================================
+         LAYER 1 (OPTION 3 ENTRY POINT): EDITORIAL FRONT PORCH & HIGHLIGHTS
+         =================================================================== -->
+    <section id="entryPorchSection" class="mb-9">
+      <!-- Editorial Hero Banner -->
+      <div class="hero-gradient border border-line rounded-3xl p-7 lg:p-9 mb-6 shadow-sm">
+        <div class="flex flex-wrap items-center justify-between gap-2 mb-4">
+          <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-soft text-ink text-xs font-extrabold uppercase tracking-wider">
+            <span>The Monday Rind · Issue #142</span>
+            <span class="text-gold">•</span>
+            <span>Autumn Pasture &amp; Affinage Edition</span>
+          </div>
+          <div class="flex items-center gap-3">
+            <span class="text-xs font-bold text-muted hidden sm:inline">Signed in as <strong class="text-ink">Aisha Bell</strong> · Quincewick Creamery (Vermont)</span>
+            <button type="button" onclick="togglePorchCollapse()" id="porchToggleBtn" class="text-xs font-extrabold text-gold hover:underline">
+              Compact View ↑
+            </button>
+          </div>
+        </div>
+
+        <div id="porchExpandedBody" class="grid grid-cols-1 lg:grid-cols-12 gap-7 items-center">
+          <div class="lg:col-span-7 space-y-3.5">
+            <h1 class="font-display font-bold text-2xl sm:text-3xl lg:text-[34px] text-ink leading-[1.18]">
+              Good cheese is a community project. Here is what needs your creamery this week.
+            </h1>
+            <p class="text-[15.5px] text-body leading-relaxed max-w-2xl">
+              Nine member creameries just completed the 14-week spruce-board steam sanitation trial, our Raw-Milk HACCP circle published updated Zone 2 floor-drain swab maps, and 2027 priority allocations close next Friday.
+            </p>
+            <div class="flex flex-wrap items-center gap-2.5 pt-1">
+              <button type="button" onclick="openPostDetail('post-motion-2026-08')" class="px-4 py-2.5 rounded-full bg-ink text-paper hover:bg-cocoa text-xs font-extrabold transition">
+                Review &amp; Vote on Motion M-2026-08 →
+              </button>
+              <button type="button" onclick="openPostDetail('post-brine-playbook')" class="px-4 py-2.5 rounded-full bg-white border border-line hover:bg-cream text-ink text-xs font-extrabold transition">
+                Open Brine &amp; Salinity Calculator
+              </button>
+              <button type="button" onclick="setTopSection('priorities')" class="px-4 py-2.5 rounded-full bg-white border border-line hover:bg-cream text-ink text-xs font-extrabold transition">
+                Allocate Quincewick’s 100 Priority Points
+              </button>
+            </div>
+          </div>
+
+          <!-- Matched to Quincewick Creamery Card -->
+          <div class="lg:col-span-5 bg-white/95 border border-line rounded-2xl p-5 shadow-sm">
+            <div class="flex items-center justify-between gap-2 mb-2.5">
+              <span class="px-2.5 py-1 rounded-full bg-soft text-ink text-[11px] font-extrabold">Matched to Quincewick Creamery</span>
+              <span class="text-xs font-bold text-muted">Washed-Rind · 94% RH</span>
+            </div>
+            <h2 class="font-display font-bold text-base text-ink mb-1.5">
+              Can you weigh in on Mateo Lindqvist’s washed-rind question?
+            </h2>
+            <p class="text-xs text-body leading-relaxed mb-3.5">
+              “Our autumn 2.5 kg washed-rind batch is showing Geotrichum slip around Day 42 at 11.5°C / 94% RH. Has anyone stepped down humidity at Day 28 without losing smear color?”
+            </p>
+            <div class="flex items-center justify-between gap-2 pt-2 border-t border-line">
+              <span class="text-[11.5px] font-bold text-sage">✓ 1 Verified Answer + 3 Maker Notes</span>
+              <button type="button" onclick="openPostDetail('post-geo-slip')" class="px-3.5 py-1.5 rounded-full bg-yellow hover:bg-butter text-ink text-xs font-extrabold transition">
+                Read &amp; Add Cave Note →
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 3 Featured Highlights Row (Option 3 Cards that open Option 1 Detail Sheet or jump to tools) -->
+      <div id="featuredCardsRow" class="grid grid-cols-1 md:grid-cols-3 gap-5">
+        <!-- Card 1: Open Committee Motion -->
+        <div class="bg-white border border-line rounded-2xl p-5 flex flex-col justify-between hover:shadow-md transition">
+          <div>
+            <div class="flex items-center justify-between gap-2 mb-2.5">
+              <span class="px-2.5 py-0.5 rounded-full bg-berry-soft text-berry text-[11px] font-extrabold">Cave Standards Ballot · Open</span>
+              <span id="featuredQuorumLabel" class="text-xs font-bold text-muted">9 of 12 Seats Cast</span>
+            </div>
+            <h3 class="font-display font-bold text-[16.5px] text-ink mb-1.5 cursor-pointer hover:underline" onclick="openPostDetail('post-motion-2026-08')">
+              Motion M-2026-08: 68°C / 15-Min Spruce Shelving Heat-Sanitation Protocol
+            </h3>
+            <p class="text-xs text-body leading-relaxed mb-3">
+              Ratifies the steam-kiln protocol preserving resident beneficial <em>Geotrichum</em> biofilms across 9 trial creameries.
+            </p>
+          </div>
+          <div class="pt-3 border-t border-line flex items-center justify-between gap-2">
+            <div class="flex items-center gap-1.5">
+              <button type="button" onclick="castQuickBallot('post-motion-2026-08', 'Yea')" id="quickBtnYea" class="px-2.5 py-1 rounded-full text-[11.5px] font-extrabold border transition">✓ Yea</button>
+              <button type="button" onclick="castQuickBallot('post-motion-2026-08', 'Nay')" id="quickBtnNay" class="px-2.5 py-1 rounded-full text-[11.5px] font-extrabold border transition">✕ Nay</button>
+              <button type="button" onclick="castQuickBallot('post-motion-2026-08', 'Abstain')" id="quickBtnAbstain" class="px-2.5 py-1 rounded-full text-[11.5px] font-extrabold border transition">— Abstain</button>
+            </div>
+            <button type="button" onclick="openPostDetail('post-motion-2026-08')" class="text-xs font-extrabold text-gold hover:underline">Full Motion →</button>
+          </div>
+        </div>
+
+        <!-- Card 2: Interactive Make-Room Brine Calculator Preview -->
+        <div class="bg-white border border-line rounded-2xl p-5 flex flex-col justify-between hover:shadow-md transition">
+          <div>
+            <div class="flex items-center justify-between gap-2 mb-2.5">
+              <span class="px-2.5 py-0.5 rounded-full bg-soft text-ink text-[11px] font-extrabold">Living Playbook + Calculator</span>
+              <span class="text-xs font-bold text-muted">v2.4 · 19 Creameries</span>
+            </div>
+            <h3 class="font-display font-bold text-[16.5px] text-ink mb-1.5 cursor-pointer hover:underline" onclick="openPostDetail('post-brine-playbook')">
+              2026 Artisan Brine Tank Maintenance &amp; Salinity Correction Guide
+            </h3>
+            <div class="grid grid-cols-3 gap-2 my-2.5 bg-cream p-2.5 rounded-xl border border-line">
+              <div>
+                <label class="block text-[10px] font-extrabold text-muted uppercase">Batch (kg)</label>
+                <input id="miniCalcKg" type="number" value="180" min="10" max="3000" oninput="updateMiniCalc()" class="w-full bg-transparent font-display font-bold text-sm text-ink focus:outline-none" />
+              </div>
+              <div>
+                <label class="block text-[10px] font-extrabold text-muted uppercase">Brine %</label>
+                <input id="miniCalcPct" type="number" value="21" min="15" max="25" oninput="updateMiniCalc()" class="w-full bg-transparent font-display font-bold text-sm text-ink focus:outline-none" />
+              </div>
+              <div>
+                <label class="block text-[10px] font-extrabold text-muted uppercase">Output</label>
+                <div id="miniCalcOut" class="font-display font-bold text-xs text-sage pt-0.5">37.8kg · 14h</div>
+              </div>
+            </div>
+          </div>
+          <div class="pt-3 border-t border-line flex items-center justify-between">
+            <span class="text-xs font-bold text-muted">Buffer: <strong id="miniCalcCa" class="text-ink">144g CaCl₂</strong> @ pH 5.20</span>
+            <button type="button" onclick="openPostDetail('post-brine-playbook')" class="text-xs font-extrabold text-gold hover:underline">Open Playbook →</button>
+          </div>
+        </div>
+
+        <!-- Card 3: Active Working Group Deliverable -->
+        <div class="bg-white border border-line rounded-2xl p-5 flex flex-col justify-between hover:shadow-md transition">
+          <div>
+            <div class="flex items-center justify-between gap-2 mb-2.5">
+              <span class="px-2.5 py-0.5 rounded-full bg-sage-soft text-sage text-[11px] font-extrabold">Working Group · 5 Creameries</span>
+              <span id="featuredWgProgress" class="text-xs font-bold text-muted">2 of 3 Milestones</span>
+            </div>
+            <h3 class="font-display font-bold text-[16.5px] text-ink mb-1.5 cursor-pointer hover:underline" onclick="openPostDetail('post-listeria-wg')">
+              Listeria Environmental Swab-Map Template Working Group
+            </h3>
+            <p class="text-xs text-body leading-relaxed mb-3">
+              Spun out of the Zone 2 floor-drain Q&amp;A thread. Co-authoring the ready-to-print 3-Zone Aging Room Swab Diagram.
+            </p>
+          </div>
+          <div class="pt-3 border-t border-line flex items-center justify-between">
+            <span class="text-xs font-bold text-muted">Lead: Aisha Bell · Due Oct 18</span>
+            <button type="button" onclick="openPostDetail('post-listeria-wg')" class="text-xs font-extrabold text-gold hover:underline">Review Checklist →</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===================================================================
+         DEDICATED TOP-TAB VIEWS (Playbooks / Committees / Priority Board)
+         =================================================================== -->
+
+    <!-- PLAYBOOKS & MAKE-ROOM TOOLS VIEW -->
+    <section id="sectionPlaybooks" class="hidden mb-10 space-y-6">
+      <div class="flex flex-wrap items-center justify-between gap-4 border-b border-line pb-4">
+        <div>
+          <span class="text-xs font-extrabold uppercase tracking-wider text-gold">Living Guild Canon</span>
+          <h2 class="font-display font-bold text-2xl text-ink">Creamery Playbooks &amp; Make-Room Calculators</h2>
+        </div>
+        <button type="button" onclick="openComposerModal('Playbook')" class="px-4 py-2 rounded-full bg-yellow hover:bg-butter text-ink text-xs font-extrabold">
+          + Draft New Guild Playbook
+        </button>
+      </div>
+
+      <!-- Full Interactive Brine & Make-Sheet Calculator -->
+      <div class="bg-cream border border-line rounded-3xl p-6 lg:p-8 grid grid-cols-1 lg:grid-cols-12 gap-6 items-center">
+        <div class="lg:col-span-5 space-y-2">
+          <span class="px-2.5 py-1 rounded-full bg-soft text-ink text-xs font-extrabold">Interactive Make-Room Utility</span>
+          <h3 class="font-display font-bold text-xl text-ink">Saturated Brine Salinity, CaCl₂ &amp; Immersion Calculator</h3>
+          <p class="text-sm text-body">
+            Compute salt additions, food-grade calcium chloride buffer, and immersion hours by wheel geometry. Save presets directly to your creamery's browser log.
+          </p>
+        </div>
+        <div class="lg:col-span-7 space-y-4">
+          <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div class="bg-white border border-line rounded-2xl p-3.5">
+              <label class="block text-[11px] font-extrabold text-muted uppercase mb-1">Batch Weight (kg)</label>
+              <input id="fullCalcWeight" type="number" value="240" min="10" max="5000" oninput="updateFullCalc()" class="w-full font-display font-bold text-lg text-ink focus:outline-none" />
+            </div>
+            <div class="bg-white border border-line rounded-2xl p-3.5">
+              <label class="block text-[11px] font-extrabold text-muted uppercase mb-1">Target Salinity (%)</label>
+              <input id="fullCalcSalinity" type="number" value="21" min="15" max="25" oninput="updateFullCalc()" class="w-full font-display font-bold text-lg text-ink focus:outline-none" />
+            </div>
+            <div class="bg-white border border-line rounded-2xl p-3.5">
+              <label class="block text-[11px] font-extrabold text-muted uppercase mb-1">Wheel Format</label>
+              <select id="fullCalcFormat" onchange="updateFullCalc()" class="w-full font-display font-bold text-sm text-ink bg-transparent focus:outline-none pt-1">
+                <option value="1.0|2.5 kg Washed-Rind">2.5 kg Washed-Rind</option>
+                <option value="1.6|6 kg Tomme">6 kg Tomme</option>
+                <option value="2.8|14 kg Alpine Wheel">14 kg Alpine Wheel</option>
+                <option value="0.6|350g Bloomy Round">350g Bloomy Round</option>
+              </select>
+            </div>
+          </div>
+          <div class="bg-ink text-paper rounded-2xl p-4 flex flex-wrap items-center justify-between gap-4">
+            <div>
+              <div class="text-xs font-bold text-soft">Recommended Make-Sheet Spec</div>
+              <div id="fullCalcSub" class="text-xs text-paper/80">Buffer with 192g CaCl₂ · Hold tank at 11.5°C &amp; pH 5.20</div>
+            </div>
+            <div class="flex items-center gap-3">
+              <strong id="fullCalcOutput" class="font-display font-bold text-xl text-yellow">50.4 kg NaCl · 14 hrs</strong>
+              <button type="button" onclick="saveBrinePreset()" class="px-3.5 py-1.5 rounded-full bg-yellow text-ink text-xs font-extrabold hover:bg-butter">
+                Save Batch Preset
+              </button>
+            </div>
+          </div>
+          <div id="savedPresetsList" class="flex flex-wrap gap-2"></div>
+        </div>
+      </div>
+
+      <div id="playbooksGrid" class="grid grid-cols-1 md:grid-cols-2 gap-5"></div>
+    </section>
+
+    <!-- COMMITTEES & WORKING GROUPS VIEW -->
+    <section id="sectionCommittees" class="hidden mb-10 space-y-6">
+      <div class="flex flex-wrap items-center justify-between gap-4 border-b border-line pb-4">
+        <div>
+          <span class="text-xs font-extrabold uppercase tracking-wider text-gold">Federation Governance &amp; Task Forces</span>
+          <h2 class="font-display font-bold text-2xl text-ink">Standing Committees &amp; Ad-Hoc Working Groups</h2>
+        </div>
+        <button type="button" onclick="openSpinUpWgModal()" class="px-4 py-2 rounded-full bg-yellow hover:bg-butter text-ink text-xs font-extrabold">
+          + Spin Up Working Group
+        </button>
+      </div>
+      <div id="committeesGrid" class="grid grid-cols-1 md:grid-cols-2 gap-6"></div>
+    </section>
+
+    <!-- 2027 PRIORITY BOARD (100-POINT CREAMERY WALLET) VIEW -->
+    <section id="sectionPriorities" class="hidden mb-10 space-y-6">
+      <div class="bg-cream border border-line rounded-3xl p-6 lg:p-8 flex flex-wrap items-center justify-between gap-6">
+        <div class="max-w-2xl space-y-1.5">
+          <span class="px-2.5 py-0.5 rounded-full bg-soft text-ink text-xs font-extrabold uppercase">Annual Cooperative Budget Allocation</span>
+          <h2 class="font-display font-bold text-2xl text-ink">2027 Guild Member Priorities · Quincewick Creamery Wallet</h2>
+          <p class="text-sm text-body">
+            Every member creamery allocates <strong>100 Priority Points</strong> to direct the Federation’s 2027 research grants, shared logistics co-ops, and regulatory templates. Adjust your allocations or propose a new initiative below.
+          </p>
+        </div>
+        <div class="bg-white border border-line rounded-2xl p-4 min-w-[240px] text-center shadow-sm">
+          <div class="text-xs font-extrabold uppercase text-muted">Points Remaining</div>
+          <div id="priorityRemainingBig" class="font-display font-bold text-3xl text-sage my-1">60 / 100</div>
+          <button type="button" onclick="openNewPriorityModal()" class="mt-1 px-3.5 py-1.5 rounded-full bg-ink text-paper text-xs font-extrabold hover:bg-cocoa">
+            + Propose Initiative
+          </button>
+        </div>
+      </div>
+
+      <div id="priorityCardsGrid" class="grid grid-cols-1 md:grid-cols-2 gap-5"></div>
+    </section>
+
+    <!-- ===================================================================
+         LAYER 2 (OPTION 1 LIVING COMMONS): LEFT RAIL + STREAM + RIGHT RAIL
+         =================================================================== -->
+    <section id="commonsWorkspace" class="grid grid-cols-1 lg:grid-cols-12 gap-7 items-start">
+
+      <!-- LEFT NAVIGATION RAIL (Spaces, Cheese Families, Committees, Working Groups) -->
+      <aside class="lg:col-span-3 space-y-5 lg:sticky lg:top-[88px]">
+        <!-- Feed Scope Navigation -->
+        <div class="bg-cream border border-line rounded-2xl p-3.5 space-y-1">
+          <div class="px-2.5 py-1 text-[11px] font-extrabold uppercase tracking-wider text-muted">Guild Spaces</div>
+          <div id="leftSpacesNav" class="space-y-0.5"></div>
+        </div>
+
+        <!-- Standing Committees & Working Groups Rail -->
+        <div class="bg-cream border border-line rounded-2xl p-3.5 space-y-1">
+          <div class="flex items-center justify-between px-2.5 py-1">
+            <span class="text-[11px] font-extrabold uppercase tracking-wider text-muted">Committees &amp; Groups</span>
+            <button type="button" onclick="openSpinUpWgModal()" class="text-[11px] font-extrabold text-gold hover:underline">+ New WG</button>
+          </div>
+          <div id="leftGroupsNav" class="space-y-0.5"></div>
+        </div>
+
+        <!-- Demo Database Controls Card -->
+        <div class="bg-white border border-line rounded-2xl p-4 space-y-2.5">
+          <div class="flex items-center justify-between">
+            <span class="text-[11px] font-extrabold uppercase tracking-wider text-sage flex items-center gap-1.5">
+              <span class="w-2 h-2 rounded-full bg-sage animate-pulse"></span>
+              IndexedDB Live Store
+            </span>
+            <button type="button" onclick="resetDemoDatabase()" class="text-[11px] font-extrabold text-berry hover:underline">
+              Reset DB
+            </button>
+          </div>
+          <p class="text-xs text-muted leading-relaxed">
+            Every vote, reply, new question, working group, brine preset, and priority point allocation is persisted in your browser’s local database.
+          </p>
+        </div>
+      </aside>
+
+      <!-- CENTER STREAM (Option 1 Breathable Feed) -->
+      <div class="lg:col-span-6 space-y-4">
+        <!-- Stream Filter Bar -->
+        <div class="bg-white border border-line rounded-2xl p-3.5 flex flex-wrap items-center justify-between gap-3">
+          <div class="flex items-center gap-1.5 flex-wrap">
+            <button type="button" data-filter="all" onclick="setStreamFilter('all')" class="stream-filter-btn px-3 py-1 rounded-full text-xs font-extrabold bg-ink text-paper">
+              All Activity
+            </button>
+            <button type="button" data-filter="verified" onclick="setStreamFilter('verified')" class="stream-filter-btn px-3 py-1 rounded-full text-xs font-extrabold text-body hover:bg-cream">
+              ✓ Verified Q&amp;A
+            </button>
+            <button type="button" data-filter="unanswered" onclick="setStreamFilter('unanswered')" class="stream-filter-btn px-3 py-1 rounded-full text-xs font-extrabold text-body hover:bg-cream">
+              Needs Answer
+            </button>
+            <button type="button" data-filter="playbook" onclick="setStreamFilter('playbook')" class="stream-filter-btn px-3 py-1 rounded-full text-xs font-extrabold text-body hover:bg-cream">
+              Playbooks
+            </button>
+            <button type="button" data-filter="ballot" onclick="setStreamFilter('ballot')" class="stream-filter-btn px-3 py-1 rounded-full text-xs font-extrabold text-body hover:bg-cream">
+              Motions &amp; WGs
+            </button>
+            <button type="button" data-filter="bookmarked" onclick="setStreamFilter('bookmarked')" class="stream-filter-btn px-3 py-1 rounded-full text-xs font-extrabold text-body hover:bg-cream">
+              ★ Saved
+            </button>
+          </div>
+          <span id="streamCountLabel" class="text-xs font-bold text-muted">6 threads</span>
+        </div>
+
+        <!-- Active Space Banner (when filtered to a specific circle/committee) -->
+        <div id="activeSpaceBanner" class="hidden bg-cream border border-line rounded-2xl p-4 flex items-center justify-between gap-4">
+          <div>
+            <div id="activeSpaceCategory" class="text-[11px] font-extrabold uppercase tracking-wider text-gold">Cheese Family Circle</div>
+            <h3 id="activeSpaceTitle" class="font-display font-bold text-lg text-ink">Washed-Rind &amp; Smear</h3>
+            <p id="activeSpaceDesc" class="text-xs text-body"></p>
+          </div>
+          <button type="button" onclick="setActiveSpace('all')" class="px-3 py-1.5 rounded-full bg-white border border-line text-xs font-extrabold text-ink hover:bg-paper shrink-0">
+            Show All Spaces ✕
+          </button>
+        </div>
+
+        <!-- Feed Cards Container -->
+        <div id="streamContainer" class="space-y-4"></div>
+      </div>
+
+      <!-- RIGHT CONTEXT RAIL (100-Point Wallet Widget + Committee Meetings + Quick Betty Search) -->
+      <aside class="lg:col-span-3 space-y-5 lg:sticky lg:top-[88px]">
+        <!-- Ask Betty Instant Canon Lookup Widget -->
+        <div class="bg-white border border-line rounded-2xl p-4 space-y-3 shadow-sm">
+          <div class="flex items-center gap-2.5">
+            <div class="w-8 h-8 rounded-full bg-ink text-yellow font-display font-bold text-sm grid place-items-center shrink-0">B</div>
+            <div>
+              <h3 class="font-display font-bold text-sm text-ink">Ask Betty · Guild Canon Lookup</h3>
+              <p class="text-[11px] font-bold text-muted">Instant check across 420+ verified answers</p>
+            </div>
+          </div>
+          <input
+            id="bettyQuickInput"
+            type="search"
+            placeholder="e.g. Geotrichum slip, brine pH, drain swab..."
+            oninput="runBettyQuickLookup(this.value)"
+            class="w-full px-3 py-2 rounded-xl bg-cream border border-line text-xs text-ink placeholder:text-muted focus:outline-none focus:bg-white focus:border-gold"
+          />
+          <div id="bettyQuickResults" class="space-y-2 text-xs">
+            <p class="text-[11.5px] text-muted">Type a make-room or HACCP keyword above to pull verified guild ratios before posting.</p>
+          </div>
+        </div>
+
+        <!-- Mini 100-Point Creamery Priority Wallet -->
+        <div class="bg-cream border border-line rounded-2xl p-4 space-y-3">
+          <div class="flex items-center justify-between">
+            <h3 class="font-display font-bold text-sm text-ink">2027 Priority Wallet</h3>
+            <span id="railWalletRemaining" class="px-2 py-0.5 rounded-full bg-sage-soft text-sage text-[11px] font-extrabold">60 pts left</span>
+          </div>
+          <p class="text-xs text-body">Quincewick Creamery’s live allocation:</p>
+          <div id="railPriorityList" class="space-y-2.5"></div>
+          <button type="button" onclick="setTopSection('priorities')" class="w-full py-2 rounded-full bg-white border border-line hover:bg-paper text-ink text-xs font-extrabold transition">
+            Open Full Priority Board →
+          </button>
+        </div>
+
+        <!-- Upcoming Committee & Guild Sessions -->
+        <div class="bg-white border border-line rounded-2xl p-4 space-y-3">
+          <h3 class="font-display font-bold text-sm text-ink">Upcoming Sessions &amp; Reviews</h3>
+          <div id="eventsList" class="space-y-3"></div>
+        </div>
+      </aside>
+
+    </section>
+  </main>
+
+  <!-- ===================================================================
+       OPTION 1 SLIDE-OVER DETAIL SHEET (Full Thread, Playbook, Ballot, WG)
+       =================================================================== -->
+  <div id="detailSheetBackdrop" onclick="closePostDetail(event)" class="fixed inset-0 z-50 bg-ink/40 backdrop-blur-[2px] hidden justify-end">
+    <div onclick="event.stopPropagation()" class="w-full max-w-[760px] bg-paper h-full shadow-2xl border-l border-line flex flex-col overflow-hidden">
+      <!-- Sticky Sheet Header -->
+      <div class="px-6 py-4 bg-white border-b border-line flex items-center justify-between gap-4">
+        <div id="sheetHeaderBadges" class="flex items-center gap-2 flex-wrap"></div>
+        <div class="flex items-center gap-2">
+          <button type="button" id="sheetSpinWgBtn" onclick="openSpinUpWgModalFromCurrentPost()" class="px-3 py-1.5 rounded-full bg-cream hover:bg-soft text-ink text-xs font-extrabold border border-line transition">
+            Spin Up Working Group
+          </button>
+          <button type="button" onclick="closePostDetail()" class="w-8 h-8 rounded-full bg-cream hover:bg-soft text-ink font-bold grid place-items-center">
+            ✕
+          </button>
+        </div>
+      </div>
+
+      <!-- Scrollable Sheet Body -->
+      <div id="sheetBody" class="flex-1 overflow-y-auto p-6 lg:p-8 space-y-6 custom-scroll"></div>
+    </div>
+  </div>
+
+  <!-- ===================================================================
+       CONFIDENTIAL 1:1 STEWARD & PEER COUNSEL DRAWER
+       =================================================================== -->
+  <div id="counselDrawerBackdrop" onclick="closeCounselDrawer(event)" class="fixed inset-0 z-50 bg-ink/40 backdrop-blur-[2px] hidden justify-end">
+    <div onclick="event.stopPropagation()" class="w-full max-w-[540px] bg-paper h-full shadow-2xl border-l border-line flex flex-col overflow-hidden">
+      <div class="px-6 py-4 bg-ink text-paper flex items-center justify-between">
+        <div>
+          <div class="flex items-center gap-2">
+            <span class="text-xs font-extrabold uppercase tracking-wider text-yellow">🔒 End-to-End Confidential</span>
+          </div>
+          <h3 class="font-display font-bold text-base">Steward &amp; Peer Counsel Rooms</h3>
+        </div>
+        <button type="button" onclick="closeCounselDrawer()" class="w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 text-paper grid place-items-center">✕</button>
+      </div>
+
+      <!-- Room Selector Tabs -->
+      <div id="counselRoomTabs" class="px-6 py-3 bg-cream border-b border-line flex items-center gap-2 overflow-x-auto"></div>
+
+      <!-- Messages Stream -->
+      <div id="counselMessagesList" class="flex-1 overflow-y-auto p-6 space-y-4 custom-scroll"></div>
+
+      <!-- Message Composer -->
+      <form onsubmit="sendCounselMessage(event)" class="p-4 bg-white border-t border-line flex items-center gap-2">
+        <input
+          id="counselInput"
+          type="text"
+          required
+          placeholder="Write a confidential message..."
+          class="flex-1 px-4 py-2.5 rounded-full bg-cream border border-line text-sm text-ink focus:outline-none focus:bg-white focus:border-gold"
+        />
+        <button type="submit" class="px-5 py-2.5 rounded-full bg-yellow hover:bg-butter text-ink text-xs font-extrabold">
+          Send
+        </button>
+      </form>
+    </div>
+  </div>
+
+  <!-- ===================================================================
+       ASK OR SHARE MODAL (With Live Ask-Betty Pre-Post Deflection)
+       =================================================================== -->
+  <div id="composerModalBackdrop" onclick="closeComposerModal(event)" class="fixed inset-0 z-50 bg-ink/40 backdrop-blur-[2px] hidden items-center justify-center p-4">
+    <div onclick="event.stopPropagation()" class="w-full max-w-2xl bg-paper border border-line rounded-3xl shadow-2xl overflow-hidden">
+      <div class="px-6 py-4 bg-cream border-b border-line flex items-center justify-between">
+        <div>
+          <span class="text-[11px] font-extrabold uppercase tracking-wider text-gold">Contribute to the Guild</span>
+          <h3 class="font-display font-bold text-lg text-ink">Ask a Question, Share Cave Notes, or Draft a Playbook</h3>
+        </div>
+        <button type="button" onclick="closeComposerModal()" class="w-8 h-8 rounded-full bg-white border border-line text-ink grid place-items-center">✕</button>
+      </div>
+
+      <form onsubmit="submitNewPost(event)" class="p-6 space-y-4">
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div>
+            <label class="block text-xs font-extrabold text-muted uppercase mb-1">Post Type</label>
+            <select id="composeType" class="w-full px-3.5 py-2 rounded-xl bg-white border border-line text-sm font-bold text-ink">
+              <option value="Question">Cave &amp; Make-Room Question (Q&amp;A)</option>
+              <option value="Playbook">Living Creamery Playbook / SOP</option>
+              <option value="Discussion">Field Trial / Guild Discussion</option>
+            </select>
+          </div>
+          <div>
+            <label class="block text-xs font-extrabold text-muted uppercase mb-1">Cheese Family / Circle</label>
+            <select id="composeSpace" class="w-full px-3.5 py-2 rounded-xl bg-white border border-line text-sm font-bold text-ink">
+              <option value="washed">Washed-Rind &amp; Smear</option>
+              <option value="haccp">Raw-Milk &amp; HACCP</option>
+              <option value="alpine">Alpine &amp; Cooked-Curd</option>
+              <option value="bloomy">Bloomy &amp; Surface-Ripened</option>
+              <option value="committee-cave">Cave Standards Committee</option>
+            </select>
+          </div>
+        </div>
+
+        <div>
+          <label class="block text-xs font-extrabold text-muted uppercase mb-1">Headline / Question</label>
+          <input
+            id="composeTitle"
+            type="text"
+            required
+            placeholder="e.g., Target drain pH and brine dwell time for 6 kg raw-milk tomme?"
+            oninput="checkComposerDeflection(this.value)"
+            class="w-full px-4 py-2.5 rounded-xl bg-white border border-line text-sm text-ink focus:outline-none focus:border-gold"
+          />
+        </div>
+
+        <!-- Live Ask Betty Pre-Post Deflection Box -->
+        <div id="composerDeflectionBox" class="hidden bg-sage-soft border border-sage/30 rounded-2xl p-4 space-y-2">
+          <div class="flex items-center justify-between">
+            <span class="text-xs font-extrabold text-sage">💡 Betty found matching verified answers in the Guild Canon:</span>
+            <span class="text-[11px] font-bold text-muted">Click to view immediately</span>
+          </div>
+          <div id="composerDeflectionLinks" class="space-y-1.5"></div>
+        </div>
+
+        <div>
+          <label class="block text-xs font-extrabold text-muted uppercase mb-1">Details, Make-Sheet Parameters &amp; Cave Conditions</label>
+          <textarea
+            id="composeBody"
+            rows="4"
+            required
+            placeholder="Include milk type, starter cultures, drain pH, cave temperature (°C), and relative humidity (% RH)..."
+            class="w-full px-4 py-2.5 rounded-xl bg-white border border-line text-sm text-ink focus:outline-none focus:border-gold"
+          ></textarea>
+        </div>
+
+        <div>
+          <label class="block text-xs font-extrabold text-muted uppercase mb-1">Tags (comma-separated)</label>
+          <input
+            id="composeTags"
+            type="text"
+            placeholder="Washed-Rind, Brine Tank, pH, Geotrichum"
+            class="w-full px-4 py-2 rounded-xl bg-white border border-line text-sm text-ink focus:outline-none focus:border-gold"
+          />
+        </div>
+
+        <div class="flex items-center justify-end gap-2.5 pt-2 border-t border-line">
+          <button type="button" onclick="closeComposerModal()" class="px-4 py-2 rounded-full bg-white border border-line text-xs font-extrabold text-ink">Cancel</button>
+          <button type="submit" class="px-5 py-2 rounded-full bg-yellow hover:bg-butter text-ink text-xs font-extrabold">Publish to Guild Hub</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- ===================================================================
+       SPIN UP WORKING GROUP MODAL
+       =================================================================== -->
+  <div id="spinWgModalBackdrop" onclick="closeSpinUpWgModal(event)" class="fixed inset-0 z-50 bg-ink/40 backdrop-blur-[2px] hidden items-center justify-center p-4">
+    <div onclick="event.stopPropagation()" class="w-full max-w-lg bg-paper border border-line rounded-3xl shadow-2xl overflow-hidden">
+      <div class="px-6 py-4 bg-cream border-b border-line flex items-center justify-between">
+        <div>
+          <span class="text-[11px] font-extrabold uppercase tracking-wider text-sage">Thread → Actionable Deliverable</span>
+          <h3 class="font-display font-bold text-lg text-ink">Spin Up Ad-Hoc Working Group</h3>
+        </div>
+        <button type="button" onclick="closeSpinUpWgModal()" class="w-8 h-8 rounded-full bg-white border border-line text-ink grid place-items-center">✕</button>
+      </div>
+      <form onsubmit="createWorkingGroup(event)" class="p-6 space-y-4">
+        <div>
+          <label class="block text-xs font-extrabold text-muted uppercase mb-1">Working Group Name</label>
+          <input id="wgTitleInput" type="text" required placeholder="e.g., Day-28 Washed-Rind Humidity Step-Down Trial WG" class="w-full px-4 py-2.5 rounded-xl bg-white border border-line text-sm text-ink" />
+        </div>
+        <div>
+          <label class="block text-xs font-extrabold text-muted uppercase mb-1">Target Deliverable &amp; Sponsoring Committee</label>
+          <textarea id="wgGoalInput" rows="3" required placeholder="Define the protocol, template, or trial dataset this group will deliver to the Cave Standards Committee..." class="w-full px-4 py-2.5 rounded-xl bg-white border border-line text-sm text-ink"></textarea>
+        </div>
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block text-xs font-extrabold text-muted uppercase mb-1">Invited Creameries</label>
+            <input id="wgMembersInput" type="text" value="Quincewick, Bellows &amp; Brine, Sorrelgate" class="w-full px-3.5 py-2 rounded-xl bg-white border border-line text-xs text-ink" />
+          </div>
+          <div>
+            <label class="block text-xs font-extrabold text-muted uppercase mb-1">Target Due Date</label>
+            <input id="wgDueInput" type="text" value="Nov 15, 2026" class="w-full px-3.5 py-2 rounded-xl bg-white border border-line text-xs text-ink" />
+          </div>
+        </div>
+        <div class="flex justify-end gap-2 pt-2 border-t border-line">
+          <button type="button" onclick="closeSpinUpWgModal()" class="px-4 py-2 rounded-full bg-white border border-line text-xs font-extrabold">Cancel</button>
+          <button type="submit" class="px-5 py-2 rounded-full bg-yellow hover:bg-butter text-ink text-xs font-extrabold">Launch Working Group</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- ===================================================================
+       PROPOSE NEW 2027 PRIORITY INITIATIVE MODAL
+       =================================================================== -->
+  <div id="newPriorityModalBackdrop" onclick="closeNewPriorityModal(event)" class="fixed inset-0 z-50 bg-ink/40 backdrop-blur-[2px] hidden items-center justify-center p-4">
+    <div onclick="event.stopPropagation()" class="w-full max-w-lg bg-paper border border-line rounded-3xl shadow-2xl overflow-hidden">
+      <div class="px-6 py-4 bg-cream border-b border-line flex items-center justify-between">
+        <div>
+          <span class="text-[11px] font-extrabold uppercase tracking-wider text-gold">2027 Priority Board</span>
+          <h3 class="font-display font-bold text-lg text-ink">Propose a Guild Priority Initiative</h3>
+        </div>
+        <button type="button" onclick="closeNewPriorityModal()" class="w-8 h-8 rounded-full bg-white border border-line text-ink grid place-items-center">✕</button>
+      </div>
+      <form onsubmit="submitNewPriority(event)" class="p-6 space-y-4">
+        <div>
+          <label class="block text-xs font-extrabold text-muted uppercase mb-1">Initiative Title</label>
+          <input id="prioTitleInput" type="text" required placeholder="e.g., Regional Spruce Aging-Board Kiln Co-Op" class="w-full px-4 py-2.5 rounded-xl bg-white border border-line text-sm text-ink" />
+        </div>
+        <div>
+          <label class="block text-xs font-extrabold text-muted uppercase mb-1">Category</label>
+          <input id="prioCatInput" type="text" required value="Affinage &amp; Infrastructure" class="w-full px-4 py-2 rounded-xl bg-white border border-line text-sm text-ink" />
+        </div>
+        <div>
+          <label class="block text-xs font-extrabold text-muted uppercase mb-1">Member Impact Summary</label>
+          <textarea id="prioDescInput" rows="3" required placeholder="How will this save creameries money or improve cheese quality?" class="w-full px-4 py-2.5 rounded-xl bg-white border border-line text-sm text-ink"></textarea>
+        </div>
+        <div class="flex justify-end gap-2 pt-2 border-t border-line">
+          <button type="button" onclick="closeNewPriorityModal()" class="px-4 py-2 rounded-full bg-white border border-line text-xs font-extrabold">Cancel</button>
+          <button type="submit" class="px-5 py-2 rounded-full bg-yellow hover:bg-butter text-ink text-xs font-extrabold">Add to Priority Board</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- TOAST NOTIFICATION -->
+  <div id="toastBanner" class="fixed bottom-6 left-6 z-50 hidden items-center gap-2.5 px-4 py-3 rounded-2xl bg-ink text-paper text-xs font-extrabold shadow-xl">
+    <span class="w-2.5 h-2.5 rounded-full bg-yellow"></span>
+    <span id="toastMessage">Saved to Guild Database</span>
+  </div>
+
+  <!-- FOOTER (Standard MoreCheese Disclaimer) -->
+  <footer class="mt-16 border-t border-line bg-cream py-8 px-6 text-xs text-muted">
+    <div class="max-w-[1380px] mx-auto flex flex-wrap items-center justify-between gap-4">
+      <div class="flex items-center gap-2.5">
+        <strong class="text-ink font-display">More Cheese · The International Cheese Federation (ICF)</strong>
+        <span>·</span>
+        <span>Unified Option 3 (Entry Hub) + Option 1 (Guild Commons &amp; Detail Sheet)</span>
+      </div>
+      <p>
+        The International Cheese Federation (ICF) and More Cheese are fictional demonstration content created for MemberJunction.
+      </p>
+    </div>
+  </footer>
+
+  <!-- ===================================================================
+       INDEXEDDB + APPLICATION CONTROLLER (Vanilla JS)
+       =================================================================== -->
+  <script>
+    const DB_NAME = 'MoreCheeseGuildHubDB_v1';
+    const DB_VERSION = 1;
+
+    // Initial Seed Data for IndexedDB
+    const SEED_STATE = {
+      spaces: [
+        { id: 'all', name: 'All Guild Activity', group: 'space', desc: 'Every Cheese Family circle, playbook, committee motion, and working group.' },
+        { id: 'washed', name: 'Washed-Rind & Smear', group: 'space', desc: 'Morge brine management, B. linens & Geotrichum balance, and high-humidity affinage.' },
+        { id: 'haccp', name: 'Raw-Milk & HACCP', group: 'space', desc: 'Environmental swab maps, Zone 1–3 drain sanitation, and FDA/FSMA inspection prep.' },
+        { id: 'alpine', name: 'Alpine & Cooked-Curd', group: 'space', desc: 'Copper-vat make sheets, thermophilic starters, and warm-room eye formation.' },
+        { id: 'bloomy', name: 'Bloomy & Surface-Ripened', group: 'space', desc: 'Penicillium candidum rind development, two-ply wrap OTR, and proteolysis control.' },
+        { id: 'committee-cave', name: 'Cave Standards Committee', group: 'committee', badge: 'Vote', desc: 'Standing 12-seat committee ratifying international affinage and sanitation protocols.' },
+        { id: 'wg-listeria', name: 'Listeria Swab-Map WG', group: 'wg', badge: 'Active', desc: '5-creamery working group producing the 3-Zone Aging Room Floor-Drain Swab Diagram.' }
+      ],
+      posts: [
+        {
+          id: 'post-motion-2026-08',
+          spaceId: 'committee-cave',
+          type: 'Motion',
+          badge: 'Committee Ballot · Open',
+          badgeStyle: 'berry',
+          title: 'Motion M-2026-08: Adopt Standardized Wooden-Board Heat-Sanitation Protocol (68°C / 15 min)',
+          summary: 'Formal Cave Standards Committee ballot following 14 weeks of microbial swab trials across 9 member creameries in Vermont, Savoie, and Somerset.',
+          body: `Following 14 weeks of microbial swab trials across 9 member creameries in Vermont, Savoie, and Somerset, this motion adopts the standardized 68°C / 15-minute steam-kiln cycle for aged spruce shelving boards.\n\nLab swabs confirm 5-log Listeria monocytogenes reduction in spruce grain pores without stripping resident beneficial Geotrichum candidum and Debaryomyces hansenii biofilms. Once ratified by committee ballot, this protocol will publish to all 641 member creameries.`,
+          author: 'Claire Vance',
+          role: 'Chair, Cave Standards Committee · Damsonwick Fine Cheese',
+          initials: 'CV',
+          time: 'Closes Friday 5:00 PM UTC',
+          upvotes: 34,
+          upvoted: true,
+          bookmarked: true,
+          tags: ['Spruce Boards', 'Committee Ballot', 'HACCP', 'Affinage'],
+          ballot: {
+            myVote: 'Yea',
+            yeaBase: 7,
+            nayBase: 0,
+            abstainBase: 1,
+            totalSeats: 12
+          }
+        },
+        {
+          id: 'post-geo-slip',
+          spaceId: 'washed',
+          type: 'Question',
+          badge: '✓ Verified Answer',
+          badgeStyle: 'sage',
+          title: 'Preventing late-stage Geotrichum slip on 60-day washed-rind wheels at 94% RH?',
+          summary: 'Our autumn 2.5 kg semi-soft washed-rind batch shows classic toad-skin slip around Day 42. Make-room drain pH is 4.95, salting at 1.9% dry weight.',
+          body: `Our autumn batch of 2.5 kg semi-soft washed-rind wheels is showing classic toad-skin slip right around Day 42. Make-room drain pH is 4.95, dry salting at 1.9% weight, and cave conditions sit at 11.5°C / 94% RH with 3x weekly 3.0% morge washes.\n\nHas anyone adjusted their KL71 / Geo 15 culture ratio or stepped down cave humidity at Day 28 to lock the rind matrix before sub-rind proteolysis accelerates?`,
+          author: 'Mateo Lindqvist',
+          role: 'Master Cheesemaker · Bellows & Brine Creamery',
+          initials: 'ML',
+          time: '2 hours ago',
+          upvotes: 28,
+          upvoted: false,
+          bookmarked: true,
+          acceptedReplyId: 'rep-geo-1',
+          tags: ['Washed-Rind', 'Geotrichum', 'Humidity', 'Morge Brine']
+        },
+        {
+          id: 'post-brine-playbook',
+          spaceId: 'washed',
+          type: 'Playbook',
+          badge: 'Living Playbook · v2.4',
+          badgeStyle: 'gold',
+          title: '2026 Artisan Brine Tank Maintenance & Salinity Correction Guide',
+          summary: 'Co-authored by 19 creameries. Includes saturated brine CaCl₂ equilibrium ratios (0.08%), pH 5.20 buffering, and the interactive batch calculator.',
+          body: `Saturated brine tanks require tight calcium and pH equilibrium (pH 5.15–5.25, 0.08% food-grade CaCl₂) to prevent slimy rind leaching (weak calcium) or horn-rind cracking (over-acidified brine).\n\n1. Maintain brine temperature at 11°C–12°C to match your primary aging room.\n2. Test Baumé / % saturation weekly after whey moisture dilution.\n3. Whenever adding fresh water + NaCl, dose 0.8g CaCl₂ per kg of make weight and buffer pH with food-grade lactic acid to 5.20.`,
+          author: 'Soraia Moreau',
+          role: 'Microbiologist · Sorrelgate Cheese Co.',
+          initials: 'SM',
+          time: 'Updated yesterday · 19 contributors',
+          upvotes: 52,
+          upvoted: true,
+          bookmarked: false,
+          hasCalculator: true,
+          tags: ['Brine Tank', 'Playbook', 'Salinity', 'CaCl2']
+        },
+        {
+          id: 'post-listeria-wg',
+          spaceId: 'wg-listeria',
+          type: 'WorkingGroup',
+          badge: 'Working Group · 5 Creameries',
+          badgeStyle: 'sage',
+          title: 'Listeria Environmental Swab-Map Template Working Group (Deliverable Check)',
+          summary: 'Spun out of the Zone 2 floor-drain Q&A thread. Co-authoring the standardized 3-Zone Aging Room Swab Diagram for small creameries.',
+          body: `This working group was launched directly from last month's Raw-Milk & HACCP Q&A thread on trench-drain monitoring. Five member creameries are finalizing the ready-to-print 3-Zone Aging Room Swab Diagram before submitting it to the Cave Standards Committee.`,
+          author: 'Aisha Bell',
+          role: 'Working Group Lead · Quincewick Creamery',
+          initials: 'AB',
+          time: 'Deliverable due Oct 18',
+          upvotes: 19,
+          upvoted: false,
+          bookmarked: false,
+          tags: ['Working Group', 'Listeria', 'Swab Map', 'Zone 2'],
+          milestones: [
+            { id: 'm1', text: 'Aggregate 90-day ATP & Listeria spp. swab logs across 5 trial creameries', done: true },
+            { id: 'm2', text: 'Draft Zone 1–3 aging-room floor drain diagram & 250 ppm peracetic foam SOP', done: true },
+            { id: 'm3', text: 'Final member sign-off & submission to Cave Standards Committee', done: false }
+          ]
+        },
+        {
+          id: 'post-alpine-eyes',
+          spaceId: 'alpine',
+          type: 'Playbook',
+          badge: 'Living Playbook · v1.8',
+          badgeStyle: 'gold',
+          title: 'Warm-Room Staging Curves for Propionibacterium Eye Formation in 14 kg Copper-Vat Wheels',
+          summary: 'Preventing late-stage slit defects in autumn pasture milk by holding warm-room wheels at 19.5°C for 18 days before cooling to 10.5°C.',
+          body: `Late-autumn grass silage or hay transitions can cause uneven gas production during warm-room fermentation. Holding 14 kg wheels at 19.5°C (rather than 22°C) for 18 days produces clean, elastic 14–18mm eyes without horizontal slit fissures.`,
+          author: 'Lukas Meier',
+          role: 'Cellar Master · Gruyère Collective',
+          initials: 'LM',
+          time: '3 days ago',
+          upvotes: 23,
+          upvoted: false,
+          bookmarked: false,
+          tags: ['Alpine', 'Propionibacterium', 'Warm Room', 'Copper Vat']
+        },
+        {
+          id: 'post-bloomy-wrap',
+          spaceId: 'bloomy',
+          type: 'Question',
+          badge: 'Needs Answer',
+          badgeStyle: 'outline',
+          title: 'High-OTR two-ply waxed cellulose wrap recommendations for 350g goat bloomy rounds?',
+          summary: 'Looking to extend monger cut-wrap shelf life past Day 28 without surface ammonia buildup during cross-country cold-chain transit.',
+          body: `We are shipping 350g lactic goat bloomy rounds from Vermont to West Coast mongers. Standard 45 g/m² two-ply micro-perforated wrap starts trapping ammonia around Day 24. Has anyone tested the newer 38 g/m² high-OTR waxed cellulose sheets?`,
+          author: 'Chidi Okonkwo',
+          role: 'Buyer & Monger · Okonkwo & Daughters Fine Cheese',
+          initials: 'CO',
+          time: '5 hours ago',
+          upvotes: 11,
+          upvoted: false,
+          bookmarked: false,
+          acceptedReplyId: null,
+          tags: ['Bloomy-Rind', 'Packaging', 'Cold Chain', 'Monger']
+        }
+      ],
+      replies: [
+        {
+          id: 'rep-geo-1',
+          postId: 'post-geo-slip',
+          author: 'Soraia Moreau',
+          role: 'Microbiologist · Sorrelgate Cheese Co.',
+          initials: 'SM',
+          time: '1 hour ago',
+          upvotes: 19,
+          body: 'At 94% RH past Day 30, Geotrichum candidum over-hydrates the sub-rind paste faster than B. linens can knit the surface protein matrix. Move wheels to an 89–91% RH zone at Day 28, raise your morge wash from 3.0% to 3.4% NaCl + 0.05% CaCl₂, and switch from woven linen to perforated aging mats for Days 28–45.'
+        },
+        {
+          id: 'rep-geo-2',
+          postId: 'post-geo-slip',
+          author: 'Claire Vance',
+          role: 'Chair, Cave Standards Committee · Damsonwick Fine Cheese',
+          initials: 'CV',
+          time: '42 mins ago',
+          upvotes: 8,
+          body: 'Seconding Soraia’s perforated mat switch at Day 28. Flipping every 48 hours during Days 28–38 also eliminated bottom-face rind slip in our Cellar #2 autumn trials.'
+        },
+        {
+          id: 'rep-motion-1',
+          postId: 'post-motion-2026-08',
+          author: 'Mateo Lindqvist',
+          role: 'Master Cheesemaker · Bellows & Brine Creamery',
+          initials: 'ML',
+          time: 'Yesterday',
+          upvotes: 12,
+          body: 'Voted Yea. Our spruce boards showed zero warping at 68°C / 15 min when stacked with 25mm air-flow spacers in the steam kiln.'
+        }
+      ],
+      priorities: [
+        {
+          id: 'prio-freight',
+          category: 'Logistics & Cold Chain',
+          title: 'Shared Cold-Chain LTL Freight Co-Op (Midwest & New England → East/West Hubs)',
+          desc: 'Consolidate weekly 4°C palletized specialty cheese freight across 48 regional creameries to cut distributor LTL rates by 32%.',
+          myPoints: 25,
+          guildPoints: 4120
+        },
+        {
+          id: 'prio-pcr',
+          category: 'Food Safety & Lab Access',
+          title: 'Subsidized Raw-Milk PCR Pathogen Lab Vouchers ($18 Flat Rate)',
+          desc: 'Negotiate $18 flat-rate Listeria spp. & STEC environmental swab panels with partner dairy laboratories for member creameries.',
+          myPoints: 15,
+          guildPoints: 3890
+        },
+        {
+          id: 'prio-atlas',
+          category: 'Education & Certification',
+          title: 'Interactive Sensory & Paste Defect Atlas for CCP Candidates',
+          desc: 'High-resolution rind and paste defect reference library paired with regional blind-tasting calibration kits for mongers and apprentices.',
+          myPoints: 0,
+          guildPoints: 2450
+        },
+        {
+          id: 'prio-spruce',
+          category: 'Affinage & Infrastructure',
+          title: 'Import Tariff Relief Brief for European Copper Vats & Aged Spruce Shelving',
+          desc: 'Joint trade-counsel filing to exempt traditional dairy copper vats and quarter-sawn Jura spruce boards from industrial equipment tariffs.',
+          myPoints: 0,
+          guildPoints: 1980
+        }
+      ],
+      counselRooms: [
+        {
+          id: 'room-fda',
+          title: 'Dr. Henrik Vance · Regulatory Steward',
+          subtitle: 'Confidential Pre-Inspection HACCP & Zone 2 Swab Review',
+          unread: 1,
+          messages: [
+            { sender: 'Dr. Henrik Vance', initials: 'HV', time: '10:14 AM', mine: false, text: 'Hi Aisha — I reviewed your floor-plan PDF for Quincewick’s Aging Cellar #2. Your trench drain sits 1.8m from the lower spruce rack, which places it squarely in Zone 2.' },
+            { sender: 'Dr. Henrik Vance', initials: 'HV', time: '10:15 AM', mine: false, text: 'Run a weekly Tuesday ATP + Listeria spp. sponge swab 2 hours post-washdown, and log your peracetic acid foam sanitizer at 250 ppm. You are in great shape for the audit.' }
+          ]
+        },
+        {
+          id: 'room-claire',
+          title: 'Claire Vance · Cave Standards Chair',
+          subtitle: '1:1 Peer Note on Spruce Kiln Spacers',
+          unread: 1,
+          messages: [
+            { sender: 'Claire Vance', initials: 'CV', time: 'Yesterday', mine: false, text: 'Thanks for co-leading the Listeria Swab-Map Working Group, Aisha! Let me know when Milestone 3 is ready so we can put it on Thursday’s committee agenda.' }
+          ]
+        }
+      ],
+      events: [
+        { id: 'ev-1', title: 'Cave Standards Committee · Motion M-2026-08 Review', time: 'Thu · 2:00 PM UTC', rsvp: true },
+        { id: 'ev-2', title: 'Listeria Swab-Map Working Group Final Sign-Off', time: 'Fri · 4:00 PM UTC', rsvp: true },
+        { id: 'ev-3', title: 'CCP Autumn Cohort Blind Sensory Calibration', time: 'Tue · 6:00 PM UTC', rsvp: false }
+      ],
+      brinePresets: [
+        { id: 'bp-1', label: 'Quincewick 2.5kg Washed-Rind (180kg @ 21%)', detail: '37.8 kg NaCl · 144g CaCl₂ · 14 hrs' }
+      ]
+    };
+
+    // Runtime state
+    let state = null;
+    let activeTopSection = 'hub';
+    let activeSpaceId = 'all';
+    let activeStreamFilter = 'all';
+    let globalSearchQuery = '';
+    let currentDetailPostId = null;
+    let activeCounselRoomId = 'room-fda';
+    let porchCollapsed = false;
+
+    // IndexedDB Wrapper
+    function openDB() {
+      return new Promise((resolve, reject) => {
+        const req = indexedDB.open(DB_NAME, DB_VERSION);
+        req.onupgradeneeded = (e) => {
+          const db = e.target.result;
+          if (!db.objectStoreNames.contains('kv')) {
+            db.createObjectStore('kv');
+          }
+        };
+        req.onsuccess = () => resolve(req.result);
+        req.onerror = () => reject(req.error);
+      });
+    }
+
+    async function loadStateFromDB() {
+      try {
+        const db = await openDB();
+        return new Promise((resolve) => {
+          const tx = db.transaction('kv', 'readonly');
+          const store = tx.objectStore('kv');
+          const getReq = store.get('appState');
+          getReq.onsuccess = () => {
+            if (getReq.result) {
+              resolve(getReq.result);
+            } else {
+              const cloned = JSON.parse(JSON.stringify(SEED_STATE));
+              saveStateToDB(cloned);
+              resolve(cloned);
+            }
+          };
+          getReq.onerror = () => resolve(JSON.parse(JSON.stringify(SEED_STATE)));
+        });
+      } catch {
+        return JSON.parse(JSON.stringify(SEED_STATE));
+      }
+    }
+
+    async function saveStateToDB(newState = state) {
+      try {
+        const db = await openDB();
+        const tx = db.transaction('kv', 'readwrite');
+        tx.objectStore('kv').put(newState, 'appState');
+      } catch (e) {
+        console.warn('IndexedDB save fallback:', e);
+      }
+    }
+
+    async function resetDemoDatabase() {
+      state = JSON.parse(JSON.stringify(SEED_STATE));
+      await saveStateToDB(state);
+      renderAll();
+      showToast('Demo database reset to initial MoreCheese Guild seed data');
+    }
+
+    // Top-level Navigation
+    function setTopSection(section) {
+      activeTopSection = section;
+      document.querySelectorAll('.top-tab').forEach(btn => {
+        const isMatch = btn.dataset.topTab === section;
+        btn.className = isMatch
+          ? 'top-tab px-4 py-1.5 rounded-full text-xs font-extrabold transition-all bg-ink text-paper flex items-center gap-1.5'
+          : 'top-tab px-4 py-1.5 rounded-full text-xs font-extrabold transition-all text-body hover:text-ink flex items-center gap-1.5';
+      });
+
+      document.getElementById('entryPorchSection').classList.toggle('hidden', section !== 'hub');
+      document.getElementById('commonsWorkspace').classList.toggle('hidden', section !== 'hub');
+      document.getElementById('sectionPlaybooks').classList.toggle('hidden', section !== 'playbooks');
+      document.getElementById('sectionCommittees').classList.toggle('hidden', section !== 'committees');
+      document.getElementById('sectionPriorities').classList.toggle('hidden', section !== 'priorities');
+
+      renderAll();
+    }
+
+    function togglePorchCollapse() {
+      porchCollapsed = !porchCollapsed;
+      document.getElementById('porchExpandedBody').classList.toggle('hidden', porchCollapsed);
+      document.getElementById('featuredCardsRow').classList.toggle('hidden', porchCollapsed);
+      document.getElementById('porchToggleBtn').textContent = porchCollapsed ? 'Expand Front Porch ↓' : 'Compact View ↑';
+    }
+
+    function handleGlobalSearch(q) {
+      globalSearchQuery = (q || '').trim().toLowerCase();
+      if (activeTopSection !== 'hub') {
+        setTopSection('hub');
+      } else {
+        renderStream();
+      }
+    }
+
+    // Render Everything
+    function renderAll() {
+      renderHeaderBadges();
+      renderFeaturedHighlights();
+      renderLeftRail();
+      renderStream();
+      renderRightRail();
+      renderPlaybooksSection();
+      renderCommitteesSection();
+      renderPrioritiesSection();
+      if (currentDetailPostId) {
+        renderDetailSheetContent(currentDetailPostId);
+      }
+    }
+
+    function getRemainingPoints() {
+      const used = state.priorities.reduce((acc, p) => acc + (p.myPoints || 0), 0);
+      return Math.max(0, 100 - used);
+    }
+
+    function renderHeaderBadges() {
+      const rem = getRemainingPoints();
+      document.getElementById('navWalletBadge').textContent = `${rem} pts`;
+      document.getElementById('railWalletRemaining').textContent = `${rem} pts left`;
+      const unread = state.counselRooms.reduce((sum, r) => sum + (r.unread || 0), 0);
+      const badge = document.getElementById('counselUnreadBadge');
+      badge.textContent = unread;
+      badge.classList.toggle('hidden', unread === 0);
+    }
+
+    function renderFeaturedHighlights() {
+      // Motion card state
+      const motion = state.posts.find(p => p.id === 'post-motion-2026-08');
+      if (motion && motion.ballot) {
+        const myVote = motion.ballot.myVote;
+        const castCount = motion.ballot.yeaBase + motion.ballot.nayBase + motion.ballot.abstainBase + (myVote ? 1 : 0);
+        document.getElementById('featuredQuorumLabel').textContent = `${castCount} of ${motion.ballot.totalSeats} Seats Cast`;
+        ['Yea', 'Nay', 'Abstain'].forEach(opt => {
+          const btn = document.getElementById('quickBtn' + opt);
+          if (!btn) return;
+          if (myVote === opt) {
+            btn.className = 'px-2.5 py-1 rounded-full text-[11.5px] font-extrabold border bg-yellow border-[#E2B11C] text-ink';
+          } else {
+            btn.className = 'px-2.5 py-1 rounded-full text-[11.5px] font-extrabold border bg-white border-line text-body hover:bg-cream';
+          }
+        });
+      }
+
+      // WG card state
+      const wg = state.posts.find(p => p.id === 'post-listeria-wg');
+      if (wg && wg.milestones) {
+        const done = wg.milestones.filter(m => m.done).length;
+        document.getElementById('featuredWgProgress').textContent = `${done} of ${wg.milestones.length} Milestones`;
+      }
+    }
+
+    function castQuickBallot(postId, choice) {
+      const post = state.posts.find(p => p.id === postId);
+      if (!post || !post.ballot) return;
+      post.ballot.myVote = choice;
+      saveStateToDB();
+      renderAll();
+      showToast(`Ballot recorded: ${choice.toUpperCase()} on Motion M-2026-08`);
+    }
+
+    function updateMiniCalc() {
+      const kg = parseFloat(document.getElementById('miniCalcKg').value) || 100;
+      const pct = parseFloat(document.getElementById('miniCalcPct').value) || 21;
+      const salt = (kg * (pct / 100)).toFixed(1);
+      const ca = Math.round(kg * 0.8);
+      document.getElementById('miniCalcOut').textContent = `${salt}kg · 14h`;
+      document.getElementById('miniCalcCa').textContent = `${ca}g CaCl₂`;
+    }
+
+    // Left Rail
+    function renderLeftRail() {
+      const spacesEl = document.getElementById('leftSpacesNav');
+      const groupsEl = document.getElementById('leftGroupsNav');
+
+      const spaces = state.spaces.filter(s => s.group === 'space');
+      const groups = state.spaces.filter(s => s.group !== 'space');
+
+      spacesEl.innerHTML = spaces.map(s => {
+        const count = s.id === 'all'
+          ? state.posts.length
+          : state.posts.filter(p => p.spaceId === s.id).length;
+        const active = activeSpaceId === s.id;
+        return `
+          <button
+            type="button"
+            onclick="setActiveSpace('${s.id}')"
+            class="w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-extrabold transition ${active ? 'bg-soft text-ink' : 'text-body hover:bg-paper hover:text-ink'}"
+          >
+            <span class="truncate">${s.name}</span>
+            <span class="px-2 py-0.5 rounded-full text-[11px] ${active ? 'bg-ink text-yellow' : 'bg-line/60 text-ink'}">${count}</span>
+          </button>
+        `;
+      }).join('');
+
+      groupsEl.innerHTML = groups.map(g => {
+        const active = activeSpaceId === g.id;
+        const isComm = g.group === 'committee';
+        return `
+          <button
+            type="button"
+            onclick="setActiveSpace('${g.id}')"
+            class="w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-extrabold transition ${active ? 'bg-soft text-ink' : 'text-body hover:bg-paper hover:text-ink'}"
+          >
+            <span class="flex items-center gap-2 truncate">
+              <span class="w-2 h-2 rounded-full shrink-0 ${isComm ? 'bg-gold' : 'bg-sage'}"></span>
+              <span class="truncate">${g.name}</span>
+            </span>
+            <span class="px-2 py-0.5 rounded-full text-[10.5px] font-extrabold ${isComm ? 'bg-berry-soft text-berry' : 'bg-sage-soft text-sage'}">${g.badge || 'Active'}</span>
+          </button>
+        `;
+      }).join('');
+    }
+
+    function setActiveSpace(spaceId) {
+      activeSpaceId = spaceId;
+      const banner = document.getElementById('activeSpaceBanner');
+      if (spaceId === 'all') {
+        banner.classList.add('hidden');
+      } else {
+        const sp = state.spaces.find(s => s.id === spaceId);
+        if (sp) {
+          banner.classList.remove('hidden');
+          document.getElementById('activeSpaceCategory').textContent =
+            sp.group === 'committee' ? 'Standing Committee' : sp.group === 'wg' ? 'Ad-Hoc Working Group' : 'Cheese Family Circle';
+          document.getElementById('activeSpaceTitle').textContent = sp.name;
+          document.getElementById('activeSpaceDesc').textContent = sp.desc || '';
+        }
+      }
+      renderLeftRail();
+      renderStream();
+    }
+
+    function setStreamFilter(filter) {
+      activeStreamFilter = filter;
+      document.querySelectorAll('.stream-filter-btn').forEach(btn => {
+        const active = btn.dataset.filter === filter;
+        btn.className = active
+          ? 'stream-filter-btn px-3 py-1 rounded-full text-xs font-extrabold bg-ink text-paper'
+          : 'stream-filter-btn px-3 py-1 rounded-full text-xs font-extrabold text-body hover:bg-cream';
+      });
+      renderStream();
+    }
+
+    function badgeClasses(style) {
+      if (style === 'sage') return 'bg-sage-soft text-sage';
+      if (style === 'berry') return 'bg-berry-soft text-berry';
+      if (style === 'gold') return 'bg-soft text-ink';
+      return 'bg-cream text-muted border border-line';
+    }
+
+    function renderStream() {
+      const filtered = state.posts.filter(post => {
+        if (activeSpaceId !== 'all' && post.spaceId !== activeSpaceId) return false;
+        if (activeStreamFilter === 'verified' && !post.acceptedReplyId) return false;
+        if (activeStreamFilter === 'unanswered' && (post.type !== 'Question' || post.acceptedReplyId)) return false;
+        if (activeStreamFilter === 'playbook' && post.type !== 'Playbook') return false;
+        if (activeStreamFilter === 'ballot' && post.type !== 'Motion' && post.type !== 'WorkingGroup') return false;
+        if (activeStreamFilter === 'bookmarked' && !post.bookmarked) return false;
+        if (globalSearchQuery) {
+          const hay = `${post.title} ${post.summary} ${post.body} ${(post.tags || []).join(' ')}`.toLowerCase();
+          if (!hay.includes(globalSearchQuery)) return false;
+        }
+        return true;
+      });
+
+      document.getElementById('streamCountLabel').textContent = `${filtered.length} item${filtered.length === 1 ? '' : 's'}`;
+      const container = document.getElementById('streamContainer');
+
+      if (filtered.length === 0) {
+        container.innerHTML = `
+          <div class="bg-white border border-line rounded-2xl p-8 text-center space-y-3">
+            <p class="font-display font-bold text-base text-ink">No matching threads in this view</p>
+            <p class="text-xs text-muted">Try clearing your filter or ask a new question in the Guild Hub.</p>
+            <button type="button" onclick="setActiveSpace('all'); setStreamFilter('all');" class="px-4 py-2 rounded-full bg-yellow text-ink text-xs font-extrabold">
+              Reset Filters
+            </button>
+          </div>
+        `;
+        return;
+      }
+
+      container.innerHTML = filtered.map(post => {
+        const replyCount = state.replies.filter(r => r.postId === post.id).length;
+        const spaceObj = state.spaces.find(s => s.id === post.spaceId);
+        const spaceName = spaceObj ? spaceObj.name : 'Guild Commons';
+        const acceptedReply = post.acceptedReplyId
+          ? state.replies.find(r => r.id === post.acceptedReplyId)
+          : null;
+
+        // Optional inline ballot or milestone snippet
+        let inlineWidget = '';
+        if (post.ballot) {
+          const b = post.ballot;
+          const yeaCount = b.yeaBase + (b.myVote === 'Yea' ? 1 : 0);
+          const nayCount = b.nayBase + (b.myVote === 'Nay' ? 1 : 0);
+          const absCount = b.abstainBase + (b.myVote === 'Abstain' ? 1 : 0);
+          inlineWidget = `
+            <div class="mt-3 p-3.5 rounded-xl bg-cream border border-line flex flex-wrap items-center justify-between gap-2" onclick="event.stopPropagation()">
+              <span class="text-xs font-extrabold text-ink">Your Seat Ballot: <span class="text-sage">${b.myVote.toUpperCase()}</span></span>
+              <div class="flex items-center gap-1.5">
+                <button type="button" onclick="castQuickBallot('${post.id}', 'Yea')" class="px-2.5 py-1 rounded-full text-xs font-extrabold border ${b.myVote === 'Yea' ? 'bg-yellow border-[#E2B11C] text-ink' : 'bg-white border-line text-body'}">✓ Yea (${yeaCount})</button>
+                <button type="button" onclick="castQuickBallot('${post.id}', 'Nay')" class="px-2.5 py-1 rounded-full text-xs font-extrabold border ${b.myVote === 'Nay' ? 'bg-yellow border-[#E2B11C] text-ink' : 'bg-white border-line text-body'}">✕ Nay (${nayCount})</button>
+                <button type="button" onclick="castQuickBallot('${post.id}', 'Abstain')" class="px-2.5 py-1 rounded-full text-xs font-extrabold border ${b.myVote === 'Abstain' ? 'bg-yellow border-[#E2B11C] text-ink' : 'bg-white border-line text-body'}">— Abstain (${absCount})</button>
+              </div>
+            </div>
+          `;
+        } else if (acceptedReply) {
+          inlineWidget = `
+            <div class="mt-3 p-3.5 rounded-xl bg-sage-soft border border-sage/25 text-xs text-ink">
+              <div class="font-extrabold text-sage mb-0.5">✓ Verified Guild Answer · ${acceptedReply.author}</div>
+              <p class="line-clamp-2 text-body">${acceptedReply.body}</p>
+            </div>
+          `;
+        } else if (post.milestones) {
+          const done = post.milestones.filter(m => m.done).length;
+          inlineWidget = `
+            <div class="mt-3 p-3 rounded-xl bg-cream border border-line flex items-center justify-between text-xs">
+              <span class="font-extrabold text-ink">Deliverable Progress: ${done} of ${post.milestones.length} Milestones Complete</span>
+              <span class="text-sage font-extrabold">Click to toggle tasks →</span>
+            </div>
+          `;
+        }
+
+        return `
+          <article
+            onclick="openPostDetail('${post.id}')"
+            class="bg-white border border-line rounded-2xl p-5 hover:border-gold/60 hover:shadow-md transition cursor-pointer"
+          >
+            <div class="flex items-center justify-between gap-2 mb-2.5 flex-wrap">
+              <div class="flex items-center gap-2 flex-wrap">
+                <span class="px-2.5 py-0.5 rounded-full text-[11px] font-extrabold ${badgeClasses(post.badgeStyle)}">${post.badge}</span>
+                <span class="text-xs font-bold text-muted">${spaceName}</span>
+              </div>
+              <button
+                type="button"
+                onclick="event.stopPropagation(); toggleBookmark('${post.id}')"
+                class="text-xs font-extrabold ${post.bookmarked ? 'text-gold' : 'text-muted hover:text-ink'}"
+                title="Save to Bookmarks"
+              >
+                ${post.bookmarked ? '★ Saved' : '☆ Save'}
+              </button>
+            </div>
+
+            <h3 class="font-display font-bold text-[17.5px] text-ink leading-snug mb-1.5">${post.title}</h3>
+            <p class="text-sm text-body leading-relaxed">${post.summary}</p>
+
+            ${inlineWidget}
+
+            <div class="mt-4 pt-3 border-t border-line flex items-center justify-between gap-3 text-xs">
+              <div class="flex items-center gap-2">
+                <div class="w-6 h-6 rounded-full bg-ink text-yellow font-extrabold text-[10px] grid place-items-center">${post.initials}</div>
+                <span class="font-bold text-ink">${post.author}</span>
+                <span class="text-muted hidden sm:inline">· ${post.time}</span>
+              </div>
+              <div class="flex items-center gap-2" onclick="event.stopPropagation()">
+                <button
+                  type="button"
+                  onclick="toggleUpvote('${post.id}')"
+                  class="px-2.5 py-1 rounded-full border text-xs font-extrabold transition ${post.upvoted ? 'bg-soft border-butter text-ink' : 'bg-cream border-line text-body hover:text-ink'}"
+                >
+                  ▲ ${post.upvotes}
+                </button>
+                <button
+                  type="button"
+                  onclick="openPostDetail('${post.id}')"
+                  class="px-3 py-1 rounded-full bg-cream hover:bg-soft text-ink font-extrabold transition"
+                >
+                  ${replyCount} repl${replyCount === 1 ? 'y' : 'ies'} →
+                </button>
+              </div>
+            </div>
+          </article>
+        `;
+      }).join('');
+    }
+
+    function toggleUpvote(postId) {
+      const post = state.posts.find(p => p.id === postId);
+      if (!post) return;
+      post.upvoted = !post.upvoted;
+      post.upvotes += post.upvoted ? 1 : -1;
+      saveStateToDB();
+      renderAll();
+    }
+
+    function toggleBookmark(postId) {
+      const post = state.posts.find(p => p.id === postId);
+      if (!post) return;
+      post.bookmarked = !post.bookmarked;
+      saveStateToDB();
+      renderAll();
+      showToast(post.bookmarked ? 'Saved to your Creamery Bookmarks' : 'Removed from Bookmarks');
+    }
+
+    // Right Rail
+    function renderRightRail() {
+      const railPrio = document.getElementById('railPriorityList');
+      railPrio.innerHTML = state.priorities.slice(0, 3).map(p => `
+        <div class="bg-white border border-line rounded-xl p-2.5 flex items-center justify-between gap-2">
+          <div class="min-w-0">
+            <div class="text-xs font-extrabold text-ink truncate">${p.title}</div>
+            <div class="text-[11px] font-bold text-muted">${p.myPoints} pts allocated</div>
+          </div>
+          <div class="flex items-center gap-1 shrink-0">
+            <button type="button" onclick="adjustPriority('${p.id}', -5)" class="w-6 h-6 rounded-full bg-cream border border-line text-xs font-extrabold hover:bg-soft">−</button>
+            <button type="button" onclick="adjustPriority('${p.id}', 5)" class="w-6 h-6 rounded-full bg-yellow text-ink text-xs font-extrabold hover:bg-butter">+</button>
+          </div>
+        </div>
+      `).join('');
+
+      const evEl = document.getElementById('eventsList');
+      evEl.innerHTML = state.events.map(ev => `
+        <div class="p-3 rounded-xl bg-cream border border-line flex items-center justify-between gap-2">
+          <div>
+            <div class="text-xs font-extrabold text-ink leading-snug">${ev.title}</div>
+            <div class="text-[11px] font-bold text-muted mt-0.5">${ev.time}</div>
+          </div>
+          <button
+            type="button"
+            onclick="toggleEventRsvp('${ev.id}')"
+            class="px-2.5 py-1 rounded-full text-[11px] font-extrabold shrink-0 transition ${ev.rsvp ? 'bg-sage-soft text-sage' : 'bg-white border border-line text-ink hover:bg-soft'}"
+          >
+            ${ev.rsvp ? '✓ Going' : 'RSVP'}
+          </button>
+        </div>
+      `).join('');
+    }
+
+    function toggleEventRsvp(evId) {
+      const ev = state.events.find(e => e.id === evId);
+      if (!ev) return;
+      ev.rsvp = !ev.rsvp;
+      saveStateToDB();
+      renderRightRail();
+      showToast(ev.rsvp ? `RSVP confirmed for ${ev.title}` : `RSVP removed for ${ev.title}`);
+    }
+
+    function runBettyQuickLookup(query) {
+      const q = (query || '').trim().toLowerCase();
+      const box = document.getElementById('bettyQuickResults');
+      if (!q) {
+        box.innerHTML = `<p class="text-[11.5px] text-muted">Type a make-room or HACCP keyword above to pull verified guild ratios before posting.</p>`;
+        return;
+      }
+      const matches = state.posts.filter(p =>
+        `${p.title} ${p.summary} ${p.body}`.toLowerCase().includes(q)
+      ).slice(0, 3);
+
+      if (matches.length === 0) {
+        box.innerHTML = `
+          <div class="p-2.5 rounded-xl bg-cream border border-line text-xs">
+            No canon match for "<strong>${query}</strong>".
+            <button type="button" onclick="openComposerModal('Question', '${query.replace(/'/g, '')}')" class="block mt-1 font-extrabold text-gold hover:underline">+ Ask the Guild →</button>
+          </div>
+        `;
+        return;
+      }
+
+      box.innerHTML = matches.map(m => `
+        <button
+          type="button"
+          onclick="openPostDetail('${m.id}')"
+          class="w-full text-left p-2.5 rounded-xl bg-cream hover:bg-soft border border-line transition block"
+        >
+          <div class="text-[10.5px] font-extrabold text-sage">${m.badge}</div>
+          <div class="text-xs font-extrabold text-ink line-clamp-1">${m.title}</div>
+        </button>
+      `).join('');
+    }
+
+    // Dedicated Playbooks Section
+    function updateFullCalc() {
+      const w = parseFloat(document.getElementById('fullCalcWeight').value) || 100;
+      const s = parseFloat(document.getElementById('fullCalcSalinity').value) || 21;
+      const rawFmt = document.getElementById('fullCalcFormat').value || '1.0|2.5 kg Washed-Rind';
+      const mult = parseFloat(rawFmt.split('|')[0]) || 1.0;
+      const salt = (w * (s / 100)).toFixed(1);
+      const hrs = Math.round(14 * mult);
+      const cacl = Math.round(w * 0.8);
+      document.getElementById('fullCalcOutput').textContent = `${salt} kg NaCl · ${hrs} hrs`;
+      document.getElementById('fullCalcSub').textContent = `Buffer with ${cacl}g CaCl₂ · Hold tank at 11.5°C & pH 5.20`;
+    }
+
+    function saveBrinePreset() {
+      const w = document.getElementById('fullCalcWeight').value;
+      const s = document.getElementById('fullCalcSalinity').value;
+      const fmt = document.getElementById('fullCalcFormat').value.split('|')[1];
+      const out = document.getElementById('fullCalcOutput').textContent;
+      state.brinePresets.unshift({
+        id: 'bp-' + Date.now(),
+        label: `${fmt} (${w}kg @ ${s}%)`,
+        detail: out
+      });
+      saveStateToDB();
+      renderPlaybooksSection();
+      showToast('Batch brine preset saved to IndexedDB');
+    }
+
+    function renderPlaybooksSection() {
+      const presetsEl = document.getElementById('savedPresetsList');
+      if (presetsEl) {
+        presetsEl.innerHTML = (state.brinePresets || []).map(bp => `
+          <span class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white border border-line text-xs font-bold text-ink">
+            <span>${bp.label}: <strong class="text-sage">${bp.detail}</strong></span>
+          </span>
+        `).join('');
+      }
+
+      const grid = document.getElementById('playbooksGrid');
+      if (!grid) return;
+      const playbooks = state.posts.filter(p => p.type === 'Playbook' || p.acceptedReplyId);
+      grid.innerHTML = playbooks.map(p => `
+        <article onclick="openPostDetail('${p.id}')" class="bg-white border border-line rounded-2xl p-6 hover:shadow-md transition cursor-pointer flex flex-col justify-between">
+          <div>
+            <span class="px-2.5 py-0.5 rounded-full text-[11px] font-extrabold ${badgeClasses(p.badgeStyle)}">${p.badge}</span>
+            <h3 class="font-display font-bold text-lg text-ink mt-2.5 mb-2">${p.title}</h3>
+            <p class="text-sm text-body">${p.summary}</p>
+          </div>
+          <div class="mt-4 pt-3 border-t border-line flex items-center justify-between text-xs font-bold text-muted">
+            <span>${p.author} · ${p.time}</span>
+            <span class="text-gold font-extrabold">Open Guide →</span>
+          </div>
+        </article>
+      `).join('');
+    }
+
+    // Dedicated Committees & Working Groups Section
+    function renderCommitteesSection() {
+      const grid = document.getElementById('committeesGrid');
+      if (!grid) return;
+      const items = state.posts.filter(p => p.type === 'Motion' || p.type === 'WorkingGroup');
+      grid.innerHTML = items.map(p => `
+        <article onclick="openPostDetail('${p.id}')" class="bg-white border border-line rounded-2xl p-6 hover:shadow-md transition cursor-pointer flex flex-col justify-between">
+          <div>
+            <span class="px-2.5 py-0.5 rounded-full text-[11px] font-extrabold ${badgeClasses(p.badgeStyle)}">${p.badge}</span>
+            <h3 class="font-display font-bold text-lg text-ink mt-2.5 mb-2">${p.title}</h3>
+            <p class="text-sm text-body mb-3">${p.summary}</p>
+          </div>
+          <div class="pt-3 border-t border-line flex items-center justify-between text-xs font-bold text-muted">
+            <span>${p.author}</span>
+            <span class="text-gold font-extrabold">Open Workspace →</span>
+          </div>
+        </article>
+      `).join('');
+    }
+
+    // Dedicated 2027 Priority Board Section
+    function renderPrioritiesSection() {
+      const rem = getRemainingPoints();
+      const remEl = document.getElementById('priorityRemainingBig');
+      if (remEl) remEl.textContent = `${rem} / 100`;
+
+      const grid = document.getElementById('priorityCardsGrid');
+      if (!grid) return;
+      grid.innerHTML = state.priorities.map(p => `
+        <article class="bg-white border border-line rounded-2xl p-6 flex flex-col justify-between">
+          <div>
+            <div class="flex items-center justify-between gap-2 mb-2">
+              <span class="px-2.5 py-0.5 rounded-full bg-soft text-ink text-[11px] font-extrabold">${p.category}</span>
+              <span class="text-xs font-bold text-muted">Guild Total: ${(p.guildPoints + p.myPoints).toLocaleString()} pts</span>
+            </div>
+            <h3 class="font-display font-bold text-lg text-ink mb-2">${p.title}</h3>
+            <p class="text-sm text-body mb-4">${p.desc}</p>
+          </div>
+          <div class="pt-4 border-t border-line flex items-center justify-between gap-3">
+            <div>
+              <span class="text-xs font-bold text-muted block">Quincewick Allocation</span>
+              <strong class="font-display font-bold text-lg text-ink">${p.myPoints} points</strong>
+            </div>
+            <div class="flex items-center gap-2">
+              <button type="button" onclick="adjustPriority('${p.id}', -5)" class="px-3.5 py-1.5 rounded-full bg-cream border border-line text-xs font-extrabold hover:bg-soft">− 5</button>
+              <button type="button" onclick="adjustPriority('${p.id}', 5)" class="px-3.5 py-1.5 rounded-full bg-yellow hover:bg-butter text-ink text-xs font-extrabold">+ 5 pts</button>
+            </div>
+          </div>
+        </article>
+      `).join('');
+    }
+
+    function adjustPriority(prioId, delta) {
+      const item = state.priorities.find(p => p.id === prioId);
+      if (!item) return;
+      const rem = getRemainingPoints();
+      if (delta > 0 && rem < delta) {
+        showToast('All 100 priority points are allocated! Reduce another item first.');
+        return;
+      }
+      if (item.myPoints + delta < 0) return;
+      item.myPoints += delta;
+      saveStateToDB();
+      renderAll();
+    }
+
+    // Slide-Over Detail Sheet (Option 1 Detail Experience)
+    function openPostDetail(postId) {
+      currentDetailPostId = postId;
+      renderDetailSheetContent(postId);
+      const backdrop = document.getElementById('detailSheetBackdrop');
+      backdrop.classList.remove('hidden');
+      backdrop.classList.add('flex');
+    }
+
+    function closePostDetail(e) {
+      if (e && e.target !== document.getElementById('detailSheetBackdrop')) return;
+      currentDetailPostId = null;
+      const backdrop = document.getElementById('detailSheetBackdrop');
+      backdrop.classList.add('hidden');
+      backdrop.classList.remove('flex');
+    }
+
+    function renderDetailSheetContent(postId) {
+      const post = state.posts.find(p => p.id === postId);
+      if (!post) return;
+      const spaceObj = state.spaces.find(s => s.id === post.spaceId);
+      const replies = state.replies.filter(r => r.postId === post.id);
+      const acceptedReply = post.acceptedReplyId
+        ? replies.find(r => r.id === post.acceptedReplyId)
+        : null;
+
+      document.getElementById('sheetHeaderBadges').innerHTML = `
+        <span class="px-2.5 py-0.5 rounded-full text-xs font-extrabold ${badgeClasses(post.badgeStyle)}">${post.badge}</span>
+        <span class="text-xs font-bold text-muted">${spaceObj ? spaceObj.name : 'Guild Hub'}</span>
+      `;
+
+      let specialModule = '';
+      if (post.ballot) {
+        const b = post.ballot;
+        const yea = b.yeaBase + (b.myVote === 'Yea' ? 1 : 0);
+        const nay = b.nayBase + (b.myVote === 'Nay' ? 1 : 0);
+        const abs = b.abstainBase + (b.myVote === 'Abstain' ? 1 : 0);
+        specialModule = `
+          <div class="p-5 rounded-2xl bg-cream border border-line space-y-3">
+            <div class="flex items-center justify-between">
+              <strong class="font-display font-bold text-sm text-ink">Cave Standards Committee · Official Seat Ballot</strong>
+              <span class="px-2.5 py-0.5 rounded-full bg-sage-soft text-sage text-xs font-extrabold">Your Vote: ${b.myVote.toUpperCase()}</span>
+            </div>
+            <p class="text-xs text-body">Quorum achieved (${yea + nay + abs} of ${b.totalSeats} seats cast). Click below to update Quincewick Creamery’s vote:</p>
+            <div class="flex flex-wrap gap-2">
+              <button type="button" onclick="castQuickBallot('${post.id}', 'Yea')" class="px-4 py-2 rounded-full text-xs font-extrabold border ${b.myVote === 'Yea' ? 'bg-yellow border-[#E2B11C] text-ink' : 'bg-white border-line text-body'}">✓ Vote Yea (${yea})</button>
+              <button type="button" onclick="castQuickBallot('${post.id}', 'Nay')" class="px-4 py-2 rounded-full text-xs font-extrabold border ${b.myVote === 'Nay' ? 'bg-yellow border-[#E2B11C] text-ink' : 'bg-white border-line text-body'}">✕ Vote Nay (${nay})</button>
+              <button type="button" onclick="castQuickBallot('${post.id}', 'Abstain')" class="px-4 py-2 rounded-full text-xs font-extrabold border ${b.myVote === 'Abstain' ? 'bg-yellow border-[#E2B11C] text-ink' : 'bg-white border-line text-body'}">— Abstain (${abs})</button>
+            </div>
+          </div>
+        `;
+      } else if (post.milestones) {
+        specialModule = `
+          <div class="p-5 rounded-2xl bg-cream border border-line space-y-3">
+            <div class="flex items-center justify-between">
+              <strong class="font-display font-bold text-sm text-ink">Working Group Deliverable Milestones</strong>
+              <span class="text-xs font-bold text-muted">Click any item to toggle completion</span>
+            </div>
+            <div class="space-y-2">
+              ${post.milestones.map(m => `
+                <label class="flex items-center gap-3 p-2.5 rounded-xl bg-white border border-line cursor-pointer">
+                  <input type="checkbox" ${m.done ? 'checked' : ''} onchange="toggleWgMilestone('${post.id}', '${m.id}')" class="w-4 h-4 accent-sage" />
+                  <span class="text-xs font-bold ${m.done ? 'line-through text-muted' : 'text-ink'}">${m.text}</span>
+                </label>
+              `).join('')}
+            </div>
+          </div>
+        `;
+      } else if (post.hasCalculator) {
+        specialModule = `
+          <div class="p-5 rounded-2xl bg-cream border border-line space-y-3">
+            <div class="flex items-center justify-between">
+              <strong class="font-display font-bold text-sm text-ink">Embedded Make-Room Brine Calculator</strong>
+              <button type="button" onclick="closePostDetail(); setTopSection('playbooks');" class="text-xs font-extrabold text-gold hover:underline">Open Full Utility →</button>
+            </div>
+            <p class="text-xs text-body">For a 180 kg batch at 21% target brine saturation: dose <strong>37.8 kg NaCl + 144g food-grade CaCl₂</strong> at pH 5.20 for 14 hours.</p>
+          </div>
+        `;
+      }
+
+      const acceptedBanner = acceptedReply ? `
+        <div class="p-5 rounded-2xl bg-sage-soft border border-sage/30 space-y-2">
+          <div class="flex items-center justify-between">
+            <span class="text-xs font-extrabold uppercase tracking-wider text-sage">✓ Accepted Guild Canon Answer</span>
+            <span class="text-xs font-bold text-sage">${acceptedReply.author} · ${acceptedReply.role}</span>
+          </div>
+          <p class="text-sm text-ink leading-relaxed">${acceptedReply.body}</p>
+        </div>
+      ` : '';
+
+      document.getElementById('sheetBody').innerHTML = `
+        <div>
+          <h1 class="font-display font-bold text-2xl text-ink leading-snug mb-3">${post.title}</h1>
+          <div class="flex items-center justify-between pb-4 border-b border-line">
+            <div class="flex items-center gap-3">
+              <div class="w-9 h-9 rounded-full bg-ink text-yellow font-display font-bold text-xs grid place-items-center">${post.initials}</div>
+              <div>
+                <div class="text-sm font-extrabold text-ink">${post.author}</div>
+                <div class="text-xs font-bold text-muted">${post.role} · ${post.time}</div>
+              </div>
+            </div>
+            <button type="button" onclick="toggleUpvote('${post.id}')" class="px-3.5 py-1.5 rounded-full border text-xs font-extrabold ${post.upvoted ? 'bg-soft border-butter text-ink' : 'bg-white border-line text-body'}">
+              ▲ Upvote (${post.upvotes})
+            </button>
+          </div>
+        </div>
+
+        <div class="space-y-3 text-[15px] text-body leading-relaxed whitespace-pre-line">${post.body}</div>
+
+        <div class="flex flex-wrap gap-1.5">
+          ${(post.tags || []).map(t => `<span class="px-2.5 py-0.5 rounded-full bg-cream border border-line text-xs font-bold text-muted">#${t}</span>`).join('')}
+        </div>
+
+        ${acceptedBanner}
+        ${specialModule}
+
+        <!-- Replies Section -->
+        <div class="pt-4 border-t border-line space-y-4">
+          <h3 class="font-display font-bold text-base text-ink">${replies.length} Guild Repl${replies.length === 1 ? 'y' : 'ies'}</h3>
+          <div class="space-y-3">
+            ${replies.map(r => {
+              const isAccepted = post.acceptedReplyId === r.id;
+              return `
+                <div class="p-4 rounded-2xl border ${isAccepted ? 'bg-sage-soft/50 border-sage/40' : 'bg-white border-line'} space-y-2">
+                  <div class="flex items-center justify-between gap-2">
+                    <div class="flex items-center gap-2">
+                      <div class="w-7 h-7 rounded-full bg-ink text-yellow font-bold text-[11px] grid place-items-center">${r.initials}</div>
+                      <div>
+                        <span class="text-xs font-extrabold text-ink">${r.author}</span>
+                        <span class="text-[11px] font-bold text-muted block">${r.role} · ${r.time}</span>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onclick="toggleAcceptReply('${post.id}', '${r.id}')"
+                      class="px-2.5 py-1 rounded-full text-[11px] font-extrabold transition ${isAccepted ? 'bg-sage text-white' : 'bg-cream hover:bg-soft text-ink border border-line'}"
+                    >
+                      ${isAccepted ? '✓ Verified Answer' : 'Mark as Verified Answer'}
+                    </button>
+                  </div>
+                  <p class="text-sm text-body leading-relaxed">${r.body}</p>
+                </div>
+              `;
+            }).join('')}
+          </div>
+
+          <!-- Add Reply Form -->
+          <form onsubmit="submitReply(event, '${post.id}')" class="bg-cream border border-line rounded-2xl p-4 space-y-3">
+            <label class="block text-xs font-extrabold text-ink">Add Quincewick Creamery’s Cave Note or Answer</label>
+            <textarea
+              id="replyInputText"
+              rows="3"
+              required
+              placeholder="Share your make-sheet parameters, swab results, or affinage observations..."
+              class="w-full p-3 rounded-xl bg-white border border-line text-sm text-ink focus:outline-none focus:border-gold"
+            ></textarea>
+            <div class="flex justify-end">
+              <button type="submit" class="px-4 py-2 rounded-full bg-yellow hover:bg-butter text-ink text-xs font-extrabold">
+                Post Reply
+              </button>
+            </div>
+          </form>
+        </div>
+      `;
+    }
+
+    function submitReply(e, postId) {
+      e.preventDefault();
+      const input = document.getElementById('replyInputText');
+      const text = (input.value || '').trim();
+      if (!text) return;
+      state.replies.push({
+        id: 'rep-' + Date.now(),
+        postId,
+        author: 'Aisha Bell',
+        role: 'Head Affineur · Quincewick Creamery',
+        initials: 'AB',
+        time: 'Just now',
+        upvotes: 1,
+        body: text
+      });
+      saveStateToDB();
+      renderAll();
+      showToast('Reply published to thread');
+    }
+
+    function toggleAcceptReply(postId, replyId) {
+      const post = state.posts.find(p => p.id === postId);
+      if (!post) return;
+      if (post.acceptedReplyId === replyId) {
+        post.acceptedReplyId = null;
+        post.badge = 'Needs Answer';
+        post.badgeStyle = 'outline';
+      } else {
+        post.acceptedReplyId = replyId;
+        post.badge = '✓ Verified Answer';
+        post.badgeStyle = 'sage';
+      }
+      saveStateToDB();
+      renderAll();
+      showToast(post.acceptedReplyId ? 'Marked as Verified Guild Answer' : 'Verified Answer status cleared');
+    }
+
+    function toggleWgMilestone(postId, milestoneId) {
+      const post = state.posts.find(p => p.id === postId);
+      if (!post || !post.milestones) return;
+      const m = post.milestones.find(item => item.id === milestoneId);
+      if (!m) return;
+      m.done = !m.done;
+      saveStateToDB();
+      renderAll();
+      showToast(`Milestone updated: ${m.done ? 'Completed' : 'Re-opened'}`);
+    }
+
+    // Composer Modal & Pre-Post Deflection
+    function openComposerModal(defaultType = 'Question', prefillTitle = '') {
+      document.getElementById('composeType').value = defaultType;
+      document.getElementById('composeTitle').value = prefillTitle;
+      document.getElementById('composeBody').value = '';
+      checkComposerDeflection(prefillTitle);
+      const modal = document.getElementById('composerModalBackdrop');
+      modal.classList.remove('hidden');
+      modal.classList.add('flex');
+    }
+
+    function closeComposerModal(e) {
+      if (e && e.target !== document.getElementById('composerModalBackdrop')) return;
+      const modal = document.getElementById('composerModalBackdrop');
+      modal.classList.add('hidden');
+      modal.classList.remove('flex');
+    }
+
+    function checkComposerDeflection(val) {
+      const q = (val || '').trim().toLowerCase();
+      const box = document.getElementById('composerDeflectionBox');
+      const links = document.getElementById('composerDeflectionLinks');
+      if (q.length < 4) {
+        box.classList.add('hidden');
+        return;
+      }
+      const words = q.split(/\s+/).filter(w => w.length > 3);
+      const matches = state.posts.filter(p => {
+        const hay = `${p.title} ${p.summary} ${(p.tags || []).join(' ')}`.toLowerCase();
+        return words.some(w => hay.includes(w));
+      }).slice(0, 2);
+
+      if (matches.length === 0) {
+        box.classList.add('hidden');
+        return;
+      }
+
+      box.classList.remove('hidden');
+      links.innerHTML = matches.map(m => `
+        <button
+          type="button"
+          onclick="closeComposerModal(); openPostDetail('${m.id}')"
+          class="w-full text-left p-2 rounded-xl bg-white hover:bg-cream border border-sage/30 flex items-center justify-between text-xs"
+        >
+          <span class="font-extrabold text-ink truncate">${m.title}</span>
+          <span class="text-sage font-extrabold shrink-0 ml-2">${m.badge} →</span>
+        </button>
+      `).join('');
+    }
+
+    function submitNewPost(e) {
+      e.preventDefault();
+      const type = document.getElementById('composeType').value;
+      const spaceId = document.getElementById('composeSpace').value;
+      const title = document.getElementById('composeTitle').value.trim();
+      const body = document.getElementById('composeBody').value.trim();
+      const rawTags = document.getElementById('composeTags').value;
+      const tags = rawTags ? rawTags.split(',').map(t => t.trim()).filter(Boolean) : ['Guild Hub'];
+
+      const newPost = {
+        id: 'post-' + Date.now(),
+        spaceId,
+        type,
+        badge: type === 'Playbook' ? 'Living Playbook · v1.0' : type === 'Question' ? 'Needs Answer' : 'Field Trial',
+        badgeStyle: type === 'Playbook' ? 'gold' : 'outline',
+        title,
+        summary: body.slice(0, 155) + (body.length > 155 ? '...' : ''),
+        body,
+        author: 'Aisha Bell',
+        role: 'Head Affineur · Quincewick Creamery',
+        initials: 'AB',
+        time: 'Just now',
+        upvotes: 1,
+        upvoted: true,
+        bookmarked: false,
+        acceptedReplyId: null,
+        tags
+      };
+
+      state.posts.unshift(newPost);
+      saveStateToDB();
+      closeComposerModal();
+      renderAll();
+      openPostDetail(newPost.id);
+      showToast('Published to More Cheese Guild Hub');
+    }
+
+    // Spin Up Working Group Modal
+    function openSpinUpWgModal(prefillTitle = '') {
+      document.getElementById('wgTitleInput').value = prefillTitle;
+      document.getElementById('wgGoalInput').value = '';
+      const modal = document.getElementById('spinWgModalBackdrop');
+      modal.classList.remove('hidden');
+      modal.classList.add('flex');
+    }
+
+    function openSpinUpWgModalFromCurrentPost() {
+      const post = state.posts.find(p => p.id === currentDetailPostId);
+      const suggested = post ? `${post.title.slice(0, 48)} Working Group` : '';
+      openSpinUpWgModal(suggested);
+    }
+
+    function closeSpinUpWgModal(e) {
+      if (e && e.target !== document.getElementById('spinWgModalBackdrop')) return;
+      const modal = document.getElementById('spinWgModalBackdrop');
+      modal.classList.add('hidden');
+      modal.classList.remove('flex');
+    }
+
+    function createWorkingGroup(e) {
+      e.preventDefault();
+      const title = document.getElementById('wgTitleInput').value.trim();
+      const goal = document.getElementById('wgGoalInput').value.trim();
+      const members = document.getElementById('wgMembersInput').value.trim();
+      const due = document.getElementById('wgDueInput').value.trim();
+
+      const wgSpaceId = 'wg-' + Date.now();
+      state.spaces.push({
+        id: wgSpaceId,
+        name: title.slice(0, 26),
+        group: 'wg',
+        badge: 'New WG',
+        desc: goal
+      });
+
+      const wgPost = {
+        id: 'post-wg-' + Date.now(),
+        spaceId: wgSpaceId,
+        type: 'WorkingGroup',
+        badge: 'Working Group · ' + members,
+        badgeStyle: 'sage',
+        title,
+        summary: goal,
+        body: `${goal}\n\nParticipating Creameries: ${members}\nTarget Deliverable Due: ${due}`,
+        author: 'Aisha Bell',
+        role: 'Working Group Lead · Quincewick Creamery',
+        initials: 'AB',
+        time: `Due ${due}`,
+        upvotes: 1,
+        upvoted: true,
+        bookmarked: true,
+        tags: ['Working Group', 'Deliverable'],
+        milestones: [
+          { id: 'm1', text: 'Gather baseline make-sheet and cave logs from participating creameries', done: true },
+          { id: 'm2', text: 'Draft standardized protocol & peer review', done: false },
+          { id: 'm3', text: 'Submit deliverable to Cave Standards Committee', done: false }
+        ]
+      };
+
+      state.posts.unshift(wgPost);
+      saveStateToDB();
+      closeSpinUpWgModal();
+      renderAll();
+      openPostDetail(wgPost.id);
+      showToast(`Working Group "${title}" launched and added to left rail`);
+    }
+
+    // New Priority Initiative Modal
+    function openNewPriorityModal() {
+      const modal = document.getElementById('newPriorityModalBackdrop');
+      modal.classList.remove('hidden');
+      modal.classList.add('flex');
+    }
+
+    function closeNewPriorityModal(e) {
+      if (e && e.target !== document.getElementById('newPriorityModalBackdrop')) return;
+      const modal = document.getElementById('newPriorityModalBackdrop');
+      modal.classList.add('hidden');
+      modal.classList.remove('flex');
+    }
+
+    function submitNewPriority(e) {
+      e.preventDefault();
+      const title = document.getElementById('prioTitleInput').value.trim();
+      const category = document.getElementById('prioCatInput').value.trim();
+      const desc = document.getElementById('prioDescInput').value.trim();
+      const rem = getRemainingPoints();
+      const initialPts = rem >= 10 ? 10 : 0;
+
+      state.priorities.unshift({
+        id: 'prio-' + Date.now(),
+        category,
+        title,
+        desc,
+        myPoints: initialPts,
+        guildPoints: 120
+      });
+      saveStateToDB();
+      closeNewPriorityModal();
+      renderAll();
+      showToast('New 2027 Priority Initiative added to board');
+    }
+
+    // Confidential Steward Counsel Drawer
+    function openCounselDrawer() {
+      const room = state.counselRooms.find(r => r.id === activeCounselRoomId);
+      if (room) room.unread = 0;
+      saveStateToDB();
+      renderCounselDrawer();
+      renderHeaderBadges();
+      const backdrop = document.getElementById('counselDrawerBackdrop');
+      backdrop.classList.remove('hidden');
+      backdrop.classList.add('flex');
+    }
+
+    function closeCounselDrawer(e) {
+      if (e && e.target !== document.getElementById('counselDrawerBackdrop')) return;
+      const backdrop = document.getElementById('counselDrawerBackdrop');
+      backdrop.classList.add('hidden');
+      backdrop.classList.remove('flex');
+    }
+
+    function selectCounselRoom(roomId) {
+      activeCounselRoomId = roomId;
+      const room = state.counselRooms.find(r => r.id === roomId);
+      if (room) room.unread = 0;
+      saveStateToDB();
+      renderCounselDrawer();
+      renderHeaderBadges();
+    }
+
+    function renderCounselDrawer() {
+      const tabsEl = document.getElementById('counselRoomTabs');
+      tabsEl.innerHTML = state.counselRooms.map(r => {
+        const active = r.id === activeCounselRoomId;
+        return `
+          <button
+            type="button"
+            onclick="selectCounselRoom('${r.id}')"
+            class="px-3.5 py-1.5 rounded-full text-xs font-extrabold whitespace-nowrap transition ${active ? 'bg-ink text-paper' : 'bg-white border border-line text-body hover:text-ink'}"
+          >
+            ${r.title}
+          </button>
+        `;
+      }).join('');
+
+      const room = state.counselRooms.find(r => r.id === activeCounselRoomId) || state.counselRooms[0];
+      const msgEl = document.getElementById('counselMessagesList');
+      msgEl.innerHTML = `
+        <div class="p-3 rounded-xl bg-cream border border-line text-xs font-bold text-muted">
+          ${room.subtitle}
+        </div>
+        ${room.messages.map(m => `
+          <div class="flex ${m.mine ? 'justify-end' : 'justify-start'}">
+            <div class="max-w-[85%] p-4 rounded-2xl ${m.mine ? 'bg-ink text-paper' : 'bg-white border border-line text-body'} space-y-1">
+              <div class="flex items-center justify-between gap-3 text-[11px] font-extrabold ${m.mine ? 'text-soft' : 'text-ink'}">
+                <span>${m.sender}</span>
+                <span class="opacity-70">${m.time}</span>
+              </div>
+              <p class="text-sm leading-relaxed">${m.text}</p>
+            </div>
+          </div>
+        `).join('')}
+      `;
+    }
+
+    function sendCounselMessage(e) {
+      e.preventDefault();
+      const input = document.getElementById('counselInput');
+      const text = (input.value || '').trim();
+      if (!text) return;
+      const room = state.counselRooms.find(r => r.id === activeCounselRoomId);
+      if (!room) return;
+      room.messages.push({
+        sender: 'Aisha Bell · Quincewick Creamery',
+        initials: 'AB',
+        time: 'Just now',
+        mine: true,
+        text
+      });
+      input.value = '';
+      saveStateToDB();
+      renderCounselDrawer();
+      showToast('Confidential message recorded in Steward room');
+    }
+
+    // Toast Helper
+    let toastTimer = null;
+    function showToast(msg) {
+      const banner = document.getElementById('toastBanner');
+      document.getElementById('toastMessage').textContent = msg;
+      banner.classList.remove('hidden');
+      banner.classList.add(' inline-flex');
+      banner.style.display = 'inline-flex';
+      clearTimeout(toastTimer);
+      toastTimer = setTimeout(() => {
+        banner.style.display = 'none';
+      }, 2800);
+    }
+
+    // Boot
+    (async function init() {
+      state = await loadStateFromDB();
+      updateMiniCalc();
+      updateFullCalc();
+      renderAll();
+    })();
+  </script>
+</body>
+</html>

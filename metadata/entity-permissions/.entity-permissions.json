@@ -1,0 +1,55 @@
+[
+  {
+    "_comments": [
+      "CommunitySpace is an IsA subtype of MJ_BizApps_Collaboration: Spaces and MUST carry ReadRLSFilterID = 58B6738B-13FA-4DE7-9F89-DF300C916C27 (Collaboration: Visible Spaces) for Space Participant so Collaboration's refuseSubtypeEntity check succeeds."
+    ],
+    "primaryKey": { "ID": "C8A17500-4E12-4B8F-9A10-100000000001" },
+    "fields": {
+      "EntityID": "@lookup:MJ: Entities.Name=MJ_BizApps_Community: Community Spaces",
+      "RoleID": "@lookup:MJ: Roles.Name=Space Participant",
+      "CanCreate": true,
+      "CanRead": true,
+      "CanUpdate": true,
+      "CanDelete": false,
+      "ReadRLSFilterID": "58B6738B-13FA-4DE7-9F89-DF300C916C27",
+      "CreateRLSFilterID": "58B6738B-13FA-4DE7-9F89-DF300C916C27",
+      "UpdateRLSFilterID": "58B6738B-13FA-4DE7-9F89-DF300C916C27"
+    }
+  },
+  {
+    "primaryKey": { "ID": "C8A17500-4E12-4B8F-9A10-100000000002" },
+    "fields": {
+      "EntityID": "@lookup:MJ: Entities.Name=MJ_BizApps_Community: Forums",
+      "RoleID": "@lookup:MJ: Roles.Name=Space Participant",
+      "CanCreate": true,
+      "CanRead": true,
+      "CanUpdate": true,
+      "CanDelete": false,
+      "ReadRLSFilterID": "@lookup:MJ: Row Level Security Filters.Name=Community: Visible Forums"
+    }
+  },
+  {
+    "primaryKey": { "ID": "C8A17500-4E12-4B8F-9A10-100000000003" },
+    "fields": {
+      "EntityID": "@lookup:MJ: Entities.Name=MJ_BizApps_Community: Forum Idea Campaigns",
+      "RoleID": "@lookup:MJ: Roles.Name=Space Participant",
+      "CanCreate": true,
+      "CanRead": true,
+      "CanUpdate": true,
+      "CanDelete": false,
+      "ReadRLSFilterID": "@lookup:MJ: Row Level Security Filters.Name=Community: Visible Forums"
+    }
+  },
+  {
+    "primaryKey": { "ID": "C8A17500-4E12-4B8F-9A10-100000000004" },
+    "fields": {
+      "EntityID": "@lookup:MJ: Entities.Name=MJ_BizApps_Community: Forum Posts",
+      "RoleID": "@lookup:MJ: Roles.Name=Space Participant",
+      "CanCreate": true,
+      "CanRead": true,
+      "CanUpdate": true,
+      "CanDelete": false,
+      "ReadRLSFilterID": "@lookup:MJ: Row Level Security Filters.Name=Community: Visible Forum Posts"
+    }
+  }
+]

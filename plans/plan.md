@@ -181,7 +181,7 @@ erDiagram
 
     %% Sibling BizApps
     VOTING_Election["__mj_BizAppsVoting.Election"]
-    VOTING_BallotItem["__mj_BizAppsVoting.BallotItem"]
+    VOTING_Contest["__mj_BizAppsVoting.Contest"]
     ISSUES_Issue["__mj_BizAppsIssues.Issue"]
     CRED_Type["__mj_BizAppsCredentialing.CredentialType"]
     CRED_Record["__mj_BizAppsCredentialing.CreditRecord"]
@@ -201,7 +201,7 @@ erDiagram
     BRIDGE_VoteForum }o--o| VOTING_Election : "DefaultElectionID (Hard FK)"
     COMM_Post ||--|| BRIDGE_BallotPost : "PK/FK ID (IsA ForumPost)"
     BRIDGE_BallotPost }o--|| VOTING_Election : "ElectionID (Hard FK)"
-    BRIDGE_BallotPost }o--o| VOTING_BallotItem : "BallotItemID (Hard FK)"
+    BRIDGE_BallotPost }o--o| VOTING_Contest : "ContestID (Hard FK)"
 
     COMM_Post ||--|| BRIDGE_IssuePost : "PK/FK ID (IsA ForumPost)"
     BRIDGE_IssuePost }o--|| ISSUES_Issue : "IssueID (Hard FK)"
@@ -252,20 +252,19 @@ GO
 -- ============================================================================
 CREATE TABLE [${flyway:defaultSchema}].[ForumType] (
     [ID] UNIQUEIDENTIFIER NOT NULL CONSTRAINT [DF_ForumType_ID] DEFAULT (NEWSEQUENTIALID()),
+    [Code] NVARCHAR(100) NOT NULL,
     [Name] NVARCHAR(100) NOT NULL,
-    [DisplayName] NVARCHAR(100) NOT NULL,
     [Description] NVARCHAR(MAX) NULL,
-    [IconClass] NVARCHAR(100) NULL,
-    [BaseForumTypeID] UNIQUEIDENTIFIER NULL,
-    [ForumExtensionEntity] NVARCHAR(255) NULL, -- MJ Entity name of 1:1 IsA child table off Forum
-    [ServerDriverClass] NVARCHAR(255) NULL,    -- @RegisterClass(BaseForumServerDriver, '<Key>')
-    [UIDriverClass] NVARCHAR(255) NULL,        -- @RegisterClass(BaseForumUIDriver, '<Key>')
+    [Icon] NVARCHAR(100) NULL,
+    [ExtensionEntity] NVARCHAR(255) NULL,      -- MJ Entity name of 1:1 IsA child table off Forum
+    [ServerDriverClass] NVARCHAR(200) NULL,    -- @RegisterClass(BaseForumServerDriver, '<Key>')
+    [UIDriverClass] NVARCHAR(200) NULL,        -- @RegisterClass(BaseForumUIDriver, '<Key>')
     [Configuration] NVARCHAR(MAX) NULL,        -- Level 2 JSON defaults (allowed PostTypes & feature switches)
-    [IsSystem] BIT NOT NULL CONSTRAINT [DF_ForumType_IsSystem] DEFAULT (0),
+    [Sequence] INT NOT NULL CONSTRAINT [DF_ForumType_Sequence] DEFAULT (0),
     [IsActive] BIT NOT NULL CONSTRAINT [DF_ForumType_IsActive] DEFAULT (1),
     CONSTRAINT [PK_ForumType] PRIMARY KEY CLUSTERED ([ID]),
-    CONSTRAINT [UQ_ForumType_Name] UNIQUE NONCLUSTERED ([Name]),
-    CONSTRAINT [FK_ForumType_BaseForumType] FOREIGN KEY ([BaseForumTypeID]) REFERENCES [${flyway:defaultSchema}].[ForumType]([ID])
+    CONSTRAINT [UQ_ForumType_Code] UNIQUE NONCLUSTERED ([Code]),
+    CONSTRAINT [UQ_ForumType_Name] UNIQUE NONCLUSTERED ([Name])
 );
 GO
 
@@ -280,24 +279,22 @@ CREATE TABLE [${flyway:defaultSchema}].[Forum] (
     [Name] NVARCHAR(200) NOT NULL,
     [Slug] NVARCHAR(120) NOT NULL,
     [Description] NVARCHAR(MAX) NULL,
-    [IconClass] NVARCHAR(100) NULL,
-    [Color] NVARCHAR(50) NULL,
-    [Band] NVARCHAR(20) NOT NULL CONSTRAINT [DF_Forum_Band] DEFAULT (N'Shared'),
-    [AnonymousAccessOverride] NVARCHAR(20) NOT NULL CONSTRAINT [DF_Forum_AnonOverride] DEFAULT (N'Inherit'),
-    [Configuration] NVARCHAR(MAX) NULL, -- Level 4 JSON overrides (cascades down ParentForumID sub-forums)
-    [DisplayRank] INT NOT NULL CONSTRAINT [DF_Forum_Rank] DEFAULT (0),
-    [IsReadOnly] BIT NOT NULL CONSTRAINT [DF_Forum_ReadOnly] DEFAULT (0),
-    [IsArchived] BIT NOT NULL CONSTRAINT [DF_Forum_Archived] DEFAULT (0),
-    [RootPostCount] INT NOT NULL CONSTRAINT [DF_Forum_RootPostCount] DEFAULT (0),
-    [ReplyPostCount] INT NOT NULL CONSTRAINT [DF_Forum_ReplyPostCount] DEFAULT (0),
-    [LastActivityAt] DATETIMEOFFSET(7) NULL,
+    [Icon] NVARCHAR(100) NULL,
+    [ColorHex] NVARCHAR(20) NULL,
+    [VisibilityBand] NVARCHAR(20) NOT NULL CONSTRAINT [DF_Forum_Band] DEFAULT (N'Shared'),
+    [AnonymousReadMode] NVARCHAR(30) NULL,
+    [InheritsSpaceMembers] BIT NOT NULL CONSTRAINT [DF_Forum_Inherits] DEFAULT (1),
+    [PostingPolicy] NVARCHAR(30) NOT NULL CONSTRAINT [DF_Forum_Policy] DEFAULT (N'Open'),
+    [Configuration] NVARCHAR(MAX) NULL, -- Level 4 JSON overrides (filtered through ForumOverridable)
+    [Sequence] INT NOT NULL CONSTRAINT [DF_Forum_Sequence] DEFAULT (0),
+    [Status] NVARCHAR(30) NOT NULL CONSTRAINT [DF_Forum_Status] DEFAULT (N'Active'),
     CONSTRAINT [PK_Forum] PRIMARY KEY CLUSTERED ([ID]),
     CONSTRAINT [UQ_Forum_Space_Slug] UNIQUE NONCLUSTERED ([SpaceID], [Slug]),
-    CONSTRAINT [FK_Forum_Space] FOREIGN KEY ([SpaceID]) REFERENCES [__mj_BizAppsCollaboration].[Space]([ID]),
+    CONSTRAINT [FK_Forum_Space] FOREIGN KEY ([SpaceID]) REFERENCES [${flyway:defaultSchema}].[CommunitySpace]([ID]),
     CONSTRAINT [FK_Forum_ParentForum] FOREIGN KEY ([ParentForumID]) REFERENCES [${flyway:defaultSchema}].[Forum]([ID]),
     CONSTRAINT [FK_Forum_ForumType] FOREIGN KEY ([ForumTypeID]) REFERENCES [${flyway:defaultSchema}].[ForumType]([ID]),
-    CONSTRAINT [CK_Forum_Band] CHECK ([Band] IN (N'Shared', N'Team')),
-    CONSTRAINT [CK_Forum_AnonOverride] CHECK ([AnonymousAccessOverride] IN (N'Inherit', N'None', N'TeaserOnly', N'FullRead'))
+    CONSTRAINT [CK_Forum_Band] CHECK ([VisibilityBand] IN (N'Shared', N'Team', N'PrivateForum')),
+    CONSTRAINT [CK_Forum_AnonOverride] CHECK ([AnonymousReadMode] IS NULL OR [AnonymousReadMode] IN (N'None', N'Teaser Only', N'Full Read'))
 );
 GO
 
@@ -475,17 +472,21 @@ GO
 -- ============================================================================
 CREATE TABLE [${flyway:defaultSchema}].[ForumAnswerPost] (
     [ID] UNIQUEIDENTIFIER NOT NULL,
-    [IsAcceptedAnswer] BIT NOT NULL CONSTRAINT [DF_ForumAnswerPost_Accepted] DEFAULT (0),
-    [AICanonStatus] NVARCHAR(30) NOT NULL CONSTRAINT [DF_ForumAnswerPost_Canon] DEFAULT (N'Unchecked'),
-    [AIGradeScore] DECIMAL(5,2) NULL,
-    [AIRubricGradeJSON] NVARCHAR(MAX) NULL,
-    [AIGradedAt] DATETIMEOFFSET(7) NULL,
-    [SupersededByPostID] UNIQUEIDENTIFIER NULL,
+    [QuestionPostID] UNIQUEIDENTIFIER NOT NULL,
+    [IsAcceptedByAuthor] BIT NOT NULL CONSTRAINT [DF_ForumAnswerPost_Accepted] DEFAULT (0),
+    [IsVerifiedByModerator] BIT NOT NULL CONSTRAINT [DF_ForumAnswerPost_Verified] DEFAULT (0),
+    [VerifiedByUserID] UNIQUEIDENTIFIER NULL,
+    [VerifiedAt] DATETIMEOFFSET(7) NULL,
+    [AIEpistemicStatus] NVARCHAR(40) NULL,
+    [AIConfidenceScore] DECIMAL(4,3) NULL,
+    [AIRationaleMarkdown] NVARCHAR(MAX) NULL,
+    [FreshnessReviewDueAt] DATETIMEOFFSET(7) NULL,
     CONSTRAINT [PK_ForumAnswerPost] PRIMARY KEY CLUSTERED ([ID]),
     CONSTRAINT [FK_ForumAnswerPost_Post] FOREIGN KEY ([ID]) REFERENCES [${flyway:defaultSchema}].[ForumPost]([ID]),
-    CONSTRAINT [FK_ForumAnswerPost_SupersededBy] FOREIGN KEY ([SupersededByPostID]) REFERENCES [${flyway:defaultSchema}].[ForumPost]([ID]),
-    CONSTRAINT [CK_ForumAnswerPost_Canon] CHECK ([AICanonStatus] IN (
-        N'Unchecked', N'CanonVerified', N'NovelInsight', N'PartiallyOutdated', N'ConflictsWithCanon'
+    CONSTRAINT [FK_ForumAnswerPost_QuestionPost] FOREIGN KEY ([QuestionPostID]) REFERENCES [${flyway:defaultSchema}].[ForumQuestionPost]([ID]),
+    CONSTRAINT [FK_ForumAnswerPost_VerifiedByUser] FOREIGN KEY ([VerifiedByUserID]) REFERENCES [${mjSchema}].[User]([ID]),
+    CONSTRAINT [CK_ForumAnswerPost_EpistemicStatus] CHECK ([AIEpistemicStatus] IS NULL OR [AIEpistemicStatus] IN (
+        N'Canon Verified', N'Novel Insight', N'Partially Outdated', N'Conflicts With Canon'
     ))
 );
 GO
@@ -599,22 +600,27 @@ GO
 -- ============================================================================
 CREATE TABLE [${flyway:defaultSchema}].[ForumInteractivePost] (
     [ID] UNIQUEIDENTIFIER NOT NULL,
-    [InteractiveKind] NVARCHAR(40) NOT NULL CONSTRAINT [DF_ForumInteractivePost_Kind] DEFAULT (N'TriviaChallenge'),
-    [ComponentSpecJSON] NVARCHAR(MAX) NOT NULL,
-    [SeedStateJSON] NVARCHAR(MAX) NULL,
-    [AuthoringPrompt] NVARCHAR(MAX) NULL,
-    [ScoringMode] NVARCHAR(30) NOT NULL CONSTRAINT [DF_ForumInteractivePost_Scoring] DEFAULT (N'HighScoreLeaderboard'),
-    [AllowMultiplePlays] BIT NOT NULL CONSTRAINT [DF_ForumInteractivePost_Replay] DEFAULT (1),
+    [ComponentArtifactID] UNIQUEIDENTIFIER NOT NULL,
+    [PinnedArtifactVersionID] UNIQUEIDENTIFIER NULL,
+    [SpaceItemID] UNIQUEIDENTIFIER NULL,
+    [ExperienceKind] NVARCHAR(40) NOT NULL CONSTRAINT [DF_ForumInteractivePost_Kind] DEFAULT (N'Quiz'),
+    [ExperienceKindDetails] NVARCHAR(200) NULL,
+    [PromptUsed] NVARCHAR(MAX) NULL,
+    [ScoringMode] NVARCHAR(30) NOT NULL CONSTRAINT [DF_ForumInteractivePost_Scoring] DEFAULT (N'Best Score'),
+    [ShowLeaderboard] BIT NOT NULL CONSTRAINT [DF_ForumInteractivePost_Leaderboard] DEFAULT (1),
+    [MaxAttemptsPerMember] INT NULL,
     [PlayCount] INT NOT NULL CONSTRAINT [DF_ForumInteractivePost_PlayCount] DEFAULT (0),
     [ExpiresAt] DATETIMEOFFSET(7) NULL,
     CONSTRAINT [PK_ForumInteractivePost] PRIMARY KEY CLUSTERED ([ID]),
     CONSTRAINT [FK_ForumInteractivePost_Post] FOREIGN KEY ([ID]) REFERENCES [${flyway:defaultSchema}].[ForumPost]([ID]),
-    CONSTRAINT [CK_ForumInteractivePost_Kind] CHECK ([InteractiveKind] IN (
-        N'TriviaChallenge', N'ScenarioSimulation', N'BenchmarkCalculator',
-        N'BracketTournament', N'ArchitectureSandbox', N'CustomMiniApp'
+    CONSTRAINT [FK_ForumInteractivePost_Artifact] FOREIGN KEY ([ComponentArtifactID]) REFERENCES [${mjSchema}].[Artifact]([ID]),
+    CONSTRAINT [FK_ForumInteractivePost_ArtifactVersion] FOREIGN KEY ([PinnedArtifactVersionID]) REFERENCES [${mjSchema}].[ArtifactVersion]([ID]),
+    CONSTRAINT [FK_ForumInteractivePost_SpaceItem] FOREIGN KEY ([SpaceItemID]) REFERENCES [__mj_BizAppsCollaboration].[SpaceItem]([ID]),
+    CONSTRAINT [CK_ForumInteractivePost_Kind] CHECK ([ExperienceKind] IN (
+        N'Quiz', N'Trivia', N'Calculator', N'Simulation', N'Flashcards', N'Poll Game', N'Other'
     )),
     CONSTRAINT [CK_ForumInteractivePost_Scoring] CHECK ([ScoringMode] IN (
-        N'HighScoreLeaderboard', N'AggregateDistribution', N'PassFailBadge', N'UnscoredSandbox'
+        N'Best Score', N'Fastest Time', N'Streak', N'Completion', N'None'
     ))
 );
 GO
@@ -622,17 +628,20 @@ GO
 CREATE TABLE [${flyway:defaultSchema}].[ForumInteractiveSession] (
     [ID] UNIQUEIDENTIFIER NOT NULL CONSTRAINT [DF_ForumInteractiveSession_ID] DEFAULT (NEWSEQUENTIALID()),
     [InteractivePostID] UNIQUEIDENTIFIER NOT NULL,
+    [ArtifactVersionID] UNIQUEIDENTIFIER NOT NULL,
     [UserID] UNIQUEIDENTIFIER NOT NULL,
-    [PersonID] UNIQUEIDENTIFIER NULL,
+    [AttemptNumber] INT NOT NULL CONSTRAINT [DF_ForumInteractiveSession_Attempt] DEFAULT (1),
     [Score] DECIMAL(12,2) NULL,
     [DurationSeconds] INT NULL,
-    [OutcomeBadge] NVARCHAR(100) NULL,
-    [ResultPayloadJSON] NVARCHAR(MAX) NULL,
-    [CompletedAt] DATETIMEOFFSET(7) NOT NULL CONSTRAINT [DF_ForumInteractiveSession_At] DEFAULT (SYSDATETIMEOFFSET()),
+    [Completed] BIT NOT NULL CONSTRAINT [DF_ForumInteractiveSession_Completed] DEFAULT (0),
+    [OutcomeSummary] NVARCHAR(300) NULL,
+    [SessionStateJSON] NVARCHAR(MAX) NULL,
     CONSTRAINT [PK_ForumInteractiveSession] PRIMARY KEY CLUSTERED ([ID]),
     CONSTRAINT [FK_ForumInteractiveSession_Post] FOREIGN KEY ([InteractivePostID]) REFERENCES [${flyway:defaultSchema}].[ForumInteractivePost]([ID]),
-    CONSTRAINT [FK_ForumInteractiveSession_User] FOREIGN KEY ([UserID]) REFERENCES [__mj].[User]([ID]),
-    CONSTRAINT [FK_ForumInteractiveSession_Person] FOREIGN KEY ([PersonID]) REFERENCES [__mj_BizAppsCommon].[Person]([ID])
+    CONSTRAINT [FK_ForumInteractiveSession_ArtifactVersion] FOREIGN KEY ([ArtifactVersionID]) REFERENCES [${mjSchema}].[ArtifactVersion]([ID]),
+    CONSTRAINT [FK_ForumInteractiveSession_User] FOREIGN KEY ([UserID]) REFERENCES [${mjSchema}].[User]([ID]),
+    CONSTRAINT [UQ_ForumInteractiveSession_Post_User_Attempt] UNIQUE NONCLUSTERED ([InteractivePostID], [UserID], [AttemptNumber]),
+    CONSTRAINT [CK_ForumInteractiveSession_State_JSON] CHECK ([SessionStateJSON] IS NULL OR ISJSON([SessionStateJSON]) = 1)
 );
 GO
 
@@ -718,8 +727,8 @@ CREATE TABLE [${flyway:defaultSchema}].[ForumPostAttachment] (
     [ID] UNIQUEIDENTIFIER NOT NULL CONSTRAINT [DF_ForumPostAttachment_ID] DEFAULT (NEWSEQUENTIALID()),
     [PostID] UNIQUEIDENTIFIER NOT NULL,
     [SpaceItemID] UNIQUEIDENTIFIER NOT NULL,
-    [DisplayOrder] INT NOT NULL CONSTRAINT [DF_ForumPostAttachment_Order] DEFAULT (0),
-    [IsPlaybookTemplate] BIT NOT NULL CONSTRAINT [DF_ForumPostAttachment_Playbook] DEFAULT (0),
+    [Caption] NVARCHAR(300) NULL,
+    [Sequence] INT NOT NULL CONSTRAINT [DF_ForumPostAttachment_Sequence] DEFAULT (0),
     CONSTRAINT [PK_ForumPostAttachment] PRIMARY KEY CLUSTERED ([ID]),
     CONSTRAINT [UQ_ForumPostAttachment_Post_Item] UNIQUE NONCLUSTERED ([PostID], [SpaceItemID]),
     CONSTRAINT [FK_ForumPostAttachment_Post] FOREIGN KEY ([PostID]) REFERENCES [${flyway:defaultSchema}].[ForumPost]([ID]),
@@ -974,61 +983,63 @@ GO
 Organizations can configure anonymous read access at the Space level (`CommunitySpace.AnonymousAccessMode`) and override it per `ForumType` or `Forum` (`Forum.AnonymousAccessOverride`), while requiring authentication for all writes, votes, point allocations, interactive game leaderboard submissions, and `Team`-band access:
 
 ```sql
-CREATE FUNCTION [${flyway:defaultSchema}].[fnCommunityForumAccess](
-    @UserID UNIQUEIDENTIFIER
-)
+CREATE FUNCTION [${flyway:defaultSchema}].[fnCommunityForumAccess](@UserID UNIQUEIDENTIFIER)
 RETURNS TABLE
 AS
-RETURN
-(
-    -- 1. Authenticated SpaceMembers (via Collaboration recursive membership & inheritance)
+RETURN (
+    WITH SpaceOpenWindow AS (
+        SELECT
+            s.ID AS SpaceID,
+            CAST(
+                CASE
+                    WHEN s.ClosedAt IS NULL THEN 1
+                    WHEN COALESCE(s.PostCloseAccess, st.PostCloseAccess, N'None') = N'ReadOnly' THEN 1
+                    WHEN COALESCE(s.PostCloseAccess, st.PostCloseAccess, N'None') = N'ReadOnlyWindow'
+                         AND COALESCE(s.PostCloseAccessDays, st.PostCloseAccessDays) IS NOT NULL
+                         AND DATEDIFF(DAY, s.ClosedAt, SYSDATETIMEOFFSET()) <= COALESCE(s.PostCloseAccessDays, st.PostCloseAccessDays) THEN 1
+                    ELSE 0
+                END AS BIT
+            ) AS IsReadable,
+            CAST(CASE WHEN s.ClosedAt IS NULL THEN 1 ELSE 0 END AS BIT) AS IsOpenForWrites
+        FROM [__mj_BizAppsCollaboration].[Space] AS s
+        INNER JOIN [__mj_BizAppsCollaboration].[SpaceType] AS st ON st.ID = s.SpaceTypeID
+    )
     SELECT
         f.ID AS ForumID,
         f.SpaceID,
-        CAST(1 AS BIT) AS CanReadFull,
-        CAST(0 AS BIT) AS IsTeaserOnly,
-        access.CanSeeTeam,
-        CASE WHEN f.IsReadOnly = 1 OR f.IsArchived = 1 THEN CAST(0 AS BIT) ELSE access.CanContribute END AS CanContribute,
-        access.CanInvite
+        sa.CanSeeTeam,
+        CAST(
+            CASE
+                WHEN f.Status = N'Locked' THEN 0
+                WHEN sow.IsOpenForWrites = 0 THEN 0
+                WHEN fm.Status = N'Muted' THEN 0
+                WHEN fr.CanCreateRootPost = 0 AND fr.CanReply = 0 THEN 0
+                WHEN f.PostingPolicy = N'ReadOnly' AND ISNULL(fr.CanConfigureForum, 0) = 0 THEN 0
+                ELSE 1
+            END AS BIT
+        ) AS CanPost,
+        CAST(ISNULL(fr.CanModerateQueue, 0) AS BIT) AS CanModerate
     FROM [${flyway:defaultSchema}].[Forum] AS f
-    INNER JOIN [__mj_BizAppsCollaboration].[fnCollaborationAccess](@UserID) AS access
-        ON access.SpaceID = f.SpaceID
-    WHERE @UserID IS NOT NULL
-      AND (f.Band = N'Shared' OR access.CanSeeTeam = 1)
-
-    UNION ALL
-
-    -- 2. Anonymous / Non-Member Public Access (Shared band ONLY; never Team band; never CanContribute)
-    SELECT
-        f.ID AS ForumID,
-        f.SpaceID,
-        CASE
-            WHEN (CASE WHEN f.AnonymousAccessOverride = N'Inherit' THEN cs.AnonymousAccessMode ELSE f.AnonymousAccessOverride END) = N'FullRead'
-            THEN CAST(1 AS BIT)
-            ELSE CAST(0 AS BIT)
-        END AS CanReadFull,
-        CASE
-            WHEN (CASE WHEN f.AnonymousAccessOverride = N'Inherit' THEN cs.AnonymousAccessMode ELSE f.AnonymousAccessOverride END) = N'TeaserOnly'
-            THEN CAST(1 AS BIT)
-            ELSE CAST(0 AS BIT)
-        END AS IsTeaserOnly,
-        CAST(0 AS BIT) AS CanSeeTeam,
-        CAST(0 AS BIT) AS CanContribute,
-        CAST(0 AS BIT) AS CanInvite
-    FROM [${flyway:defaultSchema}].[Forum] AS f
-    INNER JOIN [${flyway:defaultSchema}].[CommunitySpace] AS cs ON cs.ID = f.SpaceID
-    INNER JOIN [__mj_BizAppsCollaboration].[fnCollaborationSpaceStatuses]() AS st ON st.SpaceID = f.SpaceID
-    WHERE f.Band = N'Shared'
-      AND st.Visible = 1
-      AND (CASE WHEN f.AnonymousAccessOverride = N'Inherit' THEN cs.AnonymousAccessMode ELSE f.AnonymousAccessOverride END) IN (N'TeaserOnly', N'FullRead')
-      AND (
-          @UserID IS NULL
-          OR NOT EXISTS (
-              SELECT 1
-              FROM [__mj_BizAppsCollaboration].[fnCollaborationAccess](@UserID) AS existing
-              WHERE existing.SpaceID = f.SpaceID
-          )
-      )
+    INNER JOIN [__mj_BizAppsCollaboration].[fnCollaborationAccess](@UserID) AS sa
+        ON sa.SpaceID = f.SpaceID
+    INNER JOIN SpaceOpenWindow AS sow
+        ON sow.SpaceID = f.SpaceID AND sow.IsReadable = 1
+    LEFT JOIN [${flyway:defaultSchema}].[ForumMember] AS fm
+        ON fm.ForumID = f.ID AND fm.UserID = @UserID
+    LEFT JOIN [${flyway:defaultSchema}].[ForumRoleType] AS fr
+        ON fr.ID = fm.ForumRoleTypeID
+    WHERE
+        (
+            f.InheritsSpaceMembers = 1
+            AND (
+                f.VisibilityBand = N'Shared'
+                OR (f.VisibilityBand = N'Team' AND sa.CanSeeTeam = 1)
+            )
+            AND (fm.ID IS NULL OR fm.Status IN (N'Active', N'Muted'))
+        )
+        OR (
+            fm.Status = N'Active'
+        )
 );
 GO
 ```
