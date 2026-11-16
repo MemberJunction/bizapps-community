@@ -19,7 +19,10 @@ jobs:
   build-and-test:
     name: Build, Unit Tests & Static Gates
     if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
-    runs-on: ubuntu-latest
+    # Pinned (not `ubuntu-latest`, which has rolled to 26.04): Playwright 1.58.1 hard-refuses to
+    # install Chromium on an OS version it doesn't recognize, with no override, and 24.04 is a
+    # long-established, fully-supported target.
+    runs-on: ubuntu-24.04
     timeout-minutes: 25
     steps:
       - name: Checkout bizapps-community
@@ -205,12 +208,8 @@ jobs:
       - name: Build all packages
         run: pnpm run build
 
-      - name: Install Playwright Chromium for the E2E gate
-        run: pnpm exec playwright install chromium
-        # `--with-deps` additionally apt-installs OS-level shared libraries for the runner's exact
-        # Ubuntu version; Playwright 1.58.1 does not yet recognize `ubuntu-latest`'s current version
-        # and hard-fails rather than falling back, even though the runner image already ships the
-        # libraries the headless Chromium binary itself needs to launch.
+      - name: Install Playwright Chromium (+ OS deps) for the E2E gate
+        run: pnpm exec playwright install --with-deps chromium
 
       - name: Run unit tests
         run: pnpm run test
