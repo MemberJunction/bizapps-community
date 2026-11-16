@@ -1,0 +1,41 @@
+{
+  "schemaVersion": "sf-readiness/v3",
+  "overallPassed": true,
+  "pillars": {
+    "formParity": {
+      "passed": true,
+      "summary": "All 25 entities registered in ClassFactory and retained in generated-forms.module.ts",
+      "checkedCount": 25,
+      "violationCount": 0,
+      "violations": []
+    },
+    "navParity": {
+      "passed": true,
+      "summary": "All 1 DefaultNavItems resolve to an active BaseResourceComponent class",
+      "checkedCount": 1,
+      "violationCount": 0,
+      "violations": []
+    },
+    "designTokens": {
+      "passed": true,
+      "summary": "Zero raw color literals across 16 .ts/.html/.css file(s)",
+      "checkedCount": 16,
+      "violationCount": 0,
+      "violations": []
+    },
+    "seedDensity": {
+      "passed": true,
+      "summary": "38 multi-domain seed record(s) across 9 categories",
+      "checkedCount": 38,
+      "violationCount": 0,
+      "violations": []
+    },
+    "browserSmoke": {
+      "passed": true,
+      "summary": "Chromium smoke passed across 4 tab(s) with 0 pageErrors, 0 consoleErrors, 0 critical/serious WCAG violations",
+      "checkedCount": 4,
+      "violationCount": 0,
+      "violations": []
+    }
+  }
+}

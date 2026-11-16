@@ -1,0 +1,40 @@
+{
+  "schemaVersion": "sf-e2e/v1",
+  "harnessUrl": "http://127.0.0.1:51448/",
+  "tabsExercised": [
+    "knowledge-stream",
+    "qa-canon-workbench",
+    "quadratic-ideation-wallet",
+    "living-co-authoring"
+  ],
+  "keyboardNavigationVerified": true,
+  "askFirstDeflectionExercised": true,
+  "digestExportExercised": true,
+  "windowPrintCalled": false,
+  "quadraticVoting": {
+    "costEqualsVotesSquared": true,
+    "walletCapPoints": 100
+  },
+  "pageErrors": [],
+  "consoleErrors": [],
+  "axeResultsByTab": {
+    "knowledge-stream": {
+      "violationCount": 0,
+      "criticalOrSerious": 0
+    },
+    "qa-canon-workbench": {
+      "violationCount": 0,
+      "criticalOrSerious": 0
+    },
+    "quadratic-ideation-wallet": {
+      "violationCount": 0,
+      "criticalOrSerious": 0
+    },
+    "living-co-authoring": {
+      "violationCount": 0,
+      "criticalOrSerious": 0
+    }
+  },
+  "totalCriticalOrSeriousViolations": 0,
+  "screenshotPath": "e2e/screenshots/community-hub.png"
+}
