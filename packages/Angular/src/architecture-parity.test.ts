@@ -243,12 +243,49 @@ describe('OpenApp Readiness — CommunityHubResource architecture', () => {
     assert.match(componentSource, /idea\.effectiveQuadraticVotes = otherBackersVotes \+ effectiveVotes/);
   });
 
+  it('OnVoteAllocationChanged (CR-04/CR-21) checks both Save() results and reverts the optimistic update on failure or a thrown error', () => {
+    assert.match(componentSource, /const allocSaved = await this\.persistVoteAllocation/);
+    assert.match(componentSource, /const postSaved = allocSaved \? await this\.persistIdeaAggregate/);
+    assert.match(componentSource, /if \(!allocSaved \|\| !postSaved\) \{\s*\n\s*Object\.assign\(idea, previous\)/);
+    assert.match(componentSource, /\} catch \{[\s\S]{0,200}Object\.assign\(idea, previous\)/);
+  });
+
+  it('persistIdeaAggregate excludes 0-point allocations from UniqueBackerCount (CR-04/CR-21)', () => {
+    assert.match(componentSource, /const backingAllocations = allocations\.filter\(\(a\) => a\.PointsAllocated > 0\)/);
+    assert.match(componentSource, /ideaPost\.UniqueBackerCount = backingAllocations\.length/);
+  });
+
+  it('binds the active Ideation Campaign wallet rules and per-idea point breakdown onto the Quadratic Voting slider (CR-21)', () => {
+    const template = readFileSync(join(ANGULAR_SRC, 'lib', 'community-hub-resource.component.html'), 'utf8');
+    assert.match(template, /\[allocationMode\]="activeCampaign\.allocationMode"/);
+    assert.match(template, /\[budgetPoints\]="activeCampaign\.budgetPoints"/);
+    assert.match(template, /\[maxPointsPerIdea\]="activeCampaign\.maxPointsPerIdea"/);
+    assert.match(template, /\[existingPointsOnOtherIdeas\]="pointsOnOtherIdeas"/);
+    assert.match(template, /\[existingPointsOnThisIdea\]="pointsOnSelectedIdea"/);
+  });
+
+  it('renders the Knowledge Stream post feed list (CR-04)', () => {
+    const template = readFileSync(join(ANGULAR_SRC, 'lib', 'community-hub-resource.component.html'), 'utf8');
+    assert.match(template, /feedPosts/);
+  });
+
   it("matches metadata/applications/.applications.json's DefaultNavItems[].DriverClass", () => {
     const apps = JSON.parse(readFileSync(APPLICATIONS_METADATA, 'utf8')) as Array<{
       fields: { DefaultNavItems: Array<{ DriverClass: string }> };
     }>;
     const driverClasses = apps.flatMap((app) => app.fields.DefaultNavItems.map((item) => item.DriverClass));
     assert.ok(driverClasses.includes('CommunityHubResource'));
+  });
+});
+
+describe('QuadraticVotingSliderComponent — CR-21 ngOnChanges re-sync', () => {
+  const sliderSource = readFileSync(join(ANGULAR_SRC, 'lib', 'widgets', 'quadratic-voting-slider.component.ts'), 'utf8');
+
+  it('implements OnChanges and re-syncs pointsAllocated when ideaPostId or existingPointsOnThisIdea changes', () => {
+    assert.match(sliderSource, /implements OnChanges/);
+    assert.match(sliderSource, /public ngOnChanges\(changes: SimpleChanges\): void/);
+    assert.match(sliderSource, /changes\['ideaPostId'\] \|\| changes\['existingPointsOnThisIdea'\]/);
+    assert.match(sliderSource, /this\.pointsAllocated = this\.existingPointsOnThisIdea/);
   });
 });
 

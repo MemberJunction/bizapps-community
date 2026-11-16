@@ -1,4 +1,4 @@
-import { Component, ChangeDetectionStrategy, EventEmitter, Input, Output } from '@angular/core';
+import { Component, ChangeDetectionStrategy, EventEmitter, Input, OnChanges, Output, type SimpleChanges } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { CommunityRules, type IdeationAllocationMode } from '@mj-biz-apps/community-core';
@@ -24,7 +24,7 @@ export interface QuadraticVotingAllocationChangedEvent {
   styleUrl: './quadratic-voting-slider.component.css',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
-export class QuadraticVotingSliderComponent {
+export class QuadraticVotingSliderComponent implements OnChanges {
   @Input() public ideaPostId = '';
   @Input() public allocationMode: IdeationAllocationMode = 'Quadratic';
   @Input() public budgetPoints = 100;
@@ -39,6 +39,16 @@ export class QuadraticVotingSliderComponent {
   @Output() public allocationChanged = new EventEmitter<QuadraticVotingAllocationChangedEvent>();
 
   public pointsAllocated = 0;
+
+  /** Re-syncs `pointsAllocated` to the host's authoritative value whenever the selected idea
+   * changes, or whenever the host reports a new `existingPointsOnThisIdea` for the SAME idea
+   * (e.g. after a server save settles) — without this, the slider would keep showing whatever
+   * position it was last dragged to for a PREVIOUS idea. */
+  public ngOnChanges(changes: SimpleChanges): void {
+    if (changes['ideaPostId'] || changes['existingPointsOnThisIdea']) {
+      this.pointsAllocated = this.existingPointsOnThisIdea;
+    }
+  }
 
   public get effectiveVotes(): number {
     return this.allocationMode === 'Quadratic' ? Math.sqrt(this.pointsAllocated) : this.pointsAllocated;

@@ -33,6 +33,18 @@
             >
               <mjc-ask-first-deflection-widget [allowedForumIDs]="allowedForumIDs"></mjc-ask-first-deflection-widget>
               <mjc-digest-export-button [spaceName]="spaceName" [allowedForumIDs]="allowedForumIDs"></mjc-digest-export-button>
+              @if (feedPosts.length === 0) {
+                <p class="mjc-community-hub__hint">No posts yet in {{ spaceName }}.</p>
+              } @else {
+                <ul class="mjc-community-hub__list" aria-label="Knowledge Stream feed">
+                  @for (post of feedPosts; track post.id) {
+                    <li class="mjc-community-hub__list-item">
+                      <span class="mjc-community-hub__list-title">{{ post.title }}</span>
+                      <span class="mjc-community-hub__badge">{{ post.status }}</span>
+                    </li>
+                  }
+                </ul>
+              }
             </section>
           }
           @case ('qa-canon-workbench') {
@@ -91,6 +103,11 @@
                 @if (selectedIdeaId) {
                   <mjc-quadratic-voting-slider
                     [ideaPostId]="selectedIdeaId"
+                    [allocationMode]="activeCampaign.allocationMode"
+                    [budgetPoints]="activeCampaign.budgetPoints"
+                    [maxPointsPerIdea]="activeCampaign.maxPointsPerIdea"
+                    [existingPointsOnOtherIdeas]="pointsOnOtherIdeas"
+                    [existingPointsOnThisIdea]="pointsOnSelectedIdea"
                     (allocationChanged)="OnVoteAllocationChanged(selectedIdeaId, $event.pointsAllocated, $event.effectiveVotes)"
                   ></mjc-quadratic-voting-slider>
                 }
