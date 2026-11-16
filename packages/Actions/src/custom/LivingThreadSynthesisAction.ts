@@ -1,0 +1,111 @@
+import { RunView, type UserInfo } from '@memberjunction/core';
+import { ActionParam, ActionResultSimple, RunActionParams } from '@memberjunction/actions-base';
+import { BaseAction } from '@memberjunction/actions';
+import { RegisterClass } from '@memberjunction/global';
+import { SynthesizeLivingThread, ThreadPostForSynthesis } from './living-thread-synthesis.ts';
+
+interface ReplyRow {
+  ID: string;
+  BodyMarkdown: string;
+  AuthorUserID: string | null;
+}
+
+interface RootPostRow {
+  ID: string;
+  Title: string | null;
+  BodyMarkdown: string;
+}
+
+function paramValue(params: RunActionParams, name: string): string | null {
+  const value = params.Params.find((p) => p.Name.toLowerCase() === name.toLowerCase())?.Value;
+  return typeof value === 'string' && value.trim() ? value : null;
+}
+
+/**
+ * Action: Community.LivingThreadSynthesis
+ *
+ * Regenerates a root post's `SummaryMarkdown` (`AIExecutiveSummary`) and `SummaryGeneratedAt`
+ * (`AISynthesizedAt`) via the deterministic, bounded-input synthesis in
+ * {@link SynthesizeLivingThread} — no LLM call required.
+ */
+@RegisterClass(BaseAction, 'Community.LivingThreadSynthesis')
+export class LivingThreadSynthesisAction extends BaseAction {
+  protected async InternalRunAction(params: RunActionParams): Promise<ActionResultSimple> {
+    const user = params.ContextUser;
+    if (!user) return fail('ERROR', 'ContextUser is required');
+
+    const rootPostId = paramValue(params, 'RootPostID');
+    if (!rootPostId) return fail('MISSING_ROOT_POST', 'RootPostID is required');
+
+    const maxReplyCountRaw = paramValue(params, 'MaxReplyCount');
+    const maxCharsPerPostRaw = paramValue(params, 'MaxCharsPerPost');
+    const acceptedAnswerPostId = paramValue(params, 'AcceptedAnswerPostID');
+
+    const root = await this.loadRootPost(rootPostId, user);
+    if (!root) return fail('ROOT_POST_NOT_FOUND', `No post found with ID ${rootPostId}`);
+
+    const replies = await this.loadReplies(rootPostId, acceptedAnswerPostId, user);
+
+    const result = SynthesizeLivingThread({
+      rootTitle: root.Title,
+      rootBodyMarkdown: root.BodyMarkdown,
+      replies,
+      maxReplyCount: maxReplyCountRaw ? Number(maxReplyCountRaw) : undefined,
+      maxCharsPerPost: maxCharsPerPostRaw ? Number(maxCharsPerPostRaw) : undefined,
+    });
+
+    const outputParams: ActionParam[] = [
+      { Name: 'AIExecutiveSummary', Value: result.aiExecutiveSummary, Type: 'Output' },
+      { Name: 'AISynthesizedAt', Value: result.aiSynthesizedAt.toISOString(), Type: 'Output' },
+      { Name: 'ConsideredReplyCount', Value: result.consideredReplyCount, Type: 'Output' },
+    ];
+    return {
+      Success: true,
+      ResultCode: 'SUCCESS',
+      Message: `Synthesized ${result.consideredReplyCount} repl(y/ies)`,
+      Params: outputParams,
+    };
+  }
+
+  private async loadRootPost(rootPostId: string, user: UserInfo): Promise<RootPostRow | null> {
+    const result = await new RunView().RunView<RootPostRow>(
+      {
+        EntityName: 'MJ_BizApps_Community: Forum Posts',
+        ExtraFilter: `ID = '${rootPostId}'`,
+        Fields: ['ID', 'Title', 'BodyMarkdown'],
+        ResultType: 'simple',
+        MaxRows: 1,
+      },
+      user,
+    );
+    return result?.Success ? result.Results?.[0] ?? null : null;
+  }
+
+  private async loadReplies(
+    rootPostId: string,
+    acceptedAnswerPostId: string | null,
+    user: UserInfo,
+  ): Promise<ThreadPostForSynthesis[]> {
+    const result = await new RunView().RunView<ReplyRow>(
+      {
+        EntityName: 'MJ_BizApps_Community: Forum Posts',
+        ExtraFilter: `RootPostID = '${rootPostId}'`,
+        Fields: ['ID', 'BodyMarkdown', 'AuthorUserID'],
+        OrderBy: '__mj_CreatedAt ASC',
+        ResultType: 'simple',
+        MaxRows: 500,
+      },
+      user,
+    );
+    if (!result?.Success || !result.Results) return [];
+    return result.Results.map((row) => ({
+      authorDisplayName: row.AuthorUserID ?? 'Community Member',
+      bodyMarkdown: row.BodyMarkdown,
+      isAccepted: acceptedAnswerPostId != null && row.ID === acceptedAnswerPostId,
+    }));
+  }
+}
+
+function fail(resultCode: string, message: string): ActionResultSimple {
+  return { Success: false, ResultCode: resultCode, Message: message };
+}

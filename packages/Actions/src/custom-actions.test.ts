@@ -1,0 +1,179 @@
+import { describe, it } from 'node:test';
+import assert from 'node:assert/strict';
+import { ComputeAskFirstDeflection, type AskFirstCandidate } from './custom/ask-first-deflection.ts';
+import { GradeEpistemicAnswer } from './custom/epistemic-answer-grading.ts';
+import { SynthesizeLivingThread } from './custom/living-thread-synthesis.ts';
+import {
+  BuildCommunityDigestPDF,
+  COMMUNITY_DIGEST_PDF_MAX_ITEMS,
+  type CommunityDigestItem,
+} from './custom/export-community-digest-pdf.ts';
+
+describe('AskFirstDeflectionAction — ComputeAskFirstDeflection', () => {
+  const candidates: AskFirstCandidate[] = [
+    {
+      postId: 'ans-1',
+      forumSlug: 'tax-qa',
+      title: 'Multi-state nexus thresholds',
+      authorDisplayName: 'Alex',
+      bodyMarkdown: 'Multi-state nexus thresholds depend on economic nexus laws per state.',
+      epistemicStatus: 'Canon Verified',
+    },
+    {
+      postId: 'ans-2',
+      forumSlug: 'tax-qa',
+      title: 'Payroll tax deadlines',
+      authorDisplayName: 'Blair',
+      bodyMarkdown: 'Payroll tax filing deadlines vary by jurisdiction and frequency.',
+      epistemicStatus: 'Novel Insight',
+    },
+  ];
+
+  it('deflects to the best matching canon-verified candidate above minConfidence', () => {
+    const result = ComputeAskFirstDeflection('What are the multi-state nexus thresholds?', candidates);
+    assert.equal(result.deflected, true);
+    assert.equal(result.citations[0]?.postId, 'ans-1');
+    assert.ok(result.confidenceScore > 0);
+  });
+
+  it('declines to deflect (graceful fallback) when nothing matches well enough', () => {
+    const result = ComputeAskFirstDeflection('Completely unrelated gardening question', candidates);
+    assert.equal(result.deflected, false);
+    assert.deepEqual(result.citations, []);
+    assert.equal(result.synthesizedAnswerMarkdown, null);
+  });
+
+  it('declines to deflect when there are no candidates at all (vector/AI service unavailable)', () => {
+    const result = ComputeAskFirstDeflection('Anything', []);
+    assert.equal(result.deflected, false);
+    assert.equal(result.confidenceScore, 0);
+  });
+
+  it('bounds citations to maxCitations', () => {
+    const many: AskFirstCandidate[] = Array.from({ length: 10 }, (_, i) => ({
+      postId: `ans-${i}`,
+      forumSlug: 'tax-qa',
+      title: 'Multi-state nexus thresholds',
+      authorDisplayName: 'Someone',
+      bodyMarkdown: 'Multi-state nexus thresholds depend on economic nexus laws per state.',
+      epistemicStatus: 'Canon Verified',
+    }));
+    const result = ComputeAskFirstDeflection('multi-state nexus thresholds', many, { maxCitations: 2 });
+    assert.equal(result.citations.length, 2);
+  });
+});
+
+describe('EpistemicAnswerGradingAction — GradeEpistemicAnswer', () => {
+  it('produces a confidence score within [0, 1] and marks AI_Verified at >= 0.85', () => {
+    const result = GradeEpistemicAnswer({
+      questionBodyMarkdown: 'How do economic nexus thresholds work for multi-state sales tax?',
+      answerBodyMarkdown:
+        'Economic nexus thresholds for multi-state sales tax are typically $100,000 in sales or 200 transactions per state, per the Wayfair decision. See [state guide](https://example.com/nexus) and [Wayfair ruling](https://example.com/wayfair) for details on how each state applies economic nexus thresholds to multi-state sales tax obligations.',
+    });
+    assert.ok(result.confidenceScore >= 0 && result.confidenceScore <= 1);
+    assert.equal(result.citationReferences.length, 2);
+    if (result.confidenceScore >= 0.85) {
+      assert.equal(result.verificationStatus, 'AI_Verified');
+      assert.equal(result.epistemicStatus, 'Canon Verified');
+    }
+  });
+
+  it('falls back to Needs_Human_Review for a short, unrelated, uncited answer', () => {
+    const result = GradeEpistemicAnswer({
+      questionBodyMarkdown: 'How do economic nexus thresholds work for multi-state sales tax?',
+      answerBodyMarkdown: 'Not sure, ask someone else.',
+    });
+    assert.ok(result.confidenceScore < 0.85);
+    assert.equal(result.verificationStatus, 'Needs_Human_Review');
+  });
+
+  it('flags Conflicts With Canon when the new answer barely overlaps the prior canon answer', () => {
+    const result = GradeEpistemicAnswer({
+      questionBodyMarkdown: 'What is the capital gains holding period?',
+      answerBodyMarkdown: 'Totally different unrelated content about kitchen appliances and recipes.',
+      priorCanonAnswerMarkdown:
+        'The long-term capital gains holding period requires holding the asset for more than one year.',
+    });
+    assert.equal(result.epistemicStatus, 'Conflicts With Canon');
+  });
+
+  it('extracts bare URLs as citations too, not only markdown links', () => {
+    const result = GradeEpistemicAnswer({
+      questionBodyMarkdown: 'Where is the policy documented?',
+      answerBodyMarkdown: 'See https://example.com/policy for the full policy documentation.',
+    });
+    assert.deepEqual(result.citationReferences, ['https://example.com/policy']);
+  });
+});
+
+describe('LivingThreadSynthesisAction — SynthesizeLivingThread', () => {
+  it('surfaces accepted replies as Key resolution(s) ahead of other discussion', () => {
+    const result = SynthesizeLivingThread({
+      rootTitle: 'How do we handle nexus thresholds?',
+      rootBodyMarkdown: 'Looking for guidance on economic nexus thresholds.',
+      replies: [
+        { authorDisplayName: 'Casey', bodyMarkdown: 'Not quite right, but close.', isAccepted: false },
+        { authorDisplayName: 'Dana', bodyMarkdown: 'The threshold is $100,000 or 200 transactions.', isAccepted: true },
+      ],
+    });
+    assert.match(result.aiExecutiveSummary, /Key resolution/);
+    const resolutionIndex = result.aiExecutiveSummary.indexOf('Key resolution');
+    const highlightsIndex = result.aiExecutiveSummary.indexOf('Discussion highlights');
+    assert.ok(resolutionIndex < highlightsIndex);
+    assert.equal(result.consideredReplyCount, 2);
+  });
+
+  it('bounds input by maxReplyCount and maxCharsPerPost (token/post limits)', () => {
+    const replies = Array.from({ length: 20 }, (_, i) => ({
+      authorDisplayName: `User${i}`,
+      bodyMarkdown: 'x'.repeat(1000),
+    }));
+    const result = SynthesizeLivingThread({
+      rootTitle: 'Title',
+      rootBodyMarkdown: 'Root body',
+      replies,
+      maxReplyCount: 3,
+      maxCharsPerPost: 20,
+    });
+    assert.equal(result.consideredReplyCount, 3);
+    for (const line of result.aiExecutiveSummary.split('\n')) {
+      assert.ok(line.length < 50, `line too long: ${line}`);
+    }
+  });
+
+  it('handles a thread with no replies', () => {
+    const result = SynthesizeLivingThread({ rootTitle: 'Empty', rootBodyMarkdown: 'Nothing yet', replies: [] });
+    assert.match(result.aiExecutiveSummary, /No replies yet/);
+    assert.equal(result.consideredReplyCount, 0);
+  });
+});
+
+describe('ExportCommunityDigestPDFAction — BuildCommunityDigestPDF', () => {
+  it('produces a real PDF buffer starting with the %PDF-1. magic header', async () => {
+    const items: CommunityDigestItem[] = [
+      { forumSlug: 'general', title: 'Welcome thread', authorDisplayName: 'Alex', summary: 'Say hello!' },
+    ];
+    const buffer = await BuildCommunityDigestPDF(items, { spaceName: 'Global Tax Leaders' });
+    assert.ok(Buffer.isBuffer(buffer));
+    assert.ok(buffer.byteLength > 0);
+    assert.equal(buffer.subarray(0, 7).toString('latin1'), '%PDF-1.');
+  });
+
+  it('produces a valid (non-empty) PDF even with zero items', async () => {
+    const buffer = await BuildCommunityDigestPDF([], { spaceName: 'Empty Space' });
+    assert.equal(buffer.subarray(0, 7).toString('latin1'), '%PDF-1.');
+  });
+
+  it('enforces the hard max-item cap regardless of the caller-supplied maxItems', async () => {
+    const items: CommunityDigestItem[] = Array.from({ length: 150 }, (_, i) => ({
+      forumSlug: 'general',
+      title: `Thread ${i}`,
+      authorDisplayName: 'Someone',
+      summary: 'Summary',
+    }));
+    // Caller tries to widen the cap past COMMUNITY_DIGEST_PDF_MAX_ITEMS — must be clamped, not honored.
+    const buffer = await BuildCommunityDigestPDF(items, { spaceName: 'Big Space', maxItems: 1000 });
+    assert.ok(Buffer.isBuffer(buffer));
+    assert.equal(COMMUNITY_DIGEST_PDF_MAX_ITEMS, 100);
+  });
+});

@@ -1,0 +1,514 @@
+[
+  {
+    "fields": {
+      "Name": "Ask-First Deflection",
+      "Description": "Pre-submission search deflection across already-solved Q&A answers (and, when supplied, Living Documents) in the forums the member may read. Scores the best match with a deterministic keyword-overlap rubric — graceful fallback when no vector/AI search service is wired in — and declines to deflect when nothing clears MinConfidence.",
+      "Type": "Custom",
+      "DriverClass": "Community.AskFirstDeflection",
+      "IconClass": "fa-solid fa-magnifying-glass",
+      "UserPrompt": "Search for an existing answer before posting a new question.",
+      "CodeApprovalStatus": "Approved",
+      "Status": "Active"
+    },
+    "primaryKey": {
+      "ID": "EE9A6630-CEF5-4996-8AB8-1CA68B2FF475"
+    },
+    "relatedEntities": {
+      "MJ: Action Params": [
+        {
+          "fields": {
+            "ActionID": "@parent:ID",
+            "Name": "QueryText",
+            "Type": "Input",
+            "ValueType": "Scalar",
+            "IsArray": false,
+            "IsRequired": true,
+            "Description": "The member's draft question text to search against."
+          },
+          "primaryKey": { "ID": "326FBCE4-49F8-4A0B-9961-1EFDEF3DB1B0" }
+        },
+        {
+          "fields": {
+            "ActionID": "@parent:ID",
+            "Name": "AllowedForumIDs",
+            "Type": "Input",
+            "ValueType": "Scalar",
+            "IsArray": false,
+            "IsRequired": true,
+            "Description": "Comma-separated list of Forum IDs the requesting member may read. Computed by the caller; this action performs no permission checks of its own."
+          },
+          "primaryKey": { "ID": "5A9FFB91-8E9E-43BD-BB5C-07A36A7FCF0A" }
+        },
+        {
+          "fields": {
+            "ActionID": "@parent:ID",
+            "Name": "MinConfidence",
+            "Type": "Input",
+            "ValueType": "Scalar",
+            "IsArray": false,
+            "IsRequired": false,
+            "Description": "Minimum confidence (0-1) required to deflect. Default 0.35."
+          },
+          "primaryKey": { "ID": "354CE838-BC29-4368-8A91-80B09076B03B" }
+        },
+        {
+          "fields": {
+            "ActionID": "@parent:ID",
+            "Name": "MaxCitations",
+            "Type": "Input",
+            "ValueType": "Scalar",
+            "IsArray": false,
+            "IsRequired": false,
+            "Description": "Maximum number of citations to return. Default 3."
+          },
+          "primaryKey": { "ID": "1F0A9CFE-D803-40EF-BA55-BB547755E06D" }
+        },
+        {
+          "fields": {
+            "ActionID": "@parent:ID",
+            "Name": "Deflected",
+            "Type": "Output",
+            "ValueType": "Scalar",
+            "IsArray": false,
+            "IsRequired": false,
+            "Description": "Whether an existing answer was confident enough to deflect the new post."
+          },
+          "primaryKey": { "ID": "534254CB-A510-4331-B0A6-F4BF6FDE3D1D" }
+        },
+        {
+          "fields": {
+            "ActionID": "@parent:ID",
+            "Name": "ConfidenceScore",
+            "Type": "Output",
+            "ValueType": "Scalar",
+            "IsArray": false,
+            "IsRequired": false,
+            "Description": "Confidence score (0-1) of the best match."
+          },
+          "primaryKey": { "ID": "9A60178B-31A4-47E8-9231-C3418995E83B" }
+        },
+        {
+          "fields": {
+            "ActionID": "@parent:ID",
+            "Name": "SynthesizedAnswerMarkdown",
+            "Type": "Output",
+            "ValueType": "Scalar",
+            "IsArray": false,
+            "IsRequired": false,
+            "Description": "The best-matching answer's body, when deflected; null otherwise."
+          },
+          "primaryKey": { "ID": "094C46A7-320D-4776-8220-6C0DE94710E4" }
+        },
+        {
+          "fields": {
+            "ActionID": "@parent:ID",
+            "Name": "Citations",
+            "Type": "Output",
+            "ValueType": "Scalar",
+            "IsArray": false,
+            "IsRequired": false,
+            "Description": "JSON array of AskFirstCitation (postId, forumSlug, title, authorDisplayName, epistemicStatus, confidenceScore)."
+          },
+          "primaryKey": { "ID": "A9929F13-F839-4CE9-B7E4-6042EF51B8D4" }
+        },
+        {
+          "fields": {
+            "ActionID": "@parent:ID",
+            "Name": "SuggestedPostTypeCode",
+            "Type": "Output",
+            "ValueType": "Scalar",
+            "IsArray": false,
+            "IsRequired": false,
+            "Description": "PostType code to use if the member posts anyway."
+          },
+          "primaryKey": { "ID": "3BA3A78A-7275-4967-A976-C4951840C539" }
+        },
+        {
+          "fields": {
+            "ActionID": "@parent:ID",
+            "Name": "SuggestedTitle",
+            "Type": "Output",
+            "ValueType": "Scalar",
+            "IsArray": false,
+            "IsRequired": false,
+            "Description": "Suggested title if the member posts anyway, derived from QueryText."
+          },
+          "primaryKey": { "ID": "F4AB1B4E-F62C-4DAD-9D37-6CCBB1D8919D" }
+        }
+      ],
+      "MJ: Action Result Codes": [
+        {
+          "fields": { "ActionID": "@parent:ID", "ResultCode": "DEFLECTED", "IsSuccess": true, "Description": "A confident existing answer was found." },
+          "primaryKey": { "ID": "FAFB94F7-2815-49E1-895A-824673878473" }
+        },
+        {
+          "fields": { "ActionID": "@parent:ID", "ResultCode": "NOT_DEFLECTED", "IsSuccess": true, "Description": "No sufficiently confident match was found; the member should post." },
+          "primaryKey": { "ID": "15D2BD62-DA6D-4BF5-A904-E88ABB481EB5" }
+        },
+        {
+          "fields": { "ActionID": "@parent:ID", "ResultCode": "MISSING_QUERY", "IsSuccess": false, "Description": "QueryText was not supplied." },
+          "primaryKey": { "ID": "3ECE3C98-279F-4E8D-89F4-71E6D80FB374" }
+        },
+        {
+          "fields": { "ActionID": "@parent:ID", "ResultCode": "ERROR", "IsSuccess": false, "Description": "No context user." },
+          "primaryKey": { "ID": "576C1109-94BE-4D2E-B72B-2A7E7F39450E" }
+        }
+      ]
+    }
+  },
+  {
+    "fields": {
+      "Name": "Epistemic Answer Grading",
+      "Description": "Grades a Q&A answer against its question (and, when supplied, the forum's existing canon answer) using a deterministic rubric — no LLM call required. Writes AIEpistemicStatus, AIConfidenceScore, and AIRationaleMarkdown; sets VerificationStatus to 'AI_Verified' only at or above 0.85 confidence.",
+      "Type": "Custom",
+      "DriverClass": "Community.EpistemicAnswerGrading",
+      "IconClass": "fa-solid fa-check-double",
+      "UserPrompt": "Grade this answer's epistemic status and confidence.",
+      "CodeApprovalStatus": "Approved",
+      "Status": "Active"
+    },
+    "primaryKey": {
+      "ID": "FE5FFFC8-2CB4-4DC4-862F-E38DF19FE88D"
+    },
+    "relatedEntities": {
+      "MJ: Action Params": [
+        {
+          "fields": {
+            "ActionID": "@parent:ID",
+            "Name": "QuestionBodyMarkdown",
+            "Type": "Input",
+            "ValueType": "Scalar",
+            "IsArray": false,
+            "IsRequired": true,
+            "Description": "The question's body markdown."
+          },
+          "primaryKey": { "ID": "975EB3D6-796C-49D7-843D-C74677A8EA98" }
+        },
+        {
+          "fields": {
+            "ActionID": "@parent:ID",
+            "Name": "AnswerBodyMarkdown",
+            "Type": "Input",
+            "ValueType": "Scalar",
+            "IsArray": false,
+            "IsRequired": true,
+            "Description": "The answer's body markdown to grade."
+          },
+          "primaryKey": { "ID": "F6B3BD10-3FBC-402C-810A-56D544CE5011" }
+        },
+        {
+          "fields": {
+            "ActionID": "@parent:ID",
+            "Name": "PriorCanonAnswerMarkdown",
+            "Type": "Input",
+            "ValueType": "Scalar",
+            "IsArray": false,
+            "IsRequired": false,
+            "Description": "The question's existing accepted/canon answer, if any, used to detect a conflicting new answer."
+          },
+          "primaryKey": { "ID": "1E11F2B1-C938-4EEE-8F73-FEB80763D165" }
+        },
+        {
+          "fields": {
+            "ActionID": "@parent:ID",
+            "Name": "ConfidenceScore",
+            "Type": "Output",
+            "ValueType": "Scalar",
+            "IsArray": false,
+            "IsRequired": false,
+            "Description": "Confidence score from 0.000 to 1.000."
+          },
+          "primaryKey": { "ID": "D6AA0FEB-E15C-409F-8DB9-4D4EAD931ABE" }
+        },
+        {
+          "fields": {
+            "ActionID": "@parent:ID",
+            "Name": "EpistemicStatus",
+            "Type": "Output",
+            "ValueType": "Scalar",
+            "IsArray": false,
+            "IsRequired": false,
+            "Description": "One of 'Canon Verified', 'Novel Insight', 'Partially Outdated', 'Conflicts With Canon'."
+          },
+          "primaryKey": { "ID": "86B752D2-C379-473C-AAED-77277C0DEAB2" }
+        },
+        {
+          "fields": {
+            "ActionID": "@parent:ID",
+            "Name": "VerificationStatus",
+            "Type": "Output",
+            "ValueType": "Scalar",
+            "IsArray": false,
+            "IsRequired": false,
+            "Description": "'AI_Verified' at or above 0.85 confidence; 'Needs_Human_Review' otherwise."
+          },
+          "primaryKey": { "ID": "67055CE9-690B-432A-9B08-8D59440B4EAE" }
+        },
+        {
+          "fields": {
+            "ActionID": "@parent:ID",
+            "Name": "CitationReferences",
+            "Type": "Output",
+            "ValueType": "Scalar",
+            "IsArray": false,
+            "IsRequired": false,
+            "Description": "JSON array of citation URLs extracted from the answer."
+          },
+          "primaryKey": { "ID": "47216AF5-2242-419A-AA6D-4465ED1B59C3" }
+        },
+        {
+          "fields": {
+            "ActionID": "@parent:ID",
+            "Name": "RationaleMarkdown",
+            "Type": "Output",
+            "ValueType": "Scalar",
+            "IsArray": false,
+            "IsRequired": false,
+            "Description": "Human-readable explanation of the grading."
+          },
+          "primaryKey": { "ID": "4028B5F0-FF98-45A2-B827-1B219795EFA0" }
+        }
+      ],
+      "MJ: Action Result Codes": [
+        {
+          "fields": { "ActionID": "@parent:ID", "ResultCode": "SUCCESS", "IsSuccess": true, "Description": "The answer was graded." },
+          "primaryKey": { "ID": "479F2831-3E7F-4A9C-8AAF-741B4B7D8B97" }
+        },
+        {
+          "fields": { "ActionID": "@parent:ID", "ResultCode": "MISSING_CONTENT", "IsSuccess": false, "Description": "QuestionBodyMarkdown or AnswerBodyMarkdown was not supplied." },
+          "primaryKey": { "ID": "68E6E6F1-54AB-4FC8-BDA3-80386D1BD62E" }
+        },
+        {
+          "fields": { "ActionID": "@parent:ID", "ResultCode": "ERROR", "IsSuccess": false, "Description": "No context user." },
+          "primaryKey": { "ID": "A89DF851-012B-447E-8EEA-95E487EEC75B" }
+        }
+      ]
+    }
+  },
+  {
+    "fields": {
+      "Name": "Living Thread Synthesis",
+      "Description": "Regenerates a root post's executive summary (SummaryMarkdown / AIExecutiveSummary) and SummaryGeneratedAt (AISynthesizedAt) from the thread's replies, bounded by MaxReplyCount posts and MaxCharsPerPost characters each. Deterministic — no LLM call required.",
+      "Type": "Custom",
+      "DriverClass": "Community.LivingThreadSynthesis",
+      "IconClass": "fa-solid fa-wand-magic-sparkles",
+      "UserPrompt": "Regenerate this thread's AI executive summary.",
+      "CodeApprovalStatus": "Approved",
+      "Status": "Active"
+    },
+    "primaryKey": {
+      "ID": "B40307E3-3337-47F0-96CC-25A27A56BBDC"
+    },
+    "relatedEntities": {
+      "MJ: Action Params": [
+        {
+          "fields": {
+            "ActionID": "@parent:ID",
+            "Name": "RootPostID",
+            "Type": "Input",
+            "ValueType": "Scalar",
+            "IsArray": false,
+            "IsRequired": true,
+            "Description": "ID of the root ForumPost to synthesize."
+          },
+          "primaryKey": { "ID": "12209481-EE13-4155-BCCB-1E70C28D3DDE" }
+        },
+        {
+          "fields": {
+            "ActionID": "@parent:ID",
+            "Name": "AcceptedAnswerPostID",
+            "Type": "Input",
+            "ValueType": "Scalar",
+            "IsArray": false,
+            "IsRequired": false,
+            "Description": "ID of the thread's accepted answer, if any, surfaced first as a Key Resolution."
+          },
+          "primaryKey": { "ID": "12F24BCA-CFC0-4451-AA3B-A9A52EF8389E" }
+        },
+        {
+          "fields": {
+            "ActionID": "@parent:ID",
+            "Name": "MaxReplyCount",
+            "Type": "Input",
+            "ValueType": "Scalar",
+            "IsArray": false,
+            "IsRequired": false,
+            "Description": "Bounds how many replies are considered. Default 50."
+          },
+          "primaryKey": { "ID": "63D6DD4C-F5EE-4C6B-9D26-E6DDCFC53C2C" }
+        },
+        {
+          "fields": {
+            "ActionID": "@parent:ID",
+            "Name": "MaxCharsPerPost",
+            "Type": "Input",
+            "ValueType": "Scalar",
+            "IsArray": false,
+            "IsRequired": false,
+            "Description": "Bounds how many characters of each post are included. Default 500."
+          },
+          "primaryKey": { "ID": "4C44F57C-8CE8-4EA1-9D6B-12F7F7A4C65A" }
+        },
+        {
+          "fields": {
+            "ActionID": "@parent:ID",
+            "Name": "AIExecutiveSummary",
+            "Type": "Output",
+            "ValueType": "Scalar",
+            "IsArray": false,
+            "IsRequired": false,
+            "Description": "The synthesized executive-summary markdown."
+          },
+          "primaryKey": { "ID": "E2E3F3D4-5C8C-4C4E-8F1E-6B6A0F6F6A6B" }
+        },
+        {
+          "fields": {
+            "ActionID": "@parent:ID",
+            "Name": "AISynthesizedAt",
+            "Type": "Output",
+            "ValueType": "Scalar",
+            "IsArray": false,
+            "IsRequired": false,
+            "Description": "ISO timestamp of this synthesis run."
+          },
+          "primaryKey": { "ID": "9F4A2B3C-6D5E-4F70-8A1B-2C3D4E5F6A7B" }
+        },
+        {
+          "fields": {
+            "ActionID": "@parent:ID",
+            "Name": "ConsideredReplyCount",
+            "Type": "Output",
+            "ValueType": "Scalar",
+            "IsArray": false,
+            "IsRequired": false,
+            "Description": "How many replies were actually included after bounding."
+          },
+          "primaryKey": { "ID": "7B6C5D4E-3F2A-4190-9B8C-1D2E3F4A5B6C" }
+        }
+      ],
+      "MJ: Action Result Codes": [
+        {
+          "fields": { "ActionID": "@parent:ID", "ResultCode": "SUCCESS", "IsSuccess": true, "Description": "The thread was synthesized." },
+          "primaryKey": { "ID": "2A3B4C5D-6E7F-4081-9192-A3B4C5D6E7F8" }
+        },
+        {
+          "fields": { "ActionID": "@parent:ID", "ResultCode": "MISSING_ROOT_POST", "IsSuccess": false, "Description": "RootPostID was not supplied." },
+          "primaryKey": { "ID": "3B4C5D6E-7F80-4192-A2A3-B4C5D6E7F8A9" }
+        },
+        {
+          "fields": { "ActionID": "@parent:ID", "ResultCode": "ROOT_POST_NOT_FOUND", "IsSuccess": false, "Description": "No post exists with the given RootPostID." },
+          "primaryKey": { "ID": "4C5D6E7F-8091-42A3-B3B4-C5D6E7F8A9B0" }
+        },
+        {
+          "fields": { "ActionID": "@parent:ID", "ResultCode": "ERROR", "IsSuccess": false, "Description": "No context user." },
+          "primaryKey": { "ID": "5D6E7F80-91A2-43B4-C4C5-D6E7F8A9B0C1" }
+        }
+      ]
+    }
+  },
+  {
+    "fields": {
+      "Name": "Export Community Digest PDF",
+      "Description": "Renders a member's Community Digest as a real server-side PDF via pdfkit (never window.print()), scoped to AllowedForumIDs and hard-capped at 100 items, returned as a base64 string output parameter.",
+      "Type": "Custom",
+      "DriverClass": "Community.ExportDigestPDF",
+      "IconClass": "fa-solid fa-file-pdf",
+      "UserPrompt": "Export my community digest as a PDF.",
+      "CodeApprovalStatus": "Approved",
+      "Status": "Active"
+    },
+    "primaryKey": {
+      "ID": "6E7F8091-A2B3-44C5-D5D6-E7F8A9B0C1D2"
+    },
+    "relatedEntities": {
+      "MJ: Action Params": [
+        {
+          "fields": {
+            "ActionID": "@parent:ID",
+            "Name": "SpaceName",
+            "Type": "Input",
+            "ValueType": "Scalar",
+            "IsArray": false,
+            "IsRequired": true,
+            "Description": "Display name of the Community Space, used in the PDF header."
+          },
+          "primaryKey": { "ID": "7F8091A2-B3C4-45D6-E6E7-F8A9B0C1D2E3" }
+        },
+        {
+          "fields": {
+            "ActionID": "@parent:ID",
+            "Name": "AllowedForumIDs",
+            "Type": "Input",
+            "ValueType": "Scalar",
+            "IsArray": false,
+            "IsRequired": false,
+            "Description": "Comma-separated list of Forum IDs the requesting member may read. Computed by the caller; an empty list yields an empty digest rather than an error."
+          },
+          "primaryKey": { "ID": "8091A2B3-C4D5-46E7-F7F8-A9B0C1D2E3F4" }
+        },
+        {
+          "fields": {
+            "ActionID": "@parent:ID",
+            "Name": "MaxItems",
+            "Type": "Input",
+            "ValueType": "Scalar",
+            "IsArray": false,
+            "IsRequired": false,
+            "Description": "Caller's own cap on included items; can only tighten, never widen, the hard 100-item ceiling."
+          },
+          "primaryKey": { "ID": "91A2B3C4-D5E6-47F8-A8A9-B0C1D2E3F4A5" }
+        },
+        {
+          "fields": {
+            "ActionID": "@parent:ID",
+            "Name": "PDFBase64",
+            "Type": "Output",
+            "ValueType": "Scalar",
+            "IsArray": false,
+            "IsRequired": false,
+            "Description": "The generated PDF, base64-encoded."
+          },
+          "primaryKey": { "ID": "A2B3C4D5-E6F7-4809-B9BA-C1D2E3F4A5B6" }
+        },
+        {
+          "fields": {
+            "ActionID": "@parent:ID",
+            "Name": "ItemCount",
+            "Type": "Output",
+            "ValueType": "Scalar",
+            "IsArray": false,
+            "IsRequired": false,
+            "Description": "Number of digest items actually included (after the 100-item cap)."
+          },
+          "primaryKey": { "ID": "B3C4D5E6-F708-491A-CACB-D2E3F4A5B6C7" }
+        },
+        {
+          "fields": {
+            "ActionID": "@parent:ID",
+            "Name": "ByteLength",
+            "Type": "Output",
+            "ValueType": "Scalar",
+            "IsArray": false,
+            "IsRequired": false,
+            "Description": "Size of the generated PDF in bytes."
+          },
+          "primaryKey": { "ID": "C4D5E6F7-0819-42AB-DBDC-E3F4A5B6C7D8" }
+        }
+      ],
+      "MJ: Action Result Codes": [
+        {
+          "fields": { "ActionID": "@parent:ID", "ResultCode": "SUCCESS", "IsSuccess": true, "Description": "The PDF was generated." },
+          "primaryKey": { "ID": "D5E6F708-192A-43BC-ECED-F4A5B6C7D8E9" }
+        },
+        {
+          "fields": { "ActionID": "@parent:ID", "ResultCode": "MISSING_SPACE_NAME", "IsSuccess": false, "Description": "SpaceName was not supplied." },
+          "primaryKey": { "ID": "E6F70819-2A3B-44CD-FDFE-A5B6C7D8E9F0" }
+        },
+        {
+          "fields": { "ActionID": "@parent:ID", "ResultCode": "ERROR", "IsSuccess": false, "Description": "No context user." },
+          "primaryKey": { "ID": "F708192A-3B4C-45DE-0E0F-B6C7D8E9F0A1" }
+        }
+      ]
+    }
+  }
+]

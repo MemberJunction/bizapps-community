@@ -34,4 +34,17 @@ export interface ThreadGraduationResult {
   invitedParticipantCount: number;
 }
 
+export * from './custom/ask-first-deflection.ts';
+export * from './custom/AskFirstDeflectionAction.ts';
+export * from './custom/epistemic-answer-grading.ts';
+export * from './custom/EpistemicAnswerGradingAction.ts';
+export * from './custom/living-thread-synthesis.ts';
+export * from './custom/LivingThreadSynthesisAction.ts';
+export * from './custom/export-community-digest-pdf.ts';
+export * from './custom/ExportCommunityDigestPDFAction.ts';
+
+/**
+ * Forces the custom Action subclasses to be included in the build despite tree-shaking.
+ * Call this from your application bootstrap.
+ */
 export function LoadBizAppsCommunityActions(): void {}
