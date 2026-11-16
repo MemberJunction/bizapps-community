@@ -1,0 +1,9 @@
+<div class="mjc-digest-export">
+  <button type="button" class="mjc-digest-export__button" [disabled]="isExporting" (click)="Export()">
+    <i class="fa-solid fa-file-pdf" aria-hidden="true"></i>
+    {{ isExporting ? 'Generating PDF…' : 'Export Digest as PDF' }}
+  </button>
+  @if (errorMessage) {
+    <p class="mjc-digest-export__error">{{ errorMessage }}</p>
+  }
+</div>

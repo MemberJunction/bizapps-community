@@ -34,6 +34,7 @@ export interface ThreadGraduationResult {
   invitedParticipantCount: number;
 }
 
+export * from './action-ids.ts';
 export * from './custom/ask-first-deflection.ts';
 export * from './custom/AskFirstDeflectionAction.ts';
 export * from './custom/epistemic-answer-grading.ts';

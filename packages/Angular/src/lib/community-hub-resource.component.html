@@ -1,0 +1,51 @@
+<mj-page-layout>
+  <mj-page-body [Padding]="false">
+    <div class="mjc-community-hub">
+      <nav class="mjc-community-hub__tabs" role="tablist">
+        @for (tab of tabs; track tab.key) {
+          <button
+            type="button"
+            role="tab"
+            class="mjc-community-hub__tab"
+            [class.mjc-community-hub__tab--active]="tab.key === activeTabKey"
+            [attr.aria-selected]="tab.key === activeTabKey"
+            (click)="SelectTab(tab.key)"
+          >
+            <i [class]="tab.icon" aria-hidden="true"></i>
+            <span>{{ tab.label }}</span>
+          </button>
+        }
+      </nav>
+
+      <div class="mjc-community-hub__body">
+        @switch (activeTabKey) {
+          @case ('knowledge-stream') {
+            <section class="mjc-community-hub__panel">
+              <mjc-ask-first-deflection-widget></mjc-ask-first-deflection-widget>
+              <mjc-digest-export-button></mjc-digest-export-button>
+            </section>
+          }
+          @case ('qa-canon-workbench') {
+            <section class="mjc-community-hub__panel">
+              <p class="mjc-community-hub__hint">
+                Verified Q&amp;A canon answers and answers awaiting epistemic review.
+              </p>
+            </section>
+          }
+          @case ('quadratic-ideation-wallet') {
+            <section class="mjc-community-hub__panel">
+              <mjc-quadratic-voting-slider></mjc-quadratic-voting-slider>
+            </section>
+          }
+          @case ('living-co-authoring') {
+            <section class="mjc-community-hub__panel">
+              <p class="mjc-community-hub__hint">
+                Living documents, spreadsheets, decks, and interactive mini-apps.
+              </p>
+            </section>
+          }
+        }
+      </div>
+    </div>
+  </mj-page-body>
+</mj-page-layout>
