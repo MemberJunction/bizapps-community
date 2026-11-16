@@ -1,5 +1,8 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { ComputeAskFirstDeflection, type AskFirstCandidate } from './custom/ask-first-deflection.ts';
 import { GradeEpistemicAnswer } from './custom/epistemic-answer-grading.ts';
 import { SynthesizeLivingThread } from './custom/living-thread-synthesis.ts';
@@ -175,5 +178,31 @@ describe('ExportCommunityDigestPDFAction — BuildCommunityDigestPDF', () => {
     const buffer = await BuildCommunityDigestPDF(items, { spaceName: 'Big Space', maxItems: 1000 });
     assert.ok(Buffer.isBuffer(buffer));
     assert.equal(COMMUNITY_DIGEST_PDF_MAX_ITEMS, 100);
+  });
+});
+
+describe('EpistemicAnswerGradingAction — CR-06/CR-20 fail-closed authoritative loading, AI-only persistence', () => {
+  // `@RegisterClass`-decorated class source cannot be imported directly by this `node
+  // --experimental-strip-types` runner (legacy decorator syntax is unparseable type-stripping) —
+  // static source-text assertions are the established substitute (see architecture-parity.test.ts
+  // in the Angular package for the same pattern), proving the required control-flow structure is
+  // actually present and uncommented in the real file.
+  const HERE = dirname(fileURLToPath(import.meta.url));
+  const actionSource = readFileSync(join(HERE, 'custom', 'EpistemicAnswerGradingAction.ts'), 'utf8');
+
+  it('fails closed (AUTHORITATIVE_LOAD_FAILED) and never falls back to caller markdown when the authoritative load fails', () => {
+    assert.match(actionSource, /if \(!authoritative\) \{\s*\n\s*return fail\('AUTHORITATIVE_LOAD_FAILED'/);
+  });
+
+  it('never sets IsVerifiedByModerator from AI grading (a human-moderator-only field)', () => {
+    assert.doesNotMatch(actionSource, /\.IsVerifiedByModerator\s*=/);
+  });
+
+  it('loads PriorCanonAnswerMarkdown from the question\'s own AICanonAnswerPostID in persistence mode, not a caller-supplied param', () => {
+    assert.match(actionSource, /AICanonAnswerPostID/);
+    // The caller-supplied PriorCanonAnswerMarkdown param is only read on the NON-persistence
+    // (no AnswerPostID) branch.
+    const nonPersistenceBranch = actionSource.split('} else {')[1]?.split('const result = GradeEpistemicAnswer')[0] ?? '';
+    assert.match(nonPersistenceBranch, /paramValue\(params, 'PriorCanonAnswerMarkdown'\)/);
   });
 });
