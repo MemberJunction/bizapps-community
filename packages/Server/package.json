@@ -21,7 +21,8 @@
     "@mj-biz-apps/community-core": "0.1.0",
     "@mj-biz-apps/community-core-entities-server": "0.1.0",
     "@mj-biz-apps/community-engine-base": "0.1.0",
-    "@mj-biz-apps/community-entities": "0.1.0"
+    "@mj-biz-apps/community-entities": "0.1.0",
+    "class-validator": "^0.14.3"
   },
   "peerDependencies": {
     "@memberjunction/core": "6.3.0-edge.0",

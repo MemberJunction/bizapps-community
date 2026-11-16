@@ -39,6 +39,10 @@
       },
       "Sequence": 10,
       "IsActive": true
+    },
+    "sync": {
+      "lastModified": "2026-11-16T20:10:25.197Z",
+      "checksum": "af04f3eac0e92596b78bc9b0748fbd2c02d008b9c8eb4ce60e84da48ca069252"
     }
   },
   {
@@ -55,7 +59,11 @@
       "ExtensionEntity": null,
       "Configuration": {
         "Posts": {
-          "AllowedPostTypeCodes": ["question", "answer", "comment"],
+          "AllowedPostTypeCodes": [
+            "question",
+            "answer",
+            "comment"
+          ],
           "DefaultRootPostTypeCode": "question",
           "MaxReplyDepth": 2
         },
@@ -70,6 +78,10 @@
       },
       "Sequence": 20,
       "IsActive": true
+    },
+    "sync": {
+      "lastModified": "2026-11-16T20:10:25.319Z",
+      "checksum": "8afd08807c48ee0e3a7f226fefb0431ff480c2a5d566416a39e98da6ac487704"
     }
   },
   {
@@ -86,7 +98,11 @@
       "ExtensionEntity": "MJ_BizApps_Community: Forum Idea Campaigns",
       "Configuration": {
         "Posts": {
-          "AllowedPostTypeCodes": ["idea-proposal", "reply", "poll-or-form"],
+          "AllowedPostTypeCodes": [
+            "idea-proposal",
+            "reply",
+            "poll-or-form"
+          ],
           "DefaultRootPostTypeCode": "idea-proposal",
           "MaxReplyDepth": 3
         },
@@ -101,6 +117,10 @@
       },
       "Sequence": 30,
       "IsActive": true
+    },
+    "sync": {
+      "lastModified": "2026-11-16T20:10:25.547Z",
+      "checksum": "b6ce9873b82b0848dea7171a3a2809b9b662b0d7732156429ec85ca6575c41e9"
     }
   },
   {
@@ -137,6 +157,10 @@
       },
       "Sequence": 40,
       "IsActive": true
+    },
+    "sync": {
+      "lastModified": "2026-11-16T20:10:25.647Z",
+      "checksum": "7a6d8e566650ff7e930d2e59709b16fd7c99058bcebdbfaba6580129077a6c8d"
     }
   },
   {
@@ -153,7 +177,11 @@
       "ExtensionEntity": null,
       "Configuration": {
         "Posts": {
-          "AllowedPostTypeCodes": ["case-review", "reply", "comment"],
+          "AllowedPostTypeCodes": [
+            "case-review",
+            "reply",
+            "comment"
+          ],
           "DefaultRootPostTypeCode": "case-review",
           "MaxReplyDepth": 3
         },
@@ -167,6 +195,10 @@
       },
       "Sequence": 50,
       "IsActive": true
+    },
+    "sync": {
+      "lastModified": "2026-11-16T20:10:25.743Z",
+      "checksum": "cf69155b8ebda40804330001b8bce9d77b8dca54a024651c1d9eb3783a63f8d6"
     }
   },
   {
@@ -203,6 +235,10 @@
       },
       "Sequence": 60,
       "IsActive": true
+    },
+    "sync": {
+      "lastModified": "2026-11-16T20:10:25.810Z",
+      "checksum": "23743bf16941550db9fb73498350b2dcc99631b98bef084ea19a09e12c13b71d"
     }
   }
 ]

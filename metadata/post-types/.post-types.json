@@ -1,6 +1,8 @@
 [
   {
-    "primaryKey": { "ID": "C8A17200-4E12-4B8F-9A10-100000000001" },
+    "primaryKey": {
+      "ID": "C8A17200-4E12-4B8F-9A10-100000000001"
+    },
     "fields": {
       "Code": "discussion",
       "Name": "Discussion",
@@ -15,10 +17,16 @@
       "IndexedInCorpus": true,
       "Sequence": 10,
       "IsActive": true
+    },
+    "sync": {
+      "lastModified": "2026-11-16T20:10:25.922Z",
+      "checksum": "9a601c59fc0853578b5d73252c995bf24a313b6a6e48f800cdd41bd801ccd143"
     }
   },
   {
-    "primaryKey": { "ID": "C8A17200-4E12-4B8F-9A10-100000000002" },
+    "primaryKey": {
+      "ID": "C8A17200-4E12-4B8F-9A10-100000000002"
+    },
     "fields": {
       "Code": "reply",
       "Name": "Reply",
@@ -33,10 +41,16 @@
       "IndexedInCorpus": true,
       "Sequence": 20,
       "IsActive": true
+    },
+    "sync": {
+      "lastModified": "2026-11-16T20:10:25.981Z",
+      "checksum": "0e4ac473b1505f87e182a750a7252d867b9d8069280e861824f29a4c0aac749b"
     }
   },
   {
-    "primaryKey": { "ID": "C8A17200-4E12-4B8F-9A10-100000000003" },
+    "primaryKey": {
+      "ID": "C8A17200-4E12-4B8F-9A10-100000000003"
+    },
     "fields": {
       "Code": "comment",
       "Name": "Comment",
@@ -51,10 +65,16 @@
       "IndexedInCorpus": true,
       "Sequence": 30,
       "IsActive": true
+    },
+    "sync": {
+      "lastModified": "2026-11-16T20:10:26.097Z",
+      "checksum": "b22e1aed546a4986323f8d1ce9060c953924a5586866641f966b0beddcfcd5ac"
     }
   },
   {
-    "primaryKey": { "ID": "C8A17200-4E12-4B8F-9A10-100000000004" },
+    "primaryKey": {
+      "ID": "C8A17200-4E12-4B8F-9A10-100000000004"
+    },
     "fields": {
       "Code": "question",
       "Name": "Question",
@@ -69,10 +89,16 @@
       "IndexedInCorpus": true,
       "Sequence": 40,
       "IsActive": true
+    },
+    "sync": {
+      "lastModified": "2026-11-16T20:10:26.199Z",
+      "checksum": "4c7effdc6592f287e07cd00a601db3d5905d6971a85530dfb2239f4841261293"
     }
   },
   {
-    "primaryKey": { "ID": "C8A17200-4E12-4B8F-9A10-100000000005" },
+    "primaryKey": {
+      "ID": "C8A17200-4E12-4B8F-9A10-100000000005"
+    },
     "fields": {
       "Code": "answer",
       "Name": "Answer",
@@ -87,10 +113,16 @@
       "IndexedInCorpus": true,
       "Sequence": 50,
       "IsActive": true
+    },
+    "sync": {
+      "lastModified": "2026-11-16T20:10:26.298Z",
+      "checksum": "436ce28883d729b7ee3a1b0bb4eb137e63602eadd5d80487614c3ce2e9d48b81"
     }
   },
   {
-    "primaryKey": { "ID": "C8A17200-4E12-4B8F-9A10-100000000006" },
+    "primaryKey": {
+      "ID": "C8A17200-4E12-4B8F-9A10-100000000006"
+    },
     "fields": {
       "Code": "idea-proposal",
       "Name": "Idea Proposal",
@@ -105,10 +137,16 @@
       "IndexedInCorpus": true,
       "Sequence": 60,
       "IsActive": true
+    },
+    "sync": {
+      "lastModified": "2026-11-16T20:10:26.412Z",
+      "checksum": "c680b7647a162a7a0fc87a377a01551c3637675f3a68828dd2d28ef326394bcf"
     }
   },
   {
-    "primaryKey": { "ID": "C8A17200-4E12-4B8F-9A10-100000000007" },
+    "primaryKey": {
+      "ID": "C8A17200-4E12-4B8F-9A10-100000000007"
+    },
     "fields": {
       "Code": "poll-or-form",
       "Name": "Poll or Form",
@@ -123,10 +161,16 @@
       "IndexedInCorpus": true,
       "Sequence": 70,
       "IsActive": true
+    },
+    "sync": {
+      "lastModified": "2026-11-16T20:10:26.484Z",
+      "checksum": "11564ad70aa6f31e2a00723883ce61d1477522788096fb70a795a1a8b3cd53d1"
     }
   },
   {
-    "primaryKey": { "ID": "C8A17200-4E12-4B8F-9A10-100000000008" },
+    "primaryKey": {
+      "ID": "C8A17200-4E12-4B8F-9A10-100000000008"
+    },
     "fields": {
       "Code": "collaborative-doc",
       "Name": "Collaborative Document",
@@ -141,10 +185,16 @@
       "IndexedInCorpus": true,
       "Sequence": 80,
       "IsActive": true
+    },
+    "sync": {
+      "lastModified": "2026-11-16T20:10:26.553Z",
+      "checksum": "b0a8fa76c098f423f703b898b8f77f60acf98219b25c18b0b8c8cf315d090059"
     }
   },
   {
-    "primaryKey": { "ID": "C8A17200-4E12-4B8F-9A10-100000000009" },
+    "primaryKey": {
+      "ID": "C8A17200-4E12-4B8F-9A10-100000000009"
+    },
     "fields": {
       "Code": "collaborative-sheet",
       "Name": "Collaborative Spreadsheet",
@@ -159,10 +209,16 @@
       "IndexedInCorpus": true,
       "Sequence": 90,
       "IsActive": true
+    },
+    "sync": {
+      "lastModified": "2026-11-16T20:10:26.672Z",
+      "checksum": "b7c0d5f8097177539c362aa0f961c35349ff08bf8254a9ac059d968fda60e5dc"
     }
   },
   {
-    "primaryKey": { "ID": "C8A17200-4E12-4B8F-9A10-100000000010" },
+    "primaryKey": {
+      "ID": "C8A17200-4E12-4B8F-9A10-100000000010"
+    },
     "fields": {
       "Code": "collaborative-deck",
       "Name": "Collaborative Presentation",
@@ -177,10 +233,16 @@
       "IndexedInCorpus": true,
       "Sequence": 100,
       "IsActive": true
+    },
+    "sync": {
+      "lastModified": "2026-11-16T20:10:26.746Z",
+      "checksum": "e910c69d66c3e5ad9de587f941ede0f129cdd4febddc228cd29e79a435ea5137"
     }
   },
   {
-    "primaryKey": { "ID": "C8A17200-4E12-4B8F-9A10-100000000011" },
+    "primaryKey": {
+      "ID": "C8A17200-4E12-4B8F-9A10-100000000011"
+    },
     "fields": {
       "Code": "case-review",
       "Name": "Peer Case Review",
@@ -195,10 +257,16 @@
       "IndexedInCorpus": true,
       "Sequence": 110,
       "IsActive": true
+    },
+    "sync": {
+      "lastModified": "2026-11-16T20:10:26.808Z",
+      "checksum": "dc477b62fc3089045590bea3a96ddda67de8fb7c398a7b3950365eb849c867be"
     }
   },
   {
-    "primaryKey": { "ID": "C8A17200-4E12-4B8F-9A10-100000000012" },
+    "primaryKey": {
+      "ID": "C8A17200-4E12-4B8F-9A10-100000000012"
+    },
     "fields": {
       "Code": "live-ama",
       "Name": "Live AMA / Town Hall",
@@ -213,10 +281,16 @@
       "IndexedInCorpus": true,
       "Sequence": 120,
       "IsActive": true
+    },
+    "sync": {
+      "lastModified": "2026-11-16T20:10:26.981Z",
+      "checksum": "a543821c9b97123d19a6f17a4538e7bc72117a56b8e196a65ebe8f6c8d2a8e0b"
     }
   },
   {
-    "primaryKey": { "ID": "C8A17200-4E12-4B8F-9A10-100000000013" },
+    "primaryKey": {
+      "ID": "C8A17200-4E12-4B8F-9A10-100000000013"
+    },
     "fields": {
       "Code": "interactive-experience",
       "Name": "Interactive Experience / Mini-App",
@@ -231,6 +305,10 @@
       "IndexedInCorpus": true,
       "Sequence": 130,
       "IsActive": true
+    },
+    "sync": {
+      "lastModified": "2026-11-16T20:10:27.046Z",
+      "checksum": "9ec212321c9a0b83bba643c3d6a911c17028151b1769231fc41985819e3a4253"
     }
   }
 ]

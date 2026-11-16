@@ -8,6 +8,10 @@
       "Name": "CommunitySettings",
       "Value": "{\"AskFirstEnabled\":true,\"ThreadSynthesisThreshold\":4,\"DeflectionMinConfidence\":0.75,\"DefaultAnonymousReadMode\":\"Teaser Only\",\"DefaultDigestCadence\":\"Daily Digest\",\"EnableInteractiveArtifacts\":true}",
       "Comments": "Default settings configuration for the BizApps Community application."
+    },
+    "sync": {
+      "lastModified": "2026-11-16T20:10:22.727Z",
+      "checksum": "d8e0be2433f666b42afcf2c5a789d4c86241f3eb304589c5f4273408e4378b06"
     }
   }
 ]

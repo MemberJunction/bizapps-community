@@ -1,6 +1,8 @@
 [
   {
-    "primaryKey": { "ID": "C8A17300-4E12-4B8F-9A10-100000000001" },
+    "primaryKey": {
+      "ID": "C8A17300-4E12-4B8F-9A10-100000000001"
+    },
     "fields": {
       "Code": "forum-admin",
       "Name": "Forum Admin",
@@ -15,13 +17,19 @@
       "CanCreateRootPost": true,
       "CanReply": true,
       "CanCoEditDocs": true,
-      "VoteWeightMultiplier": 1.0,
+      "VoteWeightMultiplier": 1,
       "Sequence": 10,
       "IsActive": true
+    },
+    "sync": {
+      "lastModified": "2026-11-16T20:10:27.170Z",
+      "checksum": "c087db172d7e05394c45ca4aa1d28406e935a6426a8629ea434b6101af9073e3"
     }
   },
   {
-    "primaryKey": { "ID": "C8A17300-4E12-4B8F-9A10-100000000002" },
+    "primaryKey": {
+      "ID": "C8A17300-4E12-4B8F-9A10-100000000002"
+    },
     "fields": {
       "Code": "moderator",
       "Name": "Moderator",
@@ -36,13 +44,19 @@
       "CanCreateRootPost": true,
       "CanReply": true,
       "CanCoEditDocs": true,
-      "VoteWeightMultiplier": 1.0,
+      "VoteWeightMultiplier": 1,
       "Sequence": 20,
       "IsActive": true
+    },
+    "sync": {
+      "lastModified": "2026-11-16T20:10:27.286Z",
+      "checksum": "d5ffd3658e1382016631d3190e5d4c2c60b23091a658e05fd52ce1dda657f3a9"
     }
   },
   {
-    "primaryKey": { "ID": "C8A17300-4E12-4B8F-9A10-100000000003" },
+    "primaryKey": {
+      "ID": "C8A17300-4E12-4B8F-9A10-100000000003"
+    },
     "fields": {
       "Code": "topic-host",
       "Name": "Topic Host",
@@ -57,13 +71,19 @@
       "CanCreateRootPost": true,
       "CanReply": true,
       "CanCoEditDocs": true,
-      "VoteWeightMultiplier": 1.0,
+      "VoteWeightMultiplier": 1,
       "Sequence": 30,
       "IsActive": true
+    },
+    "sync": {
+      "lastModified": "2026-11-16T20:10:27.374Z",
+      "checksum": "19dd2b7a1f111e6c202f0ed01cf070c3c83fd409981d633fb32e3e93068d0e47"
     }
   },
   {
-    "primaryKey": { "ID": "C8A17300-4E12-4B8F-9A10-100000000004" },
+    "primaryKey": {
+      "ID": "C8A17300-4E12-4B8F-9A10-100000000004"
+    },
     "fields": {
       "Code": "expert-reviewer",
       "Name": "Expert Reviewer",
@@ -81,10 +101,16 @@
       "VoteWeightMultiplier": 1.25,
       "Sequence": 40,
       "IsActive": true
+    },
+    "sync": {
+      "lastModified": "2026-11-16T20:10:27.523Z",
+      "checksum": "d774d9f4edb15037e33b4a0b067b471aed0c0b604e32c18759a81fdb18eb44c3"
     }
   },
   {
-    "primaryKey": { "ID": "C8A17300-4E12-4B8F-9A10-100000000005" },
+    "primaryKey": {
+      "ID": "C8A17300-4E12-4B8F-9A10-100000000005"
+    },
     "fields": {
       "Code": "contributor",
       "Name": "Contributor",
@@ -99,13 +125,19 @@
       "CanCreateRootPost": true,
       "CanReply": true,
       "CanCoEditDocs": false,
-      "VoteWeightMultiplier": 1.0,
+      "VoteWeightMultiplier": 1,
       "Sequence": 50,
       "IsActive": true
+    },
+    "sync": {
+      "lastModified": "2026-11-16T20:10:27.608Z",
+      "checksum": "b28d345e599492ea6db6115946c4bd6f754293f24bc5215630e128e0be393c34"
     }
   },
   {
-    "primaryKey": { "ID": "C8A17300-4E12-4B8F-9A10-100000000006" },
+    "primaryKey": {
+      "ID": "C8A17300-4E12-4B8F-9A10-100000000006"
+    },
     "fields": {
       "Code": "observer",
       "Name": "Observer",
@@ -120,13 +152,19 @@
       "CanCreateRootPost": false,
       "CanReply": false,
       "CanCoEditDocs": false,
-      "VoteWeightMultiplier": 0.0,
+      "VoteWeightMultiplier": 0,
       "Sequence": 60,
       "IsActive": true
+    },
+    "sync": {
+      "lastModified": "2026-11-16T20:10:27.675Z",
+      "checksum": "86a432e4e4f5f9c612ff5361c971904f7c4f020f5d36546b5019c42ba8ad8f28"
     }
   },
   {
-    "primaryKey": { "ID": "C8A17300-4E12-4B8F-9A10-100000000007" },
+    "primaryKey": {
+      "ID": "C8A17300-4E12-4B8F-9A10-100000000007"
+    },
     "fields": {
       "Code": "muted",
       "Name": "Muted",
@@ -141,9 +179,13 @@
       "CanCreateRootPost": false,
       "CanReply": false,
       "CanCoEditDocs": false,
-      "VoteWeightMultiplier": 0.0,
+      "VoteWeightMultiplier": 0,
       "Sequence": 70,
       "IsActive": true
+    },
+    "sync": {
+      "lastModified": "2026-11-16T20:10:27.738Z",
+      "checksum": "8c32dd8ec8e176ae491e6403ffd5ff955f215f16d140ac49e27b3cd8d40bf2b5"
     }
   }
 ]

@@ -22,6 +22,10 @@
           "isDefault": true
         }
       ]
+    },
+    "sync": {
+      "lastModified": "2026-11-16T20:10:19.247Z",
+      "checksum": "1aee72491e92f6efb4571b00668d857b50b1f79fd6ed0dec2717fd10bfd28ec0"
     }
   }
 ]
