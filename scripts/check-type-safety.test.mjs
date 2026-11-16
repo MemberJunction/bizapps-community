@@ -3,11 +3,24 @@ import { describe, it } from 'node:test';
 import { findViolations, checkTree } from './check-type-safety.mjs';
 
 describe('the type-safety gate', () => {
-  it('flags `any` and `unknown` in type position', () => {
-    assert.equal(findViolations('function f(x: any): void {}', 'a.ts').length, 1);
-    assert.equal(findViolations('const x = y as any;', 'a.ts').length, 1);
-    assert.equal(findViolations('function f(x: unknown): void {}', 'a.ts').length, 1);
-    assert.equal(findViolations('const x = y as unknown as Record<string, unknown>;', 'a.ts').length, 1);
+  it('flags `any` and `unknown` in type position, in every spelling', () => {
+    assert.equal(findViolations('function f(x: any): void {}', 'a.ts').length, 1, ': any');
+    assert.equal(findViolations('const x = y as any;', 'a.ts').length, 1, 'as any');
+    assert.equal(findViolations('const x: any = y;', 'a.ts').length, 1, '= any (the : any on the declaration)');
+    assert.equal(findViolations('let x: SomeType | any;', 'a.ts').length, 1, '| any');
+    assert.equal(findViolations('let x: SomeType & any;', 'a.ts').length, 1, '& any');
+    assert.equal(findViolations('function f(x: any[]): void {}', 'a.ts').length, 1, 'any[]');
+    assert.equal(findViolations('const x = <any>y;', 'a.ts').length, 1, '<any> type assertion');
+    assert.equal(findViolations('function f(x: unknown): void {}', 'a.ts').length, 1, ': unknown');
+    assert.equal(findViolations('const x = y as unknown;', 'a.ts').length, 1, 'as unknown');
+    assert.equal(findViolations('let x: Record<string, unknown>;', 'a.ts').length, 1, 'Record<string, unknown>');
+    // Both `as unknown` AND the `Record<string, unknown>` type argument are distinct violations.
+    assert.equal(findViolations('const x = y as unknown as Record<string, unknown>;', 'a.ts').length, 2);
+  });
+
+  it('flags `any`/`unknown` hidden inside a template literal `${...}` interpolation expression', () => {
+    assert.equal(findViolations('const msg = `value: ${(x as any).field}`;', 'a.ts').length, 1);
+    assert.equal(findViolations('const msg = `value: ${(x as unknown as Foo).field}`;', 'a.ts').length, 1);
   });
 
   it('flags BaseEntity-style .Get()/.Set() dynamic field access', () => {
@@ -28,6 +41,14 @@ describe('the type-safety gate', () => {
 
   it('still flags an UNRELATED class calling .Get()/.Set() even if the line also mentions a directory name in a comment', () => {
     assert.equal(findViolations("someOtherThing.Get('x'); // not ForumSubtypeDirectory", 'a.ts').length, 1);
+  });
+
+  it('flags violations in .test.ts files too (test files are no longer exempt)', () => {
+    assert.equal(findViolations('const x: any = 1;', 'a.test.ts').length, 1);
+  });
+
+  it('flags violations in hand-written .d.ts declaration files too', () => {
+    assert.equal(findViolations('export function f(x: any): void;', 'a.d.ts').length, 1);
   });
 
   it('scans the real repo tree clean', () => {
