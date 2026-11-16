@@ -12,6 +12,12 @@
  *   5. browserSmoke   — the headless Playwright + axe-core WCAG run (e2e/reports/
  *                       community-hub-wcag-report.json) reports 0 page/console errors and 0
  *                       critical/serious WCAG 2.1 AA violations.
+ *   6. migrationParity — e2e/reports/migration-parity-report.json (from
+ *                        scripts/verify-migration-parity.mjs) reports overallPassed === true.
+ *
+ * The top-level report also carries `gitTreeClean` (informational — whether any tracked file
+ * other than this script's own regenerated report outputs is dirty) and
+ * `migrationParityVerified` (a convenience mirror of the migrationParity pillar's `passed`).
  *
  * Usage: node scripts/openapp-readiness.mjs
  * Exits 1 if any pillar fails.
@@ -19,6 +25,7 @@
 import { readFileSync, readdirSync, statSync, existsSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { execSync } from 'node:child_process';
 import { GetWorldSeedSummary } from './seed-world.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -30,6 +37,51 @@ const GENERATED_FORMS_MODULE = join(ANGULAR_SRC, 'lib', 'generated', 'generated-
 const APPLICATIONS_METADATA = join(REPO_ROOT, 'metadata', 'applications', '.applications.json');
 const COMMUNITY_HUB_RESOURCE = join(ANGULAR_SRC, 'lib', 'community-hub-resource.component.ts');
 const E2E_REPORT = join(REPO_ROOT, 'e2e', 'reports', 'community-hub-wcag-report.json');
+const MIGRATION_PARITY_REPORT = join(REPO_ROOT, 'e2e', 'reports', 'migration-parity-report.json');
+
+/** Tracked files with unstaged/uncommitted changes, excluding this run's own regenerated report
+ * outputs (which are EXPECTED to differ until the caller commits them — that is not drift). */
+function checkGitTreeClean() {
+  try {
+    const status = execSync('git status --porcelain', { cwd: REPO_ROOT, encoding: 'utf8' });
+    const reportOutputPaths = new Set(['e2e/reports/community-hub-wcag-report.json', 'e2e/reports/openapp-readiness-report.json', 'e2e/reports/migration-parity-report.json', 'e2e/screenshots/community-hub.png']);
+    // `git status --porcelain` lines are exactly `XY PATH` — 2 status chars + 1 space — before
+    // trimming anything; trimming first (removing a leading space on "M path"/" M path" styles)
+    // would shift the fixed-width prefix and eat into PATH itself.
+    const dirtyPaths = status
+      .split('\n')
+      .filter((line) => line.length > 0)
+      .map((line) => line.slice(3).trim())
+      .filter((path) => path.length > 0 && !reportOutputPaths.has(path));
+    return { clean: dirtyPaths.length === 0, dirtyPaths };
+  } catch (err) {
+    return { clean: false, dirtyPaths: [], error: err instanceof Error ? err.message : String(err) };
+  }
+}
+
+function checkMigrationParity() {
+  if (!existsSync(MIGRATION_PARITY_REPORT)) {
+    return {
+      passed: false,
+      summary: 'No e2e/reports/migration-parity-report.json found — run `node scripts/verify-migration-parity.mjs` first',
+      checkedCount: 0,
+      violationCount: 1,
+      violations: ['missing migration parity report'],
+    };
+  }
+  const report = JSON.parse(readFileSync(MIGRATION_PARITY_REPORT, 'utf8'));
+  const violations = Array.isArray(report.violations) ? report.violations : ['migration-parity-report.json is malformed (no violations array)'];
+  const passed = report.overallPassed === true && violations.length === 0;
+  return {
+    passed,
+    summary: passed
+      ? 'Migration parity verified: 25/25 tables in both dialects, fnCommunityForumAccess present in both, >= 50 blank lines before CodeGen, zero spDeleteUnneededEntityFields, teardown parity'
+      : `${violations.length} migration parity violation(s) found`,
+    checkedCount: report.expectedTableCount ?? 25,
+    violationCount: violations.length,
+    violations,
+  };
+}
 
 function stripComments(source) {
   return source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
@@ -282,10 +334,21 @@ function main() {
     designTokens: checkDesignTokens(),
     seedDensity: checkSeedDensity(),
     browserSmoke: checkBrowserSmoke(),
+    migrationParity: checkMigrationParity(),
   };
 
+  const gitTree = checkGitTreeClean();
   const overallPassed = Object.values(pillars).every((p) => p.passed);
-  const report = { schemaVersion: 'sf-readiness/v3', overallPassed, pillars };
+  const report = {
+    schemaVersion: 'sf-readiness/v3',
+    overallPassed,
+    gitTreeClean: gitTree.clean,
+    migrationParityVerified: pillars.migrationParity.passed,
+    pillars,
+  };
+  if (!gitTree.clean) {
+    report.gitTreeDirtyPaths = gitTree.dirtyPaths;
+  }
 
   console.log(JSON.stringify(report, null, 2));
   if (!overallPassed) {
