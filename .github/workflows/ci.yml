@@ -75,6 +75,7 @@ jobs:
             "  - 'packages/Example*/*'",
             "  - 'e2e'",
             "  - '.ci/bizapps-collaboration/packages/*'",
+            "  - '.ci/bizapps-collaboration/packages/ExampleSpaceTypes/*'",
             'linkWorkspacePackages: true',
             'minimumReleaseAge: 0',
             'overrides:',
@@ -205,5 +206,4 @@ jobs:
         run: pnpm run build
 
       - name: Run unit tests
-        if: ${{ !cancelled() }}
         run: pnpm run test
