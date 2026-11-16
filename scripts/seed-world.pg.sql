@@ -19,11 +19,20 @@ SET search_path TO __mj_BizAppsCommunity, public;
 DO $$
 DECLARE
     v_admin_user_id UUID;
+    v_second_user_id UUID;
+    v_default_environment_id UUID;
+    v_any_artifact_type_id UUID;
+    v_trivia_artifact_id UUID := 'C8A18900-4E12-4B8F-9A10-100000000001';
+    v_trivia_artifact_version_id UUID := 'C8A18A00-4E12-4B8F-9A10-100000000001';
 BEGIN
     SELECT "ID" INTO v_admin_user_id FROM __mj."User" ORDER BY "__mj_CreatedAt" ASC LIMIT 1;
     IF v_admin_user_id IS NULL THEN
         RAISE EXCEPTION 'Cannot seed BizApps Community world data: no User rows exist in __mj."User".';
     END IF;
+
+    -- A second distinct User, when one exists, backs the Quadratic Ideation campaign's second
+    -- backer (ForumIdeaAllocation forbids two allocation rows from the same User on one idea).
+    SELECT "ID" INTO v_second_user_id FROM __mj."User" WHERE "ID" <> v_admin_user_id ORDER BY "__mj_CreatedAt" ASC LIMIT 1;
 
     -- 1. Spaces (Collaboration parent rows)
     INSERT INTO __mj_BizAppsCollaboration."Space" (
@@ -119,17 +128,41 @@ BEGIN
     VALUES ('C8A18300-4E12-4B8F-9A10-100000000006', 'C8A18100-4E12-4B8F-9A10-100000000003', 'C8A17200-4E12-4B8F-9A10-100000000006', 'Add webhook signing secrets rotation API', 'add-webhook-signing-secrets-rotation-api', 'Partners need a self-service API to rotate webhook signing secrets without opening a support ticket.', 'Shared', 'Published')
     ON CONFLICT ("ID") DO NOTHING;
 
+    -- Placeholder aggregates; recomputed below from the ForumIdeaAllocation rows actually
+    -- inserted, so this row is always internally consistent rather than a static value that could
+    -- drift from how many distinct Users this database actually has.
     INSERT INTO "ForumIdeaPost" ("ID", "IdeaStatus", "TotalPointsAllocated", "EffectiveQuadraticVotes", "UniqueBackerCount")
-    VALUES ('C8A18300-4E12-4B8F-9A10-100000000006', 'Under Consideration', 61, 11.0, 2)
+    VALUES ('C8A18300-4E12-4B8F-9A10-100000000006', 'Under Consideration', 0, 0.0, 0)
     ON CONFLICT ("ID") DO NOTHING;
 
+    -- First backer: 36 points -> 6.0 effective quadratic votes (sqrt(36) = 6).
     INSERT INTO "ForumIdeaAllocation" ("ID", "IdeaPostID", "UserID", "PointsAllocated", "QuadraticVotes")
     VALUES ('C8A18400-4E12-4B8F-9A10-100000000001', 'C8A18300-4E12-4B8F-9A10-100000000006', v_admin_user_id, 36, 6.0)
     ON CONFLICT ("ID") DO NOTHING;
 
-    -- 8. poll-or-form / collaborative-doc / -sheet / -deck / interactive-experience: base ForumPost
-    --    only — their IsA extension row needs a cross-app Form/Artifact row this scratch database
-    --    does not seed.
+    -- Second backer: 25 points -> 5.0 effective quadratic votes (sqrt(25) = 5). Requires a second
+    -- distinct User; skipped gracefully on a single-user database.
+    IF v_second_user_id IS NOT NULL THEN
+        INSERT INTO "ForumIdeaAllocation" ("ID", "IdeaPostID", "UserID", "PointsAllocated", "QuadraticVotes")
+        VALUES ('C8A18400-4E12-4B8F-9A10-100000000002', 'C8A18300-4E12-4B8F-9A10-100000000006', v_second_user_id, 25, 5.0)
+        ON CONFLICT ("ID") DO NOTHING;
+    END IF;
+
+    UPDATE "ForumIdeaPost" AS idea_post
+    SET "TotalPointsAllocated" = totals.total_points,
+        "EffectiveQuadraticVotes" = totals.total_votes,
+        "UniqueBackerCount" = totals.backer_count
+    FROM (
+        SELECT COALESCE(SUM("PointsAllocated"), 0) AS total_points,
+               COALESCE(SUM("QuadraticVotes"), 0.0) AS total_votes,
+               COUNT(*) AS backer_count
+        FROM "ForumIdeaAllocation"
+        WHERE "IdeaPostID" = 'C8A18300-4E12-4B8F-9A10-100000000006'
+    ) AS totals
+    WHERE idea_post."ID" = 'C8A18300-4E12-4B8F-9A10-100000000006';
+
+    -- 8. poll-or-form / collaborative-doc / -sheet / -deck: base ForumPost only — their IsA
+    --    extension row needs a cross-app Form/Artifact row this scratch database does not seed.
     INSERT INTO "ForumPost" ("ID", "ForumID", "PostTypeID", "Title", "Slug", "BodyMarkdown", "VisibilityBand", "Status")
     VALUES
     ('C8A18300-4E12-4B8F-9A10-100000000007', 'C8A18100-4E12-4B8F-9A10-100000000003', 'C8A17200-4E12-4B8F-9A10-100000000007', 'Which SDK should we prioritize next?', 'which-sdk-should-we-prioritize-next', 'Vote for the SDK you most want to see next.', 'Shared', 'Published'),
@@ -138,6 +171,37 @@ BEGIN
     ('C8A18300-4E12-4B8F-9A10-100000000010', 'C8A18100-4E12-4B8F-9A10-100000000004', 'C8A17200-4E12-4B8F-9A10-100000000010', 'ISV Co-Sell Enablement Deck', 'isv-co-sell-enablement-deck', 'Co-sell enablement slides for ISV partners.', 'Shared', 'Published'),
     ('C8A18300-4E12-4B8F-9A10-100000000013', 'C8A18100-4E12-4B8F-9A10-100000000001', 'C8A17200-4E12-4B8F-9A10-100000000013', 'Platform Trivia: Test Your Onboarding Knowledge', 'platform-trivia-onboarding-knowledge', 'Quick trivia mini-game for new customers.', 'Shared', 'Published')
     ON CONFLICT ("ID") DO NOTHING;
+
+    -- 8b. ForumInteractivePost IsA row + 2 ForumInteractiveSession attempts. Needs a real Artifact +
+    --     ArtifactVersion, which a default Environment and any existing ArtifactType (both part of
+    --     MJ's own core baseline) make possible without fabricating IDs; skipped gracefully if a
+    --     minimal database has neither, same as the other cross-app subtypes above.
+    SELECT "ID" INTO v_default_environment_id FROM __mj."Environment" WHERE "IsDefault" = TRUE LIMIT 1;
+    IF v_default_environment_id IS NULL THEN
+        SELECT "ID" INTO v_default_environment_id FROM __mj."Environment" ORDER BY "__mj_CreatedAt" ASC LIMIT 1;
+    END IF;
+    SELECT "ID" INTO v_any_artifact_type_id FROM __mj."ArtifactType" ORDER BY "__mj_CreatedAt" ASC LIMIT 1;
+
+    IF v_default_environment_id IS NOT NULL AND v_any_artifact_type_id IS NOT NULL THEN
+        INSERT INTO __mj."Artifact" ("ID", "EnvironmentID", "Name", "Description", "TypeID", "UserID", "Visibility")
+        VALUES (v_trivia_artifact_id, v_default_environment_id, 'Platform Trivia Mini-App', 'Interactive onboarding trivia mini-app component.', v_any_artifact_type_id, v_admin_user_id, 'Always')
+        ON CONFLICT ("ID") DO NOTHING;
+
+        INSERT INTO __mj."ArtifactVersion" ("ID", "ArtifactID", "VersionNumber", "UserID", "ContentMode", "ForceToolsOnly")
+        VALUES (v_trivia_artifact_version_id, v_trivia_artifact_id, 1, v_admin_user_id, 'Text', FALSE)
+        ON CONFLICT ("ID") DO NOTHING;
+
+        INSERT INTO "ForumInteractivePost" ("ID", "ComponentArtifactID", "PinnedArtifactVersionID", "ExperienceKind", "ScoringMode", "ShowLeaderboard")
+        VALUES ('C8A18300-4E12-4B8F-9A10-100000000013', v_trivia_artifact_id, v_trivia_artifact_version_id, 'Quiz', 'Best Score', TRUE)
+        ON CONFLICT ("ID") DO NOTHING;
+
+        -- Attempt 1: 70/100 in 95s. Attempt 2 (same member, retrying): 92/100 in 61s — the better score.
+        INSERT INTO "ForumInteractiveSession" ("ID", "InteractivePostID", "ArtifactVersionID", "UserID", "AttemptNumber", "Score", "DurationSeconds", "Completed")
+        VALUES
+        ('C8A18500-4E12-4B8F-9A10-100000000001', 'C8A18300-4E12-4B8F-9A10-100000000013', v_trivia_artifact_version_id, v_admin_user_id, 1, 70, 95, TRUE),
+        ('C8A18500-4E12-4B8F-9A10-100000000002', 'C8A18300-4E12-4B8F-9A10-100000000013', v_trivia_artifact_version_id, v_admin_user_id, 2, 92, 61, TRUE)
+        ON CONFLICT ("ID") DO NOTHING;
+    END IF;
 
     -- 9. Peer Case Review + Live AMA (full IsA subtype rows; no cross-app FKs)
     INSERT INTO "ForumPost" ("ID", "ForumID", "PostTypeID", "Title", "Slug", "BodyMarkdown", "VisibilityBand", "Status")

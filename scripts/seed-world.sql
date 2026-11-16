@@ -22,6 +22,11 @@ SELECT TOP 1 @AdminUserID = [ID] FROM [__mj].[User] ORDER BY [__mj_CreatedAt] AS
 IF @AdminUserID IS NULL
     THROW 50001, 'Cannot seed BizApps Community world data: no User rows exist in [__mj].[User].', 1;
 
+-- A second distinct User, when one exists, backs the Quadratic Ideation campaign's second backer
+-- (UQ_ForumIdeaAllocation_Idea_User forbids two allocation rows from the same User on one idea).
+DECLARE @SecondUserID UNIQUEIDENTIFIER;
+SELECT TOP 1 @SecondUserID = [ID] FROM [__mj].[User] WHERE [ID] <> @AdminUserID ORDER BY [__mj_CreatedAt] ASC;
+
 -- 2. Spaces (Ensure parent Collaboration Spaces exist)
 DECLARE @Space1ID UNIQUEIDENTIFIER = 'C8A18000-4E12-4B8F-9A10-100000000001'; -- Customer Community Portal
 DECLARE @Space2ID UNIQUEIDENTIFIER = 'C8A18000-4E12-4B8F-9A10-100000000002'; -- Partner & ISV Enablement Network
@@ -300,14 +305,19 @@ BEGIN
         N'Shared', N'Published'
     );
 
+    -- Placeholder aggregates; recomputed below from the ForumIdeaAllocation rows actually inserted,
+    -- so this row is always internally consistent (TotalPointsAllocated/EffectiveQuadraticVotes/
+    -- UniqueBackerCount = sqrt-sum of real child rows) rather than a static value that could drift
+    -- from how many distinct Users this database actually has.
     INSERT INTO [__mj_BizAppsCommunity].[ForumIdeaPost] (
         [ID], [IdeaStatus], [TotalPointsAllocated], [EffectiveQuadraticVotes], [UniqueBackerCount]
     ) VALUES (
-        @IdeaPostID, N'Under Consideration', 61, 11.0, 2
+        @IdeaPostID, N'Under Consideration', 0, 0.0, 0
     );
 END;
 
-IF @AdminUserID IS NOT NULL AND NOT EXISTS (SELECT 1 FROM [__mj_BizAppsCommunity].[ForumIdeaAllocation] WHERE [ID] = @Alloc1ID)
+-- First backer: 36 points allocated -> 6.0 effective quadratic votes (sqrt(36) = 6).
+IF NOT EXISTS (SELECT 1 FROM [__mj_BizAppsCommunity].[ForumIdeaAllocation] WHERE [ID] = @Alloc1ID)
 BEGIN
     INSERT INTO [__mj_BizAppsCommunity].[ForumIdeaAllocation] (
         [ID], [IdeaPostID], [UserID], [PointsAllocated], [QuadraticVotes]
@@ -315,6 +325,30 @@ BEGIN
         @Alloc1ID, @IdeaPostID, @AdminUserID, 36, 6.0
     );
 END;
+
+-- Second backer: 25 points allocated -> 5.0 effective quadratic votes (sqrt(25) = 5). Requires a
+-- second distinct User (UQ_ForumIdeaAllocation_Idea_User); on a single-user scratch database this
+-- is skipped gracefully and the idea's aggregates below reflect only the first backer.
+IF @SecondUserID IS NOT NULL AND NOT EXISTS (SELECT 1 FROM [__mj_BizAppsCommunity].[ForumIdeaAllocation] WHERE [ID] = @Alloc2ID)
+BEGIN
+    INSERT INTO [__mj_BizAppsCommunity].[ForumIdeaAllocation] (
+        [ID], [IdeaPostID], [UserID], [PointsAllocated], [QuadraticVotes]
+    ) VALUES (
+        @Alloc2ID, @IdeaPostID, @SecondUserID, 25, 5.0
+    );
+END;
+
+UPDATE [__mj_BizAppsCommunity].[ForumIdeaPost]
+SET [TotalPointsAllocated] = ISNULL(Totals.[TotalPoints], 0),
+    [EffectiveQuadraticVotes] = ISNULL(Totals.[TotalVotes], 0.0),
+    [UniqueBackerCount] = ISNULL(Totals.[BackerCount], 0)
+FROM [__mj_BizAppsCommunity].[ForumIdeaPost] AS IdeaPost
+CROSS APPLY (
+    SELECT SUM([PointsAllocated]) AS [TotalPoints], SUM([QuadraticVotes]) AS [TotalVotes], COUNT(*) AS [BackerCount]
+    FROM [__mj_BizAppsCommunity].[ForumIdeaAllocation]
+    WHERE [IdeaPostID] = IdeaPost.[ID]
+) AS Totals
+WHERE IdeaPost.[ID] = @IdeaPostID;
 
 -- 9. poll-or-form / collaborative-doc / collaborative-sheet / collaborative-deck / interactive-experience:
 --    seeded as plain ForumPost rows of each PostType; their IsA extension row needs a
@@ -354,6 +388,69 @@ IF NOT EXISTS (SELECT 1 FROM [__mj_BizAppsCommunity].[ForumPost] WHERE [ID] = @I
 BEGIN
     INSERT INTO [__mj_BizAppsCommunity].[ForumPost] ([ID], [ForumID], [PostTypeID], [Title], [Slug], [BodyMarkdown], [VisibilityBand], [Status])
     VALUES (@InteractivePostID, @Forum1ID, 'C8A17200-4E12-4B8F-9A10-100000000013', N'Platform Trivia: Test Your Onboarding Knowledge', N'platform-trivia-onboarding-knowledge', N'Quick trivia mini-game for new customers.', N'Shared', N'Published');
+END;
+
+-- 9b. ForumInteractivePost IsA row + 2 ForumInteractiveSession attempts. Unlike the plain
+--     poll/doc/sheet/deck posts above, this needs a real Artifact + ArtifactVersion (its component
+--     and the specific version each session attempt played), which this scratch database does not
+--     seed on its own. A default Environment and any existing ArtifactType are both part of MJ's
+--     own core baseline, present on any standard install (including MJ_Scratch_Community_Dev), so
+--     this resolves them rather than fabricating IDs; if a truly minimal database has neither, the
+--     IsA row and its sessions are skipped gracefully, same as the other cross-app subtypes above.
+DECLARE @DefaultEnvironmentID UNIQUEIDENTIFIER;
+SELECT TOP 1 @DefaultEnvironmentID = [ID] FROM [__mj].[Environment] WHERE [IsDefault] = 1;
+IF @DefaultEnvironmentID IS NULL
+    SELECT TOP 1 @DefaultEnvironmentID = [ID] FROM [__mj].[Environment] ORDER BY [__mj_CreatedAt] ASC;
+
+DECLARE @AnyArtifactTypeID UNIQUEIDENTIFIER;
+SELECT TOP 1 @AnyArtifactTypeID = [ID] FROM [__mj].[ArtifactType] ORDER BY [__mj_CreatedAt] ASC;
+
+DECLARE @TriviaArtifactID UNIQUEIDENTIFIER = 'C8A18900-4E12-4B8F-9A10-100000000001';
+DECLARE @TriviaArtifactVersionID UNIQUEIDENTIFIER = 'C8A18A00-4E12-4B8F-9A10-100000000001';
+DECLARE @Session1ID UNIQUEIDENTIFIER = 'C8A18500-4E12-4B8F-9A10-100000000001';
+DECLARE @Session2ID UNIQUEIDENTIFIER = 'C8A18500-4E12-4B8F-9A10-100000000002';
+
+IF @DefaultEnvironmentID IS NOT NULL AND @AnyArtifactTypeID IS NOT NULL
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM [__mj].[Artifact] WHERE [ID] = @TriviaArtifactID)
+    BEGIN
+        INSERT INTO [__mj].[Artifact] ([ID], [EnvironmentID], [Name], [Description], [TypeID], [UserID], [__mj_CreatedAt], [__mj_UpdatedAt], [Visibility])
+        VALUES (@TriviaArtifactID, @DefaultEnvironmentID, N'Platform Trivia Mini-App', N'Interactive onboarding trivia mini-app component.', @AnyArtifactTypeID, @AdminUserID, SYSDATETIMEOFFSET(), SYSDATETIMEOFFSET(), N'Always');
+    END;
+
+    IF NOT EXISTS (SELECT 1 FROM [__mj].[ArtifactVersion] WHERE [ID] = @TriviaArtifactVersionID)
+    BEGIN
+        INSERT INTO [__mj].[ArtifactVersion] ([ID], [ArtifactID], [VersionNumber], [UserID], [__mj_CreatedAt], [__mj_UpdatedAt], [ContentMode], [ForceToolsOnly])
+        VALUES (@TriviaArtifactVersionID, @TriviaArtifactID, 1, @AdminUserID, SYSDATETIMEOFFSET(), SYSDATETIMEOFFSET(), N'Text', 0);
+    END;
+
+    IF NOT EXISTS (SELECT 1 FROM [__mj_BizAppsCommunity].[ForumInteractivePost] WHERE [ID] = @InteractivePostID)
+    BEGIN
+        INSERT INTO [__mj_BizAppsCommunity].[ForumInteractivePost] (
+            [ID], [ComponentArtifactID], [PinnedArtifactVersionID], [ExperienceKind], [ScoringMode], [ShowLeaderboard]
+        ) VALUES (
+            @InteractivePostID, @TriviaArtifactID, @TriviaArtifactVersionID, N'Quiz', N'Best Score', 1
+        );
+    END;
+
+    -- Attempt 1: 70/100 in 95s. Attempt 2 (same member, retrying): 92/100 in 61s — the better score.
+    IF @AdminUserID IS NOT NULL AND NOT EXISTS (SELECT 1 FROM [__mj_BizAppsCommunity].[ForumInteractiveSession] WHERE [ID] = @Session1ID)
+    BEGIN
+        INSERT INTO [__mj_BizAppsCommunity].[ForumInteractiveSession] (
+            [ID], [InteractivePostID], [ArtifactVersionID], [UserID], [AttemptNumber], [Score], [DurationSeconds], [Completed]
+        ) VALUES (
+            @Session1ID, @InteractivePostID, @TriviaArtifactVersionID, @AdminUserID, 1, 70, 95, 1
+        );
+    END;
+
+    IF @AdminUserID IS NOT NULL AND NOT EXISTS (SELECT 1 FROM [__mj_BizAppsCommunity].[ForumInteractiveSession] WHERE [ID] = @Session2ID)
+    BEGIN
+        INSERT INTO [__mj_BizAppsCommunity].[ForumInteractiveSession] (
+            [ID], [InteractivePostID], [ArtifactVersionID], [UserID], [AttemptNumber], [Score], [DurationSeconds], [Completed]
+        ) VALUES (
+            @Session2ID, @InteractivePostID, @TriviaArtifactVersionID, @AdminUserID, 2, 92, 61, 1
+        );
+    END;
 END;
 
 -- 10. Peer Case Review + Live AMA (full IsA subtype rows; no cross-app FKs)

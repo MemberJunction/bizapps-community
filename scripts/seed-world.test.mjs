@@ -1,5 +1,8 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
+import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import {
   ALL_POST_TYPE_CODES,
   GetWorldSeedSummary,
@@ -19,6 +22,8 @@ const REQUIRED_SPACE_NAMES = [
   'Partner & ISV Enablement Network',
   'Internal Engineering Guild',
 ];
+
+const HERE = dirname(fileURLToPath(import.meta.url));
 
 const ALL_FORUM_TYPE_CODES = [
   'general-discussion',
@@ -110,6 +115,24 @@ describe('BizApps Community world data model seed', () => {
     assert.equal(ideaPost.PostTypeCode, 'idea-proposal');
   });
 
+  it("the idea-proposal post's aggregate columns match the sum of its WORLD_IDEA_ALLOCATIONS rows (TotalPointsAllocated=61, EffectiveVoteSum=11, BackerCount=2)", () => {
+    const ideaPost = WORLD_POSTS.find((p) => p.PostTypeCode === 'idea-proposal');
+    assert.ok(ideaPost, 'no idea-proposal post seeded');
+    const allocations = WORLD_IDEA_ALLOCATIONS.filter((a) => a.IdeaPostID === ideaPost.ID);
+
+    const totalPoints = allocations.reduce((sum, a) => sum + a.PointsAllocated, 0);
+    const totalVotes = allocations.reduce((sum, a) => sum + a.QuadraticVotes, 0);
+
+    assert.equal(ideaPost.TotalPointsAllocated, totalPoints);
+    assert.equal(ideaPost.EffectiveQuadraticVotes, totalVotes);
+    assert.equal(ideaPost.UniqueBackerCount, allocations.length);
+
+    // The exact values called out as the canonical demo scenario.
+    assert.equal(ideaPost.TotalPointsAllocated, 61);
+    assert.equal(ideaPost.EffectiveQuadraticVotes, 11);
+    assert.equal(ideaPost.UniqueBackerCount, 2);
+  });
+
   it('seeds Interactive Mini-App sessions for a seeded interactive-experience post', () => {
     assert.ok(WORLD_INTERACTIVE_SESSIONS.length >= 2);
     const interactivePost = WORLD_POSTS.find((p) => p.PostTypeCode === 'interactive-experience');
@@ -129,6 +152,30 @@ describe('BizApps Community world data model seed', () => {
     const spaceIdsWithTags = new Set(WORLD_TOPIC_TAGS.map((t) => t.SpaceID));
     for (const space of WORLD_COMMUNITY_SPACES) {
       assert.ok(spaceIdsWithTags.has(space.ID), `Space ${space.Name} has no Topic Tag`);
+    }
+  });
+});
+
+describe('seed-world.sql / seed-world.pg.sql parity with seed-world.mjs', () => {
+  const sqlServerScript = readFileSync(join(HERE, 'seed-world.sql'), 'utf8');
+  const postgresScript = readFileSync(join(HERE, 'seed-world.pg.sql'), 'utf8');
+
+  it('both dialects insert every WORLD_IDEA_ALLOCATIONS row by ID (not just the first backer)', () => {
+    for (const allocation of WORLD_IDEA_ALLOCATIONS) {
+      assert.ok(sqlServerScript.includes(allocation.ID), `seed-world.sql missing allocation ${allocation.ID}`);
+      assert.ok(postgresScript.includes(allocation.ID), `seed-world.pg.sql missing allocation ${allocation.ID}`);
+    }
+  });
+
+  it("both dialects recompute the idea post's aggregate columns from its real allocation rows (never a static mismatched literal)", () => {
+    assert.ok(/UPDATE \[__mj_BizAppsCommunity\]\.\[ForumIdeaPost\]/.test(sqlServerScript));
+    assert.ok(/UPDATE "ForumIdeaPost"/.test(postgresScript));
+  });
+
+  it('both dialects insert every WORLD_INTERACTIVE_SESSIONS row by ID', () => {
+    for (const session of WORLD_INTERACTIVE_SESSIONS) {
+      assert.ok(sqlServerScript.includes(session.ID), `seed-world.sql missing interactive session ${session.ID}`);
+      assert.ok(postgresScript.includes(session.ID), `seed-world.pg.sql missing interactive session ${session.ID}`);
     }
   });
 });
