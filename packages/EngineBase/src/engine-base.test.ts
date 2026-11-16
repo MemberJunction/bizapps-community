@@ -186,3 +186,37 @@ test('@mj-biz-apps/community-engine-base CommunityEngineBase.ResolveConfiguratio
   });
   assert.equal(spaceOnly.Posts.MaxReplyDepth, 3);
 });
+
+test('@mj-biz-apps/community-engine-base CommunityEngineBase loads Application Settings (the CommunitySettings row) and feeds ResolveConfiguration\'s broadest tier', () => {
+  const engine = CommunityEngineBase.Instance;
+
+  engine.HydrateMetadata({
+    forumTypes: [{ ID: 'TYPE-APPSETTINGS', Code: 'appsettings-type', Name: 'AppSettings Type' } as IForumTypeDescriptor],
+    postTypes: [],
+    forumRoleTypes: [],
+    applicationSettingsRows: [
+      { Name: 'SomeOtherAppsSettings', Value: JSON.stringify({ AskFirstEnabled: false }) },
+      { Name: 'CommunitySettings', Value: JSON.stringify({ DefaultDigestCadence: 'Weekly Digest' }) },
+    ],
+  });
+
+  const resolved = engine.ResolveConfiguration({ forum: { ForumTypeID: 'TYPE-APPSETTINGS', Configuration: null } });
+  // The CommunitySettings row (not SomeOtherAppsSettings) was parsed into _appSettings and flows
+  // through, since nothing more specific overrides DefaultDigestCadence here.
+  assert.equal(resolved.DefaultDigestCadence, 'Weekly Digest');
+});
+
+test('@mj-biz-apps/community-engine-base CommunityEngineBase tolerates a missing or malformed CommunitySettings row without throwing', () => {
+  const engine = CommunityEngineBase.Instance;
+
+  engine.HydrateMetadata({
+    forumTypes: [{ ID: 'TYPE-NOAPPSETTINGS', Code: 'no-appsettings-type', Name: 'No AppSettings' } as IForumTypeDescriptor],
+    postTypes: [],
+    forumRoleTypes: [],
+    applicationSettingsRows: [{ Name: 'CommunitySettings', Value: '{not valid json' }],
+  });
+
+  assert.doesNotThrow(() =>
+    engine.ResolveConfiguration({ forum: { ForumTypeID: 'TYPE-NOAPPSETTINGS', Configuration: null } }),
+  );
+});

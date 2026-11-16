@@ -5,6 +5,7 @@ import {
   type IMetadataProvider,
   type UserInfo,
 } from '@memberjunction/core';
+import type { MJApplicationSettingEntity } from '@memberjunction/core-entities';
 import {
   CommunityConfigurationResolver,
   type CommunityConfiguration,
@@ -31,7 +32,11 @@ export class CommunityEngineBase extends BaseEngine<CommunityEngineBase> {
   private _forumTypes: IForumTypeDescriptor[] = [];
   private _postTypes: IPostTypeDescriptor[] = [];
   private _forumRoleTypes: IForumRoleTypeDescriptor[] = [];
+  private _applicationSettings: Array<Pick<MJApplicationSettingEntity, 'Name' | 'Value'>> = [];
   private _appSettings: Partial<CommunityConfiguration> = {};
+
+  /** `MJ: Application Settings.Name` this engine reads its `CommunityConfiguration` JSON from. */
+  public static readonly APPLICATION_SETTINGS_NAME = 'CommunitySettings';
 
   // O(1) memoized lookup indexes, reset on reload in AdditionalLoading()
   private _forumTypesById: Map<string, IForumTypeDescriptor> | null = null;
@@ -67,6 +72,11 @@ export class CommunityEngineBase extends BaseEngine<CommunityEngineBase> {
         EntityName: 'MJ_BizApps_Community: Forum Role Types',
         CacheLocal: true,
       },
+      {
+        PropertyName: '_applicationSettings',
+        EntityName: 'MJ: Application Settings',
+        CacheLocal: true,
+      },
     ];
 
     return await this.Load(params, md, forceRefresh ?? false, contextUser);
@@ -89,23 +99,52 @@ export class CommunityEngineBase extends BaseEngine<CommunityEngineBase> {
     PostSubtypeDirectory.Instance.Replace(
       this.PostTypes.map((type) => ({ ID: type.ID, ExtensionEntity: type.ExtensionEntity })),
     );
+
+    this.refreshAppSettingsFromApplicationSettings();
+  }
+
+  /** Parses the `CommunitySettings` row's `Value` JSON (from `_applicationSettings`, loaded by
+   * `Config()`) into `_appSettings`, feeding `ResolveConfiguration`'s broadest tier. Leaves
+   * `_appSettings` as-is (e.g. what `HydrateMetadata` set) when no such row was loaded. */
+  private refreshAppSettingsFromApplicationSettings(): void {
+    const settingsRow = this.GetConfigData<Pick<MJApplicationSettingEntity, 'Name' | 'Value'>>(
+      '_applicationSettings',
+    ).find((s) => s.Name === CommunityEngineBase.APPLICATION_SETTINGS_NAME);
+    if (!settingsRow?.Value) {
+      return;
+    }
+    try {
+      this._appSettings = CommunityConfigurationResolver.ParseConfigurationJSON(settingsRow.Value);
+    } catch {
+      // A malformed CommunitySettings row falls back to whatever _appSettings already held
+      // (the code defaults, via DEFAULT_COMMUNITY_CONFIGURATION in the cascade) rather than
+      // throwing out of a load.
+    }
   }
 
   /**
    * Manual metadata seeding for unit tests and other synchronous bootstrap paths that do not have a
    * live `IMetadataProvider` to run `Config()` against. Populates the same fields `Config()`/`Load()`
    * would, then rebuilds the O(1) caches and subtype directories exactly as a real reload would.
+   *
+   * `appSettings` sets `_appSettings` directly (a pre-parsed `CommunityConfiguration` partial).
+   * `applicationSettingsRows`, when given, instead exercises the SAME `MJ: Application Settings`
+   * parsing path `Config()`'s real `_applicationSettings` load feeds — the row named
+   * `CommunitySettings` wins, matching `refreshAppSettingsFromApplicationSettings()`. Passing both
+   * is redundant; `applicationSettingsRows` is applied second and so would win.
    */
   public HydrateMetadata(params: {
     forumTypes: ReadonlyArray<IForumTypeDescriptor>;
     postTypes: ReadonlyArray<IPostTypeDescriptor>;
     forumRoleTypes?: ReadonlyArray<IForumRoleTypeDescriptor>;
     appSettings?: Partial<CommunityConfiguration>;
+    applicationSettingsRows?: ReadonlyArray<Pick<MJApplicationSettingEntity, 'Name' | 'Value'>>;
   }): void {
     this._forumTypes = [...params.forumTypes];
     this._postTypes = [...params.postTypes];
     this._forumRoleTypes = [...(params.forumRoleTypes ?? [])];
     this._appSettings = params.appSettings ?? {};
+    this._applicationSettings = [...(params.applicationSettingsRows ?? [])];
 
     // AdditionalLoading has no awaits: its body completes synchronously before this returns.
     void this.AdditionalLoading();
