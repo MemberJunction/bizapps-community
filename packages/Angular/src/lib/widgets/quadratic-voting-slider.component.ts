@@ -1,7 +1,13 @@
-import { Component, ChangeDetectionStrategy, Input } from '@angular/core';
+import { Component, ChangeDetectionStrategy, EventEmitter, Input, Output } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { CommunityRules, type IdeationAllocationMode } from '@mj-biz-apps/community-core';
+
+export interface QuadraticVotingAllocationChangedEvent {
+  ideaPostId: string;
+  pointsAllocated: number;
+  effectiveVotes: number;
+}
 
 /**
  * Quadratic Voting / 100-Point Wallet slider for an Ideation Campaign idea. Computes
@@ -26,10 +32,26 @@ export class QuadraticVotingSliderComponent {
   @Input() public existingPointsOnOtherIdeas = 0;
   @Input() public existingPointsOnThisIdea = 0;
 
+  /** Emitted after a slider change that `validation.valid` accepts — the host's hook to persist
+   * the allocation (e.g. via a server action or RunView-backed save). Not emitted for an
+   * over-budget or otherwise rejected change, so a host never persists a value the server would
+   * then reject. */
+  @Output() public allocationChanged = new EventEmitter<QuadraticVotingAllocationChangedEvent>();
+
   public pointsAllocated = 0;
 
   public get effectiveVotes(): number {
     return this.allocationMode === 'Quadratic' ? Math.sqrt(this.pointsAllocated) : this.pointsAllocated;
+  }
+
+  public OnSliderInput(): void {
+    if (this.validation.valid) {
+      this.allocationChanged.emit({
+        ideaPostId: this.ideaPostId,
+        pointsAllocated: this.pointsAllocated,
+        effectiveVotes: this.effectiveVotes,
+      });
+    }
   }
 
   public get validation(): { valid: boolean; remainingBudgetPoints: number; errorMessage?: string } {

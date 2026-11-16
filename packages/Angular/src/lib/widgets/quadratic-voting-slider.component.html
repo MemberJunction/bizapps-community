@@ -6,6 +6,7 @@
       min="0"
       [max]="maxPointsPerIdea ?? budgetPoints"
       [(ngModel)]="pointsAllocated"
+      (ngModelChange)="OnSliderInput()"
     />
     <span class="mjc-qv-slider__points">{{ pointsAllocated }} pts</span>
   </div>

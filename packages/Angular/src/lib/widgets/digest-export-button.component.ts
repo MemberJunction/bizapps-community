@@ -2,7 +2,7 @@ import { Component, ChangeDetectionStrategy, ChangeDetectorRef, Input, inject } 
 import { CommonModule } from '@angular/common';
 import { Metadata } from '@memberjunction/core';
 import { GraphQLActionClient, GraphQLDataProvider } from '@memberjunction/graphql-dataprovider';
-import { COMMUNITY_ACTION_IDS } from '@mj-biz-apps/community-actions';
+import { COMMUNITY_ACTION_IDS } from '@mj-biz-apps/community-core';
 
 /**
  * Exports the member's Community Digest as a real server-side PDF by invoking
@@ -21,7 +21,7 @@ export class DigestExportButtonComponent {
   private readonly cdr = inject(ChangeDetectorRef);
 
   @Input() public spaceName = '';
-  @Input() public allowedForumIDs = '';
+  @Input() public allowedForumIDs: string[] = [];
 
   public isExporting = false;
   public errorMessage: string | null = null;
@@ -39,7 +39,7 @@ export class DigestExportButtonComponent {
       const actionClient = new GraphQLActionClient(provider);
       const result = await actionClient.RunAction(COMMUNITY_ACTION_IDS.ExportDigestPDF, [
         { Name: 'SpaceName', Value: this.spaceName, Type: 'Input' },
-        { Name: 'AllowedForumIDs', Value: this.allowedForumIDs, Type: 'Input' },
+        { Name: 'AllowedForumIDs', Value: this.allowedForumIDs.join(','), Type: 'Input' },
       ]);
 
       if (!result.Success) {

@@ -1,9 +1,9 @@
-import { Component, ChangeDetectionStrategy, ChangeDetectorRef, inject } from '@angular/core';
+import { Component, ChangeDetectionStrategy, ChangeDetectorRef, Input, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Metadata } from '@memberjunction/core';
 import { GraphQLActionClient, GraphQLDataProvider } from '@memberjunction/graphql-dataprovider';
-import { COMMUNITY_ACTION_IDS } from '@mj-biz-apps/community-actions';
+import { COMMUNITY_ACTION_IDS } from '@mj-biz-apps/community-core';
 
 /**
  * Pre-submission search widget: before a member posts a new Question, runs
@@ -25,8 +25,8 @@ export class AskFirstDeflectionWidgetComponent {
   public resultMessage: string | null = null;
   public deflected = false;
 
-  /** Comma-separated Forum IDs the current member may read, scoped by the host (no permission computation here). */
-  public allowedForumIDs = '';
+  /** Forum IDs the current member may read, scoped by the host (no permission computation here). */
+  @Input() public allowedForumIDs: string[] = [];
 
   public async Search(): Promise<void> {
     if (!this.queryText.trim() || this.isSearching) {
@@ -41,7 +41,7 @@ export class AskFirstDeflectionWidgetComponent {
       const actionClient = new GraphQLActionClient(provider);
       const result = await actionClient.RunAction(COMMUNITY_ACTION_IDS.AskFirstDeflection, [
         { Name: 'QueryText', Value: this.queryText, Type: 'Input' },
-        { Name: 'AllowedForumIDs', Value: this.allowedForumIDs, Type: 'Input' },
+        { Name: 'AllowedForumIDs', Value: this.allowedForumIDs.join(','), Type: 'Input' },
       ]);
       this.deflected = result.ResultCode === 'DEFLECTED';
       this.resultMessage = result.Message ?? null;

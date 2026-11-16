@@ -1,15 +1,20 @@
 <mj-page-layout>
   <mj-page-body [Padding]="false">
     <div class="mjc-community-hub">
-      <nav class="mjc-community-hub__tabs" role="tablist">
+      <nav class="mjc-community-hub__tabs" role="tablist" aria-label="Community Hub">
         @for (tab of tabs; track tab.key) {
           <button
+            #tabButton
             type="button"
             role="tab"
+            [id]="'mjc-hub-tab-' + tab.key"
             class="mjc-community-hub__tab"
             [class.mjc-community-hub__tab--active]="tab.key === activeTabKey"
             [attr.aria-selected]="tab.key === activeTabKey"
+            [attr.aria-controls]="'mjc-hub-panel-' + tab.key"
+            [attr.tabindex]="tab.key === focusedTabKey ? 0 : -1"
             (click)="SelectTab(tab.key)"
+            (keydown)="OnTabKeydown($event, tab.key)"
           >
             <i [class]="tab.icon" aria-hidden="true"></i>
             <span>{{ tab.label }}</span>
@@ -20,28 +25,91 @@
       <div class="mjc-community-hub__body">
         @switch (activeTabKey) {
           @case ('knowledge-stream') {
-            <section class="mjc-community-hub__panel">
-              <mjc-ask-first-deflection-widget></mjc-ask-first-deflection-widget>
-              <mjc-digest-export-button></mjc-digest-export-button>
+            <section
+              [id]="'mjc-hub-panel-knowledge-stream'"
+              class="mjc-community-hub__panel"
+              role="tabpanel"
+              [attr.aria-labelledby]="'mjc-hub-tab-knowledge-stream'"
+            >
+              <mjc-ask-first-deflection-widget [allowedForumIDs]="allowedForumIDs"></mjc-ask-first-deflection-widget>
+              <mjc-digest-export-button [spaceName]="spaceName" [allowedForumIDs]="allowedForumIDs"></mjc-digest-export-button>
             </section>
           }
           @case ('qa-canon-workbench') {
-            <section class="mjc-community-hub__panel">
-              <p class="mjc-community-hub__hint">
-                Verified Q&amp;A canon answers and answers awaiting epistemic review.
-              </p>
+            <section
+              [id]="'mjc-hub-panel-qa-canon-workbench'"
+              class="mjc-community-hub__panel"
+              role="tabpanel"
+              [attr.aria-labelledby]="'mjc-hub-tab-qa-canon-workbench'"
+            >
+              @if (qaCanonItems.length === 0) {
+                <p class="mjc-community-hub__hint">No verified Q&amp;A canon answers yet.</p>
+              } @else {
+                <ul class="mjc-community-hub__list">
+                  @for (item of qaCanonItems; track item.id) {
+                    <li class="mjc-community-hub__list-item">
+                      <span class="mjc-community-hub__list-title">{{ item.title }}</span>
+                      @if (item.epistemicStatus) {
+                        <span class="mjc-community-hub__badge">{{ item.epistemicStatus }}</span>
+                      }
+                    </li>
+                  }
+                </ul>
+              }
             </section>
           }
           @case ('quadratic-ideation-wallet') {
-            <section class="mjc-community-hub__panel">
-              <mjc-quadratic-voting-slider></mjc-quadratic-voting-slider>
+            <section
+              [id]="'mjc-hub-panel-quadratic-ideation-wallet'"
+              class="mjc-community-hub__panel"
+              role="tabpanel"
+              [attr.aria-labelledby]="'mjc-hub-tab-quadratic-ideation-wallet'"
+            >
+              @if (ideationItems.length === 0) {
+                <p class="mjc-community-hub__hint">No ideas proposed yet.</p>
+              } @else {
+                <ul class="mjc-community-hub__list" role="listbox" aria-label="Idea proposals">
+                  @for (idea of ideationItems; track idea.id) {
+                    <li
+                      class="mjc-community-hub__list-item"
+                      role="option"
+                      [attr.aria-selected]="idea.id === selectedIdeaId"
+                      [class.mjc-community-hub__list-item--selected]="idea.id === selectedIdeaId"
+                      (click)="SelectIdea(idea.id)"
+                    >
+                      <span class="mjc-community-hub__list-title">{{ idea.title }}</span>
+                      <span class="mjc-community-hub__badge">{{ idea.effectiveQuadraticVotes }} votes</span>
+                    </li>
+                  }
+                </ul>
+                @if (selectedIdeaId) {
+                  <mjc-quadratic-voting-slider
+                    [ideaPostId]="selectedIdeaId"
+                    (allocationChanged)="OnVoteAllocationChanged(selectedIdeaId, $event.pointsAllocated, $event.effectiveVotes)"
+                  ></mjc-quadratic-voting-slider>
+                }
+              }
             </section>
           }
           @case ('living-co-authoring') {
-            <section class="mjc-community-hub__panel">
-              <p class="mjc-community-hub__hint">
-                Living documents, spreadsheets, decks, and interactive mini-apps.
-              </p>
+            <section
+              [id]="'mjc-hub-panel-living-co-authoring'"
+              class="mjc-community-hub__panel"
+              role="tabpanel"
+              [attr.aria-labelledby]="'mjc-hub-tab-living-co-authoring'"
+            >
+              @if (livingDocItems.length === 0) {
+                <p class="mjc-community-hub__hint">No living documents or interactive mini-apps yet.</p>
+              } @else {
+                <ul class="mjc-community-hub__list">
+                  @for (doc of livingDocItems; track doc.id) {
+                    <li class="mjc-community-hub__list-item">
+                      <span class="mjc-community-hub__list-title">{{ doc.title }}</span>
+                      <span class="mjc-community-hub__badge">{{ doc.postTypeCode }}</span>
+                    </li>
+                  }
+                </ul>
+              }
             </section>
           }
         }

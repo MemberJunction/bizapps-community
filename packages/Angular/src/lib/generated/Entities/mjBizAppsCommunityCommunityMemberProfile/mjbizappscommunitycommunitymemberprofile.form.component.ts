@@ -1,4 +1,4 @@
-import { Component } from '@angular/core';
+import { ChangeDetectionStrategy, Component } from '@angular/core';
 import { mjBizAppsCommunityCommunityMemberProfileEntity } from '@mj-biz-apps/community-entities';
 import { RegisterClass } from '@memberjunction/global';
 import { BaseFormComponent } from '@memberjunction/ng-base-forms';
@@ -6,6 +6,7 @@ import { BaseFormComponent } from '@memberjunction/ng-base-forms';
 @RegisterClass(BaseFormComponent, 'MJ_BizApps_Community: Community Member Profiles') // Tell MemberJunction about this class
 @Component({
     standalone: false,
+    changeDetection: ChangeDetectionStrategy.OnPush,
     selector: 'gen-mjbizappscommunitycommunitymemberprofile-form',
     templateUrl: './mjbizappscommunitycommunitymemberprofile.form.component.html'
 })

@@ -14,11 +14,10 @@
   ],
   "license": "BUSL-1.1",
   "scripts": {
-    "build": "tsc",
+    "build": "tsc && node ./scripts/copy-assets.mjs",
     "test": "node --experimental-strip-types --test src/client-bootstrap.test.ts src/architecture-parity.test.ts"
   },
   "dependencies": {
-    "@mj-biz-apps/community-actions": "0.1.0",
     "@mj-biz-apps/community-core": "0.1.0",
     "@mj-biz-apps/community-engine-base": "0.1.0",
     "@mj-biz-apps/community-entities": "0.1.0",
