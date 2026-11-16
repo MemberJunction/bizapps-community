@@ -15,7 +15,7 @@
     "build": "tsc",
     "test": "node --experimental-strip-types --test src/rules.test.ts"
   },
-  "license": "UNLICENSED",
+  "license": "BUSL-1.1",
   "devDependencies": {
     "@types/node": "24.10.11",
     "typescript": "5.9.3"

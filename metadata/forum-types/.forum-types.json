@@ -11,7 +11,32 @@
       "ServerDriverClass": null,
       "UIDriverClass": "GeneralForumUIDriver",
       "ExtensionEntity": null,
-      "Configuration": "{\"Posts\":{\"AllowedPostTypeCodes\":[\"discussion\",\"reply\",\"comment\",\"poll-or-form\",\"collaborative-doc\",\"collaborative-sheet\",\"collaborative-deck\",\"interactive-experience\"],\"DefaultRootPostTypeCode\":\"discussion\",\"MaxReplyDepth\":5},\"Synthesis\":{\"AutoSummarizeThreshold\":4,\"AskFirstDeflection\":true},\"ForumOverridable\":[\"Posts.AllowedPostTypeCodes\",\"Posts.MaxReplyDepth\",\"Synthesis.AutoSummarizeThreshold\",\"Synthesis.AskFirstDeflection\"]}",
+      "Configuration": {
+        "Posts": {
+          "AllowedPostTypeCodes": [
+            "discussion",
+            "reply",
+            "comment",
+            "poll-or-form",
+            "collaborative-doc",
+            "collaborative-sheet",
+            "collaborative-deck",
+            "interactive-experience"
+          ],
+          "DefaultRootPostTypeCode": "discussion",
+          "MaxReplyDepth": 5
+        },
+        "Synthesis": {
+          "AutoSummarizeThreshold": 4,
+          "AskFirstDeflection": true
+        },
+        "ForumOverridable": [
+          "Posts.AllowedPostTypeCodes",
+          "Posts.MaxReplyDepth",
+          "Synthesis.AutoSummarizeThreshold",
+          "Synthesis.AskFirstDeflection"
+        ]
+      },
       "Sequence": 10,
       "IsActive": true
     }
@@ -28,7 +53,21 @@
       "ServerDriverClass": "QAForumServerDriver",
       "UIDriverClass": "QAForumUIDriver",
       "ExtensionEntity": null,
-      "Configuration": "{\"Posts\":{\"AllowedPostTypeCodes\":[\"question\",\"answer\",\"comment\"],\"DefaultRootPostTypeCode\":\"question\",\"MaxReplyDepth\":2},\"Synthesis\":{\"AutoSummarizeThreshold\":3,\"AskFirstDeflection\":true},\"ForumOverridable\":[\"Synthesis.AutoSummarizeThreshold\",\"Synthesis.AskFirstDeflection\"]}",
+      "Configuration": {
+        "Posts": {
+          "AllowedPostTypeCodes": ["question", "answer", "comment"],
+          "DefaultRootPostTypeCode": "question",
+          "MaxReplyDepth": 2
+        },
+        "Synthesis": {
+          "AutoSummarizeThreshold": 3,
+          "AskFirstDeflection": true
+        },
+        "ForumOverridable": [
+          "Synthesis.AutoSummarizeThreshold",
+          "Synthesis.AskFirstDeflection"
+        ]
+      },
       "Sequence": 20,
       "IsActive": true
     }
@@ -45,7 +84,21 @@
       "ServerDriverClass": "IdeaCampaignForumServerDriver",
       "UIDriverClass": "IdeaCampaignForumUIDriver",
       "ExtensionEntity": "MJ_BizApps_Community: Forum Idea Campaigns",
-      "Configuration": "{\"Posts\":{\"AllowedPostTypeCodes\":[\"idea-proposal\",\"reply\",\"poll-or-form\"],\"DefaultRootPostTypeCode\":\"idea-proposal\",\"MaxReplyDepth\":3},\"Synthesis\":{\"AutoSummarizeThreshold\":5,\"AskFirstDeflection\":true},\"ForumOverridable\":[\"Posts.MaxReplyDepth\",\"Synthesis.AutoSummarizeThreshold\"]}",
+      "Configuration": {
+        "Posts": {
+          "AllowedPostTypeCodes": ["idea-proposal", "reply", "poll-or-form"],
+          "DefaultRootPostTypeCode": "idea-proposal",
+          "MaxReplyDepth": 3
+        },
+        "Synthesis": {
+          "AutoSummarizeThreshold": 5,
+          "AskFirstDeflection": true
+        },
+        "ForumOverridable": [
+          "Posts.MaxReplyDepth",
+          "Synthesis.AutoSummarizeThreshold"
+        ]
+      },
       "Sequence": 30,
       "IsActive": true
     }
@@ -62,7 +115,26 @@
       "ServerDriverClass": "PlaybooksForumServerDriver",
       "UIDriverClass": "PlaybooksForumUIDriver",
       "ExtensionEntity": null,
-      "Configuration": "{\"Posts\":{\"AllowedPostTypeCodes\":[\"collaborative-doc\",\"collaborative-sheet\",\"collaborative-deck\",\"reply\",\"comment\"],\"DefaultRootPostTypeCode\":\"collaborative-doc\",\"MaxReplyDepth\":4},\"Synthesis\":{\"AutoSummarizeThreshold\":4,\"AskFirstDeflection\":true},\"ForumOverridable\":[\"Posts.AllowedPostTypeCodes\"]}",
+      "Configuration": {
+        "Posts": {
+          "AllowedPostTypeCodes": [
+            "collaborative-doc",
+            "collaborative-sheet",
+            "collaborative-deck",
+            "reply",
+            "comment"
+          ],
+          "DefaultRootPostTypeCode": "collaborative-doc",
+          "MaxReplyDepth": 4
+        },
+        "Synthesis": {
+          "AutoSummarizeThreshold": 4,
+          "AskFirstDeflection": true
+        },
+        "ForumOverridable": [
+          "Posts.AllowedPostTypeCodes"
+        ]
+      },
       "Sequence": 40,
       "IsActive": true
     }
@@ -79,7 +151,20 @@
       "ServerDriverClass": "CaseRoundsForumServerDriver",
       "UIDriverClass": "CaseRoundsForumUIDriver",
       "ExtensionEntity": null,
-      "Configuration": "{\"Posts\":{\"AllowedPostTypeCodes\":[\"case-review\",\"reply\",\"comment\"],\"DefaultRootPostTypeCode\":\"case-review\",\"MaxReplyDepth\":3},\"Synthesis\":{\"AutoSummarizeThreshold\":3,\"AskFirstDeflection\":true},\"ForumOverridable\":[\"Synthesis.AutoSummarizeThreshold\"]}",
+      "Configuration": {
+        "Posts": {
+          "AllowedPostTypeCodes": ["case-review", "reply", "comment"],
+          "DefaultRootPostTypeCode": "case-review",
+          "MaxReplyDepth": 3
+        },
+        "Synthesis": {
+          "AutoSummarizeThreshold": 3,
+          "AskFirstDeflection": true
+        },
+        "ForumOverridable": [
+          "Synthesis.AutoSummarizeThreshold"
+        ]
+      },
       "Sequence": 50,
       "IsActive": true
     }
@@ -96,7 +181,26 @@
       "ServerDriverClass": "LiveEventsForumServerDriver",
       "UIDriverClass": "LiveEventsForumUIDriver",
       "ExtensionEntity": null,
-      "Configuration": "{\"Posts\":{\"AllowedPostTypeCodes\":[\"live-ama\",\"question\",\"reply\",\"poll-or-form\",\"interactive-experience\"],\"DefaultRootPostTypeCode\":\"live-ama\",\"MaxReplyDepth\":3},\"Synthesis\":{\"AutoSummarizeThreshold\":5,\"AskFirstDeflection\":false},\"ForumOverridable\":[\"Synthesis.AskFirstDeflection\"]}",
+      "Configuration": {
+        "Posts": {
+          "AllowedPostTypeCodes": [
+            "live-ama",
+            "question",
+            "reply",
+            "poll-or-form",
+            "interactive-experience"
+          ],
+          "DefaultRootPostTypeCode": "live-ama",
+          "MaxReplyDepth": 3
+        },
+        "Synthesis": {
+          "AutoSummarizeThreshold": 5,
+          "AskFirstDeflection": false
+        },
+        "ForumOverridable": [
+          "Synthesis.AskFirstDeflection"
+        ]
+      },
       "Sequence": 60,
       "IsActive": true
     }

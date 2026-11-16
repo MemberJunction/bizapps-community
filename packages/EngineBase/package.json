@@ -1,0 +1,41 @@
+{
+  "name": "@mj-biz-apps/community-engine-base",
+  "type": "module",
+  "version": "0.1.0",
+  "description": "Browser-safe community engine base for BizApps Community — metadata caches (forum types, post types, forum role types, application settings), 4-tier configuration cascade resolution, and typed lookups shared by widgets, host, and server.",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "publishConfig": {
+    "access": "public"
+  },
+  "files": [
+    "/dist"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "test": "node --experimental-strip-types --test src/engine-base.test.ts"
+  },
+  "author": "MemberJunction.com",
+  "license": "BUSL-1.1",
+  "dependencies": {
+    "@mj-biz-apps/community-core": "0.1.0",
+    "@mj-biz-apps/community-entities": "0.1.0"
+  },
+  "peerDependencies": {
+    "@memberjunction/core": "6.3.0-edge.0",
+    "@memberjunction/core-entities": "6.3.0-edge.0",
+    "@memberjunction/global": "6.3.0-edge.0"
+  },
+  "devDependencies": {
+    "@memberjunction/core": "6.3.0-edge.0",
+    "@memberjunction/core-entities": "6.3.0-edge.0",
+    "@memberjunction/global": "6.3.0-edge.0",
+    "@types/node": "24.10.11",
+    "typescript": "5.9.3"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/MemberJunction/bizapps-community"
+  },
+  "mjUILayer": "runtime"
+}
