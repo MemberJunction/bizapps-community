@@ -5,6 +5,7 @@ import {
   type IMetadataProvider,
   type UserInfo,
 } from '@memberjunction/core';
+import { UUIDsEqual } from '@memberjunction/global';
 import type { MJApplicationSettingEntity } from '@memberjunction/core-entities';
 import {
   CommunityConfigurationResolver,
@@ -32,11 +33,14 @@ export class CommunityEngineBase extends BaseEngine<CommunityEngineBase> {
   private _forumTypes: IForumTypeDescriptor[] = [];
   private _postTypes: IPostTypeDescriptor[] = [];
   private _forumRoleTypes: IForumRoleTypeDescriptor[] = [];
-  private _applicationSettings: Array<Pick<MJApplicationSettingEntity, 'Name' | 'Value'>> = [];
+  private _applicationSettings: Array<Pick<MJApplicationSettingEntity, 'Name' | 'Value' | 'ApplicationID'>> = [];
   private _appSettings: Partial<CommunityConfiguration> = {};
 
   /** `MJ: Application Settings.Name` this engine reads its `CommunityConfiguration` JSON from. */
   public static readonly APPLICATION_SETTINGS_NAME = 'CommunitySettings';
+
+  /** `metadata/applications/.applications.json`'s "Community" Application ID — scopes the `CommunitySettings` lookup so another app's same-named row is never applied here. */
+  public static readonly COMMUNITY_APPLICATION_ID = 'C8A17000-4E12-4B8F-9A10-100000000001';
 
   // O(1) memoized lookup indexes, reset on reload in AdditionalLoading()
   private _forumTypesById: Map<string, IForumTypeDescriptor> | null = null;
@@ -104,21 +108,30 @@ export class CommunityEngineBase extends BaseEngine<CommunityEngineBase> {
   }
 
   /** Parses the `CommunitySettings` row's `Value` JSON (from `_applicationSettings`, loaded by
-   * `Config()`) into `_appSettings`, feeding `ResolveConfiguration`'s broadest tier. Leaves
-   * `_appSettings` as-is (e.g. what `HydrateMetadata` set) when no such row was loaded. */
+   * `Config()`) into `_appSettings`, feeding `ResolveConfiguration`'s broadest tier. Scoped to
+   * `COMMUNITY_APPLICATION_ID`: a row with a NULL `ApplicationID` is treated as global/unscoped and
+   * still applies, but a row naming a DIFFERENT application's ID is skipped — another app's
+   * same-named `CommunitySettings` row is never applied here. Always resets `_appSettings` to `{}`
+   * first, so a reload after the row was removed (or came back empty/malformed) never leaves a
+   * stale value from a prior load. */
   private refreshAppSettingsFromApplicationSettings(): void {
-    const settingsRow = this.GetConfigData<Pick<MJApplicationSettingEntity, 'Name' | 'Value'>>(
+    this._appSettings = {};
+
+    const settingsRow = this.GetConfigData<Pick<MJApplicationSettingEntity, 'Name' | 'Value' | 'ApplicationID'>>(
       '_applicationSettings',
-    ).find((s) => s.Name === CommunityEngineBase.APPLICATION_SETTINGS_NAME);
+    ).find(
+      (s) =>
+        s.Name === CommunityEngineBase.APPLICATION_SETTINGS_NAME &&
+        (s.ApplicationID == null || UUIDsEqual(s.ApplicationID, CommunityEngineBase.COMMUNITY_APPLICATION_ID)),
+    );
     if (!settingsRow?.Value) {
       return;
     }
     try {
       this._appSettings = CommunityConfigurationResolver.ParseConfigurationJSON(settingsRow.Value);
     } catch {
-      // A malformed CommunitySettings row falls back to whatever _appSettings already held
-      // (the code defaults, via DEFAULT_COMMUNITY_CONFIGURATION in the cascade) rather than
-      // throwing out of a load.
+      // A malformed CommunitySettings row falls back to the {} reset above (the code defaults,
+      // via DEFAULT_COMMUNITY_CONFIGURATION in the cascade) rather than throwing out of a load.
     }
   }
 
@@ -127,27 +140,34 @@ export class CommunityEngineBase extends BaseEngine<CommunityEngineBase> {
    * live `IMetadataProvider` to run `Config()` against. Populates the same fields `Config()`/`Load()`
    * would, then rebuilds the O(1) caches and subtype directories exactly as a real reload would.
    *
-   * `appSettings` sets `_appSettings` directly (a pre-parsed `CommunityConfiguration` partial).
-   * `applicationSettingsRows`, when given, instead exercises the SAME `MJ: Application Settings`
-   * parsing path `Config()`'s real `_applicationSettings` load feeds — the row named
-   * `CommunitySettings` wins, matching `refreshAppSettingsFromApplicationSettings()`. Passing both
-   * is redundant; `applicationSettingsRows` is applied second and so would win.
+   * `applicationSettingsRows`, when given, exercises the SAME `MJ: Application Settings` parsing
+   * path `Config()`'s real `_applicationSettings` load feeds — the row named `CommunitySettings`
+   * wins (scoped to `COMMUNITY_APPLICATION_ID`), matching `refreshAppSettingsFromApplicationSettings()`,
+   * which always resets `_appSettings` to `{}` first so a removed/absent row is never stale.
+   * `appSettings` sets `_appSettings` directly (a pre-parsed `CommunityConfiguration` partial) —
+   * applied LAST, after that reset-and-reparse, so an explicit `appSettings` always wins over
+   * whatever `applicationSettingsRows` resolved to (or didn't).
    */
   public HydrateMetadata(params: {
     forumTypes: ReadonlyArray<IForumTypeDescriptor>;
     postTypes: ReadonlyArray<IPostTypeDescriptor>;
     forumRoleTypes?: ReadonlyArray<IForumRoleTypeDescriptor>;
     appSettings?: Partial<CommunityConfiguration>;
-    applicationSettingsRows?: ReadonlyArray<Pick<MJApplicationSettingEntity, 'Name' | 'Value'>>;
+    applicationSettingsRows?: ReadonlyArray<Pick<MJApplicationSettingEntity, 'Name' | 'Value' | 'ApplicationID'>>;
   }): void {
     this._forumTypes = [...params.forumTypes];
     this._postTypes = [...params.postTypes];
     this._forumRoleTypes = [...(params.forumRoleTypes ?? [])];
-    this._appSettings = params.appSettings ?? {};
     this._applicationSettings = [...(params.applicationSettingsRows ?? [])];
 
     // AdditionalLoading has no awaits: its body completes synchronously before this returns.
+    // Runs refreshAppSettingsFromApplicationSettings(), which resets+reparses _appSettings from
+    // _applicationSettings above.
     void this.AdditionalLoading();
+
+    if (params.appSettings) {
+      this._appSettings = params.appSettings;
+    }
   }
 
   // ─── Collections ───────────────────────────────────────────────────────────

@@ -220,3 +220,80 @@ test('@mj-biz-apps/community-engine-base CommunityEngineBase tolerates a missing
     engine.ResolveConfiguration({ forum: { ForumTypeID: 'TYPE-NOAPPSETTINGS', Configuration: null } }),
   );
 });
+
+// NOTE: these 3 tests exercise `refreshAppSettingsFromApplicationSettings()` — the exact logic
+// `Config()` -> `AdditionalLoading()` runs against whatever `Config()`'s real `Load()` fetched —
+// via `HydrateMetadata`'s `applicationSettingsRows` path rather than a live/fake `IMetadataProvider`.
+// `Config()` itself calls `BaseEngine.Load()`, which requires a reasonably complete
+// `IMetadataProvider` (RunView, SetProvider, ResolveContextUser, telemetry, …) to exercise for
+// real; building a correct fake of that full interface is its own substantial effort, so the
+// provider-backed wiring itself is left to integration testing against a live database (same
+// constraint already documented for `fnCommunityForumAccess` and `ApplyCanonPromotion`/
+// `GraduateThreadToSpace` in this package's siblings) — what IS fully covered here is the
+// ApplicationID-scoping and reset-on-reload LOGIC itself.
+
+test('@mj-biz-apps/community-engine-base CommunityEngineBase scopes CommunitySettings to the Community ApplicationID — a competing app\'s same-named row is ignored', () => {
+  const engine = CommunityEngineBase.Instance;
+  const COMPETING_APP_ID = 'DEADBEEF-0000-4000-8000-000000000099';
+
+  engine.HydrateMetadata({
+    forumTypes: [{ ID: 'TYPE-SCOPED', Code: 'scoped-type', Name: 'Scoped Type' } as IForumTypeDescriptor],
+    postTypes: [],
+    forumRoleTypes: [],
+    applicationSettingsRows: [
+      {
+        Name: 'CommunitySettings',
+        ApplicationID: COMPETING_APP_ID,
+        Value: JSON.stringify({ DefaultDigestCadence: 'Highlights Only' }),
+      },
+    ],
+  });
+
+  const resolved = engine.ResolveConfiguration({ forum: { ForumTypeID: 'TYPE-SCOPED', Configuration: null } });
+  // The competing app's row must NOT have been applied — DefaultDigestCadence stays at the code default.
+  assert.notEqual(resolved.DefaultDigestCadence, 'Highlights Only');
+});
+
+test('@mj-biz-apps/community-engine-base CommunityEngineBase applies a CommunitySettings row scoped to the real Community ApplicationID (or left NULL/global)', () => {
+  const engine = CommunityEngineBase.Instance;
+
+  engine.HydrateMetadata({
+    forumTypes: [{ ID: 'TYPE-SCOPED-2', Code: 'scoped-type-2', Name: 'Scoped Type 2' } as IForumTypeDescriptor],
+    postTypes: [],
+    forumRoleTypes: [],
+    applicationSettingsRows: [
+      {
+        Name: 'CommunitySettings',
+        ApplicationID: CommunityEngineBase.COMMUNITY_APPLICATION_ID,
+        Value: JSON.stringify({ DefaultDigestCadence: 'Daily Digest' }),
+      },
+    ],
+  });
+
+  const resolved = engine.ResolveConfiguration({ forum: { ForumTypeID: 'TYPE-SCOPED-2', Configuration: null } });
+  assert.equal(resolved.DefaultDigestCadence, 'Daily Digest');
+});
+
+test('@mj-biz-apps/community-engine-base CommunityEngineBase resets _appSettings on reload when the CommunitySettings row is removed (never stale)', () => {
+  const engine = CommunityEngineBase.Instance;
+  const forumType = { ID: 'TYPE-RESET', Code: 'reset-type', Name: 'Reset Type' } as IForumTypeDescriptor;
+
+  engine.HydrateMetadata({
+    forumTypes: [forumType],
+    postTypes: [],
+    forumRoleTypes: [],
+    applicationSettingsRows: [{ Name: 'CommunitySettings', Value: JSON.stringify({ DefaultDigestCadence: 'Weekly Digest' }) }],
+  });
+  const withSettings = engine.ResolveConfiguration({ forum: { ForumTypeID: 'TYPE-RESET', Configuration: null } });
+  assert.equal(withSettings.DefaultDigestCadence, 'Weekly Digest');
+
+  // Reload with the row gone entirely — must reset to the code default, not retain 'Weekly Digest'.
+  engine.HydrateMetadata({
+    forumTypes: [forumType],
+    postTypes: [],
+    forumRoleTypes: [],
+    applicationSettingsRows: [],
+  });
+  const afterRemoval = engine.ResolveConfiguration({ forum: { ForumTypeID: 'TYPE-RESET', Configuration: null } });
+  assert.notEqual(afterRemoval.DefaultDigestCadence, 'Weekly Digest');
+});
