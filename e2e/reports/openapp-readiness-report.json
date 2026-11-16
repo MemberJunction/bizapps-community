@@ -1,6 +1,8 @@
 {
   "schemaVersion": "sf-readiness/v3",
   "overallPassed": true,
+  "gitTreeClean": true,
+  "migrationParityVerified": true,
   "pillars": {
     "formParity": {
       "passed": true,
@@ -32,8 +34,15 @@
     },
     "browserSmoke": {
       "passed": true,
-      "summary": "Chromium smoke passed across all 4 required tab(s) (evaluated 2026-11-16T23:15:04.579Z) with 0 pageErrors, 0 consoleErrors, 0 WCAG violations",
+      "summary": "Chromium smoke passed across all 4 required tab(s) (evaluated 2026-11-16T23:45:06.812Z) with 0 pageErrors, 0 consoleErrors, 0 WCAG violations",
       "checkedCount": 4,
+      "violationCount": 0,
+      "violations": []
+    },
+    "migrationParity": {
+      "passed": true,
+      "summary": "Migration parity verified: 25/25 tables in both dialects, fnCommunityForumAccess present in both, >= 50 blank lines before CodeGen, zero spDeleteUnneededEntityFields, teardown parity",
+      "checkedCount": 25,
       "violationCount": 0,
       "violations": []
     }
