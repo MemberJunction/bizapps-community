@@ -109,3 +109,80 @@ test('@mj-biz-apps/community-engine-base CommunityEngineBase metadata hydration 
   // unauthorized override rejected:
   assert.deepEqual(resolved.Posts.AllowedPostTypeCodes, ['discussion', 'reply', 'comment']);
 });
+
+test('@mj-biz-apps/community-engine-base CommunityEngineBase is a BaseEngine<T> singleton with O(1) caches that invalidate on reload', () => {
+  const engine = CommunityEngineBase.Instance;
+  assert.equal(engine, CommunityEngineBase.Instance, 'Instance must return the same process-wide singleton');
+
+  engine.HydrateMetadata({
+    forumTypes: [
+      { ID: 'TYPE-1', Code: 'alpha', Name: 'Alpha' } as IForumTypeDescriptor,
+    ],
+    postTypes: [],
+    forumRoleTypes: [],
+  });
+  assert.equal(engine.GetForumTypeByCode('alpha')?.ID, 'TYPE-1');
+  assert.equal(engine.GetForumTypeByCode('beta'), undefined);
+
+  // A re-hydration (simulating a reload) must invalidate the memoized Map so a newly
+  // added row is immediately visible without a process restart.
+  engine.HydrateMetadata({
+    forumTypes: [
+      { ID: 'TYPE-1', Code: 'alpha', Name: 'Alpha' } as IForumTypeDescriptor,
+      { ID: 'TYPE-2', Code: 'beta', Name: 'Beta' } as IForumTypeDescriptor,
+    ],
+    postTypes: [],
+    forumRoleTypes: [],
+  });
+  assert.equal(engine.GetForumTypeByCode('beta')?.ID, 'TYPE-2');
+  assert.equal(engine.GetAllForumTypes().length, 2);
+});
+
+test('@mj-biz-apps/community-engine-base CommunityEngineBase.ResolveConfiguration applies the full ForumType -> Space -> Forum -> PostType cascade', () => {
+  const engine = CommunityEngineBase.Instance;
+
+  const forumType: IForumTypeDescriptor = {
+    ID: 'TYPE-CASCADE',
+    Code: 'cascade-type',
+    Name: 'Cascade Type',
+    Configuration: JSON.stringify({
+      ForumOverridable: ['Posts.MaxReplyDepth'],
+      Posts: { MaxReplyDepth: 2 },
+    }),
+  } as IForumTypeDescriptor;
+
+  engine.HydrateMetadata({
+    forumTypes: [forumType],
+    postTypes: [],
+    forumRoleTypes: [],
+  });
+
+  const resolved = engine.ResolveConfiguration({
+    forum: {
+      ForumTypeID: 'TYPE-CASCADE',
+      Configuration: JSON.stringify({ Posts: { MaxReplyDepth: 5 } }),
+    },
+    space: { Configuration: JSON.stringify({ Posts: { MaxReplyDepth: 3 } }) },
+    postType: { Configuration: JSON.stringify({ Posts: { MaxReplyDepth: 9 } }) },
+  });
+
+  // PostType is the most specific whitelisted tier and wins the tie over Forum, Space, and ForumType.
+  assert.equal(resolved.Posts.MaxReplyDepth, 9);
+
+  // Without a PostType tier, Forum (whitelisted) wins over Space and ForumType.
+  const withoutPostType = engine.ResolveConfiguration({
+    forum: {
+      ForumTypeID: 'TYPE-CASCADE',
+      Configuration: JSON.stringify({ Posts: { MaxReplyDepth: 5 } }),
+    },
+    space: { Configuration: JSON.stringify({ Posts: { MaxReplyDepth: 3 } }) },
+  });
+  assert.equal(withoutPostType.Posts.MaxReplyDepth, 5);
+
+  // Without Forum or PostType tiers, Space (unconditional, like ForumType) wins over ForumType.
+  const spaceOnly = engine.ResolveConfiguration({
+    forum: { ForumTypeID: 'TYPE-CASCADE', Configuration: null },
+    space: { Configuration: JSON.stringify({ Posts: { MaxReplyDepth: 3 } }) },
+  });
+  assert.equal(spaceOnly.Posts.MaxReplyDepth, 3);
+});

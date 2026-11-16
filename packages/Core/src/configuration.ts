@@ -90,21 +90,35 @@ export class CommunityConfigurationResolver {
     return parsed;
   }
 
+  /**
+   * Resolves the 4-tier Community configuration cascade, lowest to highest precedence:
+   *   1. Built-in code defaults (`DEFAULT_COMMUNITY_CONFIGURATION`) and Application Settings (`CommunitySettings`)
+   *   2. `ForumType.Configuration` (a forum's type-level defaults)
+   *   3. `CommunitySpace.Configuration` (a space's own overrides, via `fields.Configuration` — the Collaboration
+   *      `Space.Configuration` column the community space IsA-extends)
+   *   4. `Forum.Configuration` and `PostType.Configuration` (the most specific tiers; both filtered strictly
+   *      through the running `ForumOverridable` whitelist, `Forum` applied before `PostType` so a post type's
+   *      own defaults win ties)
+   */
   public static Resolve(
     appSettings?: Partial<CommunityConfiguration> | null,
     forumTypeConfig?: Partial<CommunityConfiguration> | null,
     forumConfig?: Partial<CommunityConfiguration> | null,
+    spaceConfig?: Partial<CommunityConfiguration> | null,
+    postTypeConfig?: Partial<CommunityConfiguration> | null,
   ): CommunityConfiguration {
     const basePosts: CommunityPostsConfiguration = {
       ...DEFAULT_COMMUNITY_CONFIGURATION.Posts,
       ...(appSettings?.Posts ?? {}),
       ...(forumTypeConfig?.Posts ?? {}),
+      ...(spaceConfig?.Posts ?? {}),
     };
 
     const baseSynthesis: CommunitySynthesisConfiguration = {
       ...DEFAULT_COMMUNITY_CONFIGURATION.Synthesis,
       ...(appSettings?.Synthesis ?? {}),
       ...(forumTypeConfig?.Synthesis ?? {}),
+      ...(spaceConfig?.Synthesis ?? {}),
     };
 
     const overridable = new Set<string>(
@@ -113,85 +127,98 @@ export class CommunityConfigurationResolver {
         DEFAULT_COMMUNITY_CONFIGURATION.ForumOverridable,
     );
 
-    if (forumConfig?.Posts) {
-      if (
-        forumConfig.Posts.AllowedPostTypeCodes !== undefined &&
-        overridable.has('Posts.AllowedPostTypeCodes')
-      ) {
-        basePosts.AllowedPostTypeCodes = [...forumConfig.Posts.AllowedPostTypeCodes];
-      }
-      if (
-        forumConfig.Posts.DefaultRootPostTypeCode !== undefined &&
-        overridable.has('Posts.DefaultRootPostTypeCode')
-      ) {
-        basePosts.DefaultRootPostTypeCode = forumConfig.Posts.DefaultRootPostTypeCode;
-      }
-      if (
-        forumConfig.Posts.MaxReplyDepth !== undefined &&
-        overridable.has('Posts.MaxReplyDepth')
-      ) {
-        basePosts.MaxReplyDepth = forumConfig.Posts.MaxReplyDepth;
-      }
-    }
-
-    if (forumConfig?.Synthesis) {
-      if (
-        forumConfig.Synthesis.AutoSummarizeThreshold !== undefined &&
-        overridable.has('Synthesis.AutoSummarizeThreshold')
-      ) {
-        baseSynthesis.AutoSummarizeThreshold = forumConfig.Synthesis.AutoSummarizeThreshold;
-      }
-      if (
-        forumConfig.Synthesis.AskFirstDeflection !== undefined &&
-        overridable.has('Synthesis.AskFirstDeflection')
-      ) {
-        baseSynthesis.AskFirstDeflection = forumConfig.Synthesis.AskFirstDeflection;
-      }
-      if (
-        forumConfig.Synthesis.DeflectionMinConfidence !== undefined &&
-        overridable.has('Synthesis.DeflectionMinConfidence')
-      ) {
-        baseSynthesis.DeflectionMinConfidence = forumConfig.Synthesis.DeflectionMinConfidence;
-      }
-    }
-
     const mergedExtensions: Record<string, Record<string, unknown>> = {
       ...DEFAULT_COMMUNITY_CONFIGURATION.Extensions,
       ...(appSettings?.Extensions ?? {}),
       ...(forumTypeConfig?.Extensions ?? {}),
+      ...(spaceConfig?.Extensions ?? {}),
     };
 
-    if (forumConfig?.Extensions) {
-      for (const [extKey, extVal] of Object.entries(forumConfig.Extensions)) {
-        if (overridable.has('Extensions') || overridable.has(`Extensions.${extKey}`)) {
-          mergedExtensions[extKey] = {
-            ...(mergedExtensions[extKey] ?? {}),
-            ...extVal,
-          };
+    // The two most specific tiers, Forum then PostType (PostType wins ties), applied in that
+    // order so later calls override earlier ones for the same whitelisted field.
+    for (const tierConfig of [forumConfig, postTypeConfig]) {
+      if (tierConfig?.Posts) {
+        if (
+          tierConfig.Posts.AllowedPostTypeCodes !== undefined &&
+          overridable.has('Posts.AllowedPostTypeCodes')
+        ) {
+          basePosts.AllowedPostTypeCodes = [...tierConfig.Posts.AllowedPostTypeCodes];
+        }
+        if (
+          tierConfig.Posts.DefaultRootPostTypeCode !== undefined &&
+          overridable.has('Posts.DefaultRootPostTypeCode')
+        ) {
+          basePosts.DefaultRootPostTypeCode = tierConfig.Posts.DefaultRootPostTypeCode;
+        }
+        if (
+          tierConfig.Posts.MaxReplyDepth !== undefined &&
+          overridable.has('Posts.MaxReplyDepth')
+        ) {
+          basePosts.MaxReplyDepth = tierConfig.Posts.MaxReplyDepth;
+        }
+      }
+
+      if (tierConfig?.Synthesis) {
+        if (
+          tierConfig.Synthesis.AutoSummarizeThreshold !== undefined &&
+          overridable.has('Synthesis.AutoSummarizeThreshold')
+        ) {
+          baseSynthesis.AutoSummarizeThreshold = tierConfig.Synthesis.AutoSummarizeThreshold;
+        }
+        if (
+          tierConfig.Synthesis.AskFirstDeflection !== undefined &&
+          overridable.has('Synthesis.AskFirstDeflection')
+        ) {
+          baseSynthesis.AskFirstDeflection = tierConfig.Synthesis.AskFirstDeflection;
+        }
+        if (
+          tierConfig.Synthesis.DeflectionMinConfidence !== undefined &&
+          overridable.has('Synthesis.DeflectionMinConfidence')
+        ) {
+          baseSynthesis.DeflectionMinConfidence = tierConfig.Synthesis.DeflectionMinConfidence;
+        }
+      }
+
+      if (tierConfig?.Extensions) {
+        for (const [extKey, extVal] of Object.entries(tierConfig.Extensions)) {
+          if (overridable.has('Extensions') || overridable.has(`Extensions.${extKey}`)) {
+            mergedExtensions[extKey] = {
+              ...(mergedExtensions[extKey] ?? {}),
+              ...extVal,
+            };
+          }
         }
       }
     }
 
     return {
       AskFirstEnabled:
+        postTypeConfig?.AskFirstEnabled ??
         forumConfig?.AskFirstEnabled ??
+        spaceConfig?.AskFirstEnabled ??
         forumTypeConfig?.AskFirstEnabled ??
         appSettings?.AskFirstEnabled ??
         DEFAULT_COMMUNITY_CONFIGURATION.AskFirstEnabled,
       ThreadSynthesisThreshold: baseSynthesis.AutoSummarizeThreshold,
       DeflectionMinConfidence: baseSynthesis.DeflectionMinConfidence,
       DefaultAnonymousReadMode:
+        postTypeConfig?.DefaultAnonymousReadMode ??
         forumConfig?.DefaultAnonymousReadMode ??
+        spaceConfig?.DefaultAnonymousReadMode ??
         forumTypeConfig?.DefaultAnonymousReadMode ??
         appSettings?.DefaultAnonymousReadMode ??
         DEFAULT_COMMUNITY_CONFIGURATION.DefaultAnonymousReadMode,
       DefaultDigestCadence:
+        postTypeConfig?.DefaultDigestCadence ??
         forumConfig?.DefaultDigestCadence ??
+        spaceConfig?.DefaultDigestCadence ??
         forumTypeConfig?.DefaultDigestCadence ??
         appSettings?.DefaultDigestCadence ??
         DEFAULT_COMMUNITY_CONFIGURATION.DefaultDigestCadence,
       EnableInteractiveArtifacts:
+        postTypeConfig?.EnableInteractiveArtifacts ??
         forumConfig?.EnableInteractiveArtifacts ??
+        spaceConfig?.EnableInteractiveArtifacts ??
         forumTypeConfig?.EnableInteractiveArtifacts ??
         appSettings?.EnableInteractiveArtifacts ??
         DEFAULT_COMMUNITY_CONFIGURATION.EnableInteractiveArtifacts,

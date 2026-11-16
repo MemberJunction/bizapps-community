@@ -13,7 +13,7 @@
   ],
   "scripts": {
     "build": "tsc",
-    "test": "node --experimental-strip-types --test src/rules.test.ts"
+    "test": "node --experimental-strip-types --test src/rules.test.ts src/configuration.test.ts"
   },
   "license": "BUSL-1.1",
   "devDependencies": {
