@@ -500,6 +500,12 @@ BEGIN
     VALUES ('C8A18600-4E12-4B8F-9A10-100000000002', @AnsPostID, @AdminUserID, N'Helpful');
 END;
 
+IF NOT EXISTS (SELECT 1 FROM [__mj_BizAppsCommunity].[ForumPostReaction] WHERE [PostID] = @IdeaPostID AND [UserID] = @AdminUserID AND [ReactionKind] = N'Insightful')
+BEGIN
+    INSERT INTO [__mj_BizAppsCommunity].[ForumPostReaction] ([ID], [PostID], [UserID], [ReactionKind])
+    VALUES ('C8A18600-4E12-4B8F-9A10-100000000003', @IdeaPostID, @AdminUserID, N'Insightful');
+END;
+
 -- 13. Member Reputation Profiles (one per Space)
 IF NOT EXISTS (SELECT 1 FROM [__mj_BizAppsCommunity].[CommunityMemberProfile] WHERE [SpaceID] = @Space1ID AND [UserID] = @AdminUserID)
 BEGIN

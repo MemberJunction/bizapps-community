@@ -178,4 +178,11 @@ describe('seed-world.sql / seed-world.pg.sql parity with seed-world.mjs', () => 
       assert.ok(postgresScript.includes(session.ID), `seed-world.pg.sql missing interactive session ${session.ID}`);
     }
   });
+
+  it('both dialects insert all 3 WORLD_POST_REACTIONS rows by ID (not just the first 2)', () => {
+    for (const reaction of WORLD_POST_REACTIONS) {
+      assert.ok(sqlServerScript.includes(reaction.ID), `seed-world.sql missing reaction ${reaction.ID}`);
+      assert.ok(postgresScript.includes(reaction.ID), `seed-world.pg.sql missing reaction ${reaction.ID}`);
+    }
+  });
 });

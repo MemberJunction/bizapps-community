@@ -233,7 +233,8 @@ BEGIN
     INSERT INTO "ForumPostReaction" ("ID", "PostID", "UserID", "ReactionKind")
     VALUES
     ('C8A18600-4E12-4B8F-9A10-100000000001', 'C8A18300-4E12-4B8F-9A10-100000000001', v_admin_user_id, 'Upvote'),
-    ('C8A18600-4E12-4B8F-9A10-100000000002', 'C8A18300-4E12-4B8F-9A10-100000000005', v_admin_user_id, 'Helpful')
+    ('C8A18600-4E12-4B8F-9A10-100000000002', 'C8A18300-4E12-4B8F-9A10-100000000005', v_admin_user_id, 'Helpful'),
+    ('C8A18600-4E12-4B8F-9A10-100000000003', 'C8A18300-4E12-4B8F-9A10-100000000006', v_admin_user_id, 'Insightful')
     ON CONFLICT ("ID") DO NOTHING;
 
     -- 12. Member Reputation Profiles (one per Space)
