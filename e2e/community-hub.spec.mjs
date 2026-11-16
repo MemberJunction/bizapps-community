@@ -82,7 +82,8 @@ test('Community Hub: 4 tabs, Ask-First, Quadratic Voting, Digest export, keyboar
   // --- 4. Digest PDF export button triggers the action (never window.print()) ---
   await page.click('#mjc-digest-export-btn');
   expect(await page.evaluate(() => window.__digestExportClicked)).toBe(true);
-  expect(await page.evaluate(() => window.__printCallCount)).toBe(0);
+  const printCallCountAfterExport = await page.evaluate(() => window.__printCallCount);
+  expect(printCallCountAfterExport).toBe(0);
 
   // --- 5. Quadratic Voting slider: Cost = Votes^2, 100-point wallet cap, real production math ---
   await page.click('[data-tab-key="quadratic-ideation-wallet"]');
@@ -108,6 +109,7 @@ test('Community Hub: 4 tabs, Ask-First, Quadratic Voting, Digest export, keyboar
   /** @type {Record<string, { violationCount: number, criticalOrSerious: number }>} */
   const axeResultsByTab = {};
   let totalCriticalOrSerious = 0;
+  let totalViolations = 0;
   for (const key of TAB_KEYS) {
     await page.click(`[data-tab-key="${key}"]`);
     const results = await new AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa']).analyze();
@@ -117,22 +119,26 @@ test('Community Hub: 4 tabs, Ask-First, Quadratic Voting, Digest export, keyboar
       criticalOrSerious: criticalOrSerious.length,
     };
     totalCriticalOrSerious += criticalOrSerious.length;
+    totalViolations += results.violations.length;
     expect(criticalOrSerious, `tab "${key}" has critical/serious WCAG 2.1 AA violations: ${JSON.stringify(criticalOrSerious.map((v) => v.id))}`).toEqual([]);
   }
 
-  // --- 8. Assert zero page/console errors across the whole run ---
+  // --- 8. Assert zero page/console errors, and that window.print() was never invoked, across the whole run ---
   expect(pageErrors, `pageerror(s): ${JSON.stringify(pageErrors)}`).toEqual([]);
   expect(consoleErrors, `console error(s): ${JSON.stringify(consoleErrors)}`).toEqual([]);
+  const finalPrintCallCount = await page.evaluate(() => window.__printCallCount);
+  expect(finalPrintCallCount).toBe(0);
 
   // --- 9. Write the verification report backing ART-4 ---
   const report = {
     schemaVersion: 'sf-e2e/v1',
+    evaluatedAtIso: new Date().toISOString(),
     harnessUrl,
     tabsExercised: TAB_KEYS,
     keyboardNavigationVerified: true,
     askFirstDeflectionExercised: true,
     digestExportExercised: true,
-    windowPrintCalled: false,
+    windowPrintCalled: finalPrintCallCount > 0,
     quadraticVoting: {
       costEqualsVotesSquared: true,
       walletCapPoints: 100,
@@ -140,6 +146,7 @@ test('Community Hub: 4 tabs, Ask-First, Quadratic Voting, Digest export, keyboar
     pageErrors,
     consoleErrors,
     axeResultsByTab,
+    totalViolations,
     totalCriticalOrSeriousViolations: totalCriticalOrSerious,
     screenshotPath: 'e2e/screenshots/community-hub.png',
   };

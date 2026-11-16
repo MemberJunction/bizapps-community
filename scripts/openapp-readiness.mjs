@@ -161,6 +161,11 @@ function checkSeedDensity() {
   };
 }
 
+const REQUIRED_E2E_SCHEMA_VERSION = 'sf-e2e/v1';
+const REQUIRED_TAB_KEYS = ['knowledge-stream', 'qa-canon-workbench', 'quadratic-ideation-wallet', 'living-co-authoring'];
+/** Reports older than this are treated as stale (fail closed) rather than trusted blindly. */
+const MAX_REPORT_AGE_MS = 24 * 60 * 60 * 1000;
+
 function checkBrowserSmoke() {
   if (!existsSync(E2E_REPORT)) {
     return {
@@ -171,22 +176,67 @@ function checkBrowserSmoke() {
       violations: ['missing e2e report'],
     };
   }
+
   const report = JSON.parse(readFileSync(E2E_REPORT, 'utf8'));
   const violations = [];
-  if (report.pageErrors?.length > 0) violations.push(`${report.pageErrors.length} page error(s)`);
-  if (report.consoleErrors?.length > 0) violations.push(`${report.consoleErrors.length} console error(s)`);
-  if (report.totalCriticalOrSeriousViolations > 0) {
+
+  // Fail closed: every field this pillar relies on must be explicitly present and well-formed —
+  // a missing/undefined field is itself a violation, never silently treated as "0" or "passing".
+  if (report.schemaVersion !== REQUIRED_E2E_SCHEMA_VERSION) {
+    violations.push(`schemaVersion is "${report.schemaVersion}", expected "${REQUIRED_E2E_SCHEMA_VERSION}"`);
+  }
+
+  const evaluatedAtMs = typeof report.evaluatedAtIso === 'string' ? Date.parse(report.evaluatedAtIso) : NaN;
+  if (typeof report.evaluatedAtIso !== 'string' || report.evaluatedAtIso.trim() === '' || Number.isNaN(evaluatedAtMs)) {
+    violations.push('evaluatedAtIso is missing or not a valid ISO timestamp');
+  } else if (Date.now() - evaluatedAtMs > MAX_REPORT_AGE_MS) {
+    violations.push(`evaluatedAtIso "${report.evaluatedAtIso}" is stale (> ${MAX_REPORT_AGE_MS / 3_600_000}h old) — re-run \`pnpm run test:e2e\``);
+  }
+
+  const tabsExercised = Array.isArray(report.tabsExercised) ? report.tabsExercised : [];
+  for (const requiredTab of REQUIRED_TAB_KEYS) {
+    if (!tabsExercised.includes(requiredTab)) {
+      violations.push(`required tab "${requiredTab}" was not exercised`);
+    }
+  }
+
+  if (!Array.isArray(report.pageErrors)) {
+    violations.push('pageErrors field is missing');
+  } else if (report.pageErrors.length > 0) {
+    violations.push(`${report.pageErrors.length} page error(s)`);
+  }
+
+  if (!Array.isArray(report.consoleErrors)) {
+    violations.push('consoleErrors field is missing');
+  } else if (report.consoleErrors.length > 0) {
+    violations.push(`${report.consoleErrors.length} console error(s)`);
+  }
+
+  if (typeof report.totalViolations !== 'number') {
+    violations.push('totalViolations field is missing');
+  } else if (report.totalViolations > 0) {
+    violations.push(`${report.totalViolations} total WCAG 2.1 AA violation(s) (any severity)`);
+  }
+
+  if (typeof report.totalCriticalOrSeriousViolations !== 'number') {
+    violations.push('totalCriticalOrSeriousViolations field is missing');
+  } else if (report.totalCriticalOrSeriousViolations > 0) {
     violations.push(`${report.totalCriticalOrSeriousViolations} critical/serious WCAG 2.1 AA violation(s)`);
   }
-  if (report.windowPrintCalled) violations.push('window.print() was called');
+
+  if (typeof report.windowPrintCalled !== 'boolean') {
+    violations.push('windowPrintCalled field is missing');
+  } else if (report.windowPrintCalled) {
+    violations.push('window.print() was called');
+  }
 
   return {
     passed: violations.length === 0,
     summary:
       violations.length === 0
-        ? `Chromium smoke passed across ${report.tabsExercised?.length ?? 0} tab(s) with 0 pageErrors, 0 consoleErrors, 0 critical/serious WCAG violations`
+        ? `Chromium smoke passed across all ${REQUIRED_TAB_KEYS.length} required tab(s) (evaluated ${report.evaluatedAtIso}) with 0 pageErrors, 0 consoleErrors, 0 WCAG violations`
         : `${violations.length} browser smoke violation(s) found`,
-    checkedCount: report.tabsExercised?.length ?? 0,
+    checkedCount: tabsExercised.length,
     violationCount: violations.length,
     violations,
   };

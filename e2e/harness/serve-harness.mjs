@@ -1,5 +1,6 @@
 import { createServer } from 'node:http';
 import { readFile } from 'node:fs/promises';
+import { createRequire } from 'node:module';
 import { join, extname } from 'node:path';
 import { dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -8,6 +9,16 @@ import { BuildCommunityHubHarnessHtml } from './build-harness.mjs';
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = join(HERE, '..', '..');
 const COMMUNITY_CORE_DIST = join(REPO_ROOT, 'packages', 'Core', 'dist');
+
+// `@mj-biz-apps/community-core`'s dist output imports `UUIDsEqual`/`IsValidUUID` from
+// `@memberjunction/global` (a real Node package, resolved here via Node's own module resolution
+// so this works regardless of the monorepo's on-disk layout). `UUIDUtils.js` is a standalone leaf
+// file within that package with zero further imports of its own — the ONLY file Core's compiled
+// output actually needs from it — so the harness serves that one real file rather than the whole
+// `@memberjunction/global` package (which also drags in rxjs/lodash/acorn, irrelevant here).
+const require = createRequire(import.meta.url);
+const MJ_GLOBAL_DIST_DIR = dirname(require.resolve('@memberjunction/global'));
+const MJ_GLOBAL_UUID_UTILS = join(MJ_GLOBAL_DIST_DIR, 'util', 'UUIDUtils.js');
 
 const CONTENT_TYPES = {
   '.js': 'text/javascript; charset=utf-8',
@@ -24,6 +35,12 @@ export function StartHarnessServer() {
       if (req.url === '/' || req.url === '/index.html') {
         res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
         res.end(html);
+        return;
+      }
+      if (req.url === '/memberjunction-global/index.js') {
+        const content = await readFile(MJ_GLOBAL_UUID_UTILS, 'utf8');
+        res.writeHead(200, { 'Content-Type': CONTENT_TYPES['.js'] });
+        res.end(content);
         return;
       }
       if (req.url && req.url.startsWith('/community-core/')) {

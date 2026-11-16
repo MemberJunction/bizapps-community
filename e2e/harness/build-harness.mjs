@@ -84,6 +84,13 @@ ${askFirstCss}
 ${sliderCss}
 ${digestCss}
 </style>
+<script type="importmap">
+{
+  "imports": {
+    "@memberjunction/global": "/memberjunction-global/index.js"
+  }
+}
+</script>
 </head>
 <body>
   <div class="mjc-community-hub" id="hub-root">
