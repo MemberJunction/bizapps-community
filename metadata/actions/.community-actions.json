@@ -175,12 +175,24 @@
         {
           "fields": {
             "ActionID": "@parent:ID",
+            "Name": "AnswerPostID",
+            "Type": "Input",
+            "ValueType": "Scalar",
+            "IsArray": false,
+            "IsRequired": false,
+            "Description": "ID of the Forum Answer Post to grade. When supplied, the action loads the authoritative Question/Answer body markdown from the database (QuestionBodyMarkdown/AnswerBodyMarkdown become optional overrides) and persists AIEpistemicStatus/AIConfidenceScore back onto this Answer Post."
+          },
+          "primaryKey": { "ID": "2C9C7B9E-3B9A-4C2E-9E0F-2D7B6C5A4F31" }
+        },
+        {
+          "fields": {
+            "ActionID": "@parent:ID",
             "Name": "QuestionBodyMarkdown",
             "Type": "Input",
             "ValueType": "Scalar",
             "IsArray": false,
-            "IsRequired": true,
-            "Description": "The question's body markdown."
+            "IsRequired": false,
+            "Description": "The question's body markdown. Required unless AnswerPostID is supplied, in which case it is loaded from the database and this is an optional override."
           },
           "primaryKey": { "ID": "975EB3D6-796C-49D7-843D-C74677A8EA98" }
         },
@@ -191,8 +203,8 @@
             "Type": "Input",
             "ValueType": "Scalar",
             "IsArray": false,
-            "IsRequired": true,
-            "Description": "The answer's body markdown to grade."
+            "IsRequired": false,
+            "Description": "The answer's body markdown to grade. Required unless AnswerPostID is supplied, in which case it is loaded from the database and this is an optional override."
           },
           "primaryKey": { "ID": "F6B3BD10-3FBC-402C-810A-56D544CE5011" }
         },

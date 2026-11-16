@@ -39,6 +39,7 @@ export interface ThreadGraduationResult {
 // Node-only package. Re-exported here for existing server-side consumers.
 export { COMMUNITY_ACTION_IDS } from '@mj-biz-apps/community-core';
 export * from './custom/action-id-params.ts';
+export * from './custom/save-or-fail.ts';
 export * from './custom/ask-first-deflection.ts';
 export * from './custom/AskFirstDeflectionAction.ts';
 export * from './custom/epistemic-answer-grading.ts';

@@ -4,6 +4,7 @@ import { BaseAction } from '@memberjunction/actions';
 import { RegisterClass, UUIDsEqual } from '@memberjunction/global';
 import { COMMUNITY_ENTITY_NAMES, type mjBizAppsCommunityForumPostEntity } from '@mj-biz-apps/community-entities';
 import { ParseOptionalUUIDParam, ParseRequiredUUIDParam } from './action-id-params.ts';
+import { SaveOrFail } from './save-or-fail.ts';
 import { SynthesizeLivingThread, ThreadPostForSynthesis } from './living-thread-synthesis.ts';
 
 interface ReplyRow {
@@ -61,7 +62,8 @@ export class LivingThreadSynthesisAction extends BaseAction {
       maxCharsPerPost: maxCharsPerPostRaw ? Number(maxCharsPerPostRaw) : undefined,
     });
 
-    await this.persistSummary(rootPostId, result.aiExecutiveSummary, result.aiSynthesizedAt, replies.length, user);
+    const saveFailure = await this.persistSummary(rootPostId, result.aiExecutiveSummary, result.aiSynthesizedAt, replies.length, user);
+    if (saveFailure) return saveFailure;
 
     const outputParams: ActionParam[] = [
       { Name: 'AIExecutiveSummary', Value: result.aiExecutiveSummary, Type: 'Output' },
@@ -83,7 +85,7 @@ export class LivingThreadSynthesisAction extends BaseAction {
     synthesizedAt: Date,
     replyWatermark: number,
     user: UserInfo,
-  ): Promise<void> {
+  ): Promise<ActionResultSimple | null> {
     const post = await new Metadata().GetEntityObject<mjBizAppsCommunityForumPostEntity>(
       COMMUNITY_ENTITY_NAMES.ForumPosts,
       CompositeKey.FromID(rootPostId),
@@ -92,7 +94,7 @@ export class LivingThreadSynthesisAction extends BaseAction {
     post.SummaryMarkdown = summaryMarkdown;
     post.SummaryGeneratedAt = synthesizedAt;
     post.SummaryReplyWatermark = replyWatermark;
-    await post.Save();
+    return SaveOrFail(post, 'SAVE_FAILED', `Failed to persist the synthesized summary onto Forum Post ${rootPostId}.`);
   }
 
   private async loadRootPost(rootPostId: string, user: UserInfo): Promise<RootPostRow | null> {

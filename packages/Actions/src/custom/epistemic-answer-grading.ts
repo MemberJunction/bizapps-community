@@ -1,4 +1,29 @@
+import { UUIDsEqual } from '@memberjunction/global';
 import type { EpistemicAnswerStatus } from '@mj-biz-apps/community-core';
+
+export interface PostBodyRow {
+  ID: string;
+  BodyMarkdown: string;
+}
+
+/**
+ * Pure extraction of the authoritative Question/Answer body markdown out of the 2 Forum Post rows
+ * `EpistemicAnswerGradingAction.loadAuthoritativeContent` fetches by ID — kept in this
+ * decorator-free companion file (not the `@RegisterClass`-decorated Action file) so it can be
+ * unit-tested under `node --experimental-strip-types`, which cannot parse class decorators.
+ * Returns null when either expected row is missing from `rows` (a RunView result that came back
+ * incomplete/empty).
+ */
+export function ExtractAuthoritativeContent(
+  answerPostId: string,
+  questionPostId: string,
+  rows: ReadonlyArray<PostBodyRow>,
+): { questionBodyMarkdown: string; answerBodyMarkdown: string } | null {
+  const answerBodyMarkdown = rows.find((row) => UUIDsEqual(row.ID, answerPostId))?.BodyMarkdown;
+  const questionBodyMarkdown = rows.find((row) => UUIDsEqual(row.ID, questionPostId))?.BodyMarkdown;
+  if (!answerBodyMarkdown || !questionBodyMarkdown) return null;
+  return { questionBodyMarkdown, answerBodyMarkdown };
+}
 
 export interface EpistemicGradingInput {
   questionBodyMarkdown: string;
