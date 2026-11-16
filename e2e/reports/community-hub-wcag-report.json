@@ -1,7 +1,7 @@
 {
   "schemaVersion": "sf-e2e/v1",
-  "evaluatedAtIso": "2026-11-16T23:45:06.812Z",
-  "harnessUrl": "http://127.0.0.1:60221/",
+  "evaluatedAtIso": "2026-11-16T23:45:26.047Z",
+  "harnessUrl": "http://127.0.0.1:60245/",
   "tabsExercised": [
     "knowledge-stream",
     "qa-canon-workbench",
