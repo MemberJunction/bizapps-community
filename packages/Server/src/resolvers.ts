@@ -55,15 +55,37 @@ export class CommunityPublicEdgeService {
   }
 }
 
+export interface CanonPromotionRequest {
+  questionPostId: string;
+  canonAnswerPostId: string;
+}
+
+export interface CanonPromotionResult {
+  questionPostId: string;
+  canonAnswerPostId: string;
+  /** True when this promotion was already in effect (ForumQuestionPost.AICanonAnswerPostID already matched) — a no-op, not an error. */
+  alreadyPromoted: boolean;
+}
+
 /**
  * Coordinates 1-click graduation of a high-momentum Community thread into a child Collaboration Space
- * of any allowed peer `SpaceType` (such as `working-group`, `cohort`, `project`, or governance spaces).
+ * of any allowed peer `SpaceType` (such as `working-group`, `cohort`, `project`, or governance spaces),
+ * optional Task seeding on that space, and promotion of a Q&A answer into the forum's Knowledge Canon
+ * (`ForumQuestionPost.AICanonAnswerPostID`). Every operation is idempotent: calling it again with the
+ * thread/question already in its target state returns the existing outcome rather than erroring or
+ * creating a duplicate Space/Task.
  */
 export class ThreadGraduationService {
+  /**
+   * Validates and plans Space/Task graduation. `currentPromotedToSpaceId` is the root post's existing
+   * `PromotedToSpaceID` (null if never graduated) — when already set, the plan is idempotent and
+   * returns the EXISTING space without seeding a second Task or re-inviting participants.
+   */
   public ValidateAndBuildGraduationPlan(params: {
     request: ThreadGraduationRequest;
     allowedChildSpaceTypeCodes: ReadonlyArray<string>;
     userCanPromoteToSpace: boolean;
+    currentPromotedToSpaceId?: string | null;
   }): ThreadGraduationResult {
     if (!params.userCanPromoteToSpace) {
       throw new Error('Current member does not hold the CanPromoteToSpace capability in this forum.');
@@ -77,12 +99,43 @@ export class ThreadGraduationService {
       );
     }
 
+    if (params.currentPromotedToSpaceId) {
+      return {
+        promotedToSpaceId: params.currentPromotedToSpaceId,
+        targetSpaceTypeCode: normalizedType,
+        seededTaskId: null,
+        invitedParticipantCount: 0,
+      };
+    }
+
     const uniqueParticipants = Array.from(new Set(params.request.includeParticipantUserIds));
     return {
       promotedToSpaceId: `graduated-${params.request.rootPostId}`,
       targetSpaceTypeCode: normalizedType,
       seededTaskId: params.request.seedInitialTaskTitle ? `task-${params.request.rootPostId}` : null,
       invitedParticipantCount: uniqueParticipants.length,
+    };
+  }
+
+  /**
+   * Validates and plans promoting a Q&A answer into the forum's Knowledge Canon. Only the question's
+   * author or a forum moderator may promote. `currentAICanonAnswerPostId` is the question's existing
+   * `AICanonAnswerPostID` (null if none) — when it already equals `request.canonAnswerPostId`, the
+   * promotion is idempotent and `alreadyPromoted` is `true`.
+   */
+  public ValidateAndBuildCanonPromotion(params: {
+    request: CanonPromotionRequest;
+    isQuestionAuthorOrModerator: boolean;
+    currentAICanonAnswerPostId: string | null;
+  }): CanonPromotionResult {
+    if (!params.isQuestionAuthorOrModerator) {
+      throw new Error('Only the question author or a forum moderator may promote an answer to Knowledge Canon.');
+    }
+
+    return {
+      questionPostId: params.request.questionPostId,
+      canonAnswerPostId: params.request.canonAnswerPostId,
+      alreadyPromoted: params.currentAICanonAnswerPostId === params.request.canonAnswerPostId,
     };
   }
 }

@@ -111,6 +111,90 @@ describe('@mj-biz-apps/community-server services and document blocks', () => {
     assert.equal(result.seededTaskId, 'task-thread-42');
   });
 
+  it('is idempotent: re-graduating an already-promoted thread returns the existing Space without re-seeding a Task', () => {
+    const graduation = new ThreadGraduationService();
+    const result = graduation.ValidateAndBuildGraduationPlan({
+      request: {
+        rootPostId: 'thread-42',
+        targetSpaceTypeCode: 'working-group',
+        targetSpaceName: 'AI Policy Working Group',
+        seedInitialTaskTitle: 'Draft v1 Charter',
+        includeParticipantUserIds: ['u-1', 'u-2'],
+      },
+      allowedChildSpaceTypeCodes: ['working-group', 'cohort', 'project'],
+      userCanPromoteToSpace: true,
+      currentPromotedToSpaceId: 'space-already-created-123',
+    });
+
+    assert.equal(result.promotedToSpaceId, 'space-already-created-123');
+    assert.equal(result.seededTaskId, null);
+    assert.equal(result.invitedParticipantCount, 0);
+  });
+
+  it('rejects graduation into a SpaceType not in AllowedTypeCodes', () => {
+    const graduation = new ThreadGraduationService();
+    assert.throws(
+      () =>
+        graduation.ValidateAndBuildGraduationPlan({
+          request: {
+            rootPostId: 'thread-42',
+            targetSpaceTypeCode: 'governance-board',
+            targetSpaceName: 'Not Allowed',
+            includeParticipantUserIds: [],
+          },
+          allowedChildSpaceTypeCodes: ['working-group'],
+          userCanPromoteToSpace: true,
+        }),
+      /not in AllowedTypeCodes/,
+    );
+  });
+
+  it('rejects graduation from a member without the CanPromoteToSpace capability', () => {
+    const graduation = new ThreadGraduationService();
+    assert.throws(
+      () =>
+        graduation.ValidateAndBuildGraduationPlan({
+          request: {
+            rootPostId: 'thread-42',
+            targetSpaceTypeCode: 'working-group',
+            targetSpaceName: 'AI Policy Working Group',
+            includeParticipantUserIds: [],
+          },
+          allowedChildSpaceTypeCodes: ['working-group'],
+          userCanPromoteToSpace: false,
+        }),
+      /CanPromoteToSpace/,
+    );
+  });
+
+  it('promotes an answer to Knowledge Canon, access-checked and idempotent', () => {
+    const graduation = new ThreadGraduationService();
+
+    const firstPromotion = graduation.ValidateAndBuildCanonPromotion({
+      request: { questionPostId: 'q-1', canonAnswerPostId: 'ans-1' },
+      isQuestionAuthorOrModerator: true,
+      currentAICanonAnswerPostId: null,
+    });
+    assert.equal(firstPromotion.alreadyPromoted, false);
+
+    const rePromotion = graduation.ValidateAndBuildCanonPromotion({
+      request: { questionPostId: 'q-1', canonAnswerPostId: 'ans-1' },
+      isQuestionAuthorOrModerator: true,
+      currentAICanonAnswerPostId: 'ans-1',
+    });
+    assert.equal(rePromotion.alreadyPromoted, true);
+
+    assert.throws(
+      () =>
+        graduation.ValidateAndBuildCanonPromotion({
+          request: { questionPostId: 'q-1', canonAnswerPostId: 'ans-1' },
+          isQuestionAuthorOrModerator: false,
+          currentAICanonAnswerPostId: null,
+        }),
+      /Only the question author or a forum moderator/,
+    );
+  });
+
   it('serializes custom DocumentBlocks with plain-text fallbacks for MJ Collaborative Docs', () => {
     const block = CommunityDocumentBlocks.CreateCanonAnswerBlock({
       questionPostId: 'q-1',
