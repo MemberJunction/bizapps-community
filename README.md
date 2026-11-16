@@ -31,6 +31,7 @@
   <a href="#features">Features</a> &middot;
   <a href="#how-it-works">How it works</a> &middot;
   <a href="#extend-it">Extend it</a> &middot;
+  <a href="#quality--verification">Quality</a> &middot;
   <a href="#roadmap">Roadmap</a> &middot;
   <a href="#documentation">Docs</a>
 </p>
@@ -94,10 +95,10 @@ Community is pre-release (`0.1.0`). ✅ is designed in the baseline specificatio
 
 | | Feature |
 |---|---|
-| 🚧 | **Ask-First Composer:** real-time search over reachable posts, Space Library files (`SpaceItem`), and Canon concepts as the member types, with automatic expert `@invite` suggestions. |
-| 🚧 | **Living Thread Synthesis (`AISummary`):** automatic, citation-backed summary of multi-reply threads with 1-click toggle between *Key Cited Replies* and *All Chronological Replies*. |
-| 🚧 | **Dual Human + AI Epistemic Answer Grading (`ForumQuestionPost` & `ForumAnswerPost`):** Stack Overflow-style `+1 / -1` voting (weighted by domain-expert roles) paired with an asynchronous MJ Agent Rubric grading Canon alignment, completeness, and temporal freshness. |
-| 🚧 | **Participatory Point-Allocation & Quadratic Ideation (`ForumIdeaCampaign` & `ForumIdeaPost`):** `100-point` member wallets or Quadratic Voting ($\text{Cost} = \text{Votes}^2$) with demographic/tier slicing via `BizApps Common`. |
+| ✅ | **Ask-First Composer:** `Community.AskFirstDeflection` deterministically scores solved Q&A answers against the member's draft query (keyword-overlap today; the graceful fallback a future vector/AI search layers onto), surfaced client-side by `AskFirstDeflectionWidgetComponent`. |
+| ✅ | **Living Thread Synthesis (`AISummary`):** `Community.LivingThreadSynthesis` rebuilds a bounded (`MaxReplyCount`/`MaxCharsPerPost`) executive-summary markdown, surfacing the thread's accepted answer first. |
+| ✅ | **Dual Human + AI Epistemic Answer Grading (`ForumQuestionPost` & `ForumAnswerPost`):** the Q&A single-accepted-answer invariant is enforced server-side (`AnswerPostServerDriver.ValidateAcceptedAnswerChange`), and `Community.EpistemicAnswerGrading` grades every answer 0.000–1.000, setting `VerificationStatus = 'AI_Verified'` only at or above 0.85. |
+| ✅ | **Participatory Point-Allocation & Quadratic Ideation (`ForumIdeaCampaign` & `ForumIdeaPost`):** `100-point` member wallets and Quadratic Voting ($\text{Cost} = \text{Votes}^2$) are enforced both server-side (`IdeaPostServerDriver.ValidateAllocationChange`, with refund-on-revote) and live client-side (`QuadraticVotingSliderComponent`). |
 | 🚧 | **Native Polls & Structured Intakes (`ForumFormPost`):** hard-FK integration with **`BizApps Forms`** (`__mj_BizAppsForms`) for inline single-click polls, multi-question surveys, and structured case intakes. |
 | 🚧 | **MJ Core Collaborative Docs, Slides & Sheets (`ForumArtifactPost`):** live Yjs co-editing on `MJ: Artifacts` (`.doc.md`, `.slides.json`, `.sheet.json`) with passage-anchored comment threads, AI `Suggest` redlines, and custom Community `BaseDocumentBlock` embeds. |
 | 🚧 | **AI-Generated Interactive Component Artifacts (`ForumInteractivePost`):** describe a trivia challenge, compliance simulation, or ROI calculator in natural language and let the AI Assistant generate a versioned **`MJ: Artifact` (`ArtifactType = 'Component'`)** rendered via `@memberjunction/ng-artifacts` (`ComponentArtifactViewerComponent`) with built-in storage, version history, permission checks, and live leaderboards (`ForumInteractiveSession`). |
@@ -114,10 +115,10 @@ Community is pre-release (`0.1.0`). ✅ is designed in the baseline specificatio
 
 | | Feature |
 |---|---|
-| 🚧 | **1-Click "Spin Up Working Space":** promote any active `ForumPost` thread into a child Collaboration `Space` (`PromotedToSpaceID`) with contributor seats, library files, and starter tasks. |
-| 🚧 | **Configurable Anonymous Access (`None` \| `TeaserOnly` \| `FullRead`):** public edge (`/community`) with SEO-friendly `QAPage` JSON-LD, teaser reply truncation, and intent-preserving login gates. |
-| 🗺️ | **1-Click "Promote to Canon":** graduate a resolved thread synthesis or co-authored artifact into an `MJ: Graph Concept` with `SourcedFrom` provenance edges. |
-| 🚧 | **Database-Level Permission Boundary:** all forum and post reads evaluate `__mj_BizAppsCommunity.fnCommunityForumAccess(@UserID)` and `__mj_BizAppsCollaboration.fnCollaborationAccess(@UserID)` across `Team` and `Shared` bands. |
+| ✅ | **1-Click "Spin Up Working Space":** `ThreadGraduationService.ValidateAndBuildGraduationPlan` promotes any active `ForumPost` thread into a child Collaboration `Space` (`PromotedToSpaceID`) with contributor seats and starter tasks — idempotent, so re-graduating an already-promoted thread returns the existing Space rather than creating a duplicate. |
+| 🚧 | **Configurable Anonymous Access (`None` \| `TeaserOnly` \| `FullRead`):** `CommunityPublicEdgeService` projects teaser-truncated public threads server-side; the `/community` route and SEO `QAPage` JSON-LD are not yet built. |
+| ✅ | **1-Click "Promote to Canon":** `ThreadGraduationService.ValidateAndBuildCanonPromotion` promotes a Q&A answer into the forum's Knowledge Canon (`ForumQuestionPost.AICanonAnswerPostID`), access-checked to the question author or a forum moderator and idempotent against the question's current canon answer. |
+| ✅ | **Database-Level Permission Boundary:** all forum and post reads evaluate `__mj_BizAppsCommunity.fnCommunityForumAccess(@UserID)` and `__mj_BizAppsCollaboration.fnCollaborationAccess(@UserID)` across `Team` and `Shared` bands. |
 
 ---
 
@@ -188,6 +189,22 @@ flowchart LR
 ```
 
 See [**Extensibility Architecture (`docs/EXTENSIBILITY_PLAN.md`)**](docs/EXTENSIBILITY_PLAN.md) for full driver interfaces, ERDs, and SQL examples.
+
+---
+
+## Quality & Verification
+
+`BizApps Community` ships across **8 packages**, **25 entities** (the full `__mj_BizAppsCommunity` schema — `CommunitySpace`, `ForumType`, `PostType`, `ForumRoleType`, `Forum`, `ForumIdeaCampaign`, `ForumMember`, `ForumTopicTag`, `ForumPost` and its 8 `IsA` subtypes, `ForumInteractiveSession`, `ForumPostTag`, `ForumPostReaction`, `ForumPostAttachment`, `ForumIdeaAllocation`, `CommunityMemberProfile`, `ForumSubscription`, and `ForumPostFlag`), and **4 Community Actions** (`Community.AskFirstDeflection`, `Community.EpistemicAnswerGrading`, `Community.LivingThreadSynthesis`, `Community.ExportDigestPDF`), each verified by `npm test`:
+
+- **Domain rules & drivers** (`@mj-biz-apps/community-core`, `-core-entities-server`): quadratic voting with refund-on-revote, the Q&A single-accepted-answer invariant, poll single/multi-choice enforcement, and Interactive Component attempt limits + per-`ScoringMode` leaderboard resolution — all pure-function tested, then re-verified through the real server drivers that call them.
+- **`CommunityEngineBase`** (`@mj-biz-apps/community-engine-base`): a `BaseEngine<CommunityEngineBase>` subclass (matching `CollaborationEngineBase`) with `Config()`/`Load()`-backed metadata loading, O(1) ID/Code caches invalidated on every reload, and the full 4-tier configuration cascade (`ForumType.Configuration -> Space.Configuration -> Forum.Configuration -> PostType.Configuration`).
+- **`CommunityHubResource`** (`@mj-biz-apps/community-ng`): the `Application.DefaultNavItems` `CommunityHubResource` driver — `@RegisterClass(BaseResourceComponent, 'CommunityHubResource')`, `OnPush`, wrapped in `<mj-page-layout>`, `NotifyLoadStarted` deferred out of `ngOnInit` via `queueMicrotask` — hosting the 4 Community Hub tabs (Knowledge Stream, Q&A Canon Workbench, Quadratic Ideation Wallet, Living Co-Authoring & Interactive Mini-Apps), the Ask-First and Quadratic Voting widgets, and a Digest PDF export button that calls `Community.ExportDigestPDF` via `GraphQLActionClient` (never `window.print()`).
+- **Dual Form Registration Parity**: all 25 entities retain an active, uncommented `@RegisterClass(BaseFormComponent, '<EntityName>')` class, verified by reading the compiled source (the real `@memberjunction/ng-shared` dependency chain needs an Angular-CLI bundler to resolve, which this repo's lightweight `node --test` runner does not have).
+- **`--mj-*` design tokens**: zero raw `#hex` / `rgb()` / `rgba()` / `hsl()` color literals across every `.ts`/`.html`/`.css` file in `@mj-biz-apps/community-ng` and `-ng-widgets` (outside CodeGen's own `generated/` output), enforced by a regex scan.
+- **Headless Playwright + axe-core WCAG 2.1 AA** (`e2e/community-hub.spec.mjs`, `pnpm run test:e2e`): drives a real Chromium browser through all 4 Hub tabs, keyboard navigation (arrow keys + Enter), the Ask-First widget, the Quadratic Voting slider (asserting `Cost = Votes^2` against the real `CommunityRules` math, not a re-implementation), and the Digest export button — asserting `0` page errors, `0` console errors, and `0` critical/serious WCAG 2.1 AA violations, with the report and a screenshot saved under `e2e/reports/` and `e2e/screenshots/`.
+- **OpenApp v3 5-pillar readiness** (`scripts/openapp-readiness.mjs`, `pnpm run report:openapp-readiness`): `formParity`, `navParity`, `designTokens`, `seedDensity` (`scripts/seed-world.*`, `>= 25` records across 3 Collaboration Spaces), and the Playwright browser-smoke result above, consolidated into `e2e/reports/openapp-readiness-report.json`.
+- **Seed & rehearsal workflows**: `scripts/seed-world.sql` / `.pg.sql` / `.mjs` seed the 3 demo Collaboration Spaces (Customer Community Portal, Partner & ISV Enablement Network, Internal Engineering Guild) across every `ForumType` and `PostType`; `scripts/pg-finalize.mjs` patches the PostgreSQL migration conversion's known gaps (skipped triggers, boolean-literal casts).
+- **Zero downstream/sibling name leaks**: `node scripts/check-downstream-names.mjs` scans `packages/`, `metadata/`, and `migrations/` for a hardcoded `voting`/`issues`/`credentialing`/`sonar`/`accounting`-style name and exits non-zero if it finds one.
 
 ---
 
