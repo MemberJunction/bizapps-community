@@ -6,13 +6,33 @@ import { fileURLToPath } from 'node:url';
 
 /**
  * These checks verify source text directly rather than importing the real `@Component` /
- * `@RegisterClass` classes at runtime. `@memberjunction/ng-shared` and friends are built
- * exclusively for an Angular CLI (webpack/esbuild) consumer — their own emitted relative imports
- * omit file extensions, which plain Node ESM resolution cannot follow (`ERR_MODULE_NOT_FOUND`) —
- * so there is no way to `import` a real Explorer component in this repo's lightweight
- * `node --experimental-strip-types --test` runner. Reading the compiled source and asserting the
- * required architecture markers are present and uncommented is the available, deterministic
- * substitute for a live `MJGlobal.Instance.ClassFactory.GetRegistration(...)` check.
+ * `@RegisterClass` classes and calling `MJGlobal.Instance.ClassFactory.GetRegistration(...)` at
+ * runtime. This has been investigated concretely (not assumed) and hits 3 separate, compounding
+ * blockers specific to this repo's lightweight `node --experimental-strip-types --test` runner
+ * (no Angular CLI/webpack/esbuild, no `TestBed`/platform bootstrap):
+ *   1. `node --experimental-strip-types` only strips TYPE syntax — it cannot parse the legacy
+ *      `@Component`/`@RegisterClass` class-decorator SYNTAX at all, so the raw `.ts` source of any
+ *      decorated class fails with `SyntaxError: Invalid or unexpected token` before any module
+ *      resolution even runs.
+ *   2. Importing the `tsc`-compiled `.js` instead (decorators already lowered to `__decorate()`
+ *      calls — ordinary JS) gets past (1), but `@memberjunction/ng-base-forms` and its peers emit
+ *      their OWN relative imports without file extensions (`from './module'`) and directory
+ *      imports (`from './view-types'`) — valid for a bundler, but `ERR_MODULE_NOT_FOUND` /
+ *      `ERR_UNSUPPORTED_DIR_IMPORT` under plain Node ESM resolution. A custom `--experimental-loader`
+ *      resolve hook CAN paper over this (retrying with `.js`/`/index.js` appended) — confirmed
+ *      working through several layers of the dependency graph.
+ *   3. Even past (1) and (2), evaluating an Angular-Ivy-AOT-compiled decorated class
+ *      (`@Injectable`/`@Component`) outside a real Angular platform bootstrap throws `JIT
+ *      compilation failed ... '@angular/compiler' is not available` — Ivy's partial-compilation
+ *      output defers to the JIT compiler for anything not run through `bootstrapApplication`/
+ *      `TestBed`, which this lightweight runner does not stand up. This is an Angular framework
+ *      requirement, not a file-resolution detail, and is NOT satisfiable via a loader hook.
+ * Reading the compiled source and asserting the required architecture markers are present and
+ * uncommented is the available, deterministic substitute given (3). A genuine runtime
+ * `GetRegistration(...)` check would need to run inside a real Angular platform bootstrap (a host
+ * MJ Explorer app, or `TestBed`) — out of scope for this package's own lightweight test runner;
+ * the Playwright E2E suite (`e2e/community-hub.spec.mjs`) covers DOM/ARIA/keyboard behavior in a
+ * real browser but, per its own harness docs, does not bootstrap real Angular components either.
  */
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -202,6 +222,25 @@ describe('OpenApp Readiness — CommunityHubResource architecture', () => {
     for (const key of ["'ArrowRight'", "'ArrowLeft'", "'Home'", "'End'", "'Enter'"]) {
       assert.ok(componentSource.includes(key), `OnTabKeydown is missing a case for ${key}`);
     }
+  });
+
+  it('implements a keyboard-accessible idea selector (CR-16): native <button> with roving tabindex and an ArrowUp/ArrowDown/Home/End/Enter/Space handler', () => {
+    const template = readFileSync(join(ANGULAR_SRC, 'lib', 'community-hub-resource.component.html'), 'utf8');
+    assert.match(template, /<button[^>]*role="option"/s, 'idea selector must be a native <button>, not a bare clickable <li>');
+    assert.match(template, /\(keydown\)="OnIdeaKeydown\(\$event, idea\.id\)"/);
+    assert.match(template, /\[attr\.tabindex\]="idea\.id === focusedIdeaId \? 0 : -1"/);
+
+    assert.match(componentSource, /public OnIdeaKeydown\(event: KeyboardEvent, currentIdeaId: string\)/);
+    for (const key of ["'ArrowDown'", "'ArrowUp'", "'Home'", "'End'", "'Enter'"]) {
+      assert.ok(componentSource.includes(key), `OnIdeaKeydown is missing a case for ${key}`);
+    }
+  });
+
+  it('OnVoteAllocationChanged preserves other backers\' points (CR-04): recomputes from otherBackersPoints/otherBackersVotes rather than overwriting the whole idea with one member\'s vote', () => {
+    assert.match(componentSource, /const otherBackersPoints = idea\.totalPointsAllocated - idea\.myPointsAllocated/);
+    assert.match(componentSource, /const otherBackersVotes = idea\.effectiveQuadraticVotes - idea\.myEffectiveVotes/);
+    assert.match(componentSource, /idea\.totalPointsAllocated = otherBackersPoints \+ pointsAllocated/);
+    assert.match(componentSource, /idea\.effectiveQuadraticVotes = otherBackersVotes \+ effectiveVotes/);
   });
 
   it("matches metadata/applications/.applications.json's DefaultNavItems[].DriverClass", () => {

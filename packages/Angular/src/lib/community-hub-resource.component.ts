@@ -1,10 +1,15 @@
 import { Component, ChangeDetectionStrategy, ChangeDetectorRef, ElementRef, OnInit, ViewChildren, QueryList, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { Metadata, RunView, type UserInfo } from '@memberjunction/core';
-import { RegisterClass } from '@memberjunction/global';
+import { CompositeKey, Metadata, RunView, type UserInfo } from '@memberjunction/core';
+import { RegisterClass, UUIDsEqual } from '@memberjunction/global';
 import { BaseResourceComponent } from '@memberjunction/ng-shared';
 import { MJPageLayoutComponent, MJPageBodyComponent } from '@memberjunction/ng-ui-components';
 import type { ResourceData } from '@memberjunction/core-entities';
+import {
+  COMMUNITY_ENTITY_NAMES,
+  type mjBizAppsCommunityForumIdeaAllocationEntity,
+  type mjBizAppsCommunityForumIdeaPostEntity,
+} from '@mj-biz-apps/community-entities';
 import { CommunityHubPreferences, type CommunityHubTabKey } from './community-hub-preferences.ts';
 import { AskFirstDeflectionWidgetComponent } from './widgets/ask-first-deflection-widget.component.ts';
 import { QuadraticVotingSliderComponent } from './widgets/quadratic-voting-slider.component.ts';
@@ -40,6 +45,10 @@ export interface CommunityHubIdeaItem {
   title: string;
   totalPointsAllocated: number;
   effectiveQuadraticVotes: number;
+  /** The CURRENT user's own prior allocation on this idea (0 if they have not backed it yet) —
+   * needed so a revote can replace just their share of the aggregate, not the whole total. */
+  myPointsAllocated: number;
+  myEffectiveVotes: number;
 }
 
 export interface CommunityHubLivingDocItem {
@@ -66,13 +75,27 @@ interface IdeaPostRow {
   EffectiveQuadraticVotes: number;
 }
 
+interface IdeaAllocationRow {
+  ID: string;
+  IdeaPostID: string;
+  PointsAllocated: number;
+  QuadraticVotes: number;
+}
+
 /** Deterministic fallback shown when no live RunView-capable provider is available (offline, or a
  * unit/E2E test harness) — never an empty, broken-looking panel. */
 const SEEDED_QA_CANON_FALLBACK: CommunityHubQACanonItem[] = [
   { id: 'seed-answer-1', title: 'How do I rotate my API key without downtime?', epistemicStatus: 'Canon Verified', isAccepted: true },
 ];
 const SEEDED_IDEATION_FALLBACK: CommunityHubIdeaItem[] = [
-  { id: 'seed-idea-1', title: 'Add webhook signing secrets rotation API', totalPointsAllocated: 61, effectiveQuadraticVotes: 11 },
+  {
+    id: 'seed-idea-1',
+    title: 'Add webhook signing secrets rotation API',
+    totalPointsAllocated: 61,
+    effectiveQuadraticVotes: 11,
+    myPointsAllocated: 0,
+    myEffectiveVotes: 0,
+  },
 ];
 const SEEDED_LIVING_DOCS_FALLBACK: CommunityHubLivingDocItem[] = [
   { id: 'seed-doc-1', title: 'OAuth2 Partner Onboarding Playbook', postTypeCode: 'collaborative-doc' },
@@ -116,8 +139,10 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
   public ideationItems: CommunityHubIdeaItem[] = [];
   public livingDocItems: CommunityHubLivingDocItem[] = [];
   public selectedIdeaId: string | null = null;
+  public focusedIdeaId: string | null = null;
 
   @ViewChildren('tabButton') private tabButtons!: QueryList<ElementRef<HTMLButtonElement>>;
+  @ViewChildren('ideaButton') private ideaButtons!: QueryList<ElementRef<HTMLButtonElement>>;
 
   private readonly preferences = new CommunityHubPreferences();
   private readonly cdr = inject(ChangeDetectorRef);
@@ -171,7 +196,7 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
         ),
         rv.RunView<IdeaPostRow & { Title: string | null }>(
           {
-            EntityName: 'MJ_BizApps_Community: Forum Idea Posts',
+            EntityName: COMMUNITY_ENTITY_NAMES.ForumIdeaPosts,
             Fields: ['ID', 'Title', 'TotalPointsAllocated', 'EffectiveQuadraticVotes'],
             ResultType: 'simple',
             MaxRows: 20,
@@ -190,17 +215,43 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
               isAccepted: a.IsAcceptedByAuthor,
             }))
           : SEEDED_QA_CANON_FALLBACK;
-      this.ideationItems =
-        ideasResult?.Success && ideasResult.Results
-          ? ideasResult.Results.map((i) => ({
-              id: i.ID,
-              title: i.Title ?? 'Idea Proposal',
-              totalPointsAllocated: i.TotalPointsAllocated,
-              effectiveQuadraticVotes: i.EffectiveQuadraticVotes,
-            }))
-          : SEEDED_IDEATION_FALLBACK;
+
+      if (ideasResult?.Success && ideasResult.Results) {
+        const ideaIds = ideasResult.Results.map((i) => i.ID);
+        const myAllocationsResult = ideaIds.length
+          ? await rv.RunView<IdeaAllocationRow>(
+              {
+                EntityName: COMMUNITY_ENTITY_NAMES.ForumIdeaAllocations,
+                ExtraFilter: `UserID = '${user.ID}' AND IdeaPostID IN (${ideaIds.map((id) => `'${id}'`).join(',')})`,
+                Fields: ['ID', 'IdeaPostID', 'PointsAllocated', 'QuadraticVotes'],
+                ResultType: 'simple',
+                MaxRows: ideaIds.length,
+              },
+              user,
+            )
+          : null;
+        const myAllocationsByIdeaId = new Map(
+          (myAllocationsResult?.Success ? myAllocationsResult.Results ?? [] : []).map((a) => [a.IdeaPostID, a]),
+        );
+
+        this.ideationItems = ideasResult.Results.map((i) => {
+          const mine = myAllocationsByIdeaId.get(i.ID);
+          return {
+            id: i.ID,
+            title: i.Title ?? 'Idea Proposal',
+            totalPointsAllocated: i.TotalPointsAllocated,
+            effectiveQuadraticVotes: i.EffectiveQuadraticVotes,
+            myPointsAllocated: mine?.PointsAllocated ?? 0,
+            myEffectiveVotes: mine?.QuadraticVotes ?? 0,
+          };
+        });
+      } else {
+        this.ideationItems = SEEDED_IDEATION_FALLBACK;
+      }
+
       this.livingDocItems = SEEDED_LIVING_DOCS_FALLBACK;
       this.selectedIdeaId = this.ideationItems[0]?.id ?? null;
+      this.focusedIdeaId = this.selectedIdeaId;
     } catch {
       // A RunView failure (unavailable service, network error, permission denial) degrades to the
       // seeded fallback rather than leaving the hub blank.
@@ -215,6 +266,7 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
     this.ideationItems = SEEDED_IDEATION_FALLBACK;
     this.livingDocItems = SEEDED_LIVING_DOCS_FALLBACK;
     this.selectedIdeaId = this.ideationItems[0]?.id ?? null;
+    this.focusedIdeaId = this.selectedIdeaId;
     this.cdr.markForCheck();
   }
 
@@ -226,17 +278,153 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
 
   public SelectIdea(ideaId: string): void {
     this.selectedIdeaId = ideaId;
+    this.focusedIdeaId = ideaId;
   }
 
-  /** Persists a member's Quadratic Voting allocation change. No live persistence endpoint is wired
-   * in this slice — rolls the change into the in-memory aggregate so the UI reflects it immediately,
-   * and callers needing server persistence should route through `Community.*` actions. */
-  public OnVoteAllocationChanged(ideaId: string, pointsAllocated: number, effectiveVotes: number): void {
-    const idea = this.ideationItems.find((i) => i.id === ideaId);
-    if (!idea) return;
-    idea.totalPointsAllocated = pointsAllocated;
-    idea.effectiveQuadraticVotes = effectiveVotes;
+  /** Keyboard-accessible idea selector (CR-16): roving tabindex + ArrowUp/ArrowDown/Home/End move
+   * focus, Enter/Space selects — the same WAI-ARIA manual-activation pattern as {@link OnTabKeydown}. */
+  public OnIdeaKeydown(event: KeyboardEvent, currentIdeaId: string): void {
+    const currentIndex = this.ideationItems.findIndex((i) => UUIDsEqual(i.id, currentIdeaId));
+    let nextIndex = currentIndex;
+
+    switch (event.key) {
+      case 'ArrowDown':
+        nextIndex = (currentIndex + 1) % this.ideationItems.length;
+        break;
+      case 'ArrowUp':
+        nextIndex = (currentIndex - 1 + this.ideationItems.length) % this.ideationItems.length;
+        break;
+      case 'Home':
+        nextIndex = 0;
+        break;
+      case 'End':
+        nextIndex = this.ideationItems.length - 1;
+        break;
+      case 'Enter':
+      case ' ':
+        event.preventDefault();
+        this.SelectIdea(currentIdeaId);
+        return;
+      default:
+        return;
+    }
+
+    event.preventDefault();
+    const nextId = this.ideationItems[nextIndex].id;
+    this.focusedIdeaId = nextId;
     this.cdr.markForCheck();
+    queueMicrotask(() => this.focusIdeaButton(nextIndex));
+  }
+
+  private focusIdeaButton(index: number): void {
+    this.ideaButtons?.toArray()[index]?.nativeElement.focus();
+  }
+
+  /** Persists a member's Quadratic Voting allocation change (CR-04). `event.pointsAllocated`/
+   * `effectiveVotes` are only the CURRENT user's own new allocation — this preserves every OTHER
+   * backer's existing share of the aggregate (`otherBackersPoints`/`otherBackersVotes` = the
+   * idea's current total minus what THIS user previously had allocated) rather than overwriting
+   * the whole idea with just one member's vote. Persists the member's `ForumIdeaAllocation` row
+   * and the idea's recomputed aggregate via `Metadata.GetEntityObject` when a live provider/user
+   * is available; otherwise updates the in-memory state only (offline/test harness). */
+  public async OnVoteAllocationChanged(ideaId: string, pointsAllocated: number, effectiveVotes: number): Promise<void> {
+    const idea = this.ideationItems.find((i) => UUIDsEqual(i.id, ideaId));
+    if (!idea) return;
+
+    const otherBackersPoints = idea.totalPointsAllocated - idea.myPointsAllocated;
+    const otherBackersVotes = idea.effectiveQuadraticVotes - idea.myEffectiveVotes;
+    idea.totalPointsAllocated = otherBackersPoints + pointsAllocated;
+    idea.effectiveQuadraticVotes = otherBackersVotes + effectiveVotes;
+    idea.myPointsAllocated = pointsAllocated;
+    idea.myEffectiveVotes = effectiveVotes;
+    this.cdr.markForCheck();
+
+    const provider = Metadata.Provider;
+    const user: UserInfo | undefined = provider?.CurrentUser;
+    if (!provider || !user) return;
+
+    try {
+      await this.persistVoteAllocation(ideaId, pointsAllocated, effectiveVotes, user);
+      await this.persistIdeaAggregate(ideaId, idea.totalPointsAllocated, idea.effectiveQuadraticVotes, user);
+    } catch {
+      // Persistence failure (network/permission) keeps the optimistic in-memory update — the next
+      // loadHubState() reload will reconcile against the authoritative server state.
+    }
+  }
+
+  /** Upserts the current user's `ForumIdeaAllocation` row for this idea. */
+  private async persistVoteAllocation(
+    ideaPostId: string,
+    pointsAllocated: number,
+    effectiveVotes: number,
+    user: UserInfo,
+  ): Promise<void> {
+    const md = new Metadata();
+    const existingResult = await new RunView().RunView<{ ID: string }>(
+      {
+        EntityName: COMMUNITY_ENTITY_NAMES.ForumIdeaAllocations,
+        ExtraFilter: `IdeaPostID = '${ideaPostId}' AND UserID = '${user.ID}'`,
+        Fields: ['ID'],
+        ResultType: 'simple',
+        MaxRows: 1,
+      },
+      user,
+    );
+    const existingId = existingResult?.Success ? existingResult.Results?.[0]?.ID : null;
+
+    const allocation = existingId
+      ? await md.GetEntityObject<mjBizAppsCommunityForumIdeaAllocationEntity>(
+          COMMUNITY_ENTITY_NAMES.ForumIdeaAllocations,
+          CompositeKey.FromID(existingId),
+          user,
+        )
+      : await md.GetEntityObject<mjBizAppsCommunityForumIdeaAllocationEntity>(
+          COMMUNITY_ENTITY_NAMES.ForumIdeaAllocations,
+          user,
+        );
+    if (!existingId) {
+      allocation.IdeaPostID = ideaPostId;
+      allocation.UserID = user.ID;
+    }
+    allocation.PointsAllocated = pointsAllocated;
+    allocation.QuadraticVotes = effectiveVotes;
+    await allocation.Save();
+  }
+
+  /** Recomputes and persists the idea's aggregate columns from its real `ForumIdeaAllocation` rows. */
+  private async persistIdeaAggregate(
+    ideaPostId: string,
+    fallbackTotalPoints: number,
+    fallbackTotalVotes: number,
+    user: UserInfo,
+  ): Promise<void> {
+    const allocationsResult = await new RunView().RunView<IdeaAllocationRow>(
+      {
+        EntityName: COMMUNITY_ENTITY_NAMES.ForumIdeaAllocations,
+        ExtraFilter: `IdeaPostID = '${ideaPostId}'`,
+        Fields: ['ID', 'IdeaPostID', 'PointsAllocated', 'QuadraticVotes'],
+        ResultType: 'simple',
+        MaxRows: 1000,
+      },
+      user,
+    );
+    const allocations = allocationsResult?.Success ? allocationsResult.Results ?? [] : [];
+    const totalPoints = allocations.length
+      ? allocations.reduce((sum, a) => sum + a.PointsAllocated, 0)
+      : fallbackTotalPoints;
+    const totalVotes = allocations.length
+      ? allocations.reduce((sum, a) => sum + a.QuadraticVotes, 0)
+      : fallbackTotalVotes;
+
+    const ideaPost = await new Metadata().GetEntityObject<mjBizAppsCommunityForumIdeaPostEntity>(
+      COMMUNITY_ENTITY_NAMES.ForumIdeaPosts,
+      CompositeKey.FromID(ideaPostId),
+      user,
+    );
+    ideaPost.TotalPointsAllocated = totalPoints;
+    ideaPost.EffectiveQuadraticVotes = totalVotes;
+    ideaPost.UniqueBackerCount = allocations.length;
+    await ideaPost.Save();
   }
 
   // ─── WAI-ARIA tablist keyboard handling (manual activation pattern) ────────

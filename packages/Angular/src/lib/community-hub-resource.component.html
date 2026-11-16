@@ -70,15 +70,21 @@
               } @else {
                 <ul class="mjc-community-hub__list" role="listbox" aria-label="Idea proposals">
                   @for (idea of ideationItems; track idea.id) {
-                    <li
-                      class="mjc-community-hub__list-item"
-                      role="option"
-                      [attr.aria-selected]="idea.id === selectedIdeaId"
-                      [class.mjc-community-hub__list-item--selected]="idea.id === selectedIdeaId"
-                      (click)="SelectIdea(idea.id)"
-                    >
-                      <span class="mjc-community-hub__list-title">{{ idea.title }}</span>
-                      <span class="mjc-community-hub__badge">{{ idea.effectiveQuadraticVotes }} votes</span>
+                    <li class="mjc-community-hub__list-item-wrapper">
+                      <button
+                        #ideaButton
+                        type="button"
+                        class="mjc-community-hub__list-item"
+                        role="option"
+                        [attr.aria-selected]="idea.id === selectedIdeaId"
+                        [attr.tabindex]="idea.id === focusedIdeaId ? 0 : -1"
+                        [class.mjc-community-hub__list-item--selected]="idea.id === selectedIdeaId"
+                        (click)="SelectIdea(idea.id)"
+                        (keydown)="OnIdeaKeydown($event, idea.id)"
+                      >
+                        <span class="mjc-community-hub__list-title">{{ idea.title }}</span>
+                        <span class="mjc-community-hub__badge">{{ idea.effectiveQuadraticVotes }} votes</span>
+                      </button>
                     </li>
                   }
                 </ul>

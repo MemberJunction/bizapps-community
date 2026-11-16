@@ -90,6 +90,25 @@
   background: var(--mj-bg-surface-active);
 }
 
+/* The Quadratic Ideation Wallet's idea selector is a <button> (keyboard-accessible, CR-16) inside
+   a plain <li> wrapper — reset the button's browser defaults so it still fills the row exactly
+   like the other lists' plain <li role="option">. */
+.mjc-community-hub__list-item-wrapper {
+  margin: 0;
+}
+
+.mjc-community-hub__list-item-wrapper > .mjc-community-hub__list-item {
+  width: 100%;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+}
+
+.mjc-community-hub__list-item-wrapper > .mjc-community-hub__list-item:focus-visible {
+  outline: var(--mj-ring-width) solid var(--mj-focus-ring-color);
+  outline-offset: 2px;
+}
+
 .mjc-community-hub__list-title {
   font-size: var(--mj-text-sm);
   color: var(--mj-text-primary);
