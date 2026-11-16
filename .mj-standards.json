@@ -1,6 +1,6 @@
 {
   "$schema": "./node_modules/@memberjunction/standards/schema/mj-standards.schema.json",
-  "StandardsVersion": "6.1.3",
+  "StandardsVersion": "6.3.0-edge.0",
   "Checks": {
     "ui-layers": {
       "Severity": "error",

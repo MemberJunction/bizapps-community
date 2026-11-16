@@ -1,1009 +1,190 @@
-# BizApps Community (`mj-bizapps-community`) — Master Architecture, Full IsA Schema & Engineering Work Plan
+# BizApps Community (`mj-bizapps-community`) — Master Architecture, Schema & Software Factory Execution Plan
 
-> **Companion Deep-Dive Specification:** See [`docs/EXTENSIBILITY_PLAN.md`](../docs/EXTENSIBILITY_PLAN.md) for the complete `ForumType` & `PostType` plug-in driver contracts (`BaseForumServerDriver`, `BaseForumUIDriver`, `BasePostServerDriver`, `BasePostUIDriver`), MJ Core Docs/Slides/Sheets (`MJ PR #6215`) integration, AI-generated interactive games (`MJ PR #5257`), and downstream bridge Open App blueprints (`mj-bizapps-community-voting`, `mj-bizapps-community-issues`, `mj-bizapps-community-credentialing`).
-
----
-
-## 1. Architectural Vision
-
-**BizApps Community** (`__mj_BizAppsCommunity`) is an AI-native community, epistemic Q&A, participatory ideation, collaborative document co-authoring, and interactive knowledge-synthesis Open App for **MemberJunction (MJ)** built directly on top of **BizApps Collaboration** (`__mj_BizAppsCollaboration`) and **BizApps Forms** (`__mj_BizAppsForms`).
-
-Rather than isolating member discussions in a disconnected forum silo—or polluting core tables with untyped polymorphic soft keys—`mj-bizapps-community` applies the **MemberJunction `IsA` entity inheritance and plug-in driver architecture** across two orthogonal axes:
-
-1. **Two-Axis Plug-In Extensibility (`ForumType` + `PostType`) with 100% Hard SQL Foreign Keys:**
-   - **`ForumType`** governs forum/channel containers (`Forum` and hierarchical `ParentForumID` sub-forums), declaring a `ServerDriverClass`, `UIDriverClass`, optional `BaseForumTypeID` parent, and optional 1:1 `ForumExtensionEntity` (`IsA` `Forum`, such as `ForumIdeaCampaign`).
-   - **`PostType`** governs unified `ForumPost` records (both root posts where `ParentPostID IS NULL` and replies where `ParentPostID IS NOT NULL`), declaring `AllowedPlacement` (`'RootOnly' | 'ReplyOnly' | 'Both'`), `ServerDriverClass`, `UIDriverClass`, optional `BasePostTypeID` parent, and optional 1:1 `PostExtensionEntity` (`IsA` `ForumPost`).
-   - **Zero Polymorphic Soft Keys:** Every cross-table and cross-app reference uses a **real SQL `FOREIGN KEY` constraint**, unlocking automatic MJ CodeGen typed properties, entity relationship graphs, cascading validation, and GraphQL joins.
-2. **4-Level Hierarchical Configuration Cascade & Per-Forum Participant Roles:**
-   - Settings cascade deterministically across four levels:
-     1. **Global `MJ: Application Settings`** (`bizapps.community.defaults`)
-     2. **`ForumType.Configuration`** (inheriting along `BaseForumTypeID`)
-     3. **`CommunitySpace.Configuration`** (Space-level overrides)
-     4. **`Forum.Configuration`** (inheriting down `ParentForumID` sub-forums)
-   - Controls which `PostType`s are allowed at root vs. reply level and toggles feature switches (`qaGrading`, `ideation`, `formsAndPolls`, `collaborativeDocs`, `interactiveMiniApps`, `moderation`, `anonymousAccess`, `workingSpacePromotion`).
-   - **`ForumRoleType` & `ForumMemberRole`** grant granular per-forum participant roles (`forum-admin`, `moderator`, `topic-host`, `expert-reviewer`, `guest-speaker`) with sub-forum inheritance and domain-expert vote weight multipliers.
-3. **MJ Core Collaborative Docs, Slides & Sheets (`MJ PR #6215`):**
-   - `ForumArtifactPost` (`IsA` `ForumPost`) embeds live Yjs co-edited **MJ Documents (`.doc.md`), Presentations (`.slides.json`), and Spreadsheets (`.sheet.json`)** backed by hard FKs to `__mj.Artifact(ID)` and `__mj.ArtifactVersion(ID)`.
-   - Supports delegated co-editing permissions (`AuthorOnly`, `ForumModerators`, `HighTrustMembers`, `AllContributors`), passage-anchored `MJ: Conversations` comment threads, AI agent co-authoring with `Suggest` redlines (`DocumentToolLibrary` / `SlidesToolLibrary` / `SheetsToolLibrary`), and three custom Community `BaseDocumentBlock` plugins (`CommunityThreadSynthesisBlock`, `CommunityCanonAnswerBlock`, `CommunityIdeaLeaderboardBlock`).
-4. **Native Polls & Structured Intakes via `BizApps Forms` + AI-Generated Interactive Component Artifacts:**
-   - `mj-bizapps-forms` is a **hard dependency** of `mj-bizapps-community`: `ForumFormPost` (`IsA` `ForumPost`) links directly to `__mj_BizAppsForms.Form(ID)` and `FormDistribution(ID)` with real SQL Foreign Keys for inline polls, multi-question surveys, and structured case intakes.
-   - `ForumInteractivePost` (`IsA` `ForumPost`) + `ForumInteractiveSession` use **MemberJunction Interactive Component Artifacts** (`MJ: Artifacts` & `MJ: Artifact Versions` with `ArtifactType = 'Component'`, `ComponentSpec` from `@memberjunction/interactive-component-types`, and `@memberjunction/ng-artifacts` `ComponentArtifactViewerComponent` / `<mj-artifact-type-plugin-viewer>`), giving AI-generated trivia games, "Spot the Compliance Flaw" simulations, ROI calculators, and bracket challenges full database storage, immutable version history (`<mj-artifact-version-history>`), client-side permission evaluation (`EvaluateComponentPermissions`), and sandboxed execution (`MJ PR #5257`).
-5. **Dual Human + AI Epistemic Answer Grading & Participatory Point-Allocation Ideation:**
-   - `ForumQuestionPost` and `ForumAnswerPost` (`IsA` `ForumPost`) combine Stack Overflow-style `+1 / -1` voting (weighted by `ForumRoleType.VoteWeightMultiplier`) with an asynchronous MJ Agent Epistemic Rubric (**Canon Alignment**, **Completeness**, and **Temporal Freshness / Supersession detection**).
-   - `ForumIdeaCampaign` (`IsA` `Forum`) and `ForumIdeaPost` (`IsA` `ForumPost`) give members `100-point` wallets (`ForumIdeaWallet`) or Quadratic Voting ($\text{Cost} = \text{Votes}^2$) with demographic/tier slicing via `BizApps Common`.
-6. **Configurable Anonymous Public Access (`None` | `TeaserOnly` | `FullRead`):**
-   - Enforced at the SQL layer (`fnCommunityForumAccess(@UserID)`) and via the pre-auth public edge (`CommunityPublicEdge` at `/community`), stripping `Team`-band posts unconditionally and preserving visitor intent across login redirects.
+> **Companion Specifications:**
+> - [`docs/EXTENSIBILITY_PLAN.md`](../docs/EXTENSIBILITY_PLAN.md) — Plug-in driver contracts, metadata directories, and peer `SpaceType` interoperability.
+> - [`migrations/V202611060001__v0.1.x__Baseline_Tables_And_Access.sql`](../migrations/V202611060001__v0.1.x__Baseline_Tables_And_Access.sql) — Canonical SQL Server DDL and access TVF.
+> - [`migrations-pg/V202611060001__v0.1.x__Baseline_Tables_And_Access.pg.sql`](../migrations-pg/V202611060001__v0.1.x__Baseline_Tables_And_Access.pg.sql) — Dual-dialect PostgreSQL baseline.
+> - [`scripts/seed-world.mjs`](../scripts/seed-world.mjs) / [`scripts/seed-world.sql`](../scripts/seed-world.sql) — Multi-domain World Data Model seed dataset (>=25 records).
 
 ---
 
-## 2. Dependency Boundaries: Hard Core vs. Downstream Bridge Open Apps vs. Sonar
+## 1. Executive Summary & Architectural Vision
 
-### 2.1 Four Hard Upstream Dependencies in [`mj-app.json`](../mj-app.json)
+**BizApps Community** (`__mj_BizAppsCommunity`) is an AI-native community, epistemic Q&A, participatory ideation, collaborative document co-authoring, and interactive knowledge-synthesis Open App for **MemberJunction (MJ v6.3+)** built directly on top of **BizApps Collaboration** (`__mj_BizAppsCollaboration`) and **BizApps Forms** (`__mj_BizAppsForms`).
 
-`mj-bizapps-community` declares **four** hard dependencies, enabling enforced SQL `FOREIGN KEY` constraints across all core community workflows:
+### Core Design Principles
 
-| Hard Upstream Dependency | SQL Schema | Enforced SQL Foreign Keys & Capabilities in `mj-bizapps-community` |
+1. **100% Generic in the MemberJunction Way:**
+   Zero tenant-specific or client-branded terms (such as `MoreCheese`) exist in schema tables, TypeScript classes, component selectors, or metadata catalogs. Tenant and demo personas belong strictly inside optional sample seed scripts and integration tests.
+2. **Two-Axis Plug-In Extensibility (`ForumType` + `PostType`) with 100% Hard SQL Foreign Keys:**
+   - **`ForumType`** governs channel containers (`Forum`), declaring optional `ServerDriverClass`, `UIDriverClass`, and 1:1 `ExtensionEntity` (`IsA` `Forum`, such as `ForumIdeaCampaign`).
+   - **`PostType`** governs unified `ForumPost` records (both root threads and replies), declaring placement rules (`Root Only`, `Reply Only`, `Both`), optional `ServerDriverClass`, `UIDriverClass`, and 1:1 `ExtensionEntity` (`IsA` `ForumPost`).
+   - **Polymorphic Entity Links**: Posts can link to any MemberJunction entity record via `LinkedEntityID` + `LinkedRecordID`, decorated in metadata via `EntityField.EntityIDFieldName`.
+3. **Browser-Safe Shared Engine (`@mj-biz-apps/community-engine-base`):**
+   Modeled after `CollaborationEngineBase`, process-wide metadata caching (`ForumType`, `PostType`, `ForumRoleType`), O(1) lookups by ID and Code, and 4-tier configuration resolution live in a browser-safe library (`packages/EngineBase`) shared by Angular, AngularWidgets, and Server without pulling in Node/server-only dependencies.
+4. **4-Tier Hierarchical Configuration Cascade:**
+   Settings cascade deterministically across four tiers:
+   $$\text{Application Settings} \longrightarrow \text{ForumType.Configuration} \longrightarrow \text{CommunitySpace.Configuration} \longrightarrow \text{Forum.Configuration}$$
+   Overrides at forum level are strictly validated against `ForumType.Configuration.ForumOverridable`.
+5. **Living Document Co-Authoring & Interactive Component Artifacts:**
+   - Embeds live Yjs co-edited MJ Documents (`.doc.md`), Presentations (`.slides.json`), and Spreadsheets (`.sheet.json`) backed by hard FKs to `__mj.Artifact` and `__mj.ArtifactVersion`.
+   - Embeds sandboxed **MemberJunction Interactive Component Artifacts** (`@memberjunction/interactive-component-types`) for AI-generated quizzes, trivia games, calculators, and simulations with persistent score leaderboards.
+6. **Dual Human + AI Epistemic Answer Grading & Participatory Ideation:**
+   - Stack Overflow-style Q&A with weighted voting and asynchronous MJ Agent Epistemic Rubric (*Canon Verified*, *Novel Insight*, *Partially Outdated*, *Conflicts With Canon*).
+   - Ideation campaigns featuring 100-Point Wallets or Quadratic Voting ($\text{Cost} = \text{Votes}^2$) with demographic/tier slicing.
+7. **Security & Anonymous Public Access:**
+   Granular access evaluated via `fnCommunityForumAccess(@UserID)` combining Collaboration Space membership, Space open status, and forum overrides, supporting configurable anonymous reading (`None`, `Teaser Only`, `Full Read`) while shielding `Team`-band discussions unconditionally.
+
+---
+
+## 2. Upstream Dependencies & Sibling Integrations
+
+`mj-bizapps-community` declares **four** hard dependencies in `mj-app.json`:
+
+| Upstream Dependency | Schema | Integration Points |
 |---|---|---|
-| **BizApps Collaboration** (`mj-bizapps-collaboration`) | `__mj_BizAppsCollaboration` | `CommunitySpace(ID)` IsA `Space(ID)`; `Forum.SpaceID` and `ForumPost.PromotedSpaceID` reference `Space(ID)`; `ForumPostAttachment.SpaceItemID`, `ForumArtifactPost.SpaceItemID`, `ForumInteractivePost.SpaceItemID`, and `ForumPlaybook.SpaceItemID` reference `SpaceItem(ID)`; inherits `fnCollaborationAccess(@UserID)` (`Shared` vs `Team` bands). |
-| **BizApps Common** (`mj-bizapps-common`) | `__mj_BizAppsCommon` | `ForumPost.AuthorPersonID`, `ForumPostVote.VoterPersonID`, `ForumIdeaWallet.PersonID`, and `CommunityMemberProfile.PersonID` reference `Person(ID)`; `ForumIdeaWallet.OrganizationID` references `Organization(ID)` for demographic & tier slicing. |
-| **BizApps Tasks** (`mj-bizapps-tasks`) | `__mj_BizAppsTasks` | Action items extracted from discussions or created inside promoted Working Spaces land directly in `__mj_BizAppsTasks.Task(ID)`. |
-| **BizApps Forms** (`mj-bizapps-forms`) | `__mj_BizAppsForms` | `ForumFormPost(ID)` (IsA `ForumPost`) holds enforced SQL Foreign Keys to `__mj_BizAppsForms.Form(ID)` and `__mj_BizAppsForms.FormDistribution(ID)` for inline polls, pulse checks, and structured intake forms. |
+| **BizApps Collaboration** (`mj-bizapps-collaboration`) | `__mj_BizAppsCollaboration` | `CommunitySpace(ID)` IsA `Space(ID)`; `Forum.SpaceID` and `ForumPost.PromotedToSpaceID` reference `Space(ID)`; attachments and artifacts reference `SpaceItem(ID)`; reachability uses `fnCollaborationAccess(@UserID)` and `fnCollaborationSpaceStatuses()`. |
+| **BizApps Forms** (`mj-bizapps-forms`) | `__mj_BizAppsForms` | `ForumFormPost(ID)` (IsA `ForumPost`) references `Form(ID)` and `FormDistribution(ID)` with real SQL FKs for inline polls, pulse surveys, and structured questionnaire intakes. |
+| **BizApps Tasks** (`mj-bizapps-tasks`) | `__mj_BizAppsTasks` | Action items extracted from discussions or created during Space graduation link directly to `Task(ID)` via `ForumPost.LinkedTaskID`. |
+| **BizApps Common** (`__mj_BizAppsCommon`) | `__mj_BizAppsCommon` | Author attribution and member profiles reference `Person(ID)` via `ForumPost.AuthorPersonID` and `CommunityMemberProfile.PersonID`. |
+| **MemberJunction Core** (`v6.3+`) | `__mj` | User accounts (`User`), AI agents (`AIAgent`), tags (`Tag`), artifacts (`Artifact`, `ArtifactVersion`), anchored conversations (`Conversation`), and polymorphic entity records (`Entity`). |
 
-### 2.2 Optional Sibling Domains via Downstream Bridge Open Apps (`mj-bizapps-community-*`)
+### Downstream Isolation Boundary
 
-Optional enterprise domains are **never** referenced via untyped soft UUID columns in `__mj_BizAppsCommunity` (enforced in CI by [`scripts/check-downstream-names.mjs`](../scripts/check-downstream-names.mjs)). Instead, when an organization installs both Community and another BizApp, a lightweight **bridge Open App** provides the `IsA` subtype tables with **100% hard SQL Foreign Keys**:
-
-| Downstream Bridge Open App | Depends On | `IsA` Extension Tables & Hard SQL Foreign Keys |
-|---|---|---|
-| **`mj-bizapps-community-voting`** | `mj-bizapps-community` + `mj-bizapps-voting` | `ForumVotingAssembly` (`IsA` `Forum`) & `ForumBallotPost` (`IsA` `ForumPost`) with hard FKs to `__mj_BizAppsVoting.Election(ID)` and `BallotItem(ID)` (`<mj-ballot>`). |
-| **`mj-bizapps-community-issues`** | `mj-bizapps-community` + `mj-bizapps-issues` | `ForumIssuePost` (`IsA` `ForumPost`) with a hard FK to `__mj_BizAppsIssues.Issue(ID)` and two-way status/resolution webhooks. |
-| **`mj-bizapps-community-credentialing`** | `mj-bizapps-community` + `mj-bizapps-credentialing` | `ForumAccreditedSpec` (`IsA` `Forum`) & `ForumCECreditAward` with hard FKs to `__mj_BizAppsCredentialing.CredentialType(ID)` and `CreditRecord(ID)` for verified domain-expert vote weighting and CE micro-credits. |
-
-### 2.3 Why `BizApps Sonar` (`mj-bizapps-sonar`) Needs Zero Bridge Tables in Community
-
-* **`BizApps Sonar`** is an ingest and engagement-scoring engine that sits **strictly downstream** of `mj-bizapps-community`.
-* Sonar discovers `__mj_BizAppsCommunity` tables (`ForumPost`, `ForumAnswerPost`, `ForumPostVote`, `ForumIdeaAllocation`, `ForumPlaybookClone`, `ForumInteractiveSession`) dynamically at runtime through MemberJunction's core metadata (`__mj.Entity`, `ModelRelatedEntity`, `Factor`).
-* Therefore, `mj-bizapps-community` has **zero compile-time or schema references** to Sonar.
+To prevent circular dependencies and retain generic purity, **zero downstream or sibling app names** (`voting`, `issues`, `credentialing`, `sonar`, `accounting`) are permitted inside `packages/`, `metadata/`, or `migrations/` (enforced in CI by `scripts/check-downstream-names.mjs`). External domain integrations occur through dedicated downstream bridge apps (`mj-bizapps-community-voting`, `mj-bizapps-community-issues`) or runtime discovery.
 
 ---
 
-## 3. Mermaid Entity-Relationship Diagrams (ERD)
-
-### 3.1 Core `IsA` Hierarchy & Upstream Hard-FK ERD (`__mj_BizAppsCommunity`)
+## 3. Entity Architecture & ERD
 
 ```mermaid
 erDiagram
-    %% Upstream Hard Dependencies
+    %% Upstream Entities
     COLLAB_Space["__mj_BizAppsCollaboration.Space"]
     COLLAB_SpaceItem["__mj_BizAppsCollaboration.SpaceItem"]
-    COMMON_Person["__mj_BizAppsCommon.Person"]
-    COMMON_Org["__mj_BizAppsCommon.Organization"]
     FORMS_Form["__mj_BizAppsForms.Form"]
     FORMS_Dist["__mj_BizAppsForms.FormDistribution"]
-    MJ_Artifact["__mj.Artifact (Docs/Slides/Sheets & Interactive Components)"]
-    MJ_ArtifactVer["__mj.ArtifactVersion"]
+    MJ_Artifact["__mj.Artifact"]
+    MJ_ArtifactVersion["__mj.ArtifactVersion"]
+    MJ_Conversation["__mj.Conversation"]
+    MJ_Entity["__mj.Entity"]
 
-    %% Community Container Axis
-    COMM_Space["CommunitySpace (IsA Space)"]
-    COMM_ForumType["ForumType (Container Plugin Registry)"]
-    COMM_Forum["Forum (Hierarchical ParentForumID)"]
-    COMM_RoleType["ForumRoleType"]
-    COMM_MemberRole["ForumMemberRole"]
-    COMM_IdeaCampaign["ForumIdeaCampaign (IsA Forum)"]
+    %% Community Core Entities
+    CommunitySpace["CommunitySpace (IsA Space)"]
+    ForumType["ForumType"]
+    Forum["Forum"]
+    ForumIdeaCampaign["ForumIdeaCampaign (IsA Forum)"]
+    ForumRoleType["ForumRoleType"]
+    ForumMember["ForumMember"]
+    ForumTopicTag["ForumTopicTag"]
 
-    %% Unified Post Axis & IsA Subtype Tables
-    COMM_PostType["PostType (Post Plugin Registry)"]
-    COMM_Post["ForumPost (Unified Root & Reply Base)"]
-    COMM_QuestionPost["ForumQuestionPost (IsA ForumPost)"]
-    COMM_AnswerPost["ForumAnswerPost (IsA ForumPost)"]
-    COMM_IdeaPost["ForumIdeaPost (IsA ForumPost)"]
-    COMM_FormPost["ForumFormPost (IsA ForumPost)"]
-    COMM_ArtifactPost["ForumArtifactPost (IsA ForumPost)"]
-    COMM_CasePost["ForumCaseReviewPost (IsA ForumPost)"]
-    COMM_AMAPost["ForumAMAPost (IsA ForumPost)"]
-    COMM_InteractivePost["ForumInteractivePost (IsA ForumPost)"]
-    COMM_InteractiveSession["ForumInteractiveSession"]
+    %% Unified Post & Subtypes
+    PostType["PostType"]
+    ForumPost["ForumPost (Unified Base)"]
+    ForumQuestionPost["ForumQuestionPost (IsA Post)"]
+    ForumAnswerPost["ForumAnswerPost (IsA Post)"]
+    ForumIdeaPost["ForumIdeaPost (IsA Post)"]
+    ForumFormPost["ForumFormPost (IsA Post)"]
+    ForumArtifactPost["ForumArtifactPost (IsA Post)"]
+    ForumCasePost["ForumCasePost (IsA Post)"]
+    ForumAMAPost["ForumAMAPost (IsA Post)"]
+    ForumInteractivePost["ForumInteractivePost (IsA Post)"]
+    ForumInteractiveSession["ForumInteractiveSession"]
 
-    COLLAB_Space ||--|| COMM_Space : "PK/FK ID (IsA Space)"
-    COMM_Space ||--o{ COMM_Forum : "SpaceID"
-    COMM_ForumType ||--o{ COMM_Forum : "ForumTypeID"
-    COMM_ForumType ||--o{ COMM_ForumType : "BaseForumTypeID"
-    COMM_Forum ||--o{ COMM_Forum : "ParentForumID (Sub-Forums)"
-    COMM_Forum ||--|| COMM_IdeaCampaign : "PK/FK ID (IsA Forum)"
+    %% Supporting
+    ForumPostTag["ForumPostTag"]
+    ForumPostReaction["ForumPostReaction"]
+    ForumPostAttachment["ForumPostAttachment"]
+    ForumIdeaAllocation["ForumIdeaAllocation"]
+    CommunityMemberProfile["CommunityMemberProfile"]
+    ForumSubscription["ForumSubscription"]
+    ForumPostFlag["ForumPostFlag"]
 
-    COMM_Forum ||--o{ COMM_MemberRole : "ForumID"
-    COMM_RoleType ||--o{ COMM_MemberRole : "ForumRoleTypeID"
+    %% Relationships
+    COLLAB_Space ||--|| CommunitySpace : "PK/FK ID"
+    CommunitySpace ||--o{ Forum : "SpaceID"
+    ForumType ||--o{ Forum : "ForumTypeID"
+    Forum ||--o{ Forum : "ParentForumID"
+    Forum ||--|| ForumIdeaCampaign : "PK/FK ID"
+    Forum ||--o{ ForumMember : "ForumID"
+    ForumRoleType ||--o{ ForumMember : "ForumRoleTypeID"
+    CommunitySpace ||--o{ ForumTopicTag : "SpaceID"
 
-    COMM_Forum ||--o{ COMM_Post : "ForumID"
-    COMM_PostType ||--o{ COMM_Post : "PostTypeID"
-    COMM_PostType ||--o{ COMM_PostType : "BasePostTypeID"
-    COMM_Post ||--o{ COMM_Post : "ParentPostID / RootPostID"
-    COMM_Post }o--o| COLLAB_Space : "PromotedSpaceID (Hard FK)"
-    COMMON_Person ||--o{ COMM_Post : "AuthorPersonID (Hard FK)"
+    Forum ||--o{ ForumPost : "ForumID"
+    PostType ||--o{ ForumPost : "PostTypeID"
+    ForumPost ||--o{ ForumPost : "RootPostID / ParentPostID"
+    ForumPost }o--o| MJ_Entity : "LinkedEntityID"
+    ForumPost }o--o| MJ_Conversation : "ConversationID"
 
-    COMM_Post ||--|| COMM_QuestionPost : "PK/FK ID (IsA ForumPost)"
-    COMM_Post ||--|| COMM_AnswerPost : "PK/FK ID (IsA ForumPost)"
-    COMM_Post ||--|| COMM_IdeaPost : "PK/FK ID (IsA ForumPost)"
-    COMM_Post ||--|| COMM_FormPost : "PK/FK ID (IsA ForumPost)"
-    COMM_Post ||--|| COMM_ArtifactPost : "PK/FK ID (IsA ForumPost)"
-    COMM_Post ||--|| COMM_CasePost : "PK/FK ID (IsA ForumPost)"
-    COMM_Post ||--|| COMM_AMAPost : "PK/FK ID (IsA ForumPost)"
-    COMM_Post ||--|| COMM_InteractivePost : "PK/FK ID (IsA ForumPost)"
-    COMM_InteractivePost ||--o{ COMM_InteractiveSession : "InteractivePostID"
+    ForumPost ||--|| ForumQuestionPost : "PK/FK ID"
+    ForumPost ||--|| ForumAnswerPost : "PK/FK ID"
+    ForumPost ||--|| ForumIdeaPost : "PK/FK ID"
+    ForumPost ||--|| ForumFormPost : "PK/FK ID"
+    ForumPost ||--|| ForumArtifactPost : "PK/FK ID"
+    ForumPost ||--|| ForumCasePost : "PK/FK ID"
+    ForumPost ||--|| ForumAMAPost : "PK/FK ID"
+    ForumPost ||--|| ForumInteractivePost : "PK/FK ID"
 
-    FORMS_Form ||--o{ COMM_FormPost : "FormID (Hard FK)"
-    FORMS_Dist ||--o{ COMM_FormPost : "FormDistributionID (Hard FK)"
-    MJ_Artifact ||--o{ COMM_ArtifactPost : "ArtifactID (Hard FK)"
-    MJ_ArtifactVer ||--o{ COMM_ArtifactPost : "PinnedArtifactVersionID (Hard FK)"
-    COLLAB_SpaceItem ||--o{ COMM_ArtifactPost : "SpaceItemID (Hard FK)"
-    MJ_Artifact ||--o{ COMM_InteractivePost : "ComponentArtifactID (Hard FK)"
-    MJ_ArtifactVer ||--o{ COMM_InteractivePost : "PinnedArtifactVersionID (Hard FK)"
-    COLLAB_SpaceItem ||--o{ COMM_InteractivePost : "SpaceItemID (Hard FK)"
-    MJ_ArtifactVer ||--o{ COMM_InteractiveSession : "ArtifactVersionID (Hard FK)"
-    COMMON_Org ||--o{ COMMON_Person : "Affiliates"
-```
+    FORMS_Form ||--o{ ForumFormPost : "FormID"
+    FORMS_Dist ||--o{ ForumFormPost : "FormDistributionID"
+    MJ_Artifact ||--o{ ForumArtifactPost : "ArtifactID"
+    MJ_ArtifactVersion ||--o{ ForumArtifactPost : "PinnedArtifactVersionID"
+    COLLAB_SpaceItem ||--o{ ForumArtifactPost : "SpaceItemID"
 
-### 3.2 Complete Internal `__mj_BizAppsCommunity` Supporting Entities ERD
-
-```mermaid
-erDiagram
-    Forum ||--|| ForumIdeaCampaign : "PK/FK ID (IsA Forum)"
-    ForumPost ||--|| ForumQuestionPost : "PK/FK ID (IsA ForumPost)"
-    ForumPost ||--|| ForumAnswerPost : "PK/FK ID (IsA ForumPost)"
-    ForumPost ||--|| ForumIdeaPost : "PK/FK ID (IsA ForumPost)"
-
-    ForumIdeaCampaign ||--o{ ForumIdeaWallet : "CampaignForumID"
-    ForumIdeaCampaign ||--o{ ForumIdeaPost : "CampaignForumID"
-    ForumIdeaWallet ||--o{ ForumIdeaAllocation : "WalletID"
-    ForumIdeaPost ||--o{ ForumIdeaAllocation : "IdeaPostID"
+    MJ_Artifact ||--o{ ForumInteractivePost : "ComponentArtifactID"
+    MJ_ArtifactVersion ||--o{ ForumInteractivePost : "PinnedArtifactVersionID"
+    ForumInteractivePost ||--o{ ForumInteractiveSession : "InteractivePostID"
 
     ForumPost ||--o{ ForumPostTag : "PostID"
-    ForumTag ||--o{ ForumPostTag : "TagID"
-    ForumPost ||--o{ ForumPostVote : "PostID (+1 / -1)"
-    ForumPost ||--o{ ForumReaction : "PostID"
+    ForumPost ||--o{ ForumPostReaction : "PostID"
     ForumPost ||--o{ ForumPostAttachment : "PostID"
-    ForumPost ||--o{ ForumBounty : "QuestionPostID / AwardedToPostID"
-    ForumPost ||--o{ ForumPlaybook : "OriginPostID"
-    ForumPlaybook ||--o{ ForumPlaybook : "ParentPlaybookID (Forks)"
-    ForumPlaybook ||--o{ ForumPlaybookClone : "PlaybookID"
-    ForumPost ||--o{ ForumPostFollow : "RootPostID"
-    ForumPost ||--o{ ForumModerationFlag : "PostID"
-    CommunityMemberProfile ||--o{ CommunityReputationEvent : "UserID + SpaceID"
-```
-
-### 3.3 Downstream Bridge Open Apps ERD (100% Hard SQL Foreign Keys)
-
-```mermaid
-erDiagram
-    %% Community Core
-    COMM_Forum["__mj_BizAppsCommunity.Forum"]
-    COMM_Post["__mj_BizAppsCommunity.ForumPost"]
-
-    %% Sibling BizApps
-    VOTING_Election["__mj_BizAppsVoting.Election"]
-    VOTING_Contest["__mj_BizAppsVoting.Contest"]
-    ISSUES_Issue["__mj_BizAppsIssues.Issue"]
-    CRED_Type["__mj_BizAppsCredentialing.CredentialType"]
-    CRED_Record["__mj_BizAppsCredentialing.CreditRecord"]
-
-    %% Bridge App 1: mj-bizapps-community-voting
-    BRIDGE_VoteForum["ForumVotingAssembly (IsA Forum)"]
-    BRIDGE_BallotPost["ForumBallotPost (IsA ForumPost)"]
-
-    %% Bridge App 2: mj-bizapps-community-issues
-    BRIDGE_IssuePost["ForumIssuePost (IsA ForumPost)"]
-
-    %% Bridge App 3: mj-bizapps-community-credentialing
-    BRIDGE_AccredForum["ForumAccreditedSpec (IsA Forum)"]
-    BRIDGE_CEAward["ForumCECreditAward"]
-
-    COMM_Forum ||--|| BRIDGE_VoteForum : "PK/FK ID (IsA Forum)"
-    BRIDGE_VoteForum }o--o| VOTING_Election : "DefaultElectionID (Hard FK)"
-    COMM_Post ||--|| BRIDGE_BallotPost : "PK/FK ID (IsA ForumPost)"
-    BRIDGE_BallotPost }o--|| VOTING_Election : "ElectionID (Hard FK)"
-    BRIDGE_BallotPost }o--o| VOTING_Contest : "ContestID (Hard FK)"
-
-    COMM_Post ||--|| BRIDGE_IssuePost : "PK/FK ID (IsA ForumPost)"
-    BRIDGE_IssuePost }o--|| ISSUES_Issue : "IssueID (Hard FK)"
-
-    COMM_Forum ||--|| BRIDGE_AccredForum : "PK/FK ID (IsA Forum)"
-    BRIDGE_AccredForum }o--|| CRED_Type : "CredentialTypeID (Hard FK)"
-    COMM_Post ||--o{ BRIDGE_CEAward : "AnswerPostID (Hard FK)"
-    BRIDGE_CEAward }o--|| CRED_Record : "CreditRecordID (Hard FK)"
+    ForumIdeaPost ||--o{ ForumIdeaAllocation : "IdeaPostID"
+    ForumPost ||--o{ ForumPostFlag : "PostID"
 ```
 
 ---
 
-## 4. Full Production SQL Schema Specification (`migrations/B202611060000__v0.1.x__Baseline.sql`)
+## 4. Physical Schema Specification
 
-Below is the complete baseline DDL for schema `__mj_BizAppsCommunity` (29 tables total: 19 core & governance tables + 10 `IsA` subtype & interactive session tables). Every relationship uses a **hard SQL `FOREIGN KEY` constraint**—zero untyped polymorphic soft keys.
+### System Columns & Collation Standard
+Every physical table defines:
+- `COLLATE SQL_Latin1_General_CP1_CI_AS` on all character columns (`NVARCHAR`, `VARCHAR`).
+- `[__mj_CreatedAt] DATETIMEOFFSET NOT NULL CONSTRAINT [DF_<table>___mj_CreatedAt] DEFAULT (SYSDATETIMEOFFSET())`
+- `[__mj_UpdatedAt] DATETIMEOFFSET NOT NULL CONSTRAINT [DF_<table>___mj_UpdatedAt] DEFAULT (SYSDATETIMEOFFSET())`
 
-```sql
-IF NOT EXISTS (SELECT 1 FROM sys.schemas WHERE name = N'${flyway:defaultSchema}')
-    EXEC('CREATE SCHEMA [${flyway:defaultSchema}]');
-GO
+### Canonical Entity Table Inventory
 
--- ============================================================================
--- 1. CommunitySpace (1:1 IsA Extension of __mj_BizAppsCollaboration.Space)
--- ============================================================================
-CREATE TABLE [${flyway:defaultSchema}].[CommunitySpace] (
-    [ID] UNIQUEIDENTIFIER NOT NULL,
-    [Slug] NVARCHAR(120) NOT NULL,
-    [CommunityKind] NVARCHAR(30) NOT NULL CONSTRAINT [DF_CommunitySpace_Kind] DEFAULT (N'AssociationWide'),
-    [AnonymousAccessMode] NVARCHAR(20) NOT NULL CONSTRAINT [DF_CommunitySpace_AnonMode] DEFAULT (N'None'),
-    [AllowAnonymousSearch] BIT NOT NULL CONSTRAINT [DF_CommunitySpace_AnonSearch] DEFAULT (0),
-    [RequireLoginPromptAfterPosts] INT NOT NULL CONSTRAINT [DF_CommunitySpace_TeaserCount] DEFAULT (3),
-    [DefaultDigestFrequency] NVARCHAR(20) NOT NULL CONSTRAINT [DF_CommunitySpace_Digest] DEFAULT (N'Daily'),
-    [InboundEmailDomain] NVARCHAR(255) NULL,
-    [Configuration] NVARCHAR(MAX) NULL, -- Level 3 JSON overrides in 4-level settings cascade
-    CONSTRAINT [PK_CommunitySpace] PRIMARY KEY CLUSTERED ([ID]),
-    CONSTRAINT [UQ_CommunitySpace_Slug] UNIQUE NONCLUSTERED ([Slug]),
-    CONSTRAINT [FK_CommunitySpace_Space] FOREIGN KEY ([ID]) REFERENCES [__mj_BizAppsCollaboration].[Space]([ID]),
-    CONSTRAINT [CK_CommunitySpace_Kind] CHECK ([CommunityKind] IN (
-        N'AssociationWide', N'Chapter', N'SpecialInterestGroup', N'Cohort', N'ProductCommunity', N'WorkingGroup'
-    )),
-    CONSTRAINT [CK_CommunitySpace_AnonMode] CHECK ([AnonymousAccessMode] IN (N'None', N'TeaserOnly', N'FullRead')),
-    CONSTRAINT [CK_CommunitySpace_Digest] CHECK ([DefaultDigestFrequency] IN (N'None', N'Daily', N'Weekly', N'Realtime'))
-);
-GO
-
--- ============================================================================
--- 2. ForumType (Extensible Forum Container Plug-In Registry)
--- ============================================================================
-CREATE TABLE [${flyway:defaultSchema}].[ForumType] (
-    [ID] UNIQUEIDENTIFIER NOT NULL CONSTRAINT [DF_ForumType_ID] DEFAULT (NEWSEQUENTIALID()),
-    [Code] NVARCHAR(100) NOT NULL,
-    [Name] NVARCHAR(100) NOT NULL,
-    [Description] NVARCHAR(MAX) NULL,
-    [Icon] NVARCHAR(100) NULL,
-    [ExtensionEntity] NVARCHAR(255) NULL,      -- MJ Entity name of 1:1 IsA child table off Forum
-    [ServerDriverClass] NVARCHAR(200) NULL,    -- @RegisterClass(BaseForumServerDriver, '<Key>')
-    [UIDriverClass] NVARCHAR(200) NULL,        -- @RegisterClass(BaseForumUIDriver, '<Key>')
-    [Configuration] NVARCHAR(MAX) NULL,        -- Level 2 JSON defaults (allowed PostTypes & feature switches)
-    [Sequence] INT NOT NULL CONSTRAINT [DF_ForumType_Sequence] DEFAULT (0),
-    [IsActive] BIT NOT NULL CONSTRAINT [DF_ForumType_IsActive] DEFAULT (1),
-    CONSTRAINT [PK_ForumType] PRIMARY KEY CLUSTERED ([ID]),
-    CONSTRAINT [UQ_ForumType_Code] UNIQUE NONCLUSTERED ([Code]),
-    CONSTRAINT [UQ_ForumType_Name] UNIQUE NONCLUSTERED ([Name])
-);
-GO
-
--- ============================================================================
--- 3. Forum (Hierarchical Forum / Sub-Forum Containers)
--- ============================================================================
-CREATE TABLE [${flyway:defaultSchema}].[Forum] (
-    [ID] UNIQUEIDENTIFIER NOT NULL CONSTRAINT [DF_Forum_ID] DEFAULT (NEWSEQUENTIALID()),
-    [SpaceID] UNIQUEIDENTIFIER NOT NULL,
-    [ParentForumID] UNIQUEIDENTIFIER NULL,
-    [ForumTypeID] UNIQUEIDENTIFIER NOT NULL,
-    [Name] NVARCHAR(200) NOT NULL,
-    [Slug] NVARCHAR(120) NOT NULL,
-    [Description] NVARCHAR(MAX) NULL,
-    [Icon] NVARCHAR(100) NULL,
-    [ColorHex] NVARCHAR(20) NULL,
-    [VisibilityBand] NVARCHAR(20) NOT NULL CONSTRAINT [DF_Forum_Band] DEFAULT (N'Shared'),
-    [AnonymousReadMode] NVARCHAR(30) NULL,
-    [InheritsSpaceMembers] BIT NOT NULL CONSTRAINT [DF_Forum_Inherits] DEFAULT (1),
-    [PostingPolicy] NVARCHAR(30) NOT NULL CONSTRAINT [DF_Forum_Policy] DEFAULT (N'Open'),
-    [Configuration] NVARCHAR(MAX) NULL, -- Level 4 JSON overrides (filtered through ForumOverridable)
-    [Sequence] INT NOT NULL CONSTRAINT [DF_Forum_Sequence] DEFAULT (0),
-    [Status] NVARCHAR(30) NOT NULL CONSTRAINT [DF_Forum_Status] DEFAULT (N'Active'),
-    CONSTRAINT [PK_Forum] PRIMARY KEY CLUSTERED ([ID]),
-    CONSTRAINT [UQ_Forum_Space_Slug] UNIQUE NONCLUSTERED ([SpaceID], [Slug]),
-    CONSTRAINT [FK_Forum_Space] FOREIGN KEY ([SpaceID]) REFERENCES [${flyway:defaultSchema}].[CommunitySpace]([ID]),
-    CONSTRAINT [FK_Forum_ParentForum] FOREIGN KEY ([ParentForumID]) REFERENCES [${flyway:defaultSchema}].[Forum]([ID]),
-    CONSTRAINT [FK_Forum_ForumType] FOREIGN KEY ([ForumTypeID]) REFERENCES [${flyway:defaultSchema}].[ForumType]([ID]),
-    CONSTRAINT [CK_Forum_Band] CHECK ([VisibilityBand] IN (N'Shared', N'Team', N'PrivateForum')),
-    CONSTRAINT [CK_Forum_AnonOverride] CHECK ([AnonymousReadMode] IS NULL OR [AnonymousReadMode] IN (N'None', N'Teaser Only', N'Full Read'))
-);
-GO
-
--- ============================================================================
--- 4. ForumIdeaCampaign (1:1 IsA Extension of Forum for Ideation & Roadmaps)
--- ============================================================================
-CREATE TABLE [${flyway:defaultSchema}].[ForumIdeaCampaign] (
-    [ID] UNIQUEIDENTIFIER NOT NULL,
-    [VotingMechanism] NVARCHAR(30) NOT NULL CONSTRAINT [DF_ForumIdeaCampaign_Mech] DEFAULT (N'PointAllocation'),
-    [PointsBudgetPerUser] INT NOT NULL CONSTRAINT [DF_ForumIdeaCampaign_Budget] DEFAULT (100),
-    [MaxPointsPerIdea] INT NULL,
-    [RefundPointsOnShipped] BIT NOT NULL CONSTRAINT [DF_ForumIdeaCampaign_Refund] DEFAULT (1),
-    [WeightBySegmentMode] NVARCHAR(30) NOT NULL CONSTRAINT [DF_ForumIdeaCampaign_Weight] DEFAULT (N'EqualOnePersonOneBudget'),
-    [CampaignStatus] NVARCHAR(30) NOT NULL CONSTRAINT [DF_ForumIdeaCampaign_Status] DEFAULT (N'VotingOpen'),
-    [OpensAt] DATETIMEOFFSET(7) NULL,
-    [ClosesAt] DATETIMEOFFSET(7) NULL,
-    CONSTRAINT [PK_ForumIdeaCampaign] PRIMARY KEY CLUSTERED ([ID]),
-    CONSTRAINT [FK_ForumIdeaCampaign_Forum] FOREIGN KEY ([ID]) REFERENCES [${flyway:defaultSchema}].[Forum]([ID]),
-    CONSTRAINT [CK_ForumIdeaCampaign_Mech] CHECK ([VotingMechanism] IN (N'PointAllocation', N'Quadratic', N'Approval')),
-    CONSTRAINT [CK_ForumIdeaCampaign_Weight] CHECK ([WeightBySegmentMode] IN (N'EqualOnePersonOneBudget', N'TierWeighted', N'CredentialWeighted')),
-    CONSTRAINT [CK_ForumIdeaCampaign_Status] CHECK ([CampaignStatus] IN (N'Draft', N'OpenForSubmissions', N'VotingOpen', N'Closed', N'Archived')),
-    CONSTRAINT [CK_ForumIdeaCampaign_BudgetPositive] CHECK ([PointsBudgetPerUser] > 0)
-);
-GO
-
--- ============================================================================
--- 5. ForumRoleType & 6. ForumMemberRole (Per-Forum Participant Roles)
--- ============================================================================
-CREATE TABLE [${flyway:defaultSchema}].[ForumRoleType] (
-    [ID] UNIQUEIDENTIFIER NOT NULL CONSTRAINT [DF_ForumRoleType_ID] DEFAULT (NEWSEQUENTIALID()),
-    [Name] NVARCHAR(100) NOT NULL,
-    [DisplayName] NVARCHAR(100) NOT NULL,
-    [Description] NVARCHAR(500) NULL,
-    [CanPinOrLock] BIT NOT NULL CONSTRAINT [DF_ForumRoleType_Pin] DEFAULT (0),
-    [CanModerateQueue] BIT NOT NULL CONSTRAINT [DF_ForumRoleType_Mod] DEFAULT (0),
-    [CanVerifyCanon] BIT NOT NULL CONSTRAINT [DF_ForumRoleType_Canon] DEFAULT (0),
-    [CanPromoteToSpace] BIT NOT NULL CONSTRAINT [DF_ForumRoleType_Promote] DEFAULT (0),
-    [CanConfigureForum] BIT NOT NULL CONSTRAINT [DF_ForumRoleType_Config] DEFAULT (0),
-    [VoteWeightMultiplier] DECIMAL(5,2) NOT NULL CONSTRAINT [DF_ForumRoleType_Weight] DEFAULT (1.00),
-    CONSTRAINT [PK_ForumRoleType] PRIMARY KEY CLUSTERED ([ID]),
-    CONSTRAINT [UQ_ForumRoleType_Name] UNIQUE NONCLUSTERED ([Name])
-);
-GO
-
-CREATE TABLE [${flyway:defaultSchema}].[ForumMemberRole] (
-    [ID] UNIQUEIDENTIFIER NOT NULL CONSTRAINT [DF_ForumMemberRole_ID] DEFAULT (NEWSEQUENTIALID()),
-    [ForumID] UNIQUEIDENTIFIER NOT NULL,
-    [UserID] UNIQUEIDENTIFIER NOT NULL,
-    [PersonID] UNIQUEIDENTIFIER NULL,
-    [ForumRoleTypeID] UNIQUEIDENTIFIER NOT NULL,
-    [InheritsToSubForums] BIT NOT NULL CONSTRAINT [DF_ForumMemberRole_Inherit] DEFAULT (1),
-    [GrantedByUserID] UNIQUEIDENTIFIER NULL,
-    [ExpiresAt] DATETIMEOFFSET(7) NULL,
-    CONSTRAINT [PK_ForumMemberRole] PRIMARY KEY CLUSTERED ([ID]),
-    CONSTRAINT [UQ_ForumMemberRole_Forum_User_Role] UNIQUE NONCLUSTERED ([ForumID], [UserID], [ForumRoleTypeID]),
-    CONSTRAINT [FK_ForumMemberRole_Forum] FOREIGN KEY ([ForumID]) REFERENCES [${flyway:defaultSchema}].[Forum]([ID]),
-    CONSTRAINT [FK_ForumMemberRole_User] FOREIGN KEY ([UserID]) REFERENCES [__mj].[User]([ID]),
-    CONSTRAINT [FK_ForumMemberRole_Person] FOREIGN KEY ([PersonID]) REFERENCES [__mj_BizAppsCommon].[Person]([ID]),
-    CONSTRAINT [FK_ForumMemberRole_RoleType] FOREIGN KEY ([ForumRoleTypeID]) REFERENCES [${flyway:defaultSchema}].[ForumRoleType]([ID]),
-    CONSTRAINT [FK_ForumMemberRole_GrantedBy] FOREIGN KEY ([GrantedByUserID]) REFERENCES [__mj].[User]([ID])
-);
-GO
-
--- ============================================================================
--- 7. PostType (Extensible Post Plug-In Registry — Root, Reply, or Both)
--- ============================================================================
-CREATE TABLE [${flyway:defaultSchema}].[PostType] (
-    [ID] UNIQUEIDENTIFIER NOT NULL CONSTRAINT [DF_PostType_ID] DEFAULT (NEWSEQUENTIALID()),
-    [Name] NVARCHAR(100) NOT NULL,
-    [DisplayName] NVARCHAR(100) NOT NULL,
-    [Description] NVARCHAR(MAX) NULL,
-    [IconClass] NVARCHAR(100) NULL,
-    [BasePostTypeID] UNIQUEIDENTIFIER NULL,
-    [AllowedPlacement] NVARCHAR(20) NOT NULL CONSTRAINT [DF_PostType_Placement] DEFAULT (N'Both'),
-    [PostExtensionEntity] NVARCHAR(255) NULL, -- MJ Entity name of 1:1 IsA child table off ForumPost
-    [ServerDriverClass] NVARCHAR(255) NULL,   -- @RegisterClass(BasePostServerDriver, '<Key>')
-    [UIDriverClass] NVARCHAR(255) NULL,       -- @RegisterClass(BasePostUIDriver, '<Key>')
-    [DefaultReplyPostTypeID] UNIQUEIDENTIFIER NULL,
-    [Configuration] NVARCHAR(MAX) NULL,
-    [IsSystem] BIT NOT NULL CONSTRAINT [DF_PostType_IsSystem] DEFAULT (0),
-    [IsActive] BIT NOT NULL CONSTRAINT [DF_PostType_IsActive] DEFAULT (1),
-    CONSTRAINT [PK_PostType] PRIMARY KEY CLUSTERED ([ID]),
-    CONSTRAINT [UQ_PostType_Name] UNIQUE NONCLUSTERED ([Name]),
-    CONSTRAINT [FK_PostType_BasePostType] FOREIGN KEY ([BasePostTypeID]) REFERENCES [${flyway:defaultSchema}].[PostType]([ID]),
-    CONSTRAINT [FK_PostType_DefaultReplyPostType] FOREIGN KEY ([DefaultReplyPostTypeID]) REFERENCES [${flyway:defaultSchema}].[PostType]([ID]),
-    CONSTRAINT [CK_PostType_Placement] CHECK ([AllowedPlacement] IN (N'RootOnly', N'ReplyOnly', N'Both'))
-);
-GO
-
--- ============================================================================
--- 8. ForumPost (Unified Root & Reply Base Entity — Root of Post IsA Hierarchy)
--- ============================================================================
-CREATE TABLE [${flyway:defaultSchema}].[ForumPost] (
-    [ID] UNIQUEIDENTIFIER NOT NULL CONSTRAINT [DF_ForumPost_ID] DEFAULT (NEWSEQUENTIALID()),
-    [SpaceID] UNIQUEIDENTIFIER NOT NULL,
-    [ForumID] UNIQUEIDENTIFIER NOT NULL,
-    [PostTypeID] UNIQUEIDENTIFIER NOT NULL,
-    [RootPostID] UNIQUEIDENTIFIER NULL,   -- NULL when this post is a root thread post
-    [ParentPostID] UNIQUEIDENTIFIER NULL, -- NULL when this post is a root thread post
-    [AuthorUserID] UNIQUEIDENTIFIER NOT NULL,
-    [AuthorPersonID] UNIQUEIDENTIFIER NULL,
-    [Title] NVARCHAR(300) NULL,           -- Populated for root posts and titled artifacts/forms
-    [Slug] NVARCHAR(220) NULL,
-    [BodyMarkdown] NVARCHAR(MAX) NOT NULL,
-    [BodyPlainText] NVARCHAR(MAX) NULL,
-    [Band] NVARCHAR(20) NOT NULL CONSTRAINT [DF_ForumPost_Band] DEFAULT (N'Shared'),
-    [Status] NVARCHAR(30) NOT NULL CONSTRAINT [DF_ForumPost_Status] DEFAULT (N'Open'),
-    [PostedVia] NVARCHAR(20) NOT NULL CONSTRAINT [DF_ForumPost_Via] DEFAULT (N'Web'),
-    [IsPinned] BIT NOT NULL CONSTRAINT [DF_ForumPost_Pinned] DEFAULT (0),
-    [PinScope] NVARCHAR(20) NOT NULL CONSTRAINT [DF_ForumPost_PinScope] DEFAULT (N'None'),
-    [PinnedUntil] DATETIMEOFFSET(7) NULL,
-    [IsLowSignalNoise] BIT NOT NULL CONSTRAINT [DF_ForumPost_LowSignal] DEFAULT (0),
-    [ReplyCount] INT NOT NULL CONSTRAINT [DF_ForumPost_ReplyCount] DEFAULT (0),
-    [ParticipantCount] INT NOT NULL CONSTRAINT [DF_ForumPost_PartCount] DEFAULT (1),
-    [ViewCount] INT NOT NULL CONSTRAINT [DF_ForumPost_ViewCount] DEFAULT (0),
-    [AnonymousViewCount] INT NOT NULL CONSTRAINT [DF_ForumPost_AnonViews] DEFAULT (0),
-    [UpvoteCount] INT NOT NULL CONSTRAINT [DF_ForumPost_Upvotes] DEFAULT (0),
-    [DownvoteCount] INT NOT NULL CONSTRAINT [DF_ForumPost_Downvotes] DEFAULT (0),
-    [NetVoteScore] INT NOT NULL CONSTRAINT [DF_ForumPost_NetVotes] DEFAULT (0),
-    [ExpertWeightedScore] DECIMAL(12,2) NOT NULL CONSTRAINT [DF_ForumPost_ExpScore] DEFAULT (0),
-    [BridgingConsensusScore] DECIMAL(8,4) NULL,
-    [HotnessScore] DECIMAL(18,6) NOT NULL CONSTRAINT [DF_ForumPost_Hotness] DEFAULT (0),
-    [AISummary] NVARCHAR(MAX) NULL,
-    [AIConsensusJSON] NVARCHAR(MAX) NULL,
-    [AISummaryUpdatedAt] DATETIMEOFFSET(7) NULL,
-    [AISummaryReplyWatermark] INT NOT NULL CONSTRAINT [DF_ForumPost_Watermark] DEFAULT (0),
-    [PromotedSpaceID] UNIQUEIDENTIFIER NULL,
-    [ModerationStatus] NVARCHAR(30) NOT NULL CONSTRAINT [DF_ForumPost_ModStatus] DEFAULT (N'Visible'),
-    [LastActivityAt] DATETIMEOFFSET(7) NOT NULL CONSTRAINT [DF_ForumPost_LastAct] DEFAULT (SYSDATETIMEOFFSET()),
-    [EditedAt] DATETIMEOFFSET(7) NULL,
-    [EditedByUserID] UNIQUEIDENTIFIER NULL,
-    [EditReason] NVARCHAR(300) NULL,
-    CONSTRAINT [PK_ForumPost] PRIMARY KEY CLUSTERED ([ID]),
-    CONSTRAINT [FK_ForumPost_Space] FOREIGN KEY ([SpaceID]) REFERENCES [__mj_BizAppsCollaboration].[Space]([ID]),
-    CONSTRAINT [FK_ForumPost_Forum] FOREIGN KEY ([ForumID]) REFERENCES [${flyway:defaultSchema}].[Forum]([ID]),
-    CONSTRAINT [FK_ForumPost_PostType] FOREIGN KEY ([PostTypeID]) REFERENCES [${flyway:defaultSchema}].[PostType]([ID]),
-    CONSTRAINT [FK_ForumPost_RootPost] FOREIGN KEY ([RootPostID]) REFERENCES [${flyway:defaultSchema}].[ForumPost]([ID]),
-    CONSTRAINT [FK_ForumPost_ParentPost] FOREIGN KEY ([ParentPostID]) REFERENCES [${flyway:defaultSchema}].[ForumPost]([ID]),
-    CONSTRAINT [FK_ForumPost_AuthorUser] FOREIGN KEY ([AuthorUserID]) REFERENCES [__mj].[User]([ID]),
-    CONSTRAINT [FK_ForumPost_AuthorPerson] FOREIGN KEY ([AuthorPersonID]) REFERENCES [__mj_BizAppsCommon].[Person]([ID]),
-    CONSTRAINT [FK_ForumPost_PromotedSpace] FOREIGN KEY ([PromotedSpaceID]) REFERENCES [__mj_BizAppsCollaboration].[Space]([ID]),
-    CONSTRAINT [FK_ForumPost_EditedBy] FOREIGN KEY ([EditedByUserID]) REFERENCES [__mj].[User]([ID]),
-    CONSTRAINT [CK_ForumPost_Band] CHECK ([Band] IN (N'Shared', N'Team')),
-    CONSTRAINT [CK_ForumPost_Status] CHECK ([Status] IN (
-        N'Open', N'Answered', N'UnderReview', N'Planned', N'InWorkingSpace', N'Shipped', N'Resolved', N'Archived', N'Locked'
-    )),
-    CONSTRAINT [CK_ForumPost_PinScope] CHECK ([PinScope] IN (N'None', N'Forum', N'Space')),
-    CONSTRAINT [CK_ForumPost_Via] CHECK ([PostedVia] IN (N'Web', N'Mobile', N'EmailReply', N'Agent', N'MigratedImport')),
-    CONSTRAINT [CK_ForumPost_ModStatus] CHECK ([ModerationStatus] IN (
-        N'Visible', N'CollapsedByCommunity', N'PendingModeration', N'QuarantinedByAI', N'RemovedByModerator'
-    ))
-);
-GO
-
--- ============================================================================
--- 9. ForumQuestionPost (1:1 IsA ForumPost — Root Q&A Question Extension)
--- ============================================================================
-CREATE TABLE [${flyway:defaultSchema}].[ForumQuestionPost] (
-    [ID] UNIQUEIDENTIFIER NOT NULL,
-    [AcceptedAnswerPostID] UNIQUEIDENTIFIER NULL,
-    [AIVerifiedAnswerPostID] UNIQUEIDENTIFIER NULL,
-    [QuestionUrgency] NVARCHAR(20) NOT NULL CONSTRAINT [DF_ForumQuestionPost_Urgency] DEFAULT (N'Normal'),
-    [RequiredDomainTag] NVARCHAR(100) NULL,
-    [HasActiveBounty] BIT NOT NULL CONSTRAINT [DF_ForumQuestionPost_Bounty] DEFAULT (0),
-    CONSTRAINT [PK_ForumQuestionPost] PRIMARY KEY CLUSTERED ([ID]),
-    CONSTRAINT [FK_ForumQuestionPost_Post] FOREIGN KEY ([ID]) REFERENCES [${flyway:defaultSchema}].[ForumPost]([ID]),
-    CONSTRAINT [FK_ForumQuestionPost_AcceptedAnswer] FOREIGN KEY ([AcceptedAnswerPostID]) REFERENCES [${flyway:defaultSchema}].[ForumPost]([ID]),
-    CONSTRAINT [FK_ForumQuestionPost_AIVerifiedAnswer] FOREIGN KEY ([AIVerifiedAnswerPostID]) REFERENCES [${flyway:defaultSchema}].[ForumPost]([ID]),
-    CONSTRAINT [CK_ForumQuestionPost_Urgency] CHECK ([QuestionUrgency] IN (N'Normal', N'TimeSensitive', N'ComplianceCritical'))
-);
-GO
-
--- ============================================================================
--- 10. ForumAnswerPost (1:1 IsA ForumPost — Graded Q&A Answer Extension)
--- ============================================================================
-CREATE TABLE [${flyway:defaultSchema}].[ForumAnswerPost] (
-    [ID] UNIQUEIDENTIFIER NOT NULL,
-    [QuestionPostID] UNIQUEIDENTIFIER NOT NULL,
-    [IsAcceptedByAuthor] BIT NOT NULL CONSTRAINT [DF_ForumAnswerPost_Accepted] DEFAULT (0),
-    [IsVerifiedByModerator] BIT NOT NULL CONSTRAINT [DF_ForumAnswerPost_Verified] DEFAULT (0),
-    [VerifiedByUserID] UNIQUEIDENTIFIER NULL,
-    [VerifiedAt] DATETIMEOFFSET(7) NULL,
-    [AIEpistemicStatus] NVARCHAR(40) NULL,
-    [AIConfidenceScore] DECIMAL(4,3) NULL,
-    [AIRationaleMarkdown] NVARCHAR(MAX) NULL,
-    [FreshnessReviewDueAt] DATETIMEOFFSET(7) NULL,
-    CONSTRAINT [PK_ForumAnswerPost] PRIMARY KEY CLUSTERED ([ID]),
-    CONSTRAINT [FK_ForumAnswerPost_Post] FOREIGN KEY ([ID]) REFERENCES [${flyway:defaultSchema}].[ForumPost]([ID]),
-    CONSTRAINT [FK_ForumAnswerPost_QuestionPost] FOREIGN KEY ([QuestionPostID]) REFERENCES [${flyway:defaultSchema}].[ForumQuestionPost]([ID]),
-    CONSTRAINT [FK_ForumAnswerPost_VerifiedByUser] FOREIGN KEY ([VerifiedByUserID]) REFERENCES [${mjSchema}].[User]([ID]),
-    CONSTRAINT [CK_ForumAnswerPost_EpistemicStatus] CHECK ([AIEpistemicStatus] IS NULL OR [AIEpistemicStatus] IN (
-        N'Canon Verified', N'Novel Insight', N'Partially Outdated', N'Conflicts With Canon'
-    ))
-);
-GO
-
--- ============================================================================
--- 11. ForumIdeaPost (1:1 IsA ForumPost — Ideation & Feature Proposal Extension)
--- ============================================================================
-CREATE TABLE [${flyway:defaultSchema}].[ForumIdeaPost] (
-    [ID] UNIQUEIDENTIFIER NOT NULL,
-    [CampaignForumID] UNIQUEIDENTIFIER NOT NULL,
-    [IdeaStatus] NVARCHAR(30) NOT NULL CONSTRAINT [DF_ForumIdeaPost_Status] DEFAULT (N'UnderConsideration'),
-    [TotalPointsAllocated] INT NOT NULL CONSTRAINT [DF_ForumIdeaPost_Points] DEFAULT (0),
-    [UniqueAllocatorCount] INT NOT NULL CONSTRAINT [DF_ForumIdeaPost_Allocators] DEFAULT (0),
-    [QuadraticEffectiveScore] DECIMAL(12,4) NOT NULL CONSTRAINT [DF_ForumIdeaPost_QuadScore] DEFAULT (0),
-    [TargetReleaseLabel] NVARCHAR(80) NULL,
-    [OfficialResponseMarkdown] NVARCHAR(MAX) NULL,
-    CONSTRAINT [PK_ForumIdeaPost] PRIMARY KEY CLUSTERED ([ID]),
-    CONSTRAINT [FK_ForumIdeaPost_Post] FOREIGN KEY ([ID]) REFERENCES [${flyway:defaultSchema}].[ForumPost]([ID]),
-    CONSTRAINT [FK_ForumIdeaPost_Campaign] FOREIGN KEY ([CampaignForumID]) REFERENCES [${flyway:defaultSchema}].[ForumIdeaCampaign]([ID]),
-    CONSTRAINT [CK_ForumIdeaPost_Status] CHECK ([IdeaStatus] IN (
-        N'UnderConsideration', N'NeedsMoreDetail', N'Planned', N'InDevelopment', N'Shipped', N'Declined'
-    ))
-);
-GO
-
--- ============================================================================
--- 12. ForumFormPost (1:1 IsA ForumPost — Hard FK to BizApps Forms)
--- ============================================================================
-CREATE TABLE [${flyway:defaultSchema}].[ForumFormPost] (
-    [ID] UNIQUEIDENTIFIER NOT NULL,
-    [FormID] UNIQUEIDENTIFIER NOT NULL,
-    [FormDistributionID] UNIQUEIDENTIFIER NULL,
-    [PresentationMode] NVARCHAR(30) NOT NULL CONSTRAINT [DF_ForumFormPost_Mode] DEFAULT (N'InlinePollCard'),
-    [ResultVisibility] NVARCHAR(30) NOT NULL CONSTRAINT [DF_ForumFormPost_Vis] DEFAULT (N'AfterSubmission'),
-    [AllowMultipleSubmissions] BIT NOT NULL CONSTRAINT [DF_ForumFormPost_Multi] DEFAULT (0),
-    [ClosesAt] DATETIMEOFFSET(7) NULL,
-    CONSTRAINT [PK_ForumFormPost] PRIMARY KEY CLUSTERED ([ID]),
-    CONSTRAINT [FK_ForumFormPost_Post] FOREIGN KEY ([ID]) REFERENCES [${flyway:defaultSchema}].[ForumPost]([ID]),
-    CONSTRAINT [FK_ForumFormPost_Form] FOREIGN KEY ([FormID]) REFERENCES [__mj_BizAppsForms].[Form]([ID]),
-    CONSTRAINT [FK_ForumFormPost_Distribution] FOREIGN KEY ([FormDistributionID]) REFERENCES [__mj_BizAppsForms].[FormDistribution]([ID]),
-    CONSTRAINT [CK_ForumFormPost_Mode] CHECK ([PresentationMode] IN (N'InlinePollCard', N'FullWizard', N'ModalIntake')),
-    CONSTRAINT [CK_ForumFormPost_Vis] CHECK ([ResultVisibility] IN (N'AlwaysLive', N'AfterSubmission', N'AfterClose', N'ModeratorsOnly'))
-);
-GO
-
--- ============================================================================
--- 13. ForumArtifactPost (1:1 IsA ForumPost — MJ Core Docs, Slides & Sheets PR #6215)
--- ============================================================================
-CREATE TABLE [${flyway:defaultSchema}].[ForumArtifactPost] (
-    [ID] UNIQUEIDENTIFIER NOT NULL,
-    [ArtifactID] UNIQUEIDENTIFIER NOT NULL,
-    [PinnedArtifactVersionID] UNIQUEIDENTIFIER NULL,
-    [SpaceItemID] UNIQUEIDENTIFIER NULL,
-    [ArtifactKind] NVARCHAR(30) NOT NULL CONSTRAINT [DF_ForumArtifactPost_Kind] DEFAULT (N'Document'),
-    [CoEditPermissionMode] NVARCHAR(30) NOT NULL CONSTRAINT [DF_ForumArtifactPost_CoEdit] DEFAULT (N'HighTrustMembers'),
-    [EnableInlinePassageThreads] BIT NOT NULL CONSTRAINT [DF_ForumArtifactPost_Inline] DEFAULT (1),
-    [IsForkableTemplate] BIT NOT NULL CONSTRAINT [DF_ForumArtifactPost_Fork] DEFAULT (1),
-    [CloneCount] INT NOT NULL CONSTRAINT [DF_ForumArtifactPost_Clones] DEFAULT (0),
-    CONSTRAINT [PK_ForumArtifactPost] PRIMARY KEY CLUSTERED ([ID]),
-    CONSTRAINT [FK_ForumArtifactPost_Post] FOREIGN KEY ([ID]) REFERENCES [${flyway:defaultSchema}].[ForumPost]([ID]),
-    CONSTRAINT [FK_ForumArtifactPost_Artifact] FOREIGN KEY ([ArtifactID]) REFERENCES [__mj].[Artifact]([ID]),
-    CONSTRAINT [FK_ForumArtifactPost_Version] FOREIGN KEY ([PinnedArtifactVersionID]) REFERENCES [__mj].[ArtifactVersion]([ID]),
-    CONSTRAINT [FK_ForumArtifactPost_SpaceItem] FOREIGN KEY ([SpaceItemID]) REFERENCES [__mj_BizAppsCollaboration].[SpaceItem]([ID]),
-    CONSTRAINT [CK_ForumArtifactPost_Kind] CHECK ([ArtifactKind] IN (N'Document', N'Presentation', N'Spreadsheet')),
-    CONSTRAINT [CK_ForumArtifactPost_CoEdit] CHECK ([CoEditPermissionMode] IN (
-        N'AuthorOnly', N'ForumModerators', N'HighTrustMembers', N'AllContributors'
-    ))
-);
-GO
-
--- ============================================================================
--- 14. ForumCaseReviewPost (1:1 IsA ForumPost — Structured Case / Grand Rounds)
--- ============================================================================
-CREATE TABLE [${flyway:defaultSchema}].[ForumCaseReviewPost] (
-    [ID] UNIQUEIDENTIFIER NOT NULL,
-    [IntakeFormID] UNIQUEIDENTIFIER NULL,
-    [ContextSummaryMarkdown] NVARCHAR(MAX) NOT NULL,
-    [ConstraintsMarkdown] NVARCHAR(MAX) NULL,
-    [AttemptedApproachesMarkdown] NVARCHAR(MAX) NULL,
-    [DesiredOutcomeMarkdown] NVARCHAR(MAX) NULL,
-    [IsDeIdentifiedVerified] BIT NOT NULL CONSTRAINT [DF_ForumCaseReviewPost_DeId] DEFAULT (1),
-    [IsAnonymousAuthorMask] BIT NOT NULL CONSTRAINT [DF_ForumCaseReviewPost_AnonMask] DEFAULT (0),
-    CONSTRAINT [PK_ForumCaseReviewPost] PRIMARY KEY CLUSTERED ([ID]),
-    CONSTRAINT [FK_ForumCaseReviewPost_Post] FOREIGN KEY ([ID]) REFERENCES [${flyway:defaultSchema}].[ForumPost]([ID]),
-    CONSTRAINT [FK_ForumCaseReviewPost_IntakeForm] FOREIGN KEY ([IntakeFormID]) REFERENCES [__mj_BizAppsForms].[Form]([ID])
-);
-GO
-
--- ============================================================================
--- 15. ForumAMAPost (1:1 IsA ForumPost — Live Ask-Me-Anything & Office Hours)
--- ============================================================================
-CREATE TABLE [${flyway:defaultSchema}].[ForumAMAPost] (
-    [ID] UNIQUEIDENTIFIER NOT NULL,
-    [HostUserID] UNIQUEIDENTIFIER NOT NULL,
-    [HostPersonID] UNIQUEIDENTIFIER NULL,
-    [ScheduledStartAt] DATETIMEOFFSET(7) NOT NULL,
-    [ScheduledEndAt] DATETIMEOFFSET(7) NOT NULL,
-    [AMAStatus] NVARCHAR(20) NOT NULL CONSTRAINT [DF_ForumAMAPost_Status] DEFAULT (N'CollectingQuestions'),
-    [TranscriptArtifactID] UNIQUEIDENTIFIER NULL,
-    CONSTRAINT [PK_ForumAMAPost] PRIMARY KEY CLUSTERED ([ID]),
-    CONSTRAINT [FK_ForumAMAPost_Post] FOREIGN KEY ([ID]) REFERENCES [${flyway:defaultSchema}].[ForumPost]([ID]),
-    CONSTRAINT [FK_ForumAMAPost_HostUser] FOREIGN KEY ([HostUserID]) REFERENCES [__mj].[User]([ID]),
-    CONSTRAINT [FK_ForumAMAPost_HostPerson] FOREIGN KEY ([HostPersonID]) REFERENCES [__mj_BizAppsCommon].[Person]([ID]),
-    CONSTRAINT [FK_ForumAMAPost_Transcript] FOREIGN KEY ([TranscriptArtifactID]) REFERENCES [__mj].[Artifact]([ID]),
-    CONSTRAINT [CK_ForumAMAPost_Status] CHECK ([AMAStatus] IN (N'CollectingQuestions', N'LiveNow', N'Completed'))
-);
-GO
-
--- ============================================================================
--- 16. ForumInteractivePost & 17. ForumInteractiveSession (AI Games & Mini-Apps PR #5257)
--- ============================================================================
-CREATE TABLE [${flyway:defaultSchema}].[ForumInteractivePost] (
-    [ID] UNIQUEIDENTIFIER NOT NULL,
-    [ComponentArtifactID] UNIQUEIDENTIFIER NOT NULL,
-    [PinnedArtifactVersionID] UNIQUEIDENTIFIER NULL,
-    [SpaceItemID] UNIQUEIDENTIFIER NULL,
-    [ExperienceKind] NVARCHAR(40) NOT NULL CONSTRAINT [DF_ForumInteractivePost_Kind] DEFAULT (N'Quiz'),
-    [ExperienceKindDetails] NVARCHAR(200) NULL,
-    [PromptUsed] NVARCHAR(MAX) NULL,
-    [ScoringMode] NVARCHAR(30) NOT NULL CONSTRAINT [DF_ForumInteractivePost_Scoring] DEFAULT (N'Best Score'),
-    [ShowLeaderboard] BIT NOT NULL CONSTRAINT [DF_ForumInteractivePost_Leaderboard] DEFAULT (1),
-    [MaxAttemptsPerMember] INT NULL,
-    [PlayCount] INT NOT NULL CONSTRAINT [DF_ForumInteractivePost_PlayCount] DEFAULT (0),
-    [ExpiresAt] DATETIMEOFFSET(7) NULL,
-    CONSTRAINT [PK_ForumInteractivePost] PRIMARY KEY CLUSTERED ([ID]),
-    CONSTRAINT [FK_ForumInteractivePost_Post] FOREIGN KEY ([ID]) REFERENCES [${flyway:defaultSchema}].[ForumPost]([ID]),
-    CONSTRAINT [FK_ForumInteractivePost_Artifact] FOREIGN KEY ([ComponentArtifactID]) REFERENCES [${mjSchema}].[Artifact]([ID]),
-    CONSTRAINT [FK_ForumInteractivePost_ArtifactVersion] FOREIGN KEY ([PinnedArtifactVersionID]) REFERENCES [${mjSchema}].[ArtifactVersion]([ID]),
-    CONSTRAINT [FK_ForumInteractivePost_SpaceItem] FOREIGN KEY ([SpaceItemID]) REFERENCES [__mj_BizAppsCollaboration].[SpaceItem]([ID]),
-    CONSTRAINT [CK_ForumInteractivePost_Kind] CHECK ([ExperienceKind] IN (
-        N'Quiz', N'Trivia', N'Calculator', N'Simulation', N'Flashcards', N'Poll Game', N'Other'
-    )),
-    CONSTRAINT [CK_ForumInteractivePost_Scoring] CHECK ([ScoringMode] IN (
-        N'Best Score', N'Fastest Time', N'Streak', N'Completion', N'None'
-    ))
-);
-GO
-
-CREATE TABLE [${flyway:defaultSchema}].[ForumInteractiveSession] (
-    [ID] UNIQUEIDENTIFIER NOT NULL CONSTRAINT [DF_ForumInteractiveSession_ID] DEFAULT (NEWSEQUENTIALID()),
-    [InteractivePostID] UNIQUEIDENTIFIER NOT NULL,
-    [ArtifactVersionID] UNIQUEIDENTIFIER NOT NULL,
-    [UserID] UNIQUEIDENTIFIER NOT NULL,
-    [AttemptNumber] INT NOT NULL CONSTRAINT [DF_ForumInteractiveSession_Attempt] DEFAULT (1),
-    [Score] DECIMAL(12,2) NULL,
-    [DurationSeconds] INT NULL,
-    [Completed] BIT NOT NULL CONSTRAINT [DF_ForumInteractiveSession_Completed] DEFAULT (0),
-    [OutcomeSummary] NVARCHAR(300) NULL,
-    [SessionStateJSON] NVARCHAR(MAX) NULL,
-    CONSTRAINT [PK_ForumInteractiveSession] PRIMARY KEY CLUSTERED ([ID]),
-    CONSTRAINT [FK_ForumInteractiveSession_Post] FOREIGN KEY ([InteractivePostID]) REFERENCES [${flyway:defaultSchema}].[ForumInteractivePost]([ID]),
-    CONSTRAINT [FK_ForumInteractiveSession_ArtifactVersion] FOREIGN KEY ([ArtifactVersionID]) REFERENCES [${mjSchema}].[ArtifactVersion]([ID]),
-    CONSTRAINT [FK_ForumInteractiveSession_User] FOREIGN KEY ([UserID]) REFERENCES [${mjSchema}].[User]([ID]),
-    CONSTRAINT [UQ_ForumInteractiveSession_Post_User_Attempt] UNIQUE NONCLUSTERED ([InteractivePostID], [UserID], [AttemptNumber]),
-    CONSTRAINT [CK_ForumInteractiveSession_State_JSON] CHECK ([SessionStateJSON] IS NULL OR ISJSON([SessionStateJSON]) = 1)
-);
-GO
-
--- ============================================================================
--- 18. ForumTag & 19. ForumPostTag (Taxonomy & Canon Concept Mapping)
--- ============================================================================
-CREATE TABLE [${flyway:defaultSchema}].[ForumTag] (
-    [ID] UNIQUEIDENTIFIER NOT NULL CONSTRAINT [DF_ForumTag_ID] DEFAULT (NEWSEQUENTIALID()),
-    [SpaceID] UNIQUEIDENTIFIER NOT NULL,
-    [Name] NVARCHAR(100) NOT NULL,
-    [Slug] NVARCHAR(100) NOT NULL,
-    [Description] NVARCHAR(500) NULL,
-    [Color] NVARCHAR(50) NULL,
-    [SynonymOfTagID] UNIQUEIDENTIFIER NULL,
-    [MinTrustLevelToUse] INT NOT NULL CONSTRAINT [DF_ForumTag_MinTL] DEFAULT (0),
-    [IsOfficialCanonTag] BIT NOT NULL CONSTRAINT [DF_ForumTag_Canon] DEFAULT (0),
-    [UsageCount] INT NOT NULL CONSTRAINT [DF_ForumTag_Usage] DEFAULT (0),
-    CONSTRAINT [PK_ForumTag] PRIMARY KEY CLUSTERED ([ID]),
-    CONSTRAINT [UQ_ForumTag_Space_Slug] UNIQUE NONCLUSTERED ([SpaceID], [Slug]),
-    CONSTRAINT [FK_ForumTag_Space] FOREIGN KEY ([SpaceID]) REFERENCES [__mj_BizAppsCollaboration].[Space]([ID]),
-    CONSTRAINT [FK_ForumTag_Synonym] FOREIGN KEY ([SynonymOfTagID]) REFERENCES [${flyway:defaultSchema}].[ForumTag]([ID])
-);
-GO
-
-CREATE TABLE [${flyway:defaultSchema}].[ForumPostTag] (
-    [ID] UNIQUEIDENTIFIER NOT NULL CONSTRAINT [DF_ForumPostTag_ID] DEFAULT (NEWSEQUENTIALID()),
-    [PostID] UNIQUEIDENTIFIER NOT NULL,
-    [TagID] UNIQUEIDENTIFIER NOT NULL,
-    [TaggedByKind] NVARCHAR(20) NOT NULL CONSTRAINT [DF_ForumPostTag_Kind] DEFAULT (N'Author'),
-    [ConfidenceScore] DECIMAL(5,4) NULL,
-    CONSTRAINT [PK_ForumPostTag] PRIMARY KEY CLUSTERED ([ID]),
-    CONSTRAINT [UQ_ForumPostTag_Post_Tag] UNIQUE NONCLUSTERED ([PostID], [TagID]),
-    CONSTRAINT [FK_ForumPostTag_Post] FOREIGN KEY ([PostID]) REFERENCES [${flyway:defaultSchema}].[ForumPost]([ID]),
-    CONSTRAINT [FK_ForumPostTag_Tag] FOREIGN KEY ([TagID]) REFERENCES [${flyway:defaultSchema}].[ForumTag]([ID]),
-    CONSTRAINT [CK_ForumPostTag_Kind] CHECK ([TaggedByKind] IN (N'Author', N'Moderator', N'AIClassifier'))
-);
-GO
-
--- ============================================================================
--- 20. ForumPostVote (Stack Overflow Upvote/Downvote + Expert Role Weighting)
--- ============================================================================
-CREATE TABLE [${flyway:defaultSchema}].[ForumPostVote] (
-    [ID] UNIQUEIDENTIFIER NOT NULL CONSTRAINT [DF_ForumPostVote_ID] DEFAULT (NEWSEQUENTIALID()),
-    [PostID] UNIQUEIDENTIFIER NOT NULL,
-    [VoterUserID] UNIQUEIDENTIFIER NOT NULL,
-    [VoterPersonID] UNIQUEIDENTIFIER NULL,
-    [Direction] SMALLINT NOT NULL,
-    [VoterTrustLevel] INT NOT NULL CONSTRAINT [DF_ForumPostVote_TL] DEFAULT (1),
-    [IsVerifiedDomainExpert] BIT NOT NULL CONSTRAINT [DF_ForumPostVote_Expert] DEFAULT (0),
-    [EffectiveWeight] DECIMAL(6,2) NOT NULL CONSTRAINT [DF_ForumPostVote_Weight] DEFAULT (1.00),
-    [ReasonCode] NVARCHAR(40) NULL,
-    CONSTRAINT [PK_ForumPostVote] PRIMARY KEY CLUSTERED ([ID]),
-    CONSTRAINT [UQ_ForumPostVote_Post_Voter] UNIQUE NONCLUSTERED ([PostID], [VoterUserID]),
-    CONSTRAINT [FK_ForumPostVote_Post] FOREIGN KEY ([PostID]) REFERENCES [${flyway:defaultSchema}].[ForumPost]([ID]),
-    CONSTRAINT [FK_ForumPostVote_VoterUser] FOREIGN KEY ([VoterUserID]) REFERENCES [__mj].[User]([ID]),
-    CONSTRAINT [FK_ForumPostVote_VoterPerson] FOREIGN KEY ([VoterPersonID]) REFERENCES [__mj_BizAppsCommon].[Person]([ID]),
-    CONSTRAINT [CK_ForumPostVote_Direction] CHECK ([Direction] IN (1, -1)),
-    CONSTRAINT [CK_ForumPostVote_Reason] CHECK ([ReasonCode] IS NULL OR [ReasonCode] IN (
-        N'AccurateAndComplete', N'VerifiedInPractice', N'Outdated', N'Incomplete', N'IncorrectPerPolicy', N'OffTopic'
-    ))
-);
-GO
-
--- ============================================================================
--- 21. ForumReaction & 22. ForumPostAttachment
--- ============================================================================
-CREATE TABLE [${flyway:defaultSchema}].[ForumReaction] (
-    [ID] UNIQUEIDENTIFIER NOT NULL CONSTRAINT [DF_ForumReaction_ID] DEFAULT (NEWSEQUENTIALID()),
-    [PostID] UNIQUEIDENTIFIER NOT NULL,
-    [UserID] UNIQUEIDENTIFIER NOT NULL,
-    [ReactionType] NVARCHAR(30) NOT NULL,
-    CONSTRAINT [PK_ForumReaction] PRIMARY KEY CLUSTERED ([ID]),
-    CONSTRAINT [UQ_ForumReaction_Post_User_Type] UNIQUE NONCLUSTERED ([PostID], [UserID], [ReactionType]),
-    CONSTRAINT [FK_ForumReaction_Post] FOREIGN KEY ([PostID]) REFERENCES [${flyway:defaultSchema}].[ForumPost]([ID]),
-    CONSTRAINT [FK_ForumReaction_User] FOREIGN KEY ([UserID]) REFERENCES [__mj].[User]([ID]),
-    CONSTRAINT [CK_ForumReaction_Type] CHECK ([ReactionType] IN (
-        N'Helpful', N'Insightful', N'Agree', N'Celebrate', N'Curious', N'EndorseForCanon'
-    ))
-);
-GO
-
-CREATE TABLE [${flyway:defaultSchema}].[ForumPostAttachment] (
-    [ID] UNIQUEIDENTIFIER NOT NULL CONSTRAINT [DF_ForumPostAttachment_ID] DEFAULT (NEWSEQUENTIALID()),
-    [PostID] UNIQUEIDENTIFIER NOT NULL,
-    [SpaceItemID] UNIQUEIDENTIFIER NOT NULL,
-    [Caption] NVARCHAR(300) NULL,
-    [Sequence] INT NOT NULL CONSTRAINT [DF_ForumPostAttachment_Sequence] DEFAULT (0),
-    CONSTRAINT [PK_ForumPostAttachment] PRIMARY KEY CLUSTERED ([ID]),
-    CONSTRAINT [UQ_ForumPostAttachment_Post_Item] UNIQUE NONCLUSTERED ([PostID], [SpaceItemID]),
-    CONSTRAINT [FK_ForumPostAttachment_Post] FOREIGN KEY ([PostID]) REFERENCES [${flyway:defaultSchema}].[ForumPost]([ID]),
-    CONSTRAINT [FK_ForumPostAttachment_SpaceItem] FOREIGN KEY ([SpaceItemID]) REFERENCES [__mj_BizAppsCollaboration].[SpaceItem]([ID])
-);
-GO
-
--- ============================================================================
--- 23. ForumIdeaWallet & 24. ForumIdeaAllocation (Point & Quadratic Voting)
--- ============================================================================
-CREATE TABLE [${flyway:defaultSchema}].[ForumIdeaWallet] (
-    [ID] UNIQUEIDENTIFIER NOT NULL CONSTRAINT [DF_ForumIdeaWallet_ID] DEFAULT (NEWSEQUENTIALID()),
-    [CampaignForumID] UNIQUEIDENTIFIER NOT NULL,
-    [UserID] UNIQUEIDENTIFIER NOT NULL,
-    [PersonID] UNIQUEIDENTIFIER NULL,
-    [OrganizationID] UNIQUEIDENTIFIER NULL,
-    [InitialBudget] INT NOT NULL,
-    [PointsAllocated] INT NOT NULL CONSTRAINT [DF_ForumIdeaWallet_Allocated] DEFAULT (0),
-    [PointsRefunded] INT NOT NULL CONSTRAINT [DF_ForumIdeaWallet_Refunded] DEFAULT (0),
-    [SegmentTag] NVARCHAR(100) NULL,
-    CONSTRAINT [PK_ForumIdeaWallet] PRIMARY KEY CLUSTERED ([ID]),
-    CONSTRAINT [UQ_ForumIdeaWallet_Campaign_User] UNIQUE NONCLUSTERED ([CampaignForumID], [UserID]),
-    CONSTRAINT [FK_ForumIdeaWallet_Campaign] FOREIGN KEY ([CampaignForumID]) REFERENCES [${flyway:defaultSchema}].[ForumIdeaCampaign]([ID]),
-    CONSTRAINT [FK_ForumIdeaWallet_User] FOREIGN KEY ([UserID]) REFERENCES [__mj].[User]([ID]),
-    CONSTRAINT [FK_ForumIdeaWallet_Person] FOREIGN KEY ([PersonID]) REFERENCES [__mj_BizAppsCommon].[Person]([ID]),
-    CONSTRAINT [FK_ForumIdeaWallet_Org] FOREIGN KEY ([OrganizationID]) REFERENCES [__mj_BizAppsCommon].[Organization]([ID]),
-    CONSTRAINT [CK_ForumIdeaWallet_Balance] CHECK ([PointsAllocated] <= [InitialBudget] + [PointsRefunded])
-);
-GO
-
-CREATE TABLE [${flyway:defaultSchema}].[ForumIdeaAllocation] (
-    [ID] UNIQUEIDENTIFIER NOT NULL CONSTRAINT [DF_ForumIdeaAllocation_ID] DEFAULT (NEWSEQUENTIALID()),
-    [CampaignForumID] UNIQUEIDENTIFIER NOT NULL,
-    [WalletID] UNIQUEIDENTIFIER NOT NULL,
-    [IdeaPostID] UNIQUEIDENTIFIER NOT NULL,
-    [UserID] UNIQUEIDENTIFIER NOT NULL,
-    [PointsSpent] INT NOT NULL,
-    [EffectiveVotes] DECIMAL(12,4) NOT NULL,
-    [RationaleComment] NVARCHAR(500) NULL,
-    [IsRefunded] BIT NOT NULL CONSTRAINT [DF_ForumIdeaAllocation_Refunded] DEFAULT (0),
-    CONSTRAINT [PK_ForumIdeaAllocation] PRIMARY KEY CLUSTERED ([ID]),
-    CONSTRAINT [UQ_ForumIdeaAllocation_Campaign_Idea_User] UNIQUE NONCLUSTERED ([CampaignForumID], [IdeaPostID], [UserID]),
-    CONSTRAINT [FK_ForumIdeaAllocation_Campaign] FOREIGN KEY ([CampaignForumID]) REFERENCES [${flyway:defaultSchema}].[ForumIdeaCampaign]([ID]),
-    CONSTRAINT [FK_ForumIdeaAllocation_Wallet] FOREIGN KEY ([WalletID]) REFERENCES [${flyway:defaultSchema}].[ForumIdeaWallet]([ID]),
-    CONSTRAINT [FK_ForumIdeaAllocation_IdeaPost] FOREIGN KEY ([IdeaPostID]) REFERENCES [${flyway:defaultSchema}].[ForumIdeaPost]([ID]),
-    CONSTRAINT [FK_ForumIdeaAllocation_User] FOREIGN KEY ([UserID]) REFERENCES [__mj].[User]([ID]),
-    CONSTRAINT [CK_ForumIdeaAllocation_PointsPositive] CHECK ([PointsSpent] > 0)
-);
-GO
-
--- ============================================================================
--- 25. ForumBounty, 26. ForumPlaybook & 27. ForumPlaybookClone
--- ============================================================================
-CREATE TABLE [${flyway:defaultSchema}].[ForumBounty] (
-    [ID] UNIQUEIDENTIFIER NOT NULL CONSTRAINT [DF_ForumBounty_ID] DEFAULT (NEWSEQUENTIALID()),
-    [QuestionPostID] UNIQUEIDENTIFIER NOT NULL,
-    [SponsoredByUserID] UNIQUEIDENTIFIER NOT NULL,
-    [BountyKind] NVARCHAR(30) NOT NULL CONSTRAINT [DF_ForumBounty_Kind] DEFAULT (N'ReputationPoints'),
-    [BountyPoints] INT NOT NULL CONSTRAINT [DF_ForumBounty_Points] DEFAULT (50),
-    [RewardDescription] NVARCHAR(500) NULL,
-    [Status] NVARCHAR(20) NOT NULL CONSTRAINT [DF_ForumBounty_Status] DEFAULT (N'Active'),
-    [ExpiresAt] DATETIMEOFFSET(7) NOT NULL,
-    [AwardedToPostID] UNIQUEIDENTIFIER NULL,
-    [AwardedToUserID] UNIQUEIDENTIFIER NULL,
-    [AwardedAt] DATETIMEOFFSET(7) NULL,
-    CONSTRAINT [PK_ForumBounty] PRIMARY KEY CLUSTERED ([ID]),
-    CONSTRAINT [FK_ForumBounty_QuestionPost] FOREIGN KEY ([QuestionPostID]) REFERENCES [${flyway:defaultSchema}].[ForumQuestionPost]([ID]),
-    CONSTRAINT [FK_ForumBounty_Sponsor] FOREIGN KEY ([SponsoredByUserID]) REFERENCES [__mj].[User]([ID]),
-    CONSTRAINT [FK_ForumBounty_AwardedPost] FOREIGN KEY ([AwardedToPostID]) REFERENCES [${flyway:defaultSchema}].[ForumPost]([ID]),
-    CONSTRAINT [FK_ForumBounty_Winner] FOREIGN KEY ([AwardedToUserID]) REFERENCES [__mj].[User]([ID]),
-    CONSTRAINT [CK_ForumBounty_Kind] CHECK ([BountyKind] IN (N'ReputationPoints', N'RecognitionBadge', N'SponsorPrize')),
-    CONSTRAINT [CK_ForumBounty_Status] CHECK ([Status] IN (N'Active', N'Awarded', N'Expired', N'Cancelled'))
-);
-GO
-
-CREATE TABLE [${flyway:defaultSchema}].[ForumPlaybook] (
-    [ID] UNIQUEIDENTIFIER NOT NULL CONSTRAINT [DF_ForumPlaybook_ID] DEFAULT (NEWSEQUENTIALID()),
-    [SpaceID] UNIQUEIDENTIFIER NOT NULL,
-    [ForumID] UNIQUEIDENTIFIER NULL,
-    [OriginPostID] UNIQUEIDENTIFIER NULL,
-    [SpaceItemID] UNIQUEIDENTIFIER NOT NULL,
-    [ArtifactID] UNIQUEIDENTIFIER NULL,
-    [AuthorUserID] UNIQUEIDENTIFIER NOT NULL,
-    [ParentPlaybookID] UNIQUEIDENTIFIER NULL,
-    [Title] NVARCHAR(250) NOT NULL,
-    [Slug] NVARCHAR(150) NOT NULL,
-    [Summary] NVARCHAR(MAX) NULL,
-    [VersionLabel] NVARCHAR(40) NOT NULL CONSTRAINT [DF_ForumPlaybook_Ver] DEFAULT (N'1.0.0'),
-    [CloneCount] INT NOT NULL CONSTRAINT [DF_ForumPlaybook_Clones] DEFAULT (0),
-    [UpvoteCount] INT NOT NULL CONSTRAINT [DF_ForumPlaybook_Upvotes] DEFAULT (0),
-    [IsCanonEndorsed] BIT NOT NULL CONSTRAINT [DF_ForumPlaybook_Canon] DEFAULT (0),
-    CONSTRAINT [PK_ForumPlaybook] PRIMARY KEY CLUSTERED ([ID]),
-    CONSTRAINT [UQ_ForumPlaybook_Space_Slug] UNIQUE NONCLUSTERED ([SpaceID], [Slug]),
-    CONSTRAINT [FK_ForumPlaybook_Space] FOREIGN KEY ([SpaceID]) REFERENCES [__mj_BizAppsCollaboration].[Space]([ID]),
-    CONSTRAINT [FK_ForumPlaybook_Forum] FOREIGN KEY ([ForumID]) REFERENCES [${flyway:defaultSchema}].[Forum]([ID]),
-    CONSTRAINT [FK_ForumPlaybook_Post] FOREIGN KEY ([OriginPostID]) REFERENCES [${flyway:defaultSchema}].[ForumPost]([ID]),
-    CONSTRAINT [FK_ForumPlaybook_SpaceItem] FOREIGN KEY ([SpaceItemID]) REFERENCES [__mj_BizAppsCollaboration].[SpaceItem]([ID]),
-    CONSTRAINT [FK_ForumPlaybook_Artifact] FOREIGN KEY ([ArtifactID]) REFERENCES [__mj].[Artifact]([ID]),
-    CONSTRAINT [FK_ForumPlaybook_Author] FOREIGN KEY ([AuthorUserID]) REFERENCES [__mj].[User]([ID]),
-    CONSTRAINT [FK_ForumPlaybook_Parent] FOREIGN KEY ([ParentPlaybookID]) REFERENCES [${flyway:defaultSchema}].[ForumPlaybook]([ID])
-);
-GO
-
-CREATE TABLE [${flyway:defaultSchema}].[ForumPlaybookClone] (
-    [ID] UNIQUEIDENTIFIER NOT NULL CONSTRAINT [DF_ForumPlaybookClone_ID] DEFAULT (NEWSEQUENTIALID()),
-    [PlaybookID] UNIQUEIDENTIFIER NOT NULL,
-    [ClonedByUserID] UNIQUEIDENTIFIER NOT NULL,
-    [DestinationSpaceID] UNIQUEIDENTIFIER NULL,
-    [DestinationSpaceItemID] UNIQUEIDENTIFIER NULL,
-    [DestinationArtifactID] UNIQUEIDENTIFIER NULL,
-    [ClonedAt] DATETIMEOFFSET(7) NOT NULL CONSTRAINT [DF_ForumPlaybookClone_At] DEFAULT (SYSDATETIMEOFFSET()),
-    CONSTRAINT [PK_ForumPlaybookClone] PRIMARY KEY CLUSTERED ([ID]),
-    CONSTRAINT [FK_ForumPlaybookClone_Playbook] FOREIGN KEY ([PlaybookID]) REFERENCES [${flyway:defaultSchema}].[ForumPlaybook]([ID]),
-    CONSTRAINT [FK_ForumPlaybookClone_User] FOREIGN KEY ([ClonedByUserID]) REFERENCES [__mj].[User]([ID]),
-    CONSTRAINT [FK_ForumPlaybookClone_DestSpace] FOREIGN KEY ([DestinationSpaceID]) REFERENCES [__mj_BizAppsCollaboration].[Space]([ID]),
-    CONSTRAINT [FK_ForumPlaybookClone_DestItem] FOREIGN KEY ([DestinationSpaceItemID]) REFERENCES [__mj_BizAppsCollaboration].[SpaceItem]([ID]),
-    CONSTRAINT [FK_ForumPlaybookClone_DestArtifact] FOREIGN KEY ([DestinationArtifactID]) REFERENCES [__mj].[Artifact]([ID])
-);
-GO
-
--- ============================================================================
--- 28. CommunityMemberProfile, 29. CommunityReputationEvent,
--- 30. ForumSubscription, 31. ForumPostFollow, 32. ForumModerationFlag,
--- 33. ForumDeflectionLog
--- ============================================================================
-CREATE TABLE [${flyway:defaultSchema}].[CommunityMemberProfile] (
-    [ID] UNIQUEIDENTIFIER NOT NULL CONSTRAINT [DF_CommunityMemberProfile_ID] DEFAULT (NEWSEQUENTIALID()),
-    [SpaceID] UNIQUEIDENTIFIER NOT NULL,
-    [UserID] UNIQUEIDENTIFIER NOT NULL,
-    [PersonID] UNIQUEIDENTIFIER NULL,
-    [TrustLevel] INT NOT NULL CONSTRAINT [DF_CommunityMemberProfile_TL] DEFAULT (0),
-    [ReputationScore] INT NOT NULL CONSTRAINT [DF_CommunityMemberProfile_Rep] DEFAULT (0),
-    [AcceptedAnswersCount] INT NOT NULL CONSTRAINT [DF_CommunityMemberProfile_Acc] DEFAULT (0),
-    [CanonVerifiedPostsCount] INT NOT NULL CONSTRAINT [DF_CommunityMemberProfile_Canon] DEFAULT (0),
-    [PlaybooksClonedCount] INT NOT NULL CONSTRAINT [DF_CommunityMemberProfile_Clones] DEFAULT (0),
-    [BountiesWonCount] INT NOT NULL CONSTRAINT [DF_CommunityMemberProfile_Bounties] DEFAULT (0),
-    [OptInPeerMatching] BIT NOT NULL CONSTRAINT [DF_CommunityMemberProfile_Peer] DEFAULT (0),
-    [ExpertiseTagsJSON] NVARCHAR(MAX) NULL,
-    CONSTRAINT [PK_CommunityMemberProfile] PRIMARY KEY CLUSTERED ([ID]),
-    CONSTRAINT [UQ_CommunityMemberProfile_Space_User] UNIQUE NONCLUSTERED ([SpaceID], [UserID]),
-    CONSTRAINT [FK_CommunityMemberProfile_Space] FOREIGN KEY ([SpaceID]) REFERENCES [__mj_BizAppsCollaboration].[Space]([ID]),
-    CONSTRAINT [FK_CommunityMemberProfile_User] FOREIGN KEY ([UserID]) REFERENCES [__mj].[User]([ID]),
-    CONSTRAINT [FK_CommunityMemberProfile_Person] FOREIGN KEY ([PersonID]) REFERENCES [__mj_BizAppsCommon].[Person]([ID]),
-    CONSTRAINT [CK_CommunityMemberProfile_TL] CHECK ([TrustLevel] BETWEEN 0 AND 4)
-);
-GO
-
-CREATE TABLE [${flyway:defaultSchema}].[CommunityReputationEvent] (
-    [ID] UNIQUEIDENTIFIER NOT NULL CONSTRAINT [DF_CommunityReputationEvent_ID] DEFAULT (NEWSEQUENTIALID()),
-    [SpaceID] UNIQUEIDENTIFIER NOT NULL,
-    [UserID] UNIQUEIDENTIFIER NOT NULL,
-    [EventKind] NVARCHAR(40) NOT NULL,
-    [PointsDelta] INT NOT NULL,
-    [SourcePostID] UNIQUEIDENTIFIER NULL,
-    CONSTRAINT [PK_CommunityReputationEvent] PRIMARY KEY CLUSTERED ([ID]),
-    CONSTRAINT [FK_CommunityReputationEvent_Space] FOREIGN KEY ([SpaceID]) REFERENCES [__mj_BizAppsCollaboration].[Space]([ID]),
-    CONSTRAINT [FK_CommunityReputationEvent_User] FOREIGN KEY ([UserID]) REFERENCES [__mj].[User]([ID]),
-    CONSTRAINT [FK_CommunityReputationEvent_Post] FOREIGN KEY ([SourcePostID]) REFERENCES [${flyway:defaultSchema}].[ForumPost]([ID]),
-    CONSTRAINT [CK_CommunityReputationEvent_Kind] CHECK ([EventKind] IN (
-        N'AnswerUpvoted', N'AnswerDownvoted', N'AnswerAccepted', N'AICanonVerified',
-        N'BountySponsored', N'BountyAwarded', N'PostPromotedToSpace', N'PlaybookCloned', N'ModeratorAdjustment'
-    ))
-);
-GO
-
-CREATE TABLE [${flyway:defaultSchema}].[ForumSubscription] (
-    [ID] UNIQUEIDENTIFIER NOT NULL CONSTRAINT [DF_ForumSubscription_ID] DEFAULT (NEWSEQUENTIALID()),
-    [UserID] UNIQUEIDENTIFIER NOT NULL,
-    [SpaceID] UNIQUEIDENTIFIER NOT NULL,
-    [ForumID] UNIQUEIDENTIFIER NULL,
-    [DeliveryChannel] NVARCHAR(20) NOT NULL CONSTRAINT [DF_ForumSubscription_Chan] DEFAULT (N'EmailDigest'),
-    [DigestFrequency] NVARCHAR(20) NOT NULL CONSTRAINT [DF_ForumSubscription_Freq] DEFAULT (N'Daily'),
-    [IncludeAISynthesis] BIT NOT NULL CONSTRAINT [DF_ForumSubscription_AI] DEFAULT (1),
-    [TopicsFilterJSON] NVARCHAR(MAX) NULL,
-    CONSTRAINT [PK_ForumSubscription] PRIMARY KEY CLUSTERED ([ID]),
-    CONSTRAINT [FK_ForumSubscription_User] FOREIGN KEY ([UserID]) REFERENCES [__mj].[User]([ID]),
-    CONSTRAINT [FK_ForumSubscription_Space] FOREIGN KEY ([SpaceID]) REFERENCES [__mj_BizAppsCollaboration].[Space]([ID]),
-    CONSTRAINT [FK_ForumSubscription_Forum] FOREIGN KEY ([ForumID]) REFERENCES [${flyway:defaultSchema}].[Forum]([ID]),
-    CONSTRAINT [CK_ForumSubscription_Chan] CHECK ([DeliveryChannel] IN (N'InApp', N'EmailDigest', N'RealtimeEmail')),
-    CONSTRAINT [CK_ForumSubscription_Freq] CHECK ([DigestFrequency] IN (N'None', N'Daily', N'Weekly', N'Realtime'))
-);
-GO
-
-CREATE TABLE [${flyway:defaultSchema}].[ForumPostFollow] (
-    [ID] UNIQUEIDENTIFIER NOT NULL CONSTRAINT [DF_ForumPostFollow_ID] DEFAULT (NEWSEQUENTIALID()),
-    [RootPostID] UNIQUEIDENTIFIER NOT NULL,
-    [UserID] UNIQUEIDENTIFIER NOT NULL,
-    [FollowReason] NVARCHAR(30) NOT NULL CONSTRAINT [DF_ForumPostFollow_Reason] DEFAULT (N'Manual'),
-    [IsMuted] BIT NOT NULL CONSTRAINT [DF_ForumPostFollow_Muted] DEFAULT (0),
-    [LastReadPostID] UNIQUEIDENTIFIER NULL,
-    [LastReadAt] DATETIMEOFFSET(7) NULL,
-    CONSTRAINT [PK_ForumPostFollow] PRIMARY KEY CLUSTERED ([ID]),
-    CONSTRAINT [UQ_ForumPostFollow_RootPost_User] UNIQUE NONCLUSTERED ([RootPostID], [UserID]),
-    CONSTRAINT [FK_ForumPostFollow_RootPost] FOREIGN KEY ([RootPostID]) REFERENCES [${flyway:defaultSchema}].[ForumPost]([ID]),
-    CONSTRAINT [FK_ForumPostFollow_User] FOREIGN KEY ([UserID]) REFERENCES [__mj].[User]([ID]),
-    CONSTRAINT [FK_ForumPostFollow_LastPost] FOREIGN KEY ([LastReadPostID]) REFERENCES [${flyway:defaultSchema}].[ForumPost]([ID]),
-    CONSTRAINT [CK_ForumPostFollow_Reason] CHECK ([FollowReason] IN (N'Author', N'Replied', N'AllocatedPoints', N'UpvotedQuestion', N'Manual'))
-);
-GO
-
-CREATE TABLE [${flyway:defaultSchema}].[ForumModerationFlag] (
-    [ID] UNIQUEIDENTIFIER NOT NULL CONSTRAINT [DF_ForumModerationFlag_ID] DEFAULT (NEWSEQUENTIALID()),
-    [SpaceID] UNIQUEIDENTIFIER NOT NULL,
-    [ForumID] UNIQUEIDENTIFIER NOT NULL,
-    [PostID] UNIQUEIDENTIFIER NOT NULL,
-    [ReportedByUserID] UNIQUEIDENTIFIER NULL,
-    [FlagKind] NVARCHAR(30) NOT NULL,
-    [AIConfidence] DECIMAL(5,4) NULL,
-    [Notes] NVARCHAR(1000) NULL,
-    [Status] NVARCHAR(20) NOT NULL CONSTRAINT [DF_ForumModerationFlag_Status] DEFAULT (N'Open'),
-    [ResolvedByUserID] UNIQUEIDENTIFIER NULL,
-    [ResolutionAction] NVARCHAR(50) NULL,
-    [ResolvedAt] DATETIMEOFFSET(7) NULL,
-    CONSTRAINT [PK_ForumModerationFlag] PRIMARY KEY CLUSTERED ([ID]),
-    CONSTRAINT [FK_ForumModerationFlag_Space] FOREIGN KEY ([SpaceID]) REFERENCES [__mj_BizAppsCollaboration].[Space]([ID]),
-    CONSTRAINT [FK_ForumModerationFlag_Forum] FOREIGN KEY ([ForumID]) REFERENCES [${flyway:defaultSchema}].[Forum]([ID]),
-    CONSTRAINT [FK_ForumModerationFlag_Post] FOREIGN KEY ([PostID]) REFERENCES [${flyway:defaultSchema}].[ForumPost]([ID]),
-    CONSTRAINT [FK_ForumModerationFlag_Reporter] FOREIGN KEY ([ReportedByUserID]) REFERENCES [__mj].[User]([ID]),
-    CONSTRAINT [FK_ForumModerationFlag_Resolver] FOREIGN KEY ([ResolvedByUserID]) REFERENCES [__mj].[User]([ID]),
-    CONSTRAINT [CK_ForumModerationFlag_Kind] CHECK ([FlagKind] IN (
-        N'Spam', N'Uncivil', N'DuplicateQuestion', N'OutdatedInfo', N'ConfidentialLeak', N'NeedsSplitOrMerge'
-    )),
-    CONSTRAINT [CK_ForumModerationFlag_Status] CHECK ([Status] IN (N'Open', N'Resolved', N'Dismissed'))
-);
-GO
-
-CREATE TABLE [${flyway:defaultSchema}].[ForumDeflectionLog] (
-    [ID] UNIQUEIDENTIFIER NOT NULL CONSTRAINT [DF_ForumDeflectionLog_ID] DEFAULT (NEWSEQUENTIALID()),
-    [SpaceID] UNIQUEIDENTIFIER NOT NULL,
-    [ForumID] UNIQUEIDENTIFIER NULL,
-    [UserID] UNIQUEIDENTIFIER NULL,
-    [QueryText] NVARCHAR(1000) NOT NULL,
-    [DeflectedOutcome] NVARCHAR(40) NOT NULL,
-    [MatchedPostIDsJSON] NVARCHAR(MAX) NULL,
-    [CreatedRootPostID] UNIQUEIDENTIFIER NULL,
-    CONSTRAINT [PK_ForumDeflectionLog] PRIMARY KEY CLUSTERED ([ID]),
-    CONSTRAINT [FK_ForumDeflectionLog_Space] FOREIGN KEY ([SpaceID]) REFERENCES [__mj_BizAppsCollaboration].[Space]([ID]),
-    CONSTRAINT [FK_ForumDeflectionLog_Forum] FOREIGN KEY ([ForumID]) REFERENCES [${flyway:defaultSchema}].[Forum]([ID]),
-    CONSTRAINT [FK_ForumDeflectionLog_User] FOREIGN KEY ([UserID]) REFERENCES [__mj].[User]([ID]),
-    CONSTRAINT [FK_ForumDeflectionLog_CreatedPost] FOREIGN KEY ([CreatedRootPostID]) REFERENCES [${flyway:defaultSchema}].[ForumPost]([ID]),
-    CONSTRAINT [CK_ForumDeflectionLog_Outcome] CHECK ([DeflectedOutcome] IN (
-        N'SolvedBeforePost', N'PostedAnywayWithNuance', N'ConvertedToExistingPostUpvote'
-    ))
-);
-GO
-```
+1. **`CommunitySpace`**: 1:1 `IsA` subtype of `__mj_BizAppsCollaboration.Space`. Declares `Slug`, `CommunityKind` (`Association Wide`, `Special Interest Group`, `Product Community`, `Working Group`, `Other`), `AnonymousReadMode` (`None`, `Teaser Only`, `Full Read`), `AskFirstEnabled`, `DefaultDigestCadence`, and default forum link.
+2. **`ForumType`**: Metadata container archetype registry (`Code`, `Name`, `ServerDriverClass`, `UIDriverClass`, `ExtensionEntity`, `Configuration`, `Sequence`, `IsActive`).
+3. **`PostType`**: Metadata post archetype registry (`Code`, `Name`, `PlacementRule` (`Root Only`, `Reply Only`, `Both`), `AllowsNestedReplies`, `TriggersThreadSynthesis`, `IndexedInCorpus`, `ServerDriverClass`, `UIDriverClass`, `ExtensionEntity`).
+4. **`ForumRoleType`**: Role capability matrix (`Code`, `Name`, `Level`, `CanConfigureForum`, `CanModerateQueue`, `CanPinOrLock`, `CanAcceptAnswers`, `CanVerifyCanon`, `CanPromoteToSpace`, `CanCreateRootPost`, `CanReply`, `CanCoEditDocs`, `VoteWeightMultiplier`).
+5. **`Forum`**: Channel entity scoped to `CommunitySpace`. Declares `VisibilityBand` (`Shared`, `Team`, `PrivateForum`), `PostingPolicy` (`Open`, `Moderated`, `ReadOnly`), `InheritsSpaceMembers`, `AnonymousReadMode`, and sub-forum hierarchy (`ParentForumID`).
+6. **`ForumIdeaCampaign`**: 1:1 `IsA` subtype of `Forum` configuring participatory budget allocations (`DefaultBudgetPoints`, `AllocationMode` (`Point Allocation`, `Quadratic`), `MaxPointsPerIdea`, `SubmissionsCloseAt`, `VotingClosesAt`).
+7. **`ForumMember`**: Explicit forum membership overrides for private/moderated channels (`ForumID`, `UserID`, `ForumRoleTypeID`, `Status`).
+8. **`ForumTopicTag`**: Space-scoped taxonomy tags optionally linked to core `__mj.Tag` (`SpaceID`, `Slug`, `Name`, `IsOfficial`, `PostCount`).
+9. **`ForumPost`**: Unified root thread and nested reply entity (`ForumID`, `PostTypeID`, `RootPostID`, `ParentPostID`, `ReplyDepth`, `AuthorUserID`, `AuthorPersonID`, `AuthorAgentID`, `Title`, `Slug`, `BodyMarkdown`, `SummaryMarkdown`, `VisibilityBand`, `Status`, `IsPinned`, `IsLocked`, `IsFeatured`, `ReplyCount`, `ReactionScore`, `ViewCount`, `LastActivityAt`, `PromotedToSpaceID`, `LinkedTaskID`, `LinkedEntityID`, `LinkedRecordID`, `ConversationID`).
+10. **`ForumQuestionPost`**: 1:1 `IsA` subtype of `ForumPost` (`AcceptedAnswerPostID`, `AICanonAnswerPostID`, `BountyPoints`, `ResolvedAt`, `DeflectionCount`).
+11. **`ForumAnswerPost`**: 1:1 `IsA` subtype of `ForumPost` (`QuestionPostID`, `IsAcceptedByAuthor`, `IsVerifiedByModerator`, `VerifiedByUserID`, `AIEpistemicStatus`, `AIConfidenceScore`, `AIRationaleMarkdown`, `FreshnessReviewDueAt`).
+12. **`ForumIdeaPost`**: 1:1 `IsA` subtype of `ForumPost` (`IdeaStatus` (`Under Consideration`, `Planned`, `In Progress`, `Shipped`, `Declined`), `TotalPointsAllocated`, `EffectiveQuadraticVotes`, `UniqueBackerCount`, `TargetReleaseOrQuarter`, `StatusRationaleMarkdown`).
+13. **`ForumFormPost`**: 1:1 `IsA` subtype of `ForumPost` linking to `__mj_BizAppsForms.Form` and `FormDistribution` (`FormID`, `FormDistributionID`, `ShowLiveResultsInline`, `RequirePostReplyOnSubmit`, `ClosesAt`).
+14. **`ForumArtifactPost`**: 1:1 `IsA` subtype of `ForumPost` for collaborative docs/sheets/slides (`ArtifactID`, `PinnedArtifactVersionID`, `SpaceItemID`, `ArtifactModality`, `CollaborationMode`, `ShowInlinePreview`).
+15. **`ForumCasePost`**: 1:1 `IsA` subtype of `ForumPost` for peer case reviews (`SituationMarkdown`, `ActionTakenMarkdown`, `OutcomeMarkdown`, `IsAnonymized`, `AnonymizedAuthorAlias`, `RedactionConfirmedByUserID`).
+16. **`ForumAMAPost`**: 1:1 `IsA` subtype of `ForumPost` for scheduled live events (`HostUserID`, `ScheduledStartAt`, `ScheduledEndAt`, `QuestionsOpenAt`, `IsLiveNow`, `RecordingURL`, `RecapMarkdown`).
+17. **`ForumInteractivePost`**: 1:1 `IsA` subtype of `ForumPost` backed by MJ Component Artifacts (`ComponentArtifactID`, `PinnedArtifactVersionID`, `SpaceItemID`, `ExperienceKind`, `ExperienceKindDetails`, `PromptUsed`, `ScoringMode`, `ShowLeaderboard`, `MaxAttemptsPerMember`, `PlayCount`, `ExpiresAt`).
+18. **`ForumInteractiveSession`**: Per-member interactive scores and state snapshots (`InteractivePostID`, `ArtifactVersionID`, `UserID`, `AttemptNumber`, `Score`, `DurationSeconds`, `Completed`, `OutcomeSummary`, `SessionStateJSON`).
+19. **`ForumPostTag`**, **`ForumPostReaction`**, **`ForumPostAttachment`**, **`ForumIdeaAllocation`**, **`CommunityMemberProfile`**, **`ForumSubscription`**, **`ForumPostFlag`**: High-performance supporting ledger and index tables.
 
 ---
 
-## 5. Anonymous Read & Authenticated Write Architecture (`fnCommunityForumAccess`)
+## 5. Security & Composable Access TVF (`fnCommunityForumAccess`)
 
-Organizations can configure anonymous read access at the Space level (`CommunitySpace.AnonymousAccessMode`) and override it per `ForumType` or `Forum` (`Forum.AnonymousAccessOverride`), while requiring authentication for all writes, votes, point allocations, interactive game leaderboard submissions, and `Team`-band access:
+Security is evaluated in SQL through an inline Table-Valued Function that combines Collaboration Space membership, Space status, and forum overrides without referencing non-existent properties:
 
 ```sql
 CREATE FUNCTION [${flyway:defaultSchema}].[fnCommunityForumAccess](@UserID UNIQUEIDENTIFIER)
 RETURNS TABLE
 AS
 RETURN (
-    WITH SpaceOpenWindow AS (
-        SELECT
-            s.ID AS SpaceID,
-            CAST(
-                CASE
-                    WHEN s.ClosedAt IS NULL THEN 1
-                    WHEN COALESCE(s.PostCloseAccess, st.PostCloseAccess, N'None') = N'ReadOnly' THEN 1
-                    WHEN COALESCE(s.PostCloseAccess, st.PostCloseAccess, N'None') = N'ReadOnlyWindow'
-                         AND COALESCE(s.PostCloseAccessDays, st.PostCloseAccessDays) IS NOT NULL
-                         AND DATEDIFF(DAY, s.ClosedAt, SYSDATETIMEOFFSET()) <= COALESCE(s.PostCloseAccessDays, st.PostCloseAccessDays) THEN 1
-                    ELSE 0
-                END AS BIT
-            ) AS IsReadable,
-            CAST(CASE WHEN s.ClosedAt IS NULL THEN 1 ELSE 0 END AS BIT) AS IsOpenForWrites
-        FROM [__mj_BizAppsCollaboration].[Space] AS s
-        INNER JOIN [__mj_BizAppsCollaboration].[SpaceType] AS st ON st.ID = s.SpaceTypeID
-    )
     SELECT
         f.ID AS ForumID,
         f.SpaceID,
@@ -1011,7 +192,8 @@ RETURN (
         CAST(
             CASE
                 WHEN f.Status = N'Locked' THEN 0
-                WHEN sow.IsOpenForWrites = 0 THEN 0
+                WHEN ss.ReadOnly = 1 THEN 0
+                WHEN sa.CanContribute = 0 THEN 0
                 WHEN fm.Status = N'Muted' THEN 0
                 WHEN fr.CanCreateRootPost = 0 AND fr.CanReply = 0 THEN 0
                 WHEN f.PostingPolicy = N'ReadOnly' AND ISNULL(fr.CanConfigureForum, 0) = 0 THEN 0
@@ -1022,8 +204,8 @@ RETURN (
     FROM [${flyway:defaultSchema}].[Forum] AS f
     INNER JOIN [__mj_BizAppsCollaboration].[fnCollaborationAccess](@UserID) AS sa
         ON sa.SpaceID = f.SpaceID
-    INNER JOIN SpaceOpenWindow AS sow
-        ON sow.SpaceID = f.SpaceID AND sow.IsReadable = 1
+    INNER JOIN [__mj_BizAppsCollaboration].[fnCollaborationSpaceStatuses]() AS ss
+        ON ss.SpaceID = f.SpaceID AND ss.Visible = 1
     LEFT JOIN [${flyway:defaultSchema}].[ForumMember] AS fm
         ON fm.ForumID = f.ID AND fm.UserID = @UserID
     LEFT JOIN [${flyway:defaultSchema}].[ForumRoleType] AS fr
@@ -1046,28 +228,142 @@ GO
 
 ---
 
-## 6. Multi-Phase Engineering Work Plan
+## 6. Generic MemberJunction Community Hub UX Architecture
 
-### Phase 1: Foundation — SQL Migrations, `ForumType`/`PostType` Metadata, RLS & `@mj-biz-apps/community-entities`
-1. Author `migrations/B202611060000__v0.1.x__Baseline.sql` (SQL Server) and `migrations-pg/B202611060000__v0.1.x__Baseline.sql` (PostgreSQL) with all `IsA` subtype tables, hard SQL Foreign Keys, and `fnCommunityForumAccess`.
-2. Seed `metadata/forum-types/`, `metadata/post-types/`, `metadata/forum-role-types/`, and `metadata/space-types/.community-space-type.json`.
-3. Run MJ CodeGen to generate typed `BaseEntity` subclasses in `@mj-biz-apps/community-entities` with automatic `IsA` parent/child coordination (`Forum` ↔ `ForumIdeaCampaign`, `ForumPost` ↔ `ForumQuestionPost` / `ForumAnswerPost` / `ForumIdeaPost` / `ForumFormPost` / `ForumArtifactPost` / `ForumCaseReviewPost` / `ForumAMAPost` / `ForumInteractivePost`).
+Extracted from UX prototyping into a 100% generic MemberJunction specification:
 
-### Phase 2: Server Engine, 4-Level Configuration Cascade & Plug-In Drivers (`@mj-biz-apps/community-server`)
-1. Implement `BaseForumServerDriver` and `BasePostServerDriver` hierarchies with `MJGlobal.Instance.ClassFactory` resolution and `BaseForumTypeID` / `BasePostTypeID` fallback chains.
-2. Wire `resolveForumConfiguration` (4-level cascade: `MJ: Application Settings` → `ForumType` → `CommunitySpace` → `Forum`/`ParentForumID`) and `resolveEffectiveForumPermissions` (`ForumRoleType` / `ForumMemberRole`) into server hooks.
-3. Implement `CommunityPublicEdge` (`/community`) for anonymous `TeaserOnly` / `FullRead` access, SEO `QAPage` / `DiscussionForumPosting` JSON-LD, and intent-preserving login redirects.
+1. **Knowledge Stream (Unified Community Feed):**
+   Fluid multi-channel activity feed with unread indicators, topic filter chips, sort order (`Latest Activity`, `Top Reactions`, `Unanswered Q&A`), and AI Living Thread Synthesis badges that collapse long conversations into concise takeaway cards.
+2. **Q&A Canon Workbench:**
+   Structured question view with author acceptance markers, bounty tracking, and dual verification badges:
+   - **Human Expert Verification**: Verified by Subject Matter Expert or Moderator.
+   - **AI Epistemic Status**: `Canon Verified`, `Novel Insight`, `Partially Outdated`, or `Conflicts With Canon`.
+3. **Ideation Wallets & Quadratic Allocation Board:**
+   Participatory roadmap board where members allocate points from their 100-point wallet or quadratic votes. Visualizes vote totals, unique backer counts, and lifecycle stages (`Under Consideration` $\to$ `Planned` $\to$ `In Progress` $\to$ `Shipped`).
+4. **Living Document Co-Authoring & Playbooks:**
+   Deep integration with MJ Artifacts (`@memberjunction/ng-artifacts`) allowing members to collaborate on living guides, spreadsheets, and slide decks directly inside forum posts with passage comments and redline suggestions.
+5. **Interactive Sandboxed Mini-Apps:**
+   Inline rendering of MJ Component Artifacts (`<mj-artifact-type-plugin-viewer>`) enabling AI-generated calculators, trivia games, compliance quizzes, and simulations with persistent attempt scoring and competitive leaderboards.
+6. **Digest & Notification Engine:**
+   Per-member subscription preferences (`Every Post`, `Daily Digest`, `Weekly Digest`, `Highlights Only`, `Muted`) respecting user settings stored in `MJ: User Settings` via `UserInfoEngine.Instance`.
+7. **Admin Policy Cascade Editor:**
+   Visual configuration panel for community owners to manage allowed post types, reply depth limits, AI deflection thresholds, and forum role permissions.
 
-### Phase 3: AI Epistemic Answer Grading, Pre-Post Synthesis & Interactive Game Builder
-1. Build **Pre-Post Ask-First Deflection Action** querying `ForumPost`, `ForumPlaybook`, and `MJ: Knowledge Hub`.
-2. Build **AI Epistemic Answer Rubric Agent** (`ForumAnswerPost.AICanonStatus`, `AIGradeScore`, `AIRubricGradeJSON`, supersession detection).
-3. Build **AI Interactive Post Builder Agent** that compiles natural-language prompts into a `ComponentSpec` (`@memberjunction/interactive-component-types`) persisted as an **`MJ: Artifact` (`ArtifactType = 'Component'`) & `MJ: Artifact Version`**, linked via `ForumInteractivePost.ComponentArtifactID` and rendered through `@memberjunction/ng-artifacts` (`ComponentArtifactViewerComponent` / `<mj-artifact-type-plugin-viewer>`).
+---
 
-### Phase 4: MJ Core Docs/Slides/Sheets Co-Editing (`MJ PR #6215`) & `BizApps Forms` Integration
-1. Implement `ArtifactPostServerDriver` and `ArtifactPostUIDriver` (`ForumArtifactPost`) with delegated Yjs co-editing permissions, passage-anchored `MJ: Conversations` threads, and `Suggest` redlines.
-2. Register Community's three custom `BaseDocumentBlock` plugins (`CommunityThreadSynthesisBlock`, `CommunityCanonAnswerBlock`, `CommunityIdeaLeaderboardBlock`).
-3. Implement `FormPostServerDriver` and `FormPostUIDriver` (`ForumFormPost`) embedding `<mj-form>` inline polls and structured questionnaires.
+## 7. Software Factory Phased Execution Blueprint
 
-### Phase 5: Angular UI (`@mj-biz-apps/community-ng`) & Downstream Bridge Open Apps
-1. Build `<mj-community-space>`, `<mj-forum-shell>`, `<mj-post-composer>` (with Ask-First deflection and AI Interactive Game generator), `<mj-qa-answer-card>`, `<mj-idea-budget-allocator>`, and `<mj-forum-settings-cascade-editor>`.
-2. Scaffold downstream bridge Open Apps (`mj-bizapps-community-voting`, `mj-bizapps-community-issues`, `mj-bizapps-community-credentialing`) with their `IsA` extension tables and hard SQL Foreign Keys.
+This 7-Wave blueprint governs execution by **BizApps Software Factory** to deliver a complete, production-grade build from `next`.
+
+```mermaid
+flowchart TD
+    W0["Wave 0: Baseline Topology & Package Infrastructure"]
+    W1["Wave 1: Database Schema, Dual-Dialect Migrations & Teardown"]
+    W2["Wave 2: Browser-Safe EngineBase & Generated Entities"]
+    W3["Wave 3: Server Drivers, Actions & AI Capabilities"]
+    W4["Wave 4: Angular 21 Components, Widgets & Hub Surface"]
+    W5["Wave 5: World Data Model Seeds & Multi-Domain Integration Tests"]
+    W6["Wave 6: Playwright WCAG 2.1 AA E2E, Documentation & Git SoT"]
+
+    W0 --> W1 --> W2 --> W3 --> W4 --> W5 --> W6
+```
+
+### Wave 0: Baseline Topology & Package Infrastructure
+- **Objective:** Establish repo configurations, package boundaries, standards, and build order.
+- **Required Packages:**
+  - `@mj-biz-apps/community-core` (`packages/Core`)
+  - `@mj-biz-apps/community-entities` (`packages/Entities`)
+  - `@mj-biz-apps/community-engine-base` (`packages/EngineBase`)
+  - `@mj-biz-apps/community-core-entities-server` (`packages/CoreEntitiesServer`)
+  - `@mj-biz-apps/community-actions` (`packages/Actions`)
+  - `@mj-biz-apps/community-server` (`packages/Server`)
+  - `@mj-biz-apps/community-ng-widgets` (`packages/AngularWidgets`)
+  - `@mj-biz-apps/community-ng` (`packages/Angular`)
+- **Key Artifacts:** `mj-app.json`, root `package.json`, `.mj-standards.json`, `pnpm-workspace.yaml`.
+- **Exit Gate:** `pnpm run test` executes TypeScript builds and base test suites with zero errors; `node scripts/check-downstream-names.mjs` passes with zero violations.
+
+### Wave 1: Database Schema, Dual-Dialect Migrations & Teardown
+- **Objective:** Finalize physical database schema, constraints, TVF, PostgreSQL parity, and teardowns.
+- **Key Artifacts:**
+  - `migrations/B202611060000__v0.1.x__Schema.sql`
+  - `migrations/V202611060001__v0.1.x__Baseline_Tables_And_Access.sql` (with 50 blank lines before future CodeGen block)
+  - `migrations-pg/B202611060000__v0.1.x__Schema.pg.sql`
+  - `migrations-pg/V202611060001__v0.1.x__Baseline_Tables_And_Access.pg.sql`
+  - `teardown/V1__Remove_Community_Schema.sql`
+  - `teardown-pg/V1__Remove_Community_Schema.pg.sql`
+- **Exit Gate:** Schema applies cleanly on blank SQL Server and PostgreSQL databases; all 25 tables carry `__mj_CreatedAt`, `__mj_UpdatedAt`, and string collations; `fnCommunityForumAccess` passes integration verification.
+
+### Wave 2: Browser-Safe EngineBase & Generated Entities
+- **Objective:** Run CodeGen to emit typed entity classes; wire `CommunityEngineBase` and subtype directories.
+- **Key Artifacts:**
+  - Generated entities in `@mj-biz-apps/community-entities`.
+  - `CommunityEngineBase` in `@mj-biz-apps/community-engine-base` providing O(1) lookups by ID/Code for `ForumType`, `PostType`, and `ForumRoleType`, plus `ResolveForumConfiguration()`.
+  - `ForumSubtypeDirectory` & `PostSubtypeDirectory` registering dynamic `IsA` entity resolution.
+  - Polymorphic foreign-key metadata in `metadata/entities/.polymorphic-fk-entity-fields.json`.
+- **Exit Gate:** Zero `any`, zero lazy `unknown`, zero `.Get()`/`.Set()` bypasses; all field unions derived from entity types (`SomeEntity['FieldName']`).
+
+### Wave 3: Server Drivers, Actions & AI Capabilities
+- **Objective:** Implement server-side driver registries, Ask-First deflection, epistemic answer grading, thread synthesis, and PDF exports.
+- **Key Artifacts:**
+  - `BaseForumServerDriver` and `BasePostServerDriver` hierarchies in `@mj-biz-apps/community-core-entities-server`.
+  - Actions in `@mj-biz-apps/community-actions`:
+    - `AskFirstDeflectionAction`: Vector search across posts and knowledge base before composing questions.
+    - `EpistemicAnswerGradingAction`: LLM rubric evaluator scoring answers for canon verification and freshness.
+    - `LivingThreadSynthesisAction`: Generates incremental executive summaries when reply count reaches watermark thresholds.
+    - `ExportCommunityDigestPDFAction`: Server-side PDF generation using `pdfkit` (strictly zero browser `window.print()`).
+  - `ThreadGraduationService` in `@mj-biz-apps/community-server`: Promotes high-momentum threads into child Collaboration Spaces.
+- **Exit Gate:** Server unit tests pass with >=80% branch coverage; actions registered via `@RegisterClass(BaseAction, ...)`.
+
+### Wave 4: Angular 21 Components, Widgets & Hub Surface
+- **Objective:** Build the complete interactive UI suite following modern Angular 21 standards.
+- **Key Requirements:**
+  - `ChangeDetectionStrategy.OnPush` on every component.
+  - Zero raw `#hex`, `rgb()`, `rgba()`, `hsl()` color literals; 100% `--mj-*` design tokens.
+  - Modern control flow (`@if`, `@for`, `@switch`) and `inject()` DI.
+  - `<mj-page-layout>` chrome on all dashboards and resource views.
+  - `CommunityHubResource` extending `BaseResourceComponent` with `@RegisterClass(BaseResourceComponent, 'CommunityHubResource')`, `NotifyLoadComplete()`, and `DefaultNavItems` entry.
+  - Dual Form Registration Parity: every entity in `metadata/entities/` retains an active `@RegisterClass(BaseFormComponent, ...)` class reachable from `mj-app.json` `startupExport`.
+  - User preferences persisted exclusively via `UserInfoEngine.Instance`.
+  - Inline forms rendered via `<mj-form>` from `BizApps Forms`.
+  - Sandboxed interactive mini-apps rendered via `<mj-artifact-type-plugin-viewer>` from `@memberjunction/ng-artifacts`.
+- **Exit Gate:** Component tests verify design tokens, dual form registration, and lifecycle hygiene (`pageErrors === 0`, `consoleErrors === 0`).
+
+### Wave 5: World Data Model Seeds & Multi-Domain Integration Tests
+- **Objective:** Provide rich multi-domain seed data and end-to-end integration test suites.
+- **Key Artifacts:**
+  - `scripts/seed-world.sql` & `scripts/seed-world.mjs` & `scripts/seed-world.pg.sql` (>=25 realistic records across 3 spaces, 7 forums, 4 tags, 11 posts, ideation allocations, and Q&A canon).
+  - Integration test suite (`packages/IntegrationTests/` or package integration suites) testing:
+    - User access filtering via `fnCommunityForumAccess`.
+    - Ask-First deflection flow.
+    - Question submission, answer verification, and epistemic status grading.
+    - Quadratic ideation point allocation math.
+    - Collaborative document embedding and redline suggestion capture.
+    - Thread-to-Space graduation.
+- **Exit Gate:** All integration workflows pass against real database instances in dual dialects.
+
+### Wave 6: Playwright WCAG 2.1 AA E2E Verification, Repository Documentation & Git SoT
+- **Objective:** Verify accessibility, browser runtime safety, and documentation parity.
+- **Key Artifacts:**
+  - Playwright test specs covering keyboard navigation, focus management, screen reader labels, and contrast audits.
+  - Zero WCAG 2.1 AA violations on all community views.
+  - Git repository documentation: `README.md`, developer guide, and `.mj/specs/community-hub/` specifications.
+  - Linked MemberJunction Artifacts for rich documentation presentation.
+- **Exit Gate:** Playwright test run reports 100% pass with `pageErrors === 0` and `consoleErrors === 0`; documentation verified against MemberJunction open-app standards.
+
+---
+
+## 8. Standards Compliance Matrix
+
+| Rule | Requirement | Implementation in `bizapps-community` |
+|---|---|---|
+| **1. No `any` Types** | Zero `any`, lazy `unknown`, or `.Get()`/`.Set()` bypasses | Strict typing across all packages; entity fields accessed via generated typed properties. |
+| **2. Derived Unions** | Derive field unions from generated types | All DTOs, parameters, and view models derive types using `Entity['Field']`. |
+| **3. Migration DDL & Separation** | Plain DDL, 50 blank lines, CodeGen banner, dual dialect | Hand-written DDL separated from CodeGen blocks by 50 blank lines; full PG counterparts in `migrations-pg/`. |
+| **4. Dual Form Registration** | `@RegisterClass(BaseFormComponent, ...)` active | Every community entity registers a `BaseFormComponent` subclass in `startupExport`. |
+| **5. Navigation & Resource Parity** | `BaseResourceComponent` + `<mj-page-layout>` | `CommunityHubResource` registered, implements `NotifyLoadComplete()`, and wired in `DefaultNavItems`. |
+| **6. Strict `--mj-*` Tokens** | Zero raw color literals; server PDF actions | All component CSS uses `--mj-*` tokens; digest PDF generated via server action. |
+| **7. Runtime Safety** | Prototype safety & zero browser errors | Safe property access; Playwright verified with `pageErrors === 0`. |
+| **8. Rich Seed Data** | Multi-domain demo data >=20 records | `scripts/seed-world.mjs` provides 25 realistic multi-space, multi-forum records. |
+| **9. Angular `OnPush`** | `ChangeDetectionStrategy.OnPush` + `UserInfoEngine` | All Angular components use `OnPush`; preferences persisted to server-side user settings. |
+| **10. Documentation & Git SoT** | Canonical `README.md` and `.mj/specs/` | Full repository documentation aligned with MJ conventions. |
+| **11. Unit & Integration Tests** | High test coverage in dual dialects | Vitest unit tests + multi-domain integration test suite. |

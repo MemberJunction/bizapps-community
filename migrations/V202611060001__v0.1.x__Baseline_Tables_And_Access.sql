@@ -12,15 +12,17 @@
 -- -----------------------------------------------------------------------------
 CREATE TABLE [${flyway:defaultSchema}].[CommunitySpace] (
     [ID] UNIQUEIDENTIFIER NOT NULL,
-    [Slug] NVARCHAR(120) NOT NULL,
-    [CommunityKind] NVARCHAR(50) NOT NULL CONSTRAINT [DF_CommunitySpace_CommunityKind] DEFAULT (N'Association Wide'),
-    [CommunityKindDetails] NVARCHAR(200) NULL,
-    [AnonymousReadMode] NVARCHAR(30) NOT NULL CONSTRAINT [DF_CommunitySpace_AnonymousReadMode] DEFAULT (N'Teaser Only'),
+    [Slug] NVARCHAR(120) COLLATE SQL_Latin1_General_CP1_CI_AS NOT NULL,
+    [CommunityKind] NVARCHAR(50) COLLATE SQL_Latin1_General_CP1_CI_AS NOT NULL CONSTRAINT [DF_CommunitySpace_CommunityKind] DEFAULT (N'Association Wide'),
+    [CommunityKindDetails] NVARCHAR(200) COLLATE SQL_Latin1_General_CP1_CI_AS NULL,
+    [AnonymousReadMode] NVARCHAR(30) COLLATE SQL_Latin1_General_CP1_CI_AS NOT NULL CONSTRAINT [DF_CommunitySpace_AnonymousReadMode] DEFAULT (N'Teaser Only'),
     [AskFirstEnabled] BIT NOT NULL CONSTRAINT [DF_CommunitySpace_AskFirstEnabled] DEFAULT (1),
-    [DefaultDigestCadence] NVARCHAR(30) NOT NULL CONSTRAINT [DF_CommunitySpace_DefaultDigestCadence] DEFAULT (N'Daily Digest'),
-    [BannerImageURL] NVARCHAR(500) NULL,
-    [WelcomeMarkdown] NVARCHAR(MAX) NULL,
+    [DefaultDigestCadence] NVARCHAR(30) COLLATE SQL_Latin1_General_CP1_CI_AS NOT NULL CONSTRAINT [DF_CommunitySpace_DefaultDigestCadence] DEFAULT (N'Daily Digest'),
+    [BannerImageURL] NVARCHAR(500) COLLATE SQL_Latin1_General_CP1_CI_AS NULL,
+    [WelcomeMarkdown] NVARCHAR(MAX) COLLATE SQL_Latin1_General_CP1_CI_AS NULL,
     [DefaultForumID] UNIQUEIDENTIFIER NULL,
+    [__mj_CreatedAt] DATETIMEOFFSET NOT NULL CONSTRAINT [DF_CommunitySpace___mj_CreatedAt] DEFAULT (SYSDATETIMEOFFSET()),
+    [__mj_UpdatedAt] DATETIMEOFFSET NOT NULL CONSTRAINT [DF_CommunitySpace___mj_UpdatedAt] DEFAULT (SYSDATETIMEOFFSET()),
     CONSTRAINT [PK_CommunitySpace] PRIMARY KEY ([ID]),
     CONSTRAINT [FK_CommunitySpace_Space] FOREIGN KEY ([ID]) REFERENCES [__mj_BizAppsCollaboration].[Space]([ID]),
     CONSTRAINT [UQ_CommunitySpace_Slug] UNIQUE ([Slug]),
@@ -35,16 +37,18 @@ GO
 -- -----------------------------------------------------------------------------
 CREATE TABLE [${flyway:defaultSchema}].[ForumType] (
     [ID] UNIQUEIDENTIFIER NOT NULL CONSTRAINT [DF_ForumType_ID] DEFAULT (NEWSEQUENTIALID()),
-    [Code] NVARCHAR(100) NOT NULL,
-    [Name] NVARCHAR(100) NOT NULL,
-    [Description] NVARCHAR(MAX) NULL,
-    [Icon] NVARCHAR(100) NULL,
-    [ServerDriverClass] NVARCHAR(200) NULL,
-    [UIDriverClass] NVARCHAR(200) NULL,
-    [ExtensionEntity] NVARCHAR(255) NULL,
-    [Configuration] NVARCHAR(MAX) NULL,
+    [Code] NVARCHAR(100) COLLATE SQL_Latin1_General_CP1_CI_AS NOT NULL,
+    [Name] NVARCHAR(100) COLLATE SQL_Latin1_General_CP1_CI_AS NOT NULL,
+    [Description] NVARCHAR(MAX) COLLATE SQL_Latin1_General_CP1_CI_AS NULL,
+    [Icon] NVARCHAR(100) COLLATE SQL_Latin1_General_CP1_CI_AS NULL,
+    [ServerDriverClass] NVARCHAR(200) COLLATE SQL_Latin1_General_CP1_CI_AS NULL,
+    [UIDriverClass] NVARCHAR(200) COLLATE SQL_Latin1_General_CP1_CI_AS NULL,
+    [ExtensionEntity] NVARCHAR(255) COLLATE SQL_Latin1_General_CP1_CI_AS NULL,
+    [Configuration] NVARCHAR(MAX) COLLATE SQL_Latin1_General_CP1_CI_AS NULL,
     [Sequence] INT NOT NULL CONSTRAINT [DF_ForumType_Sequence] DEFAULT (0),
     [IsActive] BIT NOT NULL CONSTRAINT [DF_ForumType_IsActive] DEFAULT (1),
+    [__mj_CreatedAt] DATETIMEOFFSET NOT NULL CONSTRAINT [DF_ForumType___mj_CreatedAt] DEFAULT (SYSDATETIMEOFFSET()),
+    [__mj_UpdatedAt] DATETIMEOFFSET NOT NULL CONSTRAINT [DF_ForumType___mj_UpdatedAt] DEFAULT (SYSDATETIMEOFFSET()),
     CONSTRAINT [PK_ForumType] PRIMARY KEY ([ID]),
     CONSTRAINT [UQ_ForumType_Code] UNIQUE ([Code]),
     CONSTRAINT [UQ_ForumType_Name] UNIQUE ([Name]),
@@ -57,20 +61,22 @@ GO
 -- -----------------------------------------------------------------------------
 CREATE TABLE [${flyway:defaultSchema}].[PostType] (
     [ID] UNIQUEIDENTIFIER NOT NULL CONSTRAINT [DF_PostType_ID] DEFAULT (NEWSEQUENTIALID()),
-    [Code] NVARCHAR(100) NOT NULL,
-    [Name] NVARCHAR(100) NOT NULL,
-    [Description] NVARCHAR(MAX) NULL,
-    [Icon] NVARCHAR(100) NULL,
-    [ServerDriverClass] NVARCHAR(200) NULL,
-    [UIDriverClass] NVARCHAR(200) NULL,
-    [ExtensionEntity] NVARCHAR(255) NULL,
-    [PlacementRule] NVARCHAR(20) NOT NULL CONSTRAINT [DF_PostType_PlacementRule] DEFAULT (N'Both'),
+    [Code] NVARCHAR(100) COLLATE SQL_Latin1_General_CP1_CI_AS NOT NULL,
+    [Name] NVARCHAR(100) COLLATE SQL_Latin1_General_CP1_CI_AS NOT NULL,
+    [Description] NVARCHAR(MAX) COLLATE SQL_Latin1_General_CP1_CI_AS NULL,
+    [Icon] NVARCHAR(100) COLLATE SQL_Latin1_General_CP1_CI_AS NULL,
+    [ServerDriverClass] NVARCHAR(200) COLLATE SQL_Latin1_General_CP1_CI_AS NULL,
+    [UIDriverClass] NVARCHAR(200) COLLATE SQL_Latin1_General_CP1_CI_AS NULL,
+    [ExtensionEntity] NVARCHAR(255) COLLATE SQL_Latin1_General_CP1_CI_AS NULL,
+    [PlacementRule] NVARCHAR(20) COLLATE SQL_Latin1_General_CP1_CI_AS NOT NULL CONSTRAINT [DF_PostType_PlacementRule] DEFAULT (N'Both'),
     [AllowsNestedReplies] BIT NOT NULL CONSTRAINT [DF_PostType_AllowsNestedReplies] DEFAULT (1),
     [TriggersThreadSynthesis] BIT NOT NULL CONSTRAINT [DF_PostType_TriggersThreadSynthesis] DEFAULT (1),
     [IndexedInCorpus] BIT NOT NULL CONSTRAINT [DF_PostType_IndexedInCorpus] DEFAULT (1),
-    [Configuration] NVARCHAR(MAX) NULL,
+    [Configuration] NVARCHAR(MAX) COLLATE SQL_Latin1_General_CP1_CI_AS NULL,
     [Sequence] INT NOT NULL CONSTRAINT [DF_PostType_Sequence] DEFAULT (0),
     [IsActive] BIT NOT NULL CONSTRAINT [DF_PostType_IsActive] DEFAULT (1),
+    [__mj_CreatedAt] DATETIMEOFFSET NOT NULL CONSTRAINT [DF_PostType___mj_CreatedAt] DEFAULT (SYSDATETIMEOFFSET()),
+    [__mj_UpdatedAt] DATETIMEOFFSET NOT NULL CONSTRAINT [DF_PostType___mj_UpdatedAt] DEFAULT (SYSDATETIMEOFFSET()),
     CONSTRAINT [PK_PostType] PRIMARY KEY ([ID]),
     CONSTRAINT [UQ_PostType_Code] UNIQUE ([Code]),
     CONSTRAINT [UQ_PostType_Name] UNIQUE ([Name]),
@@ -84,9 +90,9 @@ GO
 -- -----------------------------------------------------------------------------
 CREATE TABLE [${flyway:defaultSchema}].[ForumRoleType] (
     [ID] UNIQUEIDENTIFIER NOT NULL CONSTRAINT [DF_ForumRoleType_ID] DEFAULT (NEWSEQUENTIALID()),
-    [Code] NVARCHAR(100) NOT NULL,
-    [Name] NVARCHAR(100) NOT NULL,
-    [Description] NVARCHAR(MAX) NULL,
+    [Code] NVARCHAR(100) COLLATE SQL_Latin1_General_CP1_CI_AS NOT NULL,
+    [Name] NVARCHAR(100) COLLATE SQL_Latin1_General_CP1_CI_AS NOT NULL,
+    [Description] NVARCHAR(MAX) COLLATE SQL_Latin1_General_CP1_CI_AS NULL,
     [Level] INT NOT NULL CONSTRAINT [DF_ForumRoleType_Level] DEFAULT (100),
     [CanConfigureForum] BIT NOT NULL CONSTRAINT [DF_ForumRoleType_CanConfigureForum] DEFAULT (0),
     [CanModerateQueue] BIT NOT NULL CONSTRAINT [DF_ForumRoleType_CanModerateQueue] DEFAULT (0),
@@ -100,6 +106,8 @@ CREATE TABLE [${flyway:defaultSchema}].[ForumRoleType] (
     [VoteWeightMultiplier] DECIMAL(5,2) NOT NULL CONSTRAINT [DF_ForumRoleType_VoteWeightMultiplier] DEFAULT (1.00),
     [Sequence] INT NOT NULL CONSTRAINT [DF_ForumRoleType_Sequence] DEFAULT (0),
     [IsActive] BIT NOT NULL CONSTRAINT [DF_ForumRoleType_IsActive] DEFAULT (1),
+    [__mj_CreatedAt] DATETIMEOFFSET NOT NULL CONSTRAINT [DF_ForumRoleType___mj_CreatedAt] DEFAULT (SYSDATETIMEOFFSET()),
+    [__mj_UpdatedAt] DATETIMEOFFSET NOT NULL CONSTRAINT [DF_ForumRoleType___mj_UpdatedAt] DEFAULT (SYSDATETIMEOFFSET()),
     CONSTRAINT [PK_ForumRoleType] PRIMARY KEY ([ID]),
     CONSTRAINT [UQ_ForumRoleType_Code] UNIQUE ([Code]),
     CONSTRAINT [UQ_ForumRoleType_Name] UNIQUE ([Name])
@@ -114,19 +122,21 @@ CREATE TABLE [${flyway:defaultSchema}].[Forum] (
     [SpaceID] UNIQUEIDENTIFIER NOT NULL,
     [ParentForumID] UNIQUEIDENTIFIER NULL,
     [ForumTypeID] UNIQUEIDENTIFIER NOT NULL,
-    [Slug] NVARCHAR(120) NOT NULL,
-    [Name] NVARCHAR(200) NOT NULL,
-    [Description] NVARCHAR(MAX) NULL,
-    [Icon] NVARCHAR(100) NULL,
-    [ColorHex] NVARCHAR(20) NULL,
-    [VisibilityBand] NVARCHAR(20) NOT NULL CONSTRAINT [DF_Forum_VisibilityBand] DEFAULT (N'Shared'),
-    [AnonymousReadMode] NVARCHAR(30) NULL,
+    [Slug] NVARCHAR(120) COLLATE SQL_Latin1_General_CP1_CI_AS NOT NULL,
+    [Name] NVARCHAR(200) COLLATE SQL_Latin1_General_CP1_CI_AS NOT NULL,
+    [Description] NVARCHAR(MAX) COLLATE SQL_Latin1_General_CP1_CI_AS NULL,
+    [Icon] NVARCHAR(100) COLLATE SQL_Latin1_General_CP1_CI_AS NULL,
+    [ColorHex] NVARCHAR(20) COLLATE SQL_Latin1_General_CP1_CI_AS NULL,
+    [VisibilityBand] NVARCHAR(20) COLLATE SQL_Latin1_General_CP1_CI_AS NOT NULL CONSTRAINT [DF_Forum_VisibilityBand] DEFAULT (N'Shared'),
+    [AnonymousReadMode] NVARCHAR(30) COLLATE SQL_Latin1_General_CP1_CI_AS NULL,
     [InheritsSpaceMembers] BIT NOT NULL CONSTRAINT [DF_Forum_InheritsSpaceMembers] DEFAULT (1),
-    [PostingPolicy] NVARCHAR(30) NOT NULL CONSTRAINT [DF_Forum_PostingPolicy] DEFAULT (N'Open'),
-    [InboundEmailAlias] NVARCHAR(150) NULL,
+    [PostingPolicy] NVARCHAR(30) COLLATE SQL_Latin1_General_CP1_CI_AS NOT NULL CONSTRAINT [DF_Forum_PostingPolicy] DEFAULT (N'Open'),
+    [InboundEmailAlias] NVARCHAR(150) COLLATE SQL_Latin1_General_CP1_CI_AS NULL,
     [Sequence] INT NOT NULL CONSTRAINT [DF_Forum_Sequence] DEFAULT (0),
-    [Status] NVARCHAR(30) NOT NULL CONSTRAINT [DF_Forum_Status] DEFAULT (N'Active'),
-    [Configuration] NVARCHAR(MAX) NULL,
+    [Status] NVARCHAR(30) COLLATE SQL_Latin1_General_CP1_CI_AS NOT NULL CONSTRAINT [DF_Forum_Status] DEFAULT (N'Active'),
+    [Configuration] NVARCHAR(MAX) COLLATE SQL_Latin1_General_CP1_CI_AS NULL,
+    [__mj_CreatedAt] DATETIMEOFFSET NOT NULL CONSTRAINT [DF_Forum___mj_CreatedAt] DEFAULT (SYSDATETIMEOFFSET()),
+    [__mj_UpdatedAt] DATETIMEOFFSET NOT NULL CONSTRAINT [DF_Forum___mj_UpdatedAt] DEFAULT (SYSDATETIMEOFFSET()),
     CONSTRAINT [PK_Forum] PRIMARY KEY ([ID]),
     CONSTRAINT [FK_Forum_CommunitySpace] FOREIGN KEY ([SpaceID]) REFERENCES [${flyway:defaultSchema}].[CommunitySpace]([ID]),
     CONSTRAINT [FK_Forum_ParentForum] FOREIGN KEY ([ParentForumID]) REFERENCES [${flyway:defaultSchema}].[Forum]([ID]),
@@ -150,10 +160,12 @@ GO
 CREATE TABLE [${flyway:defaultSchema}].[ForumIdeaCampaign] (
     [ID] UNIQUEIDENTIFIER NOT NULL,
     [DefaultBudgetPoints] INT NOT NULL CONSTRAINT [DF_ForumIdeaCampaign_DefaultBudgetPoints] DEFAULT (100),
-    [AllocationMode] NVARCHAR(30) NOT NULL CONSTRAINT [DF_ForumIdeaCampaign_AllocationMode] DEFAULT (N'Point Allocation'),
+    [AllocationMode] NVARCHAR(30) COLLATE SQL_Latin1_General_CP1_CI_AS NOT NULL CONSTRAINT [DF_ForumIdeaCampaign_AllocationMode] DEFAULT (N'Point Allocation'),
     [MaxPointsPerIdea] INT NULL,
     [SubmissionsCloseAt] DATETIMEOFFSET NULL,
     [VotingClosesAt] DATETIMEOFFSET NULL,
+    [__mj_CreatedAt] DATETIMEOFFSET NOT NULL CONSTRAINT [DF_ForumIdeaCampaign___mj_CreatedAt] DEFAULT (SYSDATETIMEOFFSET()),
+    [__mj_UpdatedAt] DATETIMEOFFSET NOT NULL CONSTRAINT [DF_ForumIdeaCampaign___mj_UpdatedAt] DEFAULT (SYSDATETIMEOFFSET()),
     CONSTRAINT [PK_ForumIdeaCampaign] PRIMARY KEY ([ID]),
     CONSTRAINT [FK_ForumIdeaCampaign_Forum] FOREIGN KEY ([ID]) REFERENCES [${flyway:defaultSchema}].[Forum]([ID]),
     CONSTRAINT [CK_ForumIdeaCampaign_AllocationMode] CHECK ([AllocationMode] IN (N'Point Allocation', N'Quadratic'))
@@ -168,7 +180,9 @@ CREATE TABLE [${flyway:defaultSchema}].[ForumMember] (
     [ForumID] UNIQUEIDENTIFIER NOT NULL,
     [UserID] UNIQUEIDENTIFIER NOT NULL,
     [ForumRoleTypeID] UNIQUEIDENTIFIER NOT NULL,
-    [Status] NVARCHAR(30) NOT NULL CONSTRAINT [DF_ForumMember_Status] DEFAULT (N'Active'),
+    [Status] NVARCHAR(30) COLLATE SQL_Latin1_General_CP1_CI_AS NOT NULL CONSTRAINT [DF_ForumMember_Status] DEFAULT (N'Active'),
+    [__mj_CreatedAt] DATETIMEOFFSET NOT NULL CONSTRAINT [DF_ForumMember___mj_CreatedAt] DEFAULT (SYSDATETIMEOFFSET()),
+    [__mj_UpdatedAt] DATETIMEOFFSET NOT NULL CONSTRAINT [DF_ForumMember___mj_UpdatedAt] DEFAULT (SYSDATETIMEOFFSET()),
     CONSTRAINT [PK_ForumMember] PRIMARY KEY ([ID]),
     CONSTRAINT [FK_ForumMember_Forum] FOREIGN KEY ([ForumID]) REFERENCES [${flyway:defaultSchema}].[Forum]([ID]),
     CONSTRAINT [FK_ForumMember_User] FOREIGN KEY ([UserID]) REFERENCES [${mjSchema}].[User]([ID]),
@@ -186,12 +200,14 @@ CREATE TABLE [${flyway:defaultSchema}].[ForumTopicTag] (
     [SpaceID] UNIQUEIDENTIFIER NOT NULL,
     [ParentTagID] UNIQUEIDENTIFIER NULL,
     [TagID] UNIQUEIDENTIFIER NULL,
-    [Slug] NVARCHAR(100) NOT NULL,
-    [Name] NVARCHAR(120) NOT NULL,
-    [Description] NVARCHAR(500) NULL,
-    [ColorHex] NVARCHAR(20) NULL,
+    [Slug] NVARCHAR(100) COLLATE SQL_Latin1_General_CP1_CI_AS NOT NULL,
+    [Name] NVARCHAR(120) COLLATE SQL_Latin1_General_CP1_CI_AS NOT NULL,
+    [Description] NVARCHAR(500) COLLATE SQL_Latin1_General_CP1_CI_AS NULL,
+    [ColorHex] NVARCHAR(20) COLLATE SQL_Latin1_General_CP1_CI_AS NULL,
     [IsOfficial] BIT NOT NULL CONSTRAINT [DF_ForumTopicTag_IsOfficial] DEFAULT (0),
     [PostCount] INT NOT NULL CONSTRAINT [DF_ForumTopicTag_PostCount] DEFAULT (0),
+    [__mj_CreatedAt] DATETIMEOFFSET NOT NULL CONSTRAINT [DF_ForumTopicTag___mj_CreatedAt] DEFAULT (SYSDATETIMEOFFSET()),
+    [__mj_UpdatedAt] DATETIMEOFFSET NOT NULL CONSTRAINT [DF_ForumTopicTag___mj_UpdatedAt] DEFAULT (SYSDATETIMEOFFSET()),
     CONSTRAINT [PK_ForumTopicTag] PRIMARY KEY ([ID]),
     CONSTRAINT [FK_ForumTopicTag_Space] FOREIGN KEY ([SpaceID]) REFERENCES [${flyway:defaultSchema}].[CommunitySpace]([ID]),
     CONSTRAINT [FK_ForumTopicTag_ParentTag] FOREIGN KEY ([ParentTagID]) REFERENCES [${flyway:defaultSchema}].[ForumTopicTag]([ID]),
@@ -213,14 +229,14 @@ CREATE TABLE [${flyway:defaultSchema}].[ForumPost] (
     [AuthorUserID] UNIQUEIDENTIFIER NULL,
     [AuthorPersonID] UNIQUEIDENTIFIER NULL,
     [AuthorAgentID] UNIQUEIDENTIFIER NULL,
-    [Title] NVARCHAR(300) NULL,
-    [Slug] NVARCHAR(320) NULL,
-    [BodyMarkdown] NVARCHAR(MAX) NOT NULL,
-    [SummaryMarkdown] NVARCHAR(MAX) NULL,
+    [Title] NVARCHAR(300) COLLATE SQL_Latin1_General_CP1_CI_AS NULL,
+    [Slug] NVARCHAR(320) COLLATE SQL_Latin1_General_CP1_CI_AS NULL,
+    [BodyMarkdown] NVARCHAR(MAX) COLLATE SQL_Latin1_General_CP1_CI_AS NOT NULL,
+    [SummaryMarkdown] NVARCHAR(MAX) COLLATE SQL_Latin1_General_CP1_CI_AS NULL,
     [SummaryGeneratedAt] DATETIMEOFFSET NULL,
     [SummaryReplyWatermark] INT NOT NULL CONSTRAINT [DF_ForumPost_SummaryReplyWatermark] DEFAULT (0),
-    [VisibilityBand] NVARCHAR(20) NOT NULL CONSTRAINT [DF_ForumPost_VisibilityBand] DEFAULT (N'Shared'),
-    [Status] NVARCHAR(30) NOT NULL CONSTRAINT [DF_ForumPost_Status] DEFAULT (N'Published'),
+    [VisibilityBand] NVARCHAR(20) COLLATE SQL_Latin1_General_CP1_CI_AS NOT NULL CONSTRAINT [DF_ForumPost_VisibilityBand] DEFAULT (N'Shared'),
+    [Status] NVARCHAR(30) COLLATE SQL_Latin1_General_CP1_CI_AS NOT NULL CONSTRAINT [DF_ForumPost_Status] DEFAULT (N'Published'),
     [IsPinned] BIT NOT NULL CONSTRAINT [DF_ForumPost_IsPinned] DEFAULT (0),
     [IsLocked] BIT NOT NULL CONSTRAINT [DF_ForumPost_IsLocked] DEFAULT (0),
     [IsFeatured] BIT NOT NULL CONSTRAINT [DF_ForumPost_IsFeatured] DEFAULT (0),
@@ -231,6 +247,11 @@ CREATE TABLE [${flyway:defaultSchema}].[ForumPost] (
     [LastActivityAt] DATETIMEOFFSET NOT NULL CONSTRAINT [DF_ForumPost_LastActivityAt] DEFAULT (SYSDATETIMEOFFSET()),
     [PromotedToSpaceID] UNIQUEIDENTIFIER NULL,
     [LinkedTaskID] UNIQUEIDENTIFIER NULL,
+    [LinkedEntityID] UNIQUEIDENTIFIER NULL,
+    [LinkedRecordID] NVARCHAR(450) COLLATE SQL_Latin1_General_CP1_CI_AS NULL,
+    [ConversationID] UNIQUEIDENTIFIER NULL,
+    [__mj_CreatedAt] DATETIMEOFFSET NOT NULL CONSTRAINT [DF_ForumPost___mj_CreatedAt] DEFAULT (SYSDATETIMEOFFSET()),
+    [__mj_UpdatedAt] DATETIMEOFFSET NOT NULL CONSTRAINT [DF_ForumPost___mj_UpdatedAt] DEFAULT (SYSDATETIMEOFFSET()),
     CONSTRAINT [PK_ForumPost] PRIMARY KEY ([ID]),
     CONSTRAINT [FK_ForumPost_Forum] FOREIGN KEY ([ForumID]) REFERENCES [${flyway:defaultSchema}].[Forum]([ID]),
     CONSTRAINT [FK_ForumPost_PostType] FOREIGN KEY ([PostTypeID]) REFERENCES [${flyway:defaultSchema}].[PostType]([ID]),
@@ -241,6 +262,8 @@ CREATE TABLE [${flyway:defaultSchema}].[ForumPost] (
     CONSTRAINT [FK_ForumPost_AuthorAgent] FOREIGN KEY ([AuthorAgentID]) REFERENCES [${mjSchema}].[AIAgent]([ID]),
     CONSTRAINT [FK_ForumPost_PromotedToSpace] FOREIGN KEY ([PromotedToSpaceID]) REFERENCES [__mj_BizAppsCollaboration].[Space]([ID]),
     CONSTRAINT [FK_ForumPost_LinkedTask] FOREIGN KEY ([LinkedTaskID]) REFERENCES [__mj_BizAppsTasks].[Task]([ID]),
+    CONSTRAINT [FK_ForumPost_LinkedEntity] FOREIGN KEY ([LinkedEntityID]) REFERENCES [${mjSchema}].[Entity]([ID]),
+    CONSTRAINT [FK_ForumPost_Conversation] FOREIGN KEY ([ConversationID]) REFERENCES [${mjSchema}].[Conversation]([ID]),
     CONSTRAINT [CK_ForumPost_VisibilityBand] CHECK ([VisibilityBand] IN (N'Shared', N'Team')),
     CONSTRAINT [CK_ForumPost_Status] CHECK ([Status] IN (N'Draft', N'PendingModeration', N'Published', N'Answered', N'Resolved', N'Archived', N'Redacted'))
 );
@@ -258,6 +281,8 @@ CREATE TABLE [${flyway:defaultSchema}].[ForumQuestionPost] (
     [BountyPoints] INT NOT NULL CONSTRAINT [DF_ForumQuestionPost_BountyPoints] DEFAULT (0),
     [ResolvedAt] DATETIMEOFFSET NULL,
     [DeflectionCount] INT NOT NULL CONSTRAINT [DF_ForumQuestionPost_DeflectionCount] DEFAULT (0),
+    [__mj_CreatedAt] DATETIMEOFFSET NOT NULL CONSTRAINT [DF_ForumQuestionPost___mj_CreatedAt] DEFAULT (SYSDATETIMEOFFSET()),
+    [__mj_UpdatedAt] DATETIMEOFFSET NOT NULL CONSTRAINT [DF_ForumQuestionPost___mj_UpdatedAt] DEFAULT (SYSDATETIMEOFFSET()),
     CONSTRAINT [PK_ForumQuestionPost] PRIMARY KEY ([ID]),
     CONSTRAINT [FK_ForumQuestionPost_ForumPost] FOREIGN KEY ([ID]) REFERENCES [${flyway:defaultSchema}].[ForumPost]([ID]),
     CONSTRAINT [FK_ForumQuestionPost_AcceptedAnswer] FOREIGN KEY ([AcceptedAnswerPostID]) REFERENCES [${flyway:defaultSchema}].[ForumPost]([ID]),
@@ -273,10 +298,12 @@ CREATE TABLE [${flyway:defaultSchema}].[ForumAnswerPost] (
     [IsVerifiedByModerator] BIT NOT NULL CONSTRAINT [DF_ForumAnswerPost_IsVerifiedByModerator] DEFAULT (0),
     [VerifiedByUserID] UNIQUEIDENTIFIER NULL,
     [VerifiedAt] DATETIMEOFFSET NULL,
-    [AIEpistemicStatus] NVARCHAR(40) NULL,
+    [AIEpistemicStatus] NVARCHAR(40) COLLATE SQL_Latin1_General_CP1_CI_AS NULL,
     [AIConfidenceScore] DECIMAL(4,3) NULL,
-    [AIRationaleMarkdown] NVARCHAR(MAX) NULL,
+    [AIRationaleMarkdown] NVARCHAR(MAX) COLLATE SQL_Latin1_General_CP1_CI_AS NULL,
     [FreshnessReviewDueAt] DATETIMEOFFSET NULL,
+    [__mj_CreatedAt] DATETIMEOFFSET NOT NULL CONSTRAINT [DF_ForumAnswerPost___mj_CreatedAt] DEFAULT (SYSDATETIMEOFFSET()),
+    [__mj_UpdatedAt] DATETIMEOFFSET NOT NULL CONSTRAINT [DF_ForumAnswerPost___mj_UpdatedAt] DEFAULT (SYSDATETIMEOFFSET()),
     CONSTRAINT [PK_ForumAnswerPost] PRIMARY KEY ([ID]),
     CONSTRAINT [FK_ForumAnswerPost_ForumPost] FOREIGN KEY ([ID]) REFERENCES [${flyway:defaultSchema}].[ForumPost]([ID]),
     CONSTRAINT [FK_ForumAnswerPost_QuestionPost] FOREIGN KEY ([QuestionPostID]) REFERENCES [${flyway:defaultSchema}].[ForumQuestionPost]([ID]),
@@ -288,13 +315,15 @@ GO
 -- 10c. ForumIdeaPost (IsA ForumPost)
 CREATE TABLE [${flyway:defaultSchema}].[ForumIdeaPost] (
     [ID] UNIQUEIDENTIFIER NOT NULL,
-    [IdeaStatus] NVARCHAR(30) NOT NULL CONSTRAINT [DF_ForumIdeaPost_IdeaStatus] DEFAULT (N'Under Consideration'),
+    [IdeaStatus] NVARCHAR(30) COLLATE SQL_Latin1_General_CP1_CI_AS NOT NULL CONSTRAINT [DF_ForumIdeaPost_IdeaStatus] DEFAULT (N'Under Consideration'),
     [TotalPointsAllocated] INT NOT NULL CONSTRAINT [DF_ForumIdeaPost_TotalPointsAllocated] DEFAULT (0),
     [EffectiveQuadraticVotes] DECIMAL(10,2) NOT NULL CONSTRAINT [DF_ForumIdeaPost_EffectiveQuadraticVotes] DEFAULT (0),
     [UniqueBackerCount] INT NOT NULL CONSTRAINT [DF_ForumIdeaPost_UniqueBackerCount] DEFAULT (0),
-    [TargetReleaseOrQuarter] NVARCHAR(50) NULL,
-    [StatusRationaleMarkdown] NVARCHAR(MAX) NULL,
+    [TargetReleaseOrQuarter] NVARCHAR(50) COLLATE SQL_Latin1_General_CP1_CI_AS NULL,
+    [StatusRationaleMarkdown] NVARCHAR(MAX) COLLATE SQL_Latin1_General_CP1_CI_AS NULL,
     [MergedIntoIdeaPostID] UNIQUEIDENTIFIER NULL,
+    [__mj_CreatedAt] DATETIMEOFFSET NOT NULL CONSTRAINT [DF_ForumIdeaPost___mj_CreatedAt] DEFAULT (SYSDATETIMEOFFSET()),
+    [__mj_UpdatedAt] DATETIMEOFFSET NOT NULL CONSTRAINT [DF_ForumIdeaPost___mj_UpdatedAt] DEFAULT (SYSDATETIMEOFFSET()),
     CONSTRAINT [PK_ForumIdeaPost] PRIMARY KEY ([ID]),
     CONSTRAINT [FK_ForumIdeaPost_ForumPost] FOREIGN KEY ([ID]) REFERENCES [${flyway:defaultSchema}].[ForumPost]([ID]),
     CONSTRAINT [FK_ForumIdeaPost_MergedIntoIdea] FOREIGN KEY ([MergedIntoIdeaPostID]) REFERENCES [${flyway:defaultSchema}].[ForumIdeaPost]([ID]),
@@ -306,12 +335,16 @@ GO
 CREATE TABLE [${flyway:defaultSchema}].[ForumFormPost] (
     [ID] UNIQUEIDENTIFIER NOT NULL,
     [FormID] UNIQUEIDENTIFIER NOT NULL,
+    [FormDistributionID] UNIQUEIDENTIFIER NULL,
     [ShowLiveResultsInline] BIT NOT NULL CONSTRAINT [DF_ForumFormPost_ShowLiveResultsInline] DEFAULT (1),
     [RequirePostReplyOnSubmit] BIT NOT NULL CONSTRAINT [DF_ForumFormPost_RequirePostReplyOnSubmit] DEFAULT (0),
     [ClosesAt] DATETIMEOFFSET NULL,
+    [__mj_CreatedAt] DATETIMEOFFSET NOT NULL CONSTRAINT [DF_ForumFormPost___mj_CreatedAt] DEFAULT (SYSDATETIMEOFFSET()),
+    [__mj_UpdatedAt] DATETIMEOFFSET NOT NULL CONSTRAINT [DF_ForumFormPost___mj_UpdatedAt] DEFAULT (SYSDATETIMEOFFSET()),
     CONSTRAINT [PK_ForumFormPost] PRIMARY KEY ([ID]),
     CONSTRAINT [FK_ForumFormPost_ForumPost] FOREIGN KEY ([ID]) REFERENCES [${flyway:defaultSchema}].[ForumPost]([ID]),
-    CONSTRAINT [FK_ForumFormPost_Form] FOREIGN KEY ([FormID]) REFERENCES [__mj_BizAppsForms].[Form]([ID])
+    CONSTRAINT [FK_ForumFormPost_Form] FOREIGN KEY ([FormID]) REFERENCES [__mj_BizAppsForms].[Form]([ID]),
+    CONSTRAINT [FK_ForumFormPost_FormDistribution] FOREIGN KEY ([FormDistributionID]) REFERENCES [__mj_BizAppsForms].[FormDistribution]([ID])
 );
 GO
 
@@ -321,9 +354,11 @@ CREATE TABLE [${flyway:defaultSchema}].[ForumArtifactPost] (
     [ArtifactID] UNIQUEIDENTIFIER NOT NULL,
     [PinnedArtifactVersionID] UNIQUEIDENTIFIER NULL,
     [SpaceItemID] UNIQUEIDENTIFIER NOT NULL,
-    [ArtifactModality] NVARCHAR(20) NOT NULL CONSTRAINT [DF_ForumArtifactPost_Modality] DEFAULT (N'Document'),
-    [CollaborationMode] NVARCHAR(20) NOT NULL CONSTRAINT [DF_ForumArtifactPost_CollabMode] DEFAULT (N'Suggest'),
+    [ArtifactModality] NVARCHAR(20) COLLATE SQL_Latin1_General_CP1_CI_AS NOT NULL CONSTRAINT [DF_ForumArtifactPost_Modality] DEFAULT (N'Document'),
+    [CollaborationMode] NVARCHAR(20) COLLATE SQL_Latin1_General_CP1_CI_AS NOT NULL CONSTRAINT [DF_ForumArtifactPost_CollabMode] DEFAULT (N'Suggest'),
     [ShowInlinePreview] BIT NOT NULL CONSTRAINT [DF_ForumArtifactPost_ShowInlinePreview] DEFAULT (1),
+    [__mj_CreatedAt] DATETIMEOFFSET NOT NULL CONSTRAINT [DF_ForumArtifactPost___mj_CreatedAt] DEFAULT (SYSDATETIMEOFFSET()),
+    [__mj_UpdatedAt] DATETIMEOFFSET NOT NULL CONSTRAINT [DF_ForumArtifactPost___mj_UpdatedAt] DEFAULT (SYSDATETIMEOFFSET()),
     CONSTRAINT [PK_ForumArtifactPost] PRIMARY KEY ([ID]),
     CONSTRAINT [FK_ForumArtifactPost_ForumPost] FOREIGN KEY ([ID]) REFERENCES [${flyway:defaultSchema}].[ForumPost]([ID]),
     CONSTRAINT [FK_ForumArtifactPost_Artifact] FOREIGN KEY ([ArtifactID]) REFERENCES [${mjSchema}].[Artifact]([ID]),
@@ -337,12 +372,14 @@ GO
 -- 10f. ForumCasePost (IsA ForumPost — Structured Peer Case Review)
 CREATE TABLE [${flyway:defaultSchema}].[ForumCasePost] (
     [ID] UNIQUEIDENTIFIER NOT NULL,
-    [SituationMarkdown] NVARCHAR(MAX) NOT NULL,
-    [ActionTakenMarkdown] NVARCHAR(MAX) NOT NULL,
-    [OutcomeMarkdown] NVARCHAR(MAX) NULL,
+    [SituationMarkdown] NVARCHAR(MAX) COLLATE SQL_Latin1_General_CP1_CI_AS NOT NULL,
+    [ActionTakenMarkdown] NVARCHAR(MAX) COLLATE SQL_Latin1_General_CP1_CI_AS NOT NULL,
+    [OutcomeMarkdown] NVARCHAR(MAX) COLLATE SQL_Latin1_General_CP1_CI_AS NULL,
     [IsAnonymized] BIT NOT NULL CONSTRAINT [DF_ForumCasePost_IsAnonymized] DEFAULT (0),
-    [AnonymizedAuthorAlias] NVARCHAR(100) NULL,
+    [AnonymizedAuthorAlias] NVARCHAR(100) COLLATE SQL_Latin1_General_CP1_CI_AS NULL,
     [RedactionConfirmedByUserID] UNIQUEIDENTIFIER NULL,
+    [__mj_CreatedAt] DATETIMEOFFSET NOT NULL CONSTRAINT [DF_ForumCasePost___mj_CreatedAt] DEFAULT (SYSDATETIMEOFFSET()),
+    [__mj_UpdatedAt] DATETIMEOFFSET NOT NULL CONSTRAINT [DF_ForumCasePost___mj_UpdatedAt] DEFAULT (SYSDATETIMEOFFSET()),
     CONSTRAINT [PK_ForumCasePost] PRIMARY KEY ([ID]),
     CONSTRAINT [FK_ForumCasePost_ForumPost] FOREIGN KEY ([ID]) REFERENCES [${flyway:defaultSchema}].[ForumPost]([ID]),
     CONSTRAINT [FK_ForumCasePost_RedactionConfirmedBy] FOREIGN KEY ([RedactionConfirmedByUserID]) REFERENCES [${mjSchema}].[User]([ID])
@@ -357,8 +394,10 @@ CREATE TABLE [${flyway:defaultSchema}].[ForumAMAPost] (
     [ScheduledEndAt] DATETIMEOFFSET NOT NULL,
     [QuestionsOpenAt] DATETIMEOFFSET NOT NULL,
     [IsLiveNow] BIT NOT NULL CONSTRAINT [DF_ForumAMAPost_IsLiveNow] DEFAULT (0),
-    [RecordingURL] NVARCHAR(500) NULL,
-    [RecapMarkdown] NVARCHAR(MAX) NULL,
+    [RecordingURL] NVARCHAR(500) COLLATE SQL_Latin1_General_CP1_CI_AS NULL,
+    [RecapMarkdown] NVARCHAR(MAX) COLLATE SQL_Latin1_General_CP1_CI_AS NULL,
+    [__mj_CreatedAt] DATETIMEOFFSET NOT NULL CONSTRAINT [DF_ForumAMAPost___mj_CreatedAt] DEFAULT (SYSDATETIMEOFFSET()),
+    [__mj_UpdatedAt] DATETIMEOFFSET NOT NULL CONSTRAINT [DF_ForumAMAPost___mj_UpdatedAt] DEFAULT (SYSDATETIMEOFFSET()),
     CONSTRAINT [PK_ForumAMAPost] PRIMARY KEY ([ID]),
     CONSTRAINT [FK_ForumAMAPost_ForumPost] FOREIGN KEY ([ID]) REFERENCES [${flyway:defaultSchema}].[ForumPost]([ID]),
     CONSTRAINT [FK_ForumAMAPost_HostUser] FOREIGN KEY ([HostUserID]) REFERENCES [${mjSchema}].[User]([ID])
@@ -371,14 +410,16 @@ CREATE TABLE [${flyway:defaultSchema}].[ForumInteractivePost] (
     [ComponentArtifactID] UNIQUEIDENTIFIER NOT NULL,
     [PinnedArtifactVersionID] UNIQUEIDENTIFIER NULL,
     [SpaceItemID] UNIQUEIDENTIFIER NULL,
-    [ExperienceKind] NVARCHAR(40) NOT NULL CONSTRAINT [DF_ForumInteractivePost_Kind] DEFAULT (N'Quiz'),
-    [ExperienceKindDetails] NVARCHAR(200) NULL,
-    [PromptUsed] NVARCHAR(MAX) NULL,
-    [ScoringMode] NVARCHAR(30) NOT NULL CONSTRAINT [DF_ForumInteractivePost_ScoringMode] DEFAULT (N'Best Score'),
+    [ExperienceKind] NVARCHAR(40) COLLATE SQL_Latin1_General_CP1_CI_AS NOT NULL CONSTRAINT [DF_ForumInteractivePost_Kind] DEFAULT (N'Quiz'),
+    [ExperienceKindDetails] NVARCHAR(200) COLLATE SQL_Latin1_General_CP1_CI_AS NULL,
+    [PromptUsed] NVARCHAR(MAX) COLLATE SQL_Latin1_General_CP1_CI_AS NULL,
+    [ScoringMode] NVARCHAR(30) COLLATE SQL_Latin1_General_CP1_CI_AS NOT NULL CONSTRAINT [DF_ForumInteractivePost_ScoringMode] DEFAULT (N'Best Score'),
     [ShowLeaderboard] BIT NOT NULL CONSTRAINT [DF_ForumInteractivePost_ShowLeaderboard] DEFAULT (1),
     [MaxAttemptsPerMember] INT NULL,
     [PlayCount] INT NOT NULL CONSTRAINT [DF_ForumInteractivePost_PlayCount] DEFAULT (0),
     [ExpiresAt] DATETIMEOFFSET NULL,
+    [__mj_CreatedAt] DATETIMEOFFSET NOT NULL CONSTRAINT [DF_ForumInteractivePost___mj_CreatedAt] DEFAULT (SYSDATETIMEOFFSET()),
+    [__mj_UpdatedAt] DATETIMEOFFSET NOT NULL CONSTRAINT [DF_ForumInteractivePost___mj_UpdatedAt] DEFAULT (SYSDATETIMEOFFSET()),
     CONSTRAINT [PK_ForumInteractivePost] PRIMARY KEY ([ID]),
     CONSTRAINT [FK_ForumInteractivePost_ForumPost] FOREIGN KEY ([ID]) REFERENCES [${flyway:defaultSchema}].[ForumPost]([ID]),
     CONSTRAINT [FK_ForumInteractivePost_Artifact] FOREIGN KEY ([ComponentArtifactID]) REFERENCES [${mjSchema}].[Artifact]([ID]),
@@ -401,8 +442,10 @@ CREATE TABLE [${flyway:defaultSchema}].[ForumInteractiveSession] (
     [Score] DECIMAL(12,2) NULL,
     [DurationSeconds] INT NULL,
     [Completed] BIT NOT NULL CONSTRAINT [DF_ForumInteractiveSession_Completed] DEFAULT (0),
-    [OutcomeSummary] NVARCHAR(300) NULL,
-    [SessionStateJSON] NVARCHAR(MAX) NULL,
+    [OutcomeSummary] NVARCHAR(300) COLLATE SQL_Latin1_General_CP1_CI_AS NULL,
+    [SessionStateJSON] NVARCHAR(MAX) COLLATE SQL_Latin1_General_CP1_CI_AS NULL,
+    [__mj_CreatedAt] DATETIMEOFFSET NOT NULL CONSTRAINT [DF_ForumInteractiveSession___mj_CreatedAt] DEFAULT (SYSDATETIMEOFFSET()),
+    [__mj_UpdatedAt] DATETIMEOFFSET NOT NULL CONSTRAINT [DF_ForumInteractiveSession___mj_UpdatedAt] DEFAULT (SYSDATETIMEOFFSET()),
     CONSTRAINT [PK_ForumInteractiveSession] PRIMARY KEY ([ID]),
     CONSTRAINT [FK_ForumInteractiveSession_InteractivePost] FOREIGN KEY ([InteractivePostID]) REFERENCES [${flyway:defaultSchema}].[ForumInteractivePost]([ID]),
     CONSTRAINT [FK_ForumInteractiveSession_ArtifactVersion] FOREIGN KEY ([ArtifactVersionID]) REFERENCES [${mjSchema}].[ArtifactVersion]([ID]),
@@ -420,6 +463,8 @@ CREATE TABLE [${flyway:defaultSchema}].[ForumPostTag] (
     [PostID] UNIQUEIDENTIFIER NOT NULL,
     [TopicTagID] UNIQUEIDENTIFIER NOT NULL,
     [AssignedByAI] BIT NOT NULL CONSTRAINT [DF_ForumPostTag_AssignedByAI] DEFAULT (0),
+    [__mj_CreatedAt] DATETIMEOFFSET NOT NULL CONSTRAINT [DF_ForumPostTag___mj_CreatedAt] DEFAULT (SYSDATETIMEOFFSET()),
+    [__mj_UpdatedAt] DATETIMEOFFSET NOT NULL CONSTRAINT [DF_ForumPostTag___mj_UpdatedAt] DEFAULT (SYSDATETIMEOFFSET()),
     CONSTRAINT [PK_ForumPostTag] PRIMARY KEY ([ID]),
     CONSTRAINT [FK_ForumPostTag_Post] FOREIGN KEY ([PostID]) REFERENCES [${flyway:defaultSchema}].[ForumPost]([ID]),
     CONSTRAINT [FK_ForumPostTag_TopicTag] FOREIGN KEY ([TopicTagID]) REFERENCES [${flyway:defaultSchema}].[ForumTopicTag]([ID]),
@@ -431,8 +476,10 @@ CREATE TABLE [${flyway:defaultSchema}].[ForumPostReaction] (
     [ID] UNIQUEIDENTIFIER NOT NULL CONSTRAINT [DF_ForumPostReaction_ID] DEFAULT (NEWSEQUENTIALID()),
     [PostID] UNIQUEIDENTIFIER NOT NULL,
     [UserID] UNIQUEIDENTIFIER NOT NULL,
-    [ReactionKind] NVARCHAR(30) NOT NULL CONSTRAINT [DF_ForumPostReaction_Kind] DEFAULT (N'Upvote'),
+    [ReactionKind] NVARCHAR(30) COLLATE SQL_Latin1_General_CP1_CI_AS NOT NULL CONSTRAINT [DF_ForumPostReaction_Kind] DEFAULT (N'Upvote'),
     [Weight] DECIMAL(5,2) NOT NULL CONSTRAINT [DF_ForumPostReaction_Weight] DEFAULT (1.00),
+    [__mj_CreatedAt] DATETIMEOFFSET NOT NULL CONSTRAINT [DF_ForumPostReaction___mj_CreatedAt] DEFAULT (SYSDATETIMEOFFSET()),
+    [__mj_UpdatedAt] DATETIMEOFFSET NOT NULL CONSTRAINT [DF_ForumPostReaction___mj_UpdatedAt] DEFAULT (SYSDATETIMEOFFSET()),
     CONSTRAINT [PK_ForumPostReaction] PRIMARY KEY ([ID]),
     CONSTRAINT [FK_ForumPostReaction_Post] FOREIGN KEY ([PostID]) REFERENCES [${flyway:defaultSchema}].[ForumPost]([ID]),
     CONSTRAINT [FK_ForumPostReaction_User] FOREIGN KEY ([UserID]) REFERENCES [${mjSchema}].[User]([ID]),
@@ -445,8 +492,10 @@ CREATE TABLE [${flyway:defaultSchema}].[ForumPostAttachment] (
     [ID] UNIQUEIDENTIFIER NOT NULL CONSTRAINT [DF_ForumPostAttachment_ID] DEFAULT (NEWSEQUENTIALID()),
     [PostID] UNIQUEIDENTIFIER NOT NULL,
     [SpaceItemID] UNIQUEIDENTIFIER NOT NULL,
-    [Caption] NVARCHAR(300) NULL,
+    [Caption] NVARCHAR(300) COLLATE SQL_Latin1_General_CP1_CI_AS NULL,
     [Sequence] INT NOT NULL CONSTRAINT [DF_ForumPostAttachment_Sequence] DEFAULT (0),
+    [__mj_CreatedAt] DATETIMEOFFSET NOT NULL CONSTRAINT [DF_ForumPostAttachment___mj_CreatedAt] DEFAULT (SYSDATETIMEOFFSET()),
+    [__mj_UpdatedAt] DATETIMEOFFSET NOT NULL CONSTRAINT [DF_ForumPostAttachment___mj_UpdatedAt] DEFAULT (SYSDATETIMEOFFSET()),
     CONSTRAINT [PK_ForumPostAttachment] PRIMARY KEY ([ID]),
     CONSTRAINT [FK_ForumPostAttachment_Post] FOREIGN KEY ([PostID]) REFERENCES [${flyway:defaultSchema}].[ForumPost]([ID]),
     CONSTRAINT [FK_ForumPostAttachment_SpaceItem] FOREIGN KEY ([SpaceItemID]) REFERENCES [__mj_BizAppsCollaboration].[SpaceItem]([ID]),
@@ -460,7 +509,9 @@ CREATE TABLE [${flyway:defaultSchema}].[ForumIdeaAllocation] (
     [UserID] UNIQUEIDENTIFIER NOT NULL,
     [PointsAllocated] INT NOT NULL,
     [QuadraticVotes] DECIMAL(10,2) NOT NULL,
-    [RationaleComment] NVARCHAR(500) NULL,
+    [RationaleComment] NVARCHAR(500) COLLATE SQL_Latin1_General_CP1_CI_AS NULL,
+    [__mj_CreatedAt] DATETIMEOFFSET NOT NULL CONSTRAINT [DF_ForumIdeaAllocation___mj_CreatedAt] DEFAULT (SYSDATETIMEOFFSET()),
+    [__mj_UpdatedAt] DATETIMEOFFSET NOT NULL CONSTRAINT [DF_ForumIdeaAllocation___mj_UpdatedAt] DEFAULT (SYSDATETIMEOFFSET()),
     CONSTRAINT [PK_ForumIdeaAllocation] PRIMARY KEY ([ID]),
     CONSTRAINT [FK_ForumIdeaAllocation_IdeaPost] FOREIGN KEY ([IdeaPostID]) REFERENCES [${flyway:defaultSchema}].[ForumIdeaPost]([ID]),
     CONSTRAINT [FK_ForumIdeaAllocation_User] FOREIGN KEY ([UserID]) REFERENCES [${mjSchema}].[User]([ID]),
@@ -474,13 +525,15 @@ CREATE TABLE [${flyway:defaultSchema}].[CommunityMemberProfile] (
     [SpaceID] UNIQUEIDENTIFIER NOT NULL,
     [UserID] UNIQUEIDENTIFIER NOT NULL,
     [PersonID] UNIQUEIDENTIFIER NULL,
-    [BioMarkdown] NVARCHAR(1000) NULL,
-    [ExpertiseTagsJSON] NVARCHAR(MAX) NULL,
+    [BioMarkdown] NVARCHAR(1000) COLLATE SQL_Latin1_General_CP1_CI_AS NULL,
+    [ExpertiseTagsJSON] NVARCHAR(MAX) COLLATE SQL_Latin1_General_CP1_CI_AS NULL,
     [HelpfulAnswerCount] INT NOT NULL CONSTRAINT [DF_CommunityMemberProfile_HelpfulAnswerCount] DEFAULT (0),
     [AcceptedAnswerCount] INT NOT NULL CONSTRAINT [DF_CommunityMemberProfile_AcceptedAnswerCount] DEFAULT (0),
     [ReputationScore] INT NOT NULL CONSTRAINT [DF_CommunityMemberProfile_ReputationScore] DEFAULT (0),
-    [DigestCadence] NVARCHAR(30) NOT NULL CONSTRAINT [DF_CommunityMemberProfile_DigestCadence] DEFAULT (N'Daily Digest'),
+    [DigestCadence] NVARCHAR(30) COLLATE SQL_Latin1_General_CP1_CI_AS NOT NULL CONSTRAINT [DF_CommunityMemberProfile_DigestCadence] DEFAULT (N'Daily Digest'),
     [OpenToPeerMentoring] BIT NOT NULL CONSTRAINT [DF_CommunityMemberProfile_OpenToPeerMentoring] DEFAULT (0),
+    [__mj_CreatedAt] DATETIMEOFFSET NOT NULL CONSTRAINT [DF_CommunityMemberProfile___mj_CreatedAt] DEFAULT (SYSDATETIMEOFFSET()),
+    [__mj_UpdatedAt] DATETIMEOFFSET NOT NULL CONSTRAINT [DF_CommunityMemberProfile___mj_UpdatedAt] DEFAULT (SYSDATETIMEOFFSET()),
     CONSTRAINT [PK_CommunityMemberProfile] PRIMARY KEY ([ID]),
     CONSTRAINT [FK_CommunityMemberProfile_Space] FOREIGN KEY ([SpaceID]) REFERENCES [${flyway:defaultSchema}].[CommunitySpace]([ID]),
     CONSTRAINT [FK_CommunityMemberProfile_User] FOREIGN KEY ([UserID]) REFERENCES [${mjSchema}].[User]([ID]),
@@ -497,7 +550,9 @@ CREATE TABLE [${flyway:defaultSchema}].[ForumSubscription] (
     [ForumID] UNIQUEIDENTIFIER NULL,
     [RootPostID] UNIQUEIDENTIFIER NULL,
     [TopicTagID] UNIQUEIDENTIFIER NULL,
-    [DeliveryLevel] NVARCHAR(30) NOT NULL CONSTRAINT [DF_ForumSubscription_DeliveryLevel] DEFAULT (N'Every Post'),
+    [DeliveryLevel] NVARCHAR(30) COLLATE SQL_Latin1_General_CP1_CI_AS NOT NULL CONSTRAINT [DF_ForumSubscription_DeliveryLevel] DEFAULT (N'Every Post'),
+    [__mj_CreatedAt] DATETIMEOFFSET NOT NULL CONSTRAINT [DF_ForumSubscription___mj_CreatedAt] DEFAULT (SYSDATETIMEOFFSET()),
+    [__mj_UpdatedAt] DATETIMEOFFSET NOT NULL CONSTRAINT [DF_ForumSubscription___mj_UpdatedAt] DEFAULT (SYSDATETIMEOFFSET()),
     CONSTRAINT [PK_ForumSubscription] PRIMARY KEY ([ID]),
     CONSTRAINT [FK_ForumSubscription_User] FOREIGN KEY ([UserID]) REFERENCES [${mjSchema}].[User]([ID]),
     CONSTRAINT [FK_ForumSubscription_Forum] FOREIGN KEY ([ForumID]) REFERENCES [${flyway:defaultSchema}].[Forum]([ID]),
@@ -517,12 +572,14 @@ CREATE TABLE [${flyway:defaultSchema}].[ForumPostFlag] (
     [PostID] UNIQUEIDENTIFIER NOT NULL,
     [ReportedByUserID] UNIQUEIDENTIFIER NULL,
     [ReportedByAgentID] UNIQUEIDENTIFIER NULL,
-    [ReasonCategory] NVARCHAR(40) NOT NULL,
-    [ReasonDetails] NVARCHAR(1000) NULL,
-    [Status] NVARCHAR(30) NOT NULL CONSTRAINT [DF_ForumPostFlag_Status] DEFAULT (N'Open'),
+    [ReasonCategory] NVARCHAR(40) COLLATE SQL_Latin1_General_CP1_CI_AS NOT NULL,
+    [ReasonDetails] NVARCHAR(1000) COLLATE SQL_Latin1_General_CP1_CI_AS NULL,
+    [Status] NVARCHAR(30) COLLATE SQL_Latin1_General_CP1_CI_AS NOT NULL CONSTRAINT [DF_ForumPostFlag_Status] DEFAULT (N'Open'),
     [ResolvedByUserID] UNIQUEIDENTIFIER NULL,
     [ResolvedAt] DATETIMEOFFSET NULL,
-    [ResolutionOutcome] NVARCHAR(40) NULL,
+    [ResolutionOutcome] NVARCHAR(40) COLLATE SQL_Latin1_General_CP1_CI_AS NULL,
+    [__mj_CreatedAt] DATETIMEOFFSET NOT NULL CONSTRAINT [DF_ForumPostFlag___mj_CreatedAt] DEFAULT (SYSDATETIMEOFFSET()),
+    [__mj_UpdatedAt] DATETIMEOFFSET NOT NULL CONSTRAINT [DF_ForumPostFlag___mj_UpdatedAt] DEFAULT (SYSDATETIMEOFFSET()),
     CONSTRAINT [PK_ForumPostFlag] PRIMARY KEY ([ID]),
     CONSTRAINT [FK_ForumPostFlag_Post] FOREIGN KEY ([PostID]) REFERENCES [${flyway:defaultSchema}].[ForumPost]([ID]),
     CONSTRAINT [FK_ForumPostFlag_ReportedByUser] FOREIGN KEY ([ReportedByUserID]) REFERENCES [${mjSchema}].[User]([ID]),
@@ -535,7 +592,7 @@ CREATE TABLE [${flyway:defaultSchema}].[ForumPostFlag] (
 GO
 
 -- -----------------------------------------------------------------------------
--- 13. Foreign-Key & Hot-Query Indexes
+-- 13. Foreign-Key, Polymorphic & Hot-Query Indexes
 -- -----------------------------------------------------------------------------
 CREATE INDEX [IX_Forum_SpaceID_Sequence] ON [${flyway:defaultSchema}].[Forum]([SpaceID], [Sequence]);
 CREATE INDEX [IX_Forum_ForumTypeID] ON [${flyway:defaultSchema}].[Forum]([ForumTypeID]);
@@ -543,6 +600,8 @@ CREATE INDEX [IX_ForumMember_UserID] ON [${flyway:defaultSchema}].[ForumMember](
 CREATE INDEX [IX_ForumPost_ForumID_LastActivity] ON [${flyway:defaultSchema}].[ForumPost]([ForumID], [IsPinned] DESC, [LastActivityAt] DESC) WHERE [RootPostID] IS NULL;
 CREATE INDEX [IX_ForumPost_RootPostID_Depth] ON [${flyway:defaultSchema}].[ForumPost]([RootPostID], [ReplyDepth]);
 CREATE INDEX [IX_ForumPost_AuthorUserID] ON [${flyway:defaultSchema}].[ForumPost]([AuthorUserID]);
+CREATE INDEX [IX_ForumPost_LinkedEntity_Record] ON [${flyway:defaultSchema}].[ForumPost]([LinkedEntityID], [LinkedRecordID]) WHERE [LinkedEntityID] IS NOT NULL;
+CREATE INDEX [IX_ForumPost_ConversationID] ON [${flyway:defaultSchema}].[ForumPost]([ConversationID]) WHERE [ConversationID] IS NOT NULL;
 CREATE INDEX [IX_ForumAnswerPost_QuestionPostID] ON [${flyway:defaultSchema}].[ForumAnswerPost]([QuestionPostID]);
 CREATE INDEX [IX_ForumInteractiveSession_Score] ON [${flyway:defaultSchema}].[ForumInteractiveSession]([InteractivePostID], [Score] DESC, [DurationSeconds] ASC);
 GO
@@ -562,30 +621,13 @@ GO
 
 -- -----------------------------------------------------------------------------
 -- 15. Inline Table-Valued Function: fnCommunityForumAccess
---     Evaluates Collaboration Space access, Space open/post-close read window,
---     and private/moderated Forum overrides in a single composable TVF.
+--     Evaluates Collaboration Space access, Space open status, and forum overrides
+--     in a single composable TVF without referencing non-existent columns.
 -- -----------------------------------------------------------------------------
 CREATE FUNCTION [${flyway:defaultSchema}].[fnCommunityForumAccess](@UserID UNIQUEIDENTIFIER)
 RETURNS TABLE
 AS
 RETURN (
-    WITH SpaceOpenWindow AS (
-        SELECT
-            s.ID AS SpaceID,
-            CAST(
-                CASE
-                    WHEN s.ClosedAt IS NULL THEN 1
-                    WHEN COALESCE(s.PostCloseAccess, st.PostCloseAccess, N'None') = N'ReadOnly' THEN 1
-                    WHEN COALESCE(s.PostCloseAccess, st.PostCloseAccess, N'None') = N'ReadOnlyWindow'
-                         AND COALESCE(s.PostCloseAccessDays, st.PostCloseAccessDays) IS NOT NULL
-                         AND DATEDIFF(DAY, s.ClosedAt, SYSDATETIMEOFFSET()) <= COALESCE(s.PostCloseAccessDays, st.PostCloseAccessDays) THEN 1
-                    ELSE 0
-                END AS BIT
-            ) AS IsReadable,
-            CAST(CASE WHEN s.ClosedAt IS NULL THEN 1 ELSE 0 END AS BIT) AS IsOpenForWrites
-        FROM [__mj_BizAppsCollaboration].[Space] AS s
-        INNER JOIN [__mj_BizAppsCollaboration].[SpaceType] AS st ON st.ID = s.SpaceTypeID
-    )
     SELECT
         f.ID AS ForumID,
         f.SpaceID,
@@ -593,7 +635,8 @@ RETURN (
         CAST(
             CASE
                 WHEN f.Status = N'Locked' THEN 0
-                WHEN sow.IsOpenForWrites = 0 THEN 0
+                WHEN ss.ReadOnly = 1 THEN 0
+                WHEN sa.CanContribute = 0 THEN 0
                 WHEN fm.Status = N'Muted' THEN 0
                 WHEN fr.CanCreateRootPost = 0 AND fr.CanReply = 0 THEN 0
                 WHEN f.PostingPolicy = N'ReadOnly' AND ISNULL(fr.CanConfigureForum, 0) = 0 THEN 0
@@ -604,8 +647,8 @@ RETURN (
     FROM [${flyway:defaultSchema}].[Forum] AS f
     INNER JOIN [__mj_BizAppsCollaboration].[fnCollaborationAccess](@UserID) AS sa
         ON sa.SpaceID = f.SpaceID
-    INNER JOIN SpaceOpenWindow AS sow
-        ON sow.SpaceID = f.SpaceID AND sow.IsReadable = 1
+    INNER JOIN [__mj_BizAppsCollaboration].[fnCollaborationSpaceStatuses]() AS ss
+        ON ss.SpaceID = f.SpaceID AND ss.Visible = 1
     LEFT JOIN [${flyway:defaultSchema}].[ForumMember] AS fm
         ON fm.ForumID = f.ID AND fm.UserID = @UserID
     LEFT JOIN [${flyway:defaultSchema}].[ForumRoleType] AS fr
@@ -624,3 +667,60 @@ RETURN (
         )
 );
 GO
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+-- =============================================================================
+-- GENERATED BY MemberJunction CodeGen — DO NOT EDIT BY HAND
+--
+-- This section will contain the CodeGen output appended during the Wave 1 CodeGen
+-- pass (EntityField inserts, generated views, spCreate/spUpdate/spDelete procedures,
+-- and triggers).
+-- =============================================================================

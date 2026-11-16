@@ -1,0 +1,22 @@
+[
+  {
+    "fields": {
+      "Name": "MJ_BizApps_Community: Forum Posts"
+    },
+    "relatedEntities": {
+      "MJ: Entity Fields": [
+        {
+          "fields": {
+            "EntityIDFieldName": "LinkedEntityID"
+          },
+          "primaryKey": {
+            "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Community: Forum Posts&Name=LinkedRecordID"
+          }
+        }
+      ]
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entities.Name=MJ_BizApps_Community: Forum Posts"
+    }
+  }
+]

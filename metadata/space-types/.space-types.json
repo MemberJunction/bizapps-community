@@ -9,20 +9,56 @@
     "fields": {
       "Code": "community",
       "Name": "Community",
-      "Description": "A standing community of practice with forums, Q&A canon, ideation campaigns, live document co-authoring, and interactive AI experiences.",
-      "Icon": "fa-solid fa-comments",
-      "DefaultVisibility": "Listed",
-      "DefaultJoinMode": "SelfServe",
-      "DefaultAllowOutsideMembers": true,
-      "RequiresExpiresAt": false,
-      "PostCloseAccess": "ReadOnly",
-      "PostCloseAccessDays": null,
+      "Vocabulary": "community",
+      "Discoverability": "Listed",
+      "JoinMode": "SelfServe",
+      "MessagingPanel": true,
+      "LibraryPanel": true,
+      "WorkPanel": true,
+      "DefaultAgentRetrieval": "Included",
+      "DefaultAllowParentAssignees": true,
+      "DefaultBand": "Shared",
+      "InviteApproval": "Approve",
+      "IsActive": true,
+      "IconClass": "fa-solid fa-people-roof",
+      "Color": "#9333ea",
       "ServerDriverClass": "CommunitySpaceServerDriver",
       "UIDriverClass": "CommunitySpaceUIDriver",
       "SpaceExtensionEntity": "MJ_BizApps_Community: Community Spaces",
-      "Configuration": "{\n  \"Children\": {\n    \"AllowedTypeCodes\": [\"working-group\", \"cohort\", \"project\", \"event\", \"community\"]\n  },\n  \"Chats\": {\n    \"WhoCanStart\": \"Anyone\",\n    \"AgentReplyMode\": \"MentionOrOneToOne\"\n  },\n  \"Extensions\": {\n    \"community\": {\n      \"AskFirstEnabled\": true,\n      \"ThreadSynthesisThreshold\": 4,\n      \"DefaultDigestCadence\": \"Daily Digest\",\n      \"AnonymousReadMode\": \"Teaser Only\"\n    }\n  },\n  \"SpaceOverridable\": [\"Chats.WhoCanStart\", \"Chats.AgentReplyMode\", \"Extensions.community\"]\n}",
-      "Sequence": 40,
-      "IsActive": true
+      "Configuration": {
+        "Children": {
+          "AllowedTypeCodes": [
+            "working-group",
+            "cohort",
+            "project",
+            "event",
+            "community"
+          ]
+        },
+        "Labels": {
+          "Tabs": {
+            "library": "Documents",
+            "work": "Work"
+          }
+        },
+        "Chats": {
+          "WhoCanStart": "Anyone",
+          "AgentReplyMode": "MentionOrOneToOne"
+        },
+        "Extensions": {
+          "community": {
+            "AskFirstEnabled": true,
+            "ThreadSynthesisThreshold": 4,
+            "DefaultDigestCadence": "Daily Digest",
+            "AnonymousReadMode": "Teaser Only"
+          }
+        },
+        "SpaceOverridable": [
+          "Chats.WhoCanStart",
+          "Chats.AgentReplyMode",
+          "Extensions.community"
+        ]
+      }
     }
   }
 ]

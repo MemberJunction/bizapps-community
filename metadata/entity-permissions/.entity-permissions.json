@@ -51,5 +51,194 @@
       "CanDelete": false,
       "ReadRLSFilterID": "@lookup:MJ: Row Level Security Filters.Name=Community: Visible Forum Posts"
     }
+  },
+  {
+    "primaryKey": { "ID": "C8A17500-4E12-4B8F-9A10-100000000005" },
+    "fields": {
+      "EntityID": "@lookup:MJ: Entities.Name=MJ_BizApps_Community: Forum Question Posts",
+      "RoleID": "@lookup:MJ: Roles.Name=Space Participant",
+      "CanCreate": true,
+      "CanRead": true,
+      "CanUpdate": true,
+      "CanDelete": false,
+      "ReadRLSFilterID": "@lookup:MJ: Row Level Security Filters.Name=Community: Visible Forum Posts"
+    }
+  },
+  {
+    "primaryKey": { "ID": "C8A17500-4E12-4B8F-9A10-100000000006" },
+    "fields": {
+      "EntityID": "@lookup:MJ: Entities.Name=MJ_BizApps_Community: Forum Answer Posts",
+      "RoleID": "@lookup:MJ: Roles.Name=Space Participant",
+      "CanCreate": true,
+      "CanRead": true,
+      "CanUpdate": true,
+      "CanDelete": false,
+      "ReadRLSFilterID": "@lookup:MJ: Row Level Security Filters.Name=Community: Visible Forum Posts"
+    }
+  },
+  {
+    "primaryKey": { "ID": "C8A17500-4E12-4B8F-9A10-100000000007" },
+    "fields": {
+      "EntityID": "@lookup:MJ: Entities.Name=MJ_BizApps_Community: Forum Idea Posts",
+      "RoleID": "@lookup:MJ: Roles.Name=Space Participant",
+      "CanCreate": true,
+      "CanRead": true,
+      "CanUpdate": true,
+      "CanDelete": false,
+      "ReadRLSFilterID": "@lookup:MJ: Row Level Security Filters.Name=Community: Visible Forum Posts"
+    }
+  },
+  {
+    "primaryKey": { "ID": "C8A17500-4E12-4B8F-9A10-100000000008" },
+    "fields": {
+      "EntityID": "@lookup:MJ: Entities.Name=MJ_BizApps_Community: Forum Form Posts",
+      "RoleID": "@lookup:MJ: Roles.Name=Space Participant",
+      "CanCreate": true,
+      "CanRead": true,
+      "CanUpdate": true,
+      "CanDelete": false,
+      "ReadRLSFilterID": "@lookup:MJ: Row Level Security Filters.Name=Community: Visible Forum Posts"
+    }
+  },
+  {
+    "primaryKey": { "ID": "C8A17500-4E12-4B8F-9A10-100000000009" },
+    "fields": {
+      "EntityID": "@lookup:MJ: Entities.Name=MJ_BizApps_Community: Forum Artifact Posts",
+      "RoleID": "@lookup:MJ: Roles.Name=Space Participant",
+      "CanCreate": true,
+      "CanRead": true,
+      "CanUpdate": true,
+      "CanDelete": false,
+      "ReadRLSFilterID": "@lookup:MJ: Row Level Security Filters.Name=Community: Visible Forum Posts"
+    }
+  },
+  {
+    "primaryKey": { "ID": "C8A17500-4E12-4B8F-9A10-100000000010" },
+    "fields": {
+      "EntityID": "@lookup:MJ: Entities.Name=MJ_BizApps_Community: Forum Case Posts",
+      "RoleID": "@lookup:MJ: Roles.Name=Space Participant",
+      "CanCreate": true,
+      "CanRead": true,
+      "CanUpdate": true,
+      "CanDelete": false,
+      "ReadRLSFilterID": "@lookup:MJ: Row Level Security Filters.Name=Community: Visible Forum Posts"
+    }
+  },
+  {
+    "primaryKey": { "ID": "C8A17500-4E12-4B8F-9A10-100000000011" },
+    "fields": {
+      "EntityID": "@lookup:MJ: Entities.Name=MJ_BizApps_Community: Forum AMAPost",
+      "RoleID": "@lookup:MJ: Roles.Name=Space Participant",
+      "CanCreate": true,
+      "CanRead": true,
+      "CanUpdate": true,
+      "CanDelete": false,
+      "ReadRLSFilterID": "@lookup:MJ: Row Level Security Filters.Name=Community: Visible Forum Posts"
+    }
+  },
+  {
+    "primaryKey": { "ID": "C8A17500-4E12-4B8F-9A10-100000000012" },
+    "fields": {
+      "EntityID": "@lookup:MJ: Entities.Name=MJ_BizApps_Community: Forum Interactive Posts",
+      "RoleID": "@lookup:MJ: Roles.Name=Space Participant",
+      "CanCreate": true,
+      "CanRead": true,
+      "CanUpdate": true,
+      "CanDelete": false,
+      "ReadRLSFilterID": "@lookup:MJ: Row Level Security Filters.Name=Community: Visible Forum Posts"
+    }
+  },
+  {
+    "primaryKey": { "ID": "C8A17500-4E12-4B8F-9A10-100000000013" },
+    "fields": {
+      "EntityID": "@lookup:MJ: Entities.Name=MJ_BizApps_Community: Forum Interactive Sessions",
+      "RoleID": "@lookup:MJ: Roles.Name=Space Participant",
+      "CanCreate": true,
+      "CanRead": true,
+      "CanUpdate": true,
+      "CanDelete": false,
+      "ReadRLSFilterID": "@lookup:MJ: Row Level Security Filters.Name=Community: Visible Forum Post Children"
+    }
+  },
+  {
+    "primaryKey": { "ID": "C8A17500-4E12-4B8F-9A10-100000000014" },
+    "fields": {
+      "EntityID": "@lookup:MJ: Entities.Name=MJ_BizApps_Community: Forum Post Tags",
+      "RoleID": "@lookup:MJ: Roles.Name=Space Participant",
+      "CanCreate": true,
+      "CanRead": true,
+      "CanUpdate": true,
+      "CanDelete": false,
+      "ReadRLSFilterID": "@lookup:MJ: Row Level Security Filters.Name=Community: Visible Forum Post Children"
+    }
+  },
+  {
+    "primaryKey": { "ID": "C8A17500-4E12-4B8F-9A10-100000000015" },
+    "fields": {
+      "EntityID": "@lookup:MJ: Entities.Name=MJ_BizApps_Community: Forum Post Reactions",
+      "RoleID": "@lookup:MJ: Roles.Name=Space Participant",
+      "CanCreate": true,
+      "CanRead": true,
+      "CanUpdate": true,
+      "CanDelete": false,
+      "ReadRLSFilterID": "@lookup:MJ: Row Level Security Filters.Name=Community: Visible Forum Post Children"
+    }
+  },
+  {
+    "primaryKey": { "ID": "C8A17500-4E12-4B8F-9A10-100000000016" },
+    "fields": {
+      "EntityID": "@lookup:MJ: Entities.Name=MJ_BizApps_Community: Forum Post Attachments",
+      "RoleID": "@lookup:MJ: Roles.Name=Space Participant",
+      "CanCreate": true,
+      "CanRead": true,
+      "CanUpdate": true,
+      "CanDelete": false,
+      "ReadRLSFilterID": "@lookup:MJ: Row Level Security Filters.Name=Community: Visible Forum Post Children"
+    }
+  },
+  {
+    "primaryKey": { "ID": "C8A17500-4E12-4B8F-9A10-100000000017" },
+    "fields": {
+      "EntityID": "@lookup:MJ: Entities.Name=MJ_BizApps_Community: Forum Idea Allocations",
+      "RoleID": "@lookup:MJ: Roles.Name=Space Participant",
+      "CanCreate": true,
+      "CanRead": true,
+      "CanUpdate": true,
+      "CanDelete": false,
+      "ReadRLSFilterID": "@lookup:MJ: Row Level Security Filters.Name=Community: Visible Forum Post Children"
+    }
+  },
+  {
+    "primaryKey": { "ID": "C8A17500-4E12-4B8F-9A10-100000000018" },
+    "fields": {
+      "EntityID": "@lookup:MJ: Entities.Name=MJ_BizApps_Community: Forum Types",
+      "RoleID": "@lookup:MJ: Roles.Name=Space Participant",
+      "CanCreate": false,
+      "CanRead": true,
+      "CanUpdate": false,
+      "CanDelete": false
+    }
+  },
+  {
+    "primaryKey": { "ID": "C8A17500-4E12-4B8F-9A10-100000000019" },
+    "fields": {
+      "EntityID": "@lookup:MJ: Entities.Name=MJ_BizApps_Community: Post Types",
+      "RoleID": "@lookup:MJ: Roles.Name=Space Participant",
+      "CanCreate": false,
+      "CanRead": true,
+      "CanUpdate": false,
+      "CanDelete": false
+    }
+  },
+  {
+    "primaryKey": { "ID": "C8A17500-4E12-4B8F-9A10-100000000020" },
+    "fields": {
+      "EntityID": "@lookup:MJ: Entities.Name=MJ_BizApps_Community: Forum Role Types",
+      "RoleID": "@lookup:MJ: Roles.Name=Space Participant",
+      "CanCreate": false,
+      "CanRead": true,
+      "CanUpdate": false,
+      "CanDelete": false
+    }
   }
 ]
