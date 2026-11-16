@@ -4,7 +4,9 @@ import {
   CommunityDocumentBlocks,
   CommunityPublicEdgeService,
   LoadBizAppsCommunityServer,
+  SaveOrThrow,
   ThreadGraduationService,
+  ValidateCanonPromotionCrossReferences,
 } from './index.ts';
 
 const ROOT_POST_ID = '23acc7cf-c227-4d33-8bb1-2558d9729711';
@@ -13,6 +15,9 @@ const USER_2 = '49cfc209-95a9-4d2f-875f-0ba5df5ea205';
 const EXISTING_SPACE_ID = 'ff1d29fc-6392-41b1-a86e-c23a178102c9';
 const QUESTION_POST_ID = '7b860684-f57e-4915-bd52-340f019562a1';
 const ANSWER_POST_ID = '6ee7db14-5a44-44c0-b771-60849abf2afa';
+const OTHER_QUESTION_POST_ID = '12b3c4d5-6e7f-4890-abcd-ef0123456789';
+const FORUM_1_ID = 'aaaaaaaa-1111-4111-8111-111111111111';
+const FORUM_2_ID = 'bbbbbbbb-2222-4222-8222-222222222222';
 const SQL_INJECTION = "' OR '1'='1";
 
 describe('@mj-biz-apps/community-server services and document blocks', () => {
@@ -267,6 +272,53 @@ describe('@mj-biz-apps/community-server services and document blocks', () => {
         }),
       );
     }
+  });
+
+  it('ValidateCanonPromotionCrossReferences rejects an answer that answers a DIFFERENT question (cross-question rejection)', () => {
+    assert.throws(
+      () =>
+        ValidateCanonPromotionCrossReferences({
+          requestedQuestionPostId: QUESTION_POST_ID,
+          answerQuestionPostId: OTHER_QUESTION_POST_ID,
+          questionForumId: FORUM_1_ID,
+          answerForumId: FORUM_1_ID,
+        }),
+      /not the requested Question/,
+    );
+  });
+
+  it('ValidateCanonPromotionCrossReferences accepts mixed-case-equal UUIDs (UUIDsEqual, not ===)', () => {
+    assert.doesNotThrow(() =>
+      ValidateCanonPromotionCrossReferences({
+        requestedQuestionPostId: QUESTION_POST_ID,
+        answerQuestionPostId: QUESTION_POST_ID.toUpperCase(),
+        questionForumId: FORUM_1_ID,
+        answerForumId: FORUM_1_ID.toUpperCase(),
+      }),
+    );
+  });
+
+  it('ValidateCanonPromotionCrossReferences rejects an answer scoped to a different Forum than its question', () => {
+    assert.throws(
+      () =>
+        ValidateCanonPromotionCrossReferences({
+          requestedQuestionPostId: QUESTION_POST_ID,
+          answerQuestionPostId: QUESTION_POST_ID,
+          questionForumId: FORUM_1_ID,
+          answerForumId: FORUM_2_ID,
+        }),
+      /must belong to the same Forum/,
+    );
+  });
+
+  it('SaveOrThrow throws the supplied message when Save() returns false (unauthorized caller / rejected save)', async () => {
+    const rejectingEntity = { Save: async () => false };
+    await assert.rejects(() => SaveOrThrow(rejectingEntity, 'SAVE_FAILED: did not persist'), /SAVE_FAILED/);
+  });
+
+  it('SaveOrThrow resolves cleanly when Save() returns true', async () => {
+    const acceptingEntity = { Save: async () => true };
+    await assert.doesNotReject(() => SaveOrThrow(acceptingEntity, 'should not throw'));
   });
 
   it('serializes custom DocumentBlocks with plain-text fallbacks for MJ Collaborative Docs', () => {
