@@ -1,4 +1,5 @@
 import type { AnonymousReadMode } from './rules.ts';
+import type { CommunityJsonObject } from './json-types.ts';
 
 export type DigestCadence =
   | 'Every Post'
@@ -28,7 +29,7 @@ export interface CommunityConfiguration {
   EnableInteractiveArtifacts: boolean;
   Posts: CommunityPostsConfiguration;
   Synthesis: CommunitySynthesisConfiguration;
-  Extensions: Record<string, Record<string, unknown>>;
+  Extensions: Record<string, CommunityJsonObject>;
   ForumOverridable: string[];
 }
 
@@ -127,7 +128,7 @@ export class CommunityConfigurationResolver {
         DEFAULT_COMMUNITY_CONFIGURATION.ForumOverridable,
     );
 
-    const mergedExtensions: Record<string, Record<string, unknown>> = {
+    const mergedExtensions: Record<string, CommunityJsonObject> = {
       ...DEFAULT_COMMUNITY_CONFIGURATION.Extensions,
       ...(appSettings?.Extensions ?? {}),
       ...(forumTypeConfig?.Extensions ?? {}),

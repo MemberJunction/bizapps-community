@@ -11,6 +11,8 @@
  *  8. Interactive Component Attempt Limits & Per-ScoringMode Leaderboard Resolution
  */
 
+import { UUIDsEqual } from '@memberjunction/global';
+
 export type CommunityVisibilityBand = 'Shared' | 'Team';
 export type ForumVisibilityBand = 'Shared' | 'Team' | 'PrivateForum';
 export type AnonymousReadMode = 'None' | 'Teaser Only' | 'Full Read';
@@ -307,7 +309,7 @@ export class CommunityRules {
     }
 
     const otherAllocations = params.existingAllocations.filter(
-      (a) => a.ideaPostId !== params.changedIdeaPostId,
+      (a) => !UUIDsEqual(a.ideaPostId, params.changedIdeaPostId),
     );
     const nextAllocations: IdeaAllocationEntry[] =
       params.newPointsAllocated > 0
@@ -341,7 +343,7 @@ export class CommunityRules {
     if (params.settingAccepted) {
       if (
         params.currentlyAcceptedAnswerPostId &&
-        params.currentlyAcceptedAnswerPostId !== params.answerPostId
+        !UUIDsEqual(params.currentlyAcceptedAnswerPostId, params.answerPostId)
       ) {
         return {
           allowed: false,
@@ -351,7 +353,7 @@ export class CommunityRules {
       return { allowed: true };
     }
 
-    if (params.currentlyAcceptedAnswerPostId !== params.answerPostId) {
+    if (!UUIDsEqual(params.currentlyAcceptedAnswerPostId, params.answerPostId)) {
       return { allowed: false, reason: 'This answer is not the currently accepted answer.' };
     }
     return { allowed: true };

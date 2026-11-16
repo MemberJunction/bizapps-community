@@ -18,7 +18,7 @@ import { CommunityEngine } from '../CommunityEngine.ts';
 import {
   BaseForumServerDriver,
   ForumDriverRegistry,
-  type ForumDriverContext,
+  type ForumAgentContextContribution,
   type ForumPostValidationContext,
   type ForumValidationResult,
 } from '../base-forum-server-driver.ts';
@@ -308,7 +308,7 @@ export class CommunitySpaceServerDriver {
     slug: string;
     activeForumCount: number;
     canonAnswerCount: number;
-  }): ForumDriverContext extends never ? never : { summary: string; data: Record<string, unknown> } {
+  }): ForumAgentContextContribution {
     return {
       summary: `Community "${params.spaceName}" (${params.slug}): ${params.activeForumCount} active forum(s), ${params.canonAnswerCount} verified canon answer(s).`,
       data: {
