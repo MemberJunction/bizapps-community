@@ -3,6 +3,7 @@ import { ActionParam, ActionResultSimple, RunActionParams } from '@memberjunctio
 import { BaseAction } from '@memberjunction/actions';
 import { RegisterClass } from '@memberjunction/global';
 import type { EpistemicAnswerStatus } from '@mj-biz-apps/community-core';
+import { ParseAllowedForumIDsParam } from './action-id-params.ts';
 import { AskFirstCandidate, ComputeAskFirstDeflection } from './ask-first-deflection.ts';
 import type { AskFirstDeflectionResult } from '../index.ts';
 
@@ -39,11 +40,12 @@ export class AskFirstDeflectionAction extends BaseAction {
     const queryText = paramValue(params, 'QueryText');
     if (!queryText) return fail('MISSING_QUERY', 'QueryText is required');
 
-    const allowedForumIDsRaw = paramValue(params, 'AllowedForumIDs');
-    const allowedForumIDs = (allowedForumIDsRaw ?? '')
-      .split(',')
-      .map((id) => id.trim())
-      .filter(Boolean);
+    let allowedForumIDs: string[];
+    try {
+      allowedForumIDs = ParseAllowedForumIDsParam(paramValue(params, 'AllowedForumIDs'));
+    } catch (err) {
+      return fail('INVALID_FORUM_ID', err instanceof Error ? err.message : 'AllowedForumIDs is malformed');
+    }
     if (allowedForumIDs.length === 0) {
       return success({
         deflected: false,

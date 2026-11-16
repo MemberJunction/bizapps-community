@@ -1,6 +1,9 @@
+import { CompositeKey, Metadata, type UserInfo } from '@memberjunction/core';
 import { ActionParam, ActionResultSimple, RunActionParams } from '@memberjunction/actions-base';
 import { BaseAction } from '@memberjunction/actions';
 import { RegisterClass } from '@memberjunction/global';
+import { COMMUNITY_ENTITY_NAMES, type mjBizAppsCommunityForumAnswerPostEntity } from '@mj-biz-apps/community-entities';
+import { ParseOptionalUUIDParam } from './action-id-params.ts';
 import { EpistemicGradingResult, GradeEpistemicAnswer } from './epistemic-answer-grading.ts';
 
 function paramValue(params: RunActionParams, name: string): string | null {
@@ -28,13 +31,37 @@ export class EpistemicAnswerGradingAction extends BaseAction {
       return fail('MISSING_CONTENT', 'QuestionBodyMarkdown and AnswerBodyMarkdown are required');
     }
 
+    let answerPostId: string | null;
+    try {
+      answerPostId = ParseOptionalUUIDParam(paramValue(params, 'AnswerPostID'), 'AnswerPostID');
+    } catch (err) {
+      return fail('INVALID_ANSWER_ID', err instanceof Error ? err.message : 'AnswerPostID is malformed');
+    }
+
     const result = GradeEpistemicAnswer({
       questionBodyMarkdown,
       answerBodyMarkdown,
       priorCanonAnswerMarkdown: paramValue(params, 'PriorCanonAnswerMarkdown'),
     });
 
+    if (answerPostId) {
+      await this.persistGrading(answerPostId, result, user);
+    }
+
     return success(result);
+  }
+
+  /** Persists the deterministic grading onto the Forum Answer Post so future reads see it without re-grading. */
+  private async persistGrading(answerPostId: string, result: EpistemicGradingResult, user: UserInfo): Promise<void> {
+    const answer = await new Metadata().GetEntityObject<mjBizAppsCommunityForumAnswerPostEntity>(
+      COMMUNITY_ENTITY_NAMES.ForumAnswerPosts,
+      CompositeKey.FromID(answerPostId),
+      user,
+    );
+    answer.AIEpistemicStatus = result.epistemicStatus;
+    answer.AIConfidenceScore = result.confidenceScore;
+    answer.AIRationaleMarkdown = result.rationaleMarkdown;
+    await answer.Save();
   }
 }
 

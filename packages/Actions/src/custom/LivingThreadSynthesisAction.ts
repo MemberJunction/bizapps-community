@@ -1,7 +1,9 @@
-import { RunView, type UserInfo } from '@memberjunction/core';
+import { CompositeKey, Metadata, RunView, type UserInfo } from '@memberjunction/core';
 import { ActionParam, ActionResultSimple, RunActionParams } from '@memberjunction/actions-base';
 import { BaseAction } from '@memberjunction/actions';
-import { RegisterClass } from '@memberjunction/global';
+import { RegisterClass, UUIDsEqual } from '@memberjunction/global';
+import { COMMUNITY_ENTITY_NAMES, type mjBizAppsCommunityForumPostEntity } from '@mj-biz-apps/community-entities';
+import { ParseOptionalUUIDParam, ParseRequiredUUIDParam } from './action-id-params.ts';
 import { SynthesizeLivingThread, ThreadPostForSynthesis } from './living-thread-synthesis.ts';
 
 interface ReplyRow {
@@ -34,12 +36,17 @@ export class LivingThreadSynthesisAction extends BaseAction {
     const user = params.ContextUser;
     if (!user) return fail('ERROR', 'ContextUser is required');
 
-    const rootPostId = paramValue(params, 'RootPostID');
-    if (!rootPostId) return fail('MISSING_ROOT_POST', 'RootPostID is required');
+    let rootPostId: string;
+    let acceptedAnswerPostId: string | null;
+    try {
+      rootPostId = ParseRequiredUUIDParam(paramValue(params, 'RootPostID'), 'RootPostID');
+      acceptedAnswerPostId = ParseOptionalUUIDParam(paramValue(params, 'AcceptedAnswerPostID'), 'AcceptedAnswerPostID');
+    } catch (err) {
+      return fail('INVALID_POST_ID', err instanceof Error ? err.message : 'RootPostID or AcceptedAnswerPostID is malformed');
+    }
 
     const maxReplyCountRaw = paramValue(params, 'MaxReplyCount');
     const maxCharsPerPostRaw = paramValue(params, 'MaxCharsPerPost');
-    const acceptedAnswerPostId = paramValue(params, 'AcceptedAnswerPostID');
 
     const root = await this.loadRootPost(rootPostId, user);
     if (!root) return fail('ROOT_POST_NOT_FOUND', `No post found with ID ${rootPostId}`);
@@ -54,6 +61,8 @@ export class LivingThreadSynthesisAction extends BaseAction {
       maxCharsPerPost: maxCharsPerPostRaw ? Number(maxCharsPerPostRaw) : undefined,
     });
 
+    await this.persistSummary(rootPostId, result.aiExecutiveSummary, result.aiSynthesizedAt, replies.length, user);
+
     const outputParams: ActionParam[] = [
       { Name: 'AIExecutiveSummary', Value: result.aiExecutiveSummary, Type: 'Output' },
       { Name: 'AISynthesizedAt', Value: result.aiSynthesizedAt.toISOString(), Type: 'Output' },
@@ -65,6 +74,25 @@ export class LivingThreadSynthesisAction extends BaseAction {
       Message: `Synthesized ${result.consideredReplyCount} repl(y/ies)`,
       Params: outputParams,
     };
+  }
+
+  /** Persists the regenerated summary onto the root Forum Post so future reads see it without re-synthesizing. */
+  private async persistSummary(
+    rootPostId: string,
+    summaryMarkdown: string,
+    synthesizedAt: Date,
+    replyWatermark: number,
+    user: UserInfo,
+  ): Promise<void> {
+    const post = await new Metadata().GetEntityObject<mjBizAppsCommunityForumPostEntity>(
+      COMMUNITY_ENTITY_NAMES.ForumPosts,
+      CompositeKey.FromID(rootPostId),
+      user,
+    );
+    post.SummaryMarkdown = summaryMarkdown;
+    post.SummaryGeneratedAt = synthesizedAt;
+    post.SummaryReplyWatermark = replyWatermark;
+    await post.Save();
   }
 
   private async loadRootPost(rootPostId: string, user: UserInfo): Promise<RootPostRow | null> {
@@ -101,7 +129,7 @@ export class LivingThreadSynthesisAction extends BaseAction {
     return result.Results.map((row) => ({
       authorDisplayName: row.AuthorUserID ?? 'Community Member',
       bodyMarkdown: row.BodyMarkdown,
-      isAccepted: acceptedAnswerPostId != null && row.ID === acceptedAnswerPostId,
+      isAccepted: acceptedAnswerPostId != null && UUIDsEqual(row.ID, acceptedAnswerPostId),
     }));
   }
 }

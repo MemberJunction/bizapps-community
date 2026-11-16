@@ -2,6 +2,7 @@ import { RunView, type UserInfo } from '@memberjunction/core';
 import { ActionParam, ActionResultSimple, RunActionParams } from '@memberjunction/actions-base';
 import { BaseAction } from '@memberjunction/actions';
 import { RegisterClass } from '@memberjunction/global';
+import { ParseAllowedForumIDsParam } from './action-id-params.ts';
 import {
   BuildCommunityDigestPDF,
   COMMUNITY_DIGEST_PDF_MAX_ITEMS,
@@ -39,10 +40,12 @@ export class ExportCommunityDigestPDFAction extends BaseAction {
     const spaceName = paramValue(params, 'SpaceName');
     if (!spaceName) return fail('MISSING_SPACE_NAME', 'SpaceName is required');
 
-    const allowedForumIDs = (paramValue(params, 'AllowedForumIDs') ?? '')
-      .split(',')
-      .map((id) => id.trim())
-      .filter(Boolean);
+    let allowedForumIDs: string[];
+    try {
+      allowedForumIDs = ParseAllowedForumIDsParam(paramValue(params, 'AllowedForumIDs'));
+    } catch (err) {
+      return fail('INVALID_FORUM_ID', err instanceof Error ? err.message : 'AllowedForumIDs is malformed');
+    }
 
     const maxItemsRaw = paramValue(params, 'MaxItems');
     const maxItems = maxItemsRaw ? Number(maxItemsRaw) : COMMUNITY_DIGEST_PDF_MAX_ITEMS;

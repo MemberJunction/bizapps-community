@@ -34,7 +34,11 @@ export interface ThreadGraduationResult {
   invitedParticipantCount: number;
 }
 
-export * from './action-ids.ts';
+// COMMUNITY_ACTION_IDS lives in @mj-biz-apps/community-core (browser-safe, zero @memberjunction/actions
+// or pdfkit dependency) so Angular client code can reference action GUIDs without pulling in this
+// Node-only package. Re-exported here for existing server-side consumers.
+export { COMMUNITY_ACTION_IDS } from '@mj-biz-apps/community-core';
+export * from './custom/action-id-params.ts';
 export * from './custom/ask-first-deflection.ts';
 export * from './custom/AskFirstDeflectionAction.ts';
 export * from './custom/epistemic-answer-grading.ts';
