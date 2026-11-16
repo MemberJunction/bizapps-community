@@ -205,8 +205,12 @@ jobs:
       - name: Build all packages
         run: pnpm run build
 
-      - name: Install Playwright Chromium (+ OS deps) for the E2E gate
-        run: pnpm exec playwright install --with-deps chromium
+      - name: Install Playwright Chromium for the E2E gate
+        run: pnpm exec playwright install chromium
+        # `--with-deps` additionally apt-installs OS-level shared libraries for the runner's exact
+        # Ubuntu version; Playwright 1.58.1 does not yet recognize `ubuntu-latest`'s current version
+        # and hard-fails rather than falling back, even though the runner image already ships the
+        # libraries the headless Chromium binary itself needs to launch.
 
       - name: Run unit tests
         run: pnpm run test
