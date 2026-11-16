@@ -189,6 +189,8 @@ function checkBrowserSmoke() {
   const evaluatedAtMs = typeof report.evaluatedAtIso === 'string' ? Date.parse(report.evaluatedAtIso) : NaN;
   if (typeof report.evaluatedAtIso !== 'string' || report.evaluatedAtIso.trim() === '' || Number.isNaN(evaluatedAtMs)) {
     violations.push('evaluatedAtIso is missing or not a valid ISO timestamp');
+  } else if (evaluatedAtMs > Date.now()) {
+    violations.push(`evaluatedAtIso "${report.evaluatedAtIso}" is in the future — a clock-skewed or fabricated report`);
   } else if (Date.now() - evaluatedAtMs > MAX_REPORT_AGE_MS) {
     violations.push(`evaluatedAtIso "${report.evaluatedAtIso}" is stale (> ${MAX_REPORT_AGE_MS / 3_600_000}h old) — re-run \`pnpm run test:e2e\``);
   }
@@ -228,6 +230,37 @@ function checkBrowserSmoke() {
     violations.push('windowPrintCalled field is missing');
   } else if (report.windowPrintCalled) {
     violations.push('window.print() was called');
+  }
+
+  for (const requiredFlag of ['keyboardNavigationVerified', 'askFirstDeflectionExercised', 'digestExportExercised', 'quadraticVotingExercised']) {
+    if (report[requiredFlag] !== true) {
+      violations.push(`${requiredFlag} is not true (got ${JSON.stringify(report[requiredFlag])})`);
+    }
+  }
+
+  // axeResultsByTab must reconcile with totalViolations: every required tab present with a
+  // non-negative count, and the sum across tabs must equal the reported total exactly — a
+  // mismatch (or a negative/fabricated per-tab count) is itself a violation.
+  if (typeof report.axeResultsByTab !== 'object' || report.axeResultsByTab === null) {
+    violations.push('axeResultsByTab field is missing');
+  } else {
+    let reconciledTotal = 0;
+    let hasNegativeOrInvalidCount = false;
+    for (const requiredTab of REQUIRED_TAB_KEYS) {
+      const perTab = report.axeResultsByTab[requiredTab];
+      const violationCount = perTab?.violationCount;
+      if (typeof violationCount !== 'number' || violationCount < 0 || !Number.isInteger(violationCount)) {
+        violations.push(`axeResultsByTab["${requiredTab}"].violationCount is missing or invalid (got ${JSON.stringify(violationCount)})`);
+        hasNegativeOrInvalidCount = true;
+        continue;
+      }
+      reconciledTotal += violationCount;
+    }
+    if (!hasNegativeOrInvalidCount && typeof report.totalViolations === 'number' && reconciledTotal !== report.totalViolations) {
+      violations.push(
+        `axeResultsByTab per-tab violationCount sum (${reconciledTotal}) does not reconcile with totalViolations (${report.totalViolations})`,
+      );
+    }
   }
 
   return {

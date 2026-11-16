@@ -1,7 +1,7 @@
 {
   "schemaVersion": "sf-e2e/v1",
-  "evaluatedAtIso": "2026-11-16T22:19:09.225Z",
-  "harnessUrl": "http://127.0.0.1:53542/",
+  "evaluatedAtIso": "2026-11-16T22:57:23.403Z",
+  "harnessUrl": "http://127.0.0.1:57368/",
   "tabsExercised": [
     "knowledge-stream",
     "qa-canon-workbench",
@@ -11,6 +11,7 @@
   "keyboardNavigationVerified": true,
   "askFirstDeflectionExercised": true,
   "digestExportExercised": true,
+  "quadraticVotingExercised": true,
   "windowPrintCalled": false,
   "quadraticVoting": {
     "costEqualsVotesSquared": true,

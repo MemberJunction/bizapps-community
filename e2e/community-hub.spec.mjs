@@ -138,6 +138,7 @@ test('Community Hub: 4 tabs, Ask-First, Quadratic Voting, Digest export, keyboar
     keyboardNavigationVerified: true,
     askFirstDeflectionExercised: true,
     digestExportExercised: true,
+    quadraticVotingExercised: true,
     windowPrintCalled: finalPrintCallCount > 0,
     quadraticVoting: {
       costEqualsVotesSquared: true,
