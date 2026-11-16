@@ -1,8 +1,12 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
+import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import {
   CommunityDocumentBlocks,
   CommunityPublicEdgeService,
+  DeduplicateUUIDsCaseInsensitive,
   LoadBizAppsCommunityServer,
   SaveOrThrow,
   ThreadGraduationService,
@@ -225,6 +229,7 @@ describe('@mj-biz-apps/community-server services and document blocks', () => {
       request: { questionPostId: QUESTION_POST_ID, canonAnswerPostId: ANSWER_POST_ID },
       isQuestionAuthorOrModerator: true,
       currentAICanonAnswerPostId: null,
+      answerAlreadyReflectsPromotion: false,
     });
     assert.equal(firstPromotion.alreadyPromoted, false);
 
@@ -232,6 +237,7 @@ describe('@mj-biz-apps/community-server services and document blocks', () => {
       request: { questionPostId: QUESTION_POST_ID, canonAnswerPostId: ANSWER_POST_ID },
       isQuestionAuthorOrModerator: true,
       currentAICanonAnswerPostId: ANSWER_POST_ID,
+      answerAlreadyReflectsPromotion: true,
     });
     assert.equal(rePromotion.alreadyPromoted, true);
 
@@ -240,8 +246,19 @@ describe('@mj-biz-apps/community-server services and document blocks', () => {
       request: { questionPostId: QUESTION_POST_ID, canonAnswerPostId: ANSWER_POST_ID },
       isQuestionAuthorOrModerator: true,
       currentAICanonAnswerPostId: ANSWER_POST_ID.toUpperCase(),
+      answerAlreadyReflectsPromotion: true,
     });
     assert.equal(mixedCaseRePromotion.alreadyPromoted, true);
+
+    // Partial-failure repair: the question side already matches, but the answer side does not —
+    // alreadyPromoted must be false so ApplyCanonPromotion knows to repair the answer.
+    const partialRepairNeeded = graduation.ValidateAndBuildCanonPromotion({
+      request: { questionPostId: QUESTION_POST_ID, canonAnswerPostId: ANSWER_POST_ID },
+      isQuestionAuthorOrModerator: true,
+      currentAICanonAnswerPostId: ANSWER_POST_ID,
+      answerAlreadyReflectsPromotion: false,
+    });
+    assert.equal(partialRepairNeeded.alreadyPromoted, false);
 
     assert.throws(
       () =>
@@ -249,6 +266,7 @@ describe('@mj-biz-apps/community-server services and document blocks', () => {
           request: { questionPostId: QUESTION_POST_ID, canonAnswerPostId: ANSWER_POST_ID },
           isQuestionAuthorOrModerator: false,
           currentAICanonAnswerPostId: null,
+          answerAlreadyReflectsPromotion: false,
         }),
       /Only the question author or a forum moderator/,
     );
@@ -262,6 +280,7 @@ describe('@mj-biz-apps/community-server services and document blocks', () => {
           request: { questionPostId: badId, canonAnswerPostId: ANSWER_POST_ID },
           isQuestionAuthorOrModerator: true,
           currentAICanonAnswerPostId: null,
+          answerAlreadyReflectsPromotion: false,
         }),
       );
       assert.throws(() =>
@@ -269,6 +288,7 @@ describe('@mj-biz-apps/community-server services and document blocks', () => {
           request: { questionPostId: QUESTION_POST_ID, canonAnswerPostId: badId },
           isQuestionAuthorOrModerator: true,
           currentAICanonAnswerPostId: null,
+          answerAlreadyReflectsPromotion: false,
         }),
       );
     }
@@ -319,6 +339,54 @@ describe('@mj-biz-apps/community-server services and document blocks', () => {
   it('SaveOrThrow resolves cleanly when Save() returns true', async () => {
     const acceptingEntity = { Save: async () => true };
     await assert.doesNotReject(() => SaveOrThrow(acceptingEntity, 'should not throw'));
+  });
+
+  it('DeduplicateUUIDsCaseInsensitive dedupes case-insensitively and trims, keeping first-seen order', () => {
+    assert.deepEqual(
+      DeduplicateUUIDsCaseInsensitive([USER_1, USER_1.toUpperCase(), ` ${USER_2} `, USER_2]),
+      [USER_1, USER_2],
+    );
+    assert.deepEqual(DeduplicateUUIDsCaseInsensitive([]), []);
+  });
+
+  // GraduateThreadToSpace's full provider-backed orchestration (actual Space/Task/SpaceMember
+  // creation) is not exercised by this DB-less node:test runner — same documented constraint as
+  // ApplyCanonPromotion's real persistence and fnCommunityForumAccess. The CONTROL-FLOW structure
+  // (prerequisite resolution strictly before any Save(), the reply/authorization rejections, the
+  // deterministic role-type preference) is verified directly against the real, uncommented source.
+  describe('GraduateThreadToSpace orchestration (static source verification — see comment above)', () => {
+    const HERE = dirname(fileURLToPath(import.meta.url));
+    const resolversSource = readFileSync(join(HERE, 'resolvers.ts'), 'utf8');
+
+    it('rejects a reply post (ParentPostID set) before resolving anything else', () => {
+      assert.match(resolversSource, /if \(rootPost\.ParentPostID !== null\) \{\s*\n\s*throw new Error/);
+    });
+
+    it('derives userCanPromoteToSpace server-side from contextUser — never accepts it as a caller-supplied parameter', () => {
+      assert.doesNotMatch(resolversSource, /GraduateThreadToSpace\(params: \{[\s\S]{0,400}userCanPromoteToSpace/);
+      assert.match(resolversSource, /const userCanPromoteToSpace = await this\.ResolveForumPromoteToSpaceCapability/);
+    });
+
+    it('resolves the SpaceType, Space Role Type, and Task Type prerequisites — and throws on any missing one — before the first SaveOrThrow', () => {
+      const body = resolversSource.split('public async GraduateThreadToSpace')[1] ?? '';
+      const firstSaveIndex = body.indexOf('await SaveOrThrow(space,');
+      const spaceTypeCheckIndex = body.indexOf("throw new Error(`No Collaboration SpaceType found");
+      const roleTypeCheckIndex = body.indexOf('No active Space Role Type is configured');
+      const taskTypeCheckIndex = body.indexOf('No Task Type is configured');
+      assert.ok(firstSaveIndex > 0, 'could not find the Space SaveOrThrow call');
+      assert.ok(spaceTypeCheckIndex > -1 && spaceTypeCheckIndex < firstSaveIndex, 'SpaceType must be resolved before the first save');
+      assert.ok(roleTypeCheckIndex > -1 && roleTypeCheckIndex < firstSaveIndex, 'Space Role Type must be resolved before the first save');
+      assert.ok(taskTypeCheckIndex > -1 && taskTypeCheckIndex < firstSaveIndex, 'Task Type must be resolved before the first save');
+    });
+
+    it('always explicitly sets LinkedTaskID (to the new Task ID or null) — never leaves it unset when no Task was created', () => {
+      assert.match(resolversSource, /rootPost\.LinkedTaskID = createStarterTask \? plan\.seededTaskId : null;/);
+    });
+
+    it('prefers an active least-privilege ("Member"/"Contributor") Space Role Type, falling back to any active role ordered deterministically by Name ASC', () => {
+      assert.match(resolversSource, /IsActive = 1 AND Name IN \('Member', 'Contributor'\)/);
+      assert.match(resolversSource, /ExtraFilter: 'IsActive = 1',\s*\n\s*OrderBy: 'Name ASC'/);
+    });
   });
 
   it('serializes custom DocumentBlocks with plain-text fallbacks for MJ Collaborative Docs', () => {
