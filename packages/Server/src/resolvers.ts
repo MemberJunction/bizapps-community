@@ -1,6 +1,14 @@
-import { CommunityRules, type AnonymousReadMode } from '@mj-biz-apps/community-core';
+import { randomUUID } from 'node:crypto';
+import { CompositeKey, Metadata, type UserInfo } from '@memberjunction/core';
+import { UUIDsEqual } from '@memberjunction/global';
+import { AssertValidUUID, AssertValidUUIDList, CommunityRules, type AnonymousReadMode } from '@mj-biz-apps/community-core';
 import type { ThreadGraduationRequest, ThreadGraduationResult } from '@mj-biz-apps/community-actions';
-import type { IForumPostSummary, IForumSummary } from '@mj-biz-apps/community-entities';
+import {
+  COMMUNITY_ENTITY_NAMES,
+  type IForumPostSummary,
+  type IForumSummary,
+  type mjBizAppsCommunityForumQuestionPostEntity,
+} from '@mj-biz-apps/community-entities';
 
 export interface PublicCommunityThreadProjection {
   postId: string;
@@ -91,6 +99,15 @@ export class ThreadGraduationService {
       throw new Error('Current member does not hold the CanPromoteToSpace capability in this forum.');
     }
 
+    AssertValidUUID(params.request.rootPostId, 'rootPostId');
+    const uniqueParticipantIds = Array.from(new Set(params.request.includeParticipantUserIds));
+    if (uniqueParticipantIds.length > 0) {
+      AssertValidUUIDList(uniqueParticipantIds.join(','), 'includeParticipantUserIds');
+    }
+    if (params.currentPromotedToSpaceId) {
+      AssertValidUUID(params.currentPromotedToSpaceId, 'currentPromotedToSpaceId');
+    }
+
     const normalizedType = params.request.targetSpaceTypeCode.trim().toLowerCase();
     const allowedSet = new Set(params.allowedChildSpaceTypeCodes.map((code) => code.toLowerCase()));
     if (!allowedSet.has(normalizedType)) {
@@ -108,12 +125,16 @@ export class ThreadGraduationService {
       };
     }
 
-    const uniqueParticipants = Array.from(new Set(params.request.includeParticipantUserIds));
+    // Deterministic, genuinely-valid UUIDv4s — never a fabricated `graduated-<id>`/`task-<id>` string.
+    // Actually creating the Space (`__mj_BizAppsCollaboration`) and Task (`__mj_BizAppsTasks`) rows that
+    // these IDs are pre-assigned to is owned by the GraphQL resolver layer, which already orchestrates
+    // both sibling schemas and the invite flow; this service only decides WHETHER graduation is allowed
+    // and HANDS BACK the ID plan for the resolver to persist.
     return {
-      promotedToSpaceId: `graduated-${params.request.rootPostId}`,
+      promotedToSpaceId: randomUUID(),
       targetSpaceTypeCode: normalizedType,
-      seededTaskId: params.request.seedInitialTaskTitle ? `task-${params.request.rootPostId}` : null,
-      invitedParticipantCount: uniqueParticipants.length,
+      seededTaskId: params.request.seedInitialTaskTitle ? randomUUID() : null,
+      invitedParticipantCount: uniqueParticipantIds.length,
     };
   }
 
@@ -132,10 +153,33 @@ export class ThreadGraduationService {
       throw new Error('Only the question author or a forum moderator may promote an answer to Knowledge Canon.');
     }
 
+    AssertValidUUID(params.request.questionPostId, 'questionPostId');
+    AssertValidUUID(params.request.canonAnswerPostId, 'canonAnswerPostId');
+    if (params.currentAICanonAnswerPostId) {
+      AssertValidUUID(params.currentAICanonAnswerPostId, 'currentAICanonAnswerPostId');
+    }
+
     return {
       questionPostId: params.request.questionPostId,
       canonAnswerPostId: params.request.canonAnswerPostId,
-      alreadyPromoted: params.currentAICanonAnswerPostId === params.request.canonAnswerPostId,
+      alreadyPromoted:
+        params.currentAICanonAnswerPostId !== null &&
+        UUIDsEqual(params.currentAICanonAnswerPostId, params.request.canonAnswerPostId),
     };
+  }
+
+  /**
+   * Persists a validated canon promotion (see {@link ValidateAndBuildCanonPromotion}) onto
+   * `ForumQuestionPost.AICanonAnswerPostID` via `Metadata.GetEntityObject`. Callers must have already
+   * run `ValidateAndBuildCanonPromotion` and confirmed `alreadyPromoted === false`.
+   */
+  public async ApplyCanonPromotion(params: { request: CanonPromotionRequest; user: UserInfo }): Promise<void> {
+    const question = await new Metadata().GetEntityObject<mjBizAppsCommunityForumQuestionPostEntity>(
+      COMMUNITY_ENTITY_NAMES.ForumQuestionPosts,
+      CompositeKey.FromID(params.request.questionPostId),
+      params.user,
+    );
+    question.AICanonAnswerPostID = params.request.canonAnswerPostId;
+    await question.Save();
   }
 }
