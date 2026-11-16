@@ -30572,6 +30572,55 @@ ALTER TABLE __mj_BizAppsCommunity."CommunitySpace"
  ADD CONSTRAINT "FK_CommunitySpace_DefaultForum" FOREIGN KEY ("DefaultForumID") REFERENCES __mj_BizAppsCommunity."Forum"("ID") DEFERRABLE INITIALLY DEFERRED;
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 -- ===================== Grants =====================
 
 DO $$ BEGIN GRANT SELECT ON __mj_BizAppsCommunity."vwCommunityMemberProfiles" TO "cdp_UI", "cdp_Developer", "cdp_Integration"; EXCEPTION WHEN others THEN NULL; END $$;

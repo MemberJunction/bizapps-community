@@ -55,6 +55,23 @@ BEGIN
     )
     ON CONFLICT ("ID") DO NOTHING;
 
+    -- 1b. Space Members — owning a Space (OwnerID) does NOT by itself grant access via
+    --     fnCollaborationAccess/fnCommunityForumAccess; an ACTIVE SpaceMember row is required.
+    --     'Owner' (CanContribute = TRUE) is a real, already-seeded
+    --     MJ_BizApps_Collaboration: Space Role Type.
+    INSERT INTO __mj_BizAppsCollaboration."SpaceMember" ("ID", "SpaceID", "UserID", "SpaceRoleTypeID", "Band", "Status")
+    VALUES
+    ('C8A18050-4E12-4B8F-9A10-100000000001', 'C8A18000-4E12-4B8F-9A10-100000000001', v_admin_user_id, '69090145-C214-4C16-83C5-9D0F1F3B6DE4', 'Shared', 'Active'),
+    ('C8A18050-4E12-4B8F-9A10-100000000002', 'C8A18000-4E12-4B8F-9A10-100000000002', v_admin_user_id, '69090145-C214-4C16-83C5-9D0F1F3B6DE4', 'Shared', 'Active'),
+    ('C8A18050-4E12-4B8F-9A10-100000000003', 'C8A18000-4E12-4B8F-9A10-100000000003', v_admin_user_id, '69090145-C214-4C16-83C5-9D0F1F3B6DE4', 'Shared', 'Active')
+    ON CONFLICT ("ID") DO NOTHING;
+
+    IF v_second_user_id IS NOT NULL THEN
+        INSERT INTO __mj_BizAppsCollaboration."SpaceMember" ("ID", "SpaceID", "UserID", "SpaceRoleTypeID", "Band", "Status")
+        VALUES ('C8A18050-4E12-4B8F-9A10-100000000004', 'C8A18000-4E12-4B8F-9A10-100000000002', v_second_user_id, '03AD14E2-341A-4AC6-BA9D-E7AA5B31647B', 'Shared', 'Active')
+        ON CONFLICT ("ID") DO NOTHING;
+    END IF;
+
     -- 2. CommunitySpace subtypes
     INSERT INTO "CommunitySpace" (
         "ID", "Slug", "CommunityKind", "AnonymousReadMode", "AskFirstEnabled", "DefaultDigestCadence"

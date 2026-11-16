@@ -32347,9 +32347,6 @@ GRANT EXECUTE ON [${flyway:defaultSchema}].[spDeletePostType] TO [cdp_Developer]
 
 GRANT EXECUTE ON [${flyway:defaultSchema}].[spDeletePostType] TO [cdp_Developer], [cdp_Integration];
 
-/* SQL text to delete unneeded entity fields */
-EXEC [${mjSchema}].[spDeleteUnneededEntityFields] @ExcludedSchemaNames='sys,staging,dbo,${mjSchema}', @IncludedSchemaNames='${flyway:defaultSchema}';
-
 /* SQL text to insert 39 new entity field(s) */
 
       IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[EntityField] WHERE ID = '2d70e23e-7c17-4bc8-83d2-cb8ff02944c7' OR (EntityID = '863C68E4-D58A-465F-97DE-098400DD851E' AND Name = 'User')) BEGIN

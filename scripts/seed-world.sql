@@ -65,6 +65,37 @@ BEGIN
     );
 END;
 
+-- 2b. Space Members — owning a Space (OwnerID) does NOT by itself grant access via
+--     fnCollaborationAccess/fnCommunityForumAccess; an ACTIVE SpaceMember row is required. Without
+--     this, the admin user could not actually post in the Forums that live inside their own
+--     seeded Spaces, silently breaking every downstream access check. 'Owner' (CanContribute = 1)
+--     is a real, already-seeded MJ_BizApps_Collaboration: Space Role Type.
+DECLARE @OwnerSpaceRoleTypeID UNIQUEIDENTIFIER = '69090145-C214-4C16-83C5-9D0F1F3B6DE4';
+
+IF NOT EXISTS (SELECT 1 FROM [__mj_BizAppsCollaboration].[SpaceMember] WHERE [SpaceID] = @Space1ID AND [UserID] = @AdminUserID)
+BEGIN
+    INSERT INTO [__mj_BizAppsCollaboration].[SpaceMember] ([ID], [SpaceID], [UserID], [SpaceRoleTypeID], [Band], [Status])
+    VALUES ('C8A18050-4E12-4B8F-9A10-100000000001', @Space1ID, @AdminUserID, @OwnerSpaceRoleTypeID, N'Shared', N'Active');
+END;
+
+IF NOT EXISTS (SELECT 1 FROM [__mj_BizAppsCollaboration].[SpaceMember] WHERE [SpaceID] = @Space2ID AND [UserID] = @AdminUserID)
+BEGIN
+    INSERT INTO [__mj_BizAppsCollaboration].[SpaceMember] ([ID], [SpaceID], [UserID], [SpaceRoleTypeID], [Band], [Status])
+    VALUES ('C8A18050-4E12-4B8F-9A10-100000000002', @Space2ID, @AdminUserID, @OwnerSpaceRoleTypeID, N'Shared', N'Active');
+END;
+
+IF NOT EXISTS (SELECT 1 FROM [__mj_BizAppsCollaboration].[SpaceMember] WHERE [SpaceID] = @Space3ID AND [UserID] = @AdminUserID)
+BEGIN
+    INSERT INTO [__mj_BizAppsCollaboration].[SpaceMember] ([ID], [SpaceID], [UserID], [SpaceRoleTypeID], [Band], [Status])
+    VALUES ('C8A18050-4E12-4B8F-9A10-100000000003', @Space3ID, @AdminUserID, @OwnerSpaceRoleTypeID, N'Shared', N'Active');
+END;
+
+IF @SecondUserID IS NOT NULL AND NOT EXISTS (SELECT 1 FROM [__mj_BizAppsCollaboration].[SpaceMember] WHERE [SpaceID] = @Space2ID AND [UserID] = @SecondUserID)
+BEGIN
+    INSERT INTO [__mj_BizAppsCollaboration].[SpaceMember] ([ID], [SpaceID], [UserID], [SpaceRoleTypeID], [Band], [Status])
+    VALUES ('C8A18050-4E12-4B8F-9A10-100000000004', @Space2ID, @SecondUserID, '03AD14E2-341A-4AC6-BA9D-E7AA5B31647B', N'Shared', N'Active');
+END;
+
 -- 3. CommunitySpace Subtypes
 IF NOT EXISTS (SELECT 1 FROM [__mj_BizAppsCommunity].[CommunitySpace] WHERE [ID] = @Space1ID)
 BEGIN
