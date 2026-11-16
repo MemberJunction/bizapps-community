@@ -1,0 +1,209 @@
+name: CI Build, Test & Quality Gates
+
+permissions:
+  contents: read
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [next, main]
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+    branches: [next, main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-test:
+    name: Build, Unit Tests & Static Gates
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Checkout bizapps-community
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Checkout upstream bizapps-collaboration
+        uses: actions/checkout@v4
+        with:
+          repository: MemberJunction/bizapps-collaboration
+          ref: next
+          path: .ci/bizapps-collaboration
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Configure joined CI workspace for upstream dependencies
+        run: |
+          node - <<'NODE'
+          const fs = require('node:fs');
+
+          const rootPkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
+          const mjVersion =
+            rootPkg.devDependencies?.['@memberjunction/core'] || '6.3.0-edge.0';
+          const pkgOverrides = rootPkg.pnpm?.overrides || {};
+          const mergedOverrides = {
+            '@types/node': '24.10.11',
+            '@angular/animations': '21.2.22',
+            '@angular/common': '21.2.22',
+            '@angular/compiler': '21.2.22',
+            '@angular/compiler-cli': '21.2.22',
+            '@angular/core': '21.2.22',
+            '@angular/forms': '21.2.22',
+            '@angular/platform-browser': '21.2.22',
+            '@angular/router': '21.2.22',
+            '@angular/cdk': '21.2.14',
+            ...pkgOverrides,
+            '@memberjunction/*': mjVersion,
+            vite: '7.3.6',
+          };
+
+          const lines = [
+            'packages:',
+            "  - 'packages/*'",
+            "  - 'packages/Example*/*'",
+            "  - 'e2e'",
+            "  - '.ci/bizapps-collaboration/packages/*'",
+            "  - '.ci/bizapps-collaboration/packages/ExampleSpaceTypes/*'",
+            'linkWorkspacePackages: true',
+            'minimumReleaseAge: 0',
+            'overrides:',
+            ...Object.entries(mergedOverrides).map(
+              ([k, v]) => `  '${k}': '${v}'`,
+            ),
+            'allowBuilds:',
+            '  esbuild: true',
+            "  '@apollo/protobufjs': false",
+            "  '@google/genai': false",
+            '  isolated-vm: false',
+            '  oracledb: false',
+            '  protobufjs: false',
+            '  sharp: false',
+            '  tesseract.js: false',
+            '',
+          ];
+
+          fs.writeFileSync('pnpm-workspace.yaml', lines.join('\n'), 'utf8');
+          console.log(
+            `Configured CI workspace with .ci/bizapps-collaboration and @memberjunction/*=${mjVersion}`,
+          );
+          NODE
+
+      - name: Install dependencies
+        run: pnpm install --no-frozen-lockfile
+
+      - name: Build upstream bizapps-collaboration libraries
+        run: |
+          pnpm \
+            --filter @mj-biz-apps/collaboration-core... \
+            --filter @mj-biz-apps/collaboration-entities... \
+            --filter @mj-biz-apps/collaboration-engine-base... \
+            --filter @mj-biz-apps/collaboration-core-entities-server... \
+            --filter @mj-biz-apps/collaboration-ng-widgets... \
+            run build
+
+      - name: Check downstream naming boundary
+        run: node scripts/check-downstream-names.mjs
+
+      - name: Enforce static type, entity-access & storage gates
+        run: |
+          node - <<'NODE'
+          const fs = require('node:fs');
+          const path = require('node:path');
+          const ts = require('typescript');
+
+          function walkTs(dir, out = []) {
+            if (!fs.existsSync(dir)) return out;
+            for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+              const full = path.join(dir, entry.name);
+              if (entry.isDirectory()) {
+                const normFull = full.replace(/\\/g, '/');
+                if (
+                  entry.name === 'node_modules' ||
+                  entry.name === 'dist' ||
+                  normFull.endsWith('/src/generated') ||
+                  normFull.includes('/src/generated/')
+                ) {
+                  continue;
+                }
+                walkTs(full, out);
+              } else if (
+                entry.isFile() &&
+                entry.name.endsWith('.ts') &&
+                !entry.name.endsWith('.d.ts')
+              ) {
+                out.push(full);
+              }
+            }
+            return out;
+          }
+
+          const violations = [];
+          const files = walkTs('packages');
+          for (const file of files) {
+            const norm = file.replace(/\\/g, '/');
+            const isTest =
+              norm.includes('/__tests__/') || /\.(?:test|spec)\.ts$/.test(norm);
+            const src = fs.readFileSync(file, 'utf8');
+            const sf = ts.createSourceFile(file, src, ts.ScriptTarget.Latest, true);
+            const visit = (node) => {
+              if (node.kind === ts.SyntaxKind.AnyKeyword) {
+                const pos = sf.getLineAndCharacterOfPosition(node.getStart(sf));
+                violations.push(`${norm}:${pos.line + 1}: forbidden \`any\` type`);
+              }
+              if (
+                ts.isCallExpression(node) &&
+                ts.isPropertyAccessExpression(node.expression)
+              ) {
+                const name = node.expression.name.text;
+                const receiver = node.expression.expression.getText(sf);
+                if (
+                  (name === 'Get' || name === 'Set') &&
+                  node.arguments.length >= 1 &&
+                  ts.isStringLiteral(node.arguments[0]) &&
+                  !receiver.includes('Directory')
+                ) {
+                  const pos = sf.getLineAndCharacterOfPosition(node.getStart(sf));
+                  violations.push(
+                    `${norm}:${pos.line + 1}: forbidden BaseEntity .${name}() call`,
+                  );
+                }
+              }
+              if (
+                !isTest &&
+                ts.isIdentifier(node) &&
+                (node.text === 'localStorage' || node.text === 'sessionStorage')
+              ) {
+                const pos = sf.getLineAndCharacterOfPosition(node.getStart(sf));
+                violations.push(
+                  `${norm}:${pos.line + 1}: forbidden ${node.text} usage (use UserInfoEngine.Instance)`,
+                );
+              }
+              ts.forEachChild(node, visit);
+            };
+            visit(sf);
+          }
+
+          if (violations.length > 0) {
+            console.error(violations.join('\n'));
+            process.exit(1);
+          }
+          console.log(`Static gates passed cleanly across ${files.length} TS files.`);
+          NODE
+
+      - name: Build all packages
+        run: pnpm run build
+
+      - name: Run unit tests
+        run: pnpm run test
