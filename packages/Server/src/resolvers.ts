@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { CompositeKey, Metadata, RunView, type UserInfo } from '@memberjunction/core';
+import { BaseEntity, CompositeKey, Metadata, RunView, type UserInfo } from '@memberjunction/core';
 import { UUIDsEqual } from '@memberjunction/global';
 import type { MJTaskEntity } from '@memberjunction/core-entities';
 import { AssertValidUUID, AssertValidUUIDList, CommunityRules, EscapeSqlLiteral, type AnonymousReadMode } from '@mj-biz-apps/community-core';
@@ -15,7 +15,37 @@ import {
   type mjBizAppsCommunityForumQuestionPostEntity,
   type mjBizAppsCommunityForumRoleTypeEntity,
 } from '@mj-biz-apps/community-entities';
-import type { mjBizAppsCollaborationSpaceEntity, mjBizAppsCollaborationSpaceMemberEntity } from '@mj-biz-apps/collaboration-entities';
+
+/**
+ * Minimal structural views of `MJ_BizApps_Collaboration: Spaces` / `Space Members`, deliberately
+ * NOT importing the real `mjBizAppsCollaborationSpaceEntity`/`mjBizAppsCollaborationSpaceMemberEntity`
+ * classes from `@mj-biz-apps/collaboration-entities`: that sibling package is built against its own
+ * checkout of `@memberjunction/core`, and in CI (a fresh `pnpm install` resolving published
+ * versions, not this monorepo's live sibling checkouts) its generated entity classes have failed
+ * to structurally satisfy `GetEntityObject<T extends BaseEntity>`'s constraint even though the
+ * version strings match — a cross-package type-identity issue, not a schema one. `Metadata.
+ * GetEntityObject` resolves the ACTUAL runtime class purely from the entity NAME string via
+ * MJGlobal's ClassFactory; the generic type parameter is a compile-time view only, so a minimal
+ * interface naming just the fields this file actually sets is both safe and accurate.
+ */
+interface CollaborationSpaceEntityView extends BaseEntity {
+  ID: string;
+  SpaceTypeID: string;
+  ParentID: string | null;
+  Name: string;
+  OwnerID: string;
+  InheritsMembership: boolean;
+  AgentRetrieval: 'ExcludedEntirely' | 'ExcludedFromParentScope' | 'Included';
+  StartedAt: Date | null;
+}
+
+interface CollaborationSpaceMemberEntityView extends BaseEntity {
+  SpaceID: string;
+  UserID: string;
+  SpaceRoleTypeID: string;
+  Band: 'Shared' | 'Team';
+  Status: 'Active' | 'Invited' | 'Removed';
+}
 
 /** Awaits `entity.Save()` and throws `message` if it returns `false` — MJ's documented signal for a failed save (validation/trigger rejection), never a thrown exception on its own. */
 export async function SaveOrThrow(entity: { Save(): Promise<boolean> }, message: string): Promise<void> {
@@ -359,7 +389,7 @@ export class ThreadGraduationService {
       throw new Error(`No Collaboration SpaceType found for code "${plan.targetSpaceTypeCode}".`);
     }
 
-    const space = await md.GetEntityObject<mjBizAppsCollaborationSpaceEntity>(
+    const space = await md.GetEntityObject<CollaborationSpaceEntityView>(
       'MJ_BizApps_Collaboration: Spaces',
       params.contextUser,
     );
@@ -389,7 +419,7 @@ export class ThreadGraduationService {
       const spaceRoleTypeId = await this.ResolveIdByFilter('MJ_BizApps_Collaboration: Space Role Types', '1=1', params.contextUser);
       if (spaceRoleTypeId) {
         for (const participantUserId of uniqueParticipantIds) {
-          const member = await md.GetEntityObject<mjBizAppsCollaborationSpaceMemberEntity>(
+          const member = await md.GetEntityObject<CollaborationSpaceMemberEntityView>(
             'MJ_BizApps_Collaboration: Space Members',
             params.contextUser,
           );
