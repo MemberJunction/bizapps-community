@@ -1,7 +1,9 @@
 {
   "schemaVersion": "sf-e2e/v1",
-  "evaluatedAtIso": "2026-11-17T13:42:23.367Z",
-  "harnessUrl": "http://127.0.0.1:49700/",
+  "evaluatedAtIso": "2026-11-17T13:50:49.475Z",
+  "harnessUrl": "http://127.0.0.1:50186/",
+  "fontAwesomeMode": "local-package",
+  "fontAwesomeLoaded": true,
   "runtimeClassFactoryRegistrationsVerified": 26,
   "tabsExercised": [
     "knowledge-stream",
@@ -45,5 +47,14 @@
   },
   "totalViolations": 0,
   "totalCriticalOrSeriousViolations": 0,
-  "screenshotPath": "e2e/screenshots/community-hub.png"
+  "screenshotPath": "e2e/screenshots/community-hub.png",
+  "screenshots": [
+    "e2e/screenshots/01-editorial-porch.png",
+    "e2e/screenshots/02-knowledge-stream.png",
+    "e2e/screenshots/03-detail-drawer.png",
+    "e2e/screenshots/04-qa-canon-workbench.png",
+    "e2e/screenshots/05-quadratic-ideation-wallet.png",
+    "e2e/screenshots/06-living-co-authoring.png",
+    "e2e/screenshots/community-hub.png"
+  ]
 }
