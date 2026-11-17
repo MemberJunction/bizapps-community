@@ -221,18 +221,8 @@ See [**Extensibility Architecture (`docs/EXTENSIBILITY_PLAN.md`)**](docs/EXTENSI
 
 ## Documentation
 
-- [**Master Architecture, Full IsA Schema & Software Factory Plan (`plans/plan.md`)**](plans/plan.md) — Complete SQL DDL, Mermaid ERDs, access TVF, and 7-Wave Software Factory execution blueprint.
+- [**Master Architecture & Full IsA Schema Plan (`plans/plan.md`)**](plans/plan.md) — Complete SQL DDL, Mermaid ERDs, access TVF, and 7-Wave implementation blueprint.
 - [**ForumType, PostType & Peer SpaceType Extensibility Plan (`docs/EXTENSIBILITY_PLAN.md`)**](docs/EXTENSIBILITY_PLAN.md) — Deep dive into `IsA` hard-FK subtype tables, 4-tier configuration cascade (`ForumOverridable`), per-forum roles, MJ Docs/Slides/Sheets integration, Interactive Component Artifacts, and peer Collaboration `SpaceType` interop.
 - [**3 Divergent Interactive UX Concepts (`docs/ux/community-3-divergent-ux-concepts.html`)**](docs/ux/community-3-divergent-ux-concepts.html) — Interactive HTML showcase comparing 3 divergent UX philosophies (*Calm Knowledge Stream*, *Adaptive Bento + Split Workbench*, and *AI Concierge Portal + Canon Atlas*) uniting Community, Committees, Core Collaboration, and Secure Messaging.
 - [**Interactive AI-Native Community UX Prototype (`docs/ux/interactive-community-prototype.html`)**](docs/ux/interactive-community-prototype.html) — Self-contained interactive HTML prototype of the Collapsed Forum, Ask-First Composer, Living Thread Synthesis, and Collaboration Space graduation flow.
 - [**CLAUDE.md**](CLAUDE.md) — Metadata, migration, and workspace authoring rules.
-
-<!-- MJ-FACTORY-SPECS:START -->
-### Software Factory Governed Specifications (`bizapps-community-production-build-waves-0-6`)
-- **Feature / Initiative:** BizApps Community Production Build (Waves 0-6)
-- **Product Brief:** [`.mj/specs/bizapps-community-production-build-waves-0-6/product-brief.md`](.mj/specs/bizapps-community-production-build-waves-0-6/product-brief.md)
-- **Architecture & EARS Plan:** [`.mj/specs/bizapps-community-production-build-waves-0-6/architecture-plan.md`](.mj/specs/bizapps-community-production-build-waves-0-6/architecture-plan.md)
-- **Tasks & Evidence:** [`.mj/specs/bizapps-community-production-build-waves-0-6/tasks-and-evidence.md`](.mj/specs/bizapps-community-production-build-waves-0-6/tasks-and-evidence.md)
-- **MemberJunction Guide:** [`docs/bizapps-community-production-build-waves-0-6.md`](docs/bizapps-community-production-build-waves-0-6.md)
-- **Verified Commit:** `HEAD`
-<!-- MJ-FACTORY-SPECS:END -->
