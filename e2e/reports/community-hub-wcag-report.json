@@ -1,10 +1,11 @@
 {
   "schemaVersion": "sf-e2e/v1",
-  "evaluatedAtIso": "2026-11-17T14:44:20.138Z",
-  "harnessUrl": "http://127.0.0.1:52604/",
+  "evaluatedAtIso": "2026-11-17T17:10:03.361Z",
+  "harnessUrl": "http://127.0.0.1:60889/",
   "fontAwesomeMode": "local-package",
   "fontAwesomeLoaded": true,
   "runtimeClassFactoryRegistrationsVerified": 26,
+  "collaborationEmbeddedExercised": true,
   "tabsExercised": [
     "knowledge-stream",
     "qa-canon-workbench",
@@ -55,6 +56,7 @@
     "e2e/screenshots/04-qa-canon-workbench.png",
     "e2e/screenshots/05-quadratic-ideation-wallet.png",
     "e2e/screenshots/06-living-co-authoring.png",
+    "e2e/screenshots/07-collaboration-embedded.png",
     "e2e/screenshots/community-hub.png"
   ]
 }

@@ -1,6 +1,19 @@
-<mj-page-layout>
-  <mj-page-body [Padding]="false">
-    <div class="mjc-community-hub" [attr.data-feed-count]="feedPosts.length">
+@if (EmbeddedMode) {
+  <ng-container *ngTemplateOutlet="hubWorkspaceTemplate" />
+} @else {
+  <mj-page-layout>
+    <mj-page-body [Padding]="false">
+      <ng-container *ngTemplateOutlet="hubWorkspaceTemplate" />
+    </mj-page-body>
+  </mj-page-layout>
+}
+
+<ng-template #hubWorkspaceTemplate>
+    <div
+      class="mjc-community-hub"
+      [class.mjc-community-hub--embedded]="EmbeddedMode"
+      [attr.data-feed-count]="feedPosts.length"
+    >
       <!-- STICKY TOP HEADER BAR -->
       <header
         class="mjc-hub-header"
@@ -8,21 +21,24 @@
         [attr.aria-hidden]="hasActiveOverlay ? 'true' : null"
       >
         <div class="mjc-hub-header__inner">
-          <div class="mjc-hub-brand">
-            <svg class="mjc-hub-brand__emblem" width="34" height="34" viewBox="0 0 36 36" aria-hidden="true">
-              <rect x="2" y="2" width="32" height="32" rx="9" class="mjc-emblem-bg" />
-              <path d="M18 9L26 14V22L18 27L10 22V14L18 9Z" class="mjc-emblem-accent" />
-            </svg>
-            <div class="mjc-hub-brand__copy">
-              <div class="mjc-hub-brand__title-row">
-                <span class="mjc-hub-brand__title">MemberJunction Community Hub</span>
-                <span class="mjc-hub-brand__pill">Commons</span>
+          @if (!EmbeddedMode) {
+            <div class="mjc-hub-brand">
+              <svg class="mjc-hub-brand__emblem" width="34" height="34" viewBox="0 0 36 36" aria-hidden="true">
+                <rect x="2" y="2" width="32" height="32" rx="9" class="mjc-emblem-bg" />
+                <path d="M18 9L26 14V22L18 27L10 22V14L18 9Z" class="mjc-emblem-accent" />
+              </svg>
+              <div class="mjc-hub-brand__copy">
+                <div class="mjc-hub-brand__title-row">
+                  <span class="mjc-hub-brand__title">MemberJunction Community Hub</span>
+                  <span class="mjc-hub-brand__pill">Commons</span>
+                </div>
+                <span class="mjc-hub-brand__subtitle">Enterprise Knowledge &amp; Governance Commons</span>
               </div>
-              <span class="mjc-hub-brand__subtitle">Enterprise Knowledge &amp; Governance Commons</span>
             </div>
-          </div>
+          }
 
-          <nav class="mjc-community-hub__tabs" role="tablist" aria-label="Community Hub">
+          @if (ShowTabBar) {
+            <nav class="mjc-community-hub__tabs" role="tablist" aria-label="Community Hub">
             @for (tab of tabs; track tab.key) {
               <button
                 #tabButton
@@ -45,6 +61,7 @@
               </button>
             }
           </nav>
+          }
 
           <div class="mjc-hub-header__actions">
             <div class="mjc-header-search">
@@ -139,6 +156,18 @@
         [attr.inert]="hasActiveOverlay ? '' : null"
         [attr.aria-hidden]="hasActiveOverlay ? 'true' : null"
       >
+        @if (EmbeddedMode && !ShowTabBar && InitialTabKey && activeTabKey !== InitialTabKey) {
+          <div class="mjc-embedded-return-bar">
+            <button
+              type="button"
+              id="mjc-embedded-return-btn"
+              class="mjc-community-hub__btn"
+              (click)="SelectTab(InitialTabKey)"
+            >
+              ← Return to Space View
+            </button>
+          </div>
+        }
         @switch (activeTabKey) {
           @case ('knowledge-stream') {
             <section
@@ -363,6 +392,7 @@
                     type="button"
                     id="mjc-idea-toggle-composer-btn"
                     class="mjc-community-hub__btn mjc-community-hub__btn--primary"
+                    [disabled]="!hasActiveCampaign && !isOfflineDemoMode"
                     (click)="showIdeaComposer = !showIdeaComposer"
                   >
                     {{ showIdeaComposer ? 'Cancel Proposal' : 'Propose Idea' }}
@@ -391,7 +421,9 @@
                 <p class="mjc-community-hub__error" role="alert">{{ ideationErrorMessage }}</p>
               }
 
-              @if (visibleIdeationItems.length === 0) {
+              @if (!hasActiveCampaign && !isOfflineDemoMode) {
+                <p class="mjc-community-hub__hint">No ideation campaigns exist in this Community Space yet.</p>
+              } @else if (visibleIdeationItems.length === 0) {
                 <p class="mjc-community-hub__hint">No ideas proposed yet in {{ activeCampaign.name }}.</p>
               } @else {
                 <div class="mjc-ideation-workspace">
@@ -808,5 +840,4 @@
         </div>
       }
     </div>
-  </mj-page-body>
-</mj-page-layout>
+</ng-template>

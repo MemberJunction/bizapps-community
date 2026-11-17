@@ -57,13 +57,21 @@ test('Real Angular 21 Community Hub: 26 ClassFactory registrations, 4 tabs, PDF 
   await page.goto(harnessUrl);
   await page.waitForFunction(() => window.__harnessReady === true);
 
-  // --- 0. Runtime ClassFactory registration verification across all 26 classes ---
+  // --- 0. Runtime ClassFactory registration verification across all standalone + Collaboration classes ---
   const runtimeRegs = await page.evaluate(() => window.__runtimeRegistrations);
   expect(runtimeRegs.CommunityHubResource).toBe(true);
   expect(runtimeRegs.totalVerified).toBe(26);
   for (const [entityName, registered] of Object.entries(runtimeRegs.formRegistrations)) {
     expect(registered, `Expected BaseFormComponent ClassFactory registration for ${entityName}`).toBe(true);
   }
+  expect(runtimeRegs.collaboration.driverClassName).toMatch(/^CommunityCollaborationSpaceUIDriver/);
+  expect(runtimeRegs.collaboration.isBaseSpaceTypeUIDriver).toBe(true);
+  expect(runtimeRegs.collaboration.assembledTabKeys).toEqual(
+    expect.arrayContaining(['forums', 'qa-canon', 'ideation', 'playbooks']),
+  );
+  expect(runtimeRegs.collaboration.assembledCardKeys).toEqual(
+    expect.arrayContaining(['community-highlights']),
+  );
 
   // --- 0b. Verify FontAwesome CSS loaded cleanly and initial 100 pts wallet badge ---
   const faInfo = await page.evaluate(async () => {
@@ -291,6 +299,60 @@ test('Real Angular 21 Community Hub: 26 ClassFactory registrations, 4 tabs, PDF 
     ).toEqual([]);
   }
 
+  // --- 7b. Collaboration Embedded Mode: UIDriver + BaseSpaceOverviewCard + BaseSpaceTab (@ngComponentOutlet) + Space Isolation ---
+  await page.goto(`${harnessUrl}?mode=collaboration`);
+  await page.waitForFunction(() => window.__harnessReady === true);
+  await expect(page.locator('#mjc-collab-overview-cards')).toContainText('Forums, Canon & Ideation');
+  await expect(page.locator('#mjc-collab-tab-body')).toContainText('Zero-Downtime API Key Rotation Playbook');
+  await expect(page.locator('#mjc-collab-tab-body')).not.toContainText('Space 2 Isolated Internal Thread');
+  expect(await page.locator('#mjc-collab-tab-body mj-page-layout').count()).toBe(0);
+
+  // Verify embedded deep-link fallback bar lets user return cleanly when ShowTabBar=false
+  await page.getByRole('button', { name: 'Explore Verified Q&A Canon' }).click();
+  await expect(page.locator('#mjc-embedded-return-btn')).toBeVisible();
+  await page.click('#mjc-embedded-return-btn');
+  await expect(page.locator('#mjc-embedded-return-btn')).toBeHidden();
+
+  await page.click('#mjc-collab-tab-qa-canon');
+  await expect(page.locator('#mjc-collab-tab-body')).toContainText('Verified Q&A Canon Workbench');
+  await expect(page.locator('#mjc-collab-tab-body')).not.toContainText('Space 2 Secret Q&A Entry');
+
+  await page.click('#mjc-collab-tab-ideation');
+  await expect(page.locator('#mjc-collab-tab-body')).toContainText('Priority Wallet');
+  await expect(page.locator('#mjc-collab-tab-body')).not.toContainText('Space 2 Secret Roadmap Idea');
+
+  await page.click('#mjc-collab-tab-playbooks');
+  await expect(page.locator('#mjc-collab-tab-body')).toContainText('OAuth2 Partner Onboarding Playbook');
+  await expect(page.locator('#mjc-collab-tab-body')).not.toContainText('Space 2 Secret Playbook');
+
+  // Dynamic Space switch (SPACE_1 -> SPACE_2 via Input/OnChanges) must isolate Space 2 records cleanly with zero Space 1 leakage
+  await page.click('#mjc-collab-switch-space2-btn');
+  await expect(page.locator('#mjc-collab-overview-cards')).toContainText('Isolated Security Forum'.length ? '1' : '1');
+  await expect(page.locator('#mjc-collab-tab-body')).toContainText('Space 2 Secret Playbook');
+  await expect(page.locator('#mjc-collab-tab-body')).not.toContainText('OAuth2 Partner Onboarding Playbook');
+
+  await page.click('#mjc-collab-tab-forums');
+  await expect(page.locator('#mjc-collab-tab-body')).toContainText('Space 2 Isolated Internal Thread');
+  await expect(page.locator('#mjc-collab-tab-body')).not.toContainText('Zero-Downtime API Key Rotation Playbook');
+
+  await page.click('#mjc-collab-tab-qa-canon');
+  await expect(page.locator('#mjc-collab-tab-body')).toContainText('Space 2 Secret Q&A Entry');
+  await expect(page.locator('#mjc-collab-tab-body')).not.toContainText('How do I rotate my API key without downtime?');
+
+  await page.click('#mjc-collab-tab-ideation');
+  await expect(page.locator('#mjc-collab-tab-body')).toContainText('Space 2 Secret Roadmap Idea');
+  await expect(page.locator('#mjc-collab-tab-body')).not.toContainText('Add webhook signing secrets rotation API');
+
+  // Switch back to Space 1 cleanly before screenshot + axe-core check
+  await page.click('#mjc-collab-switch-space1-btn');
+  await page.click('#mjc-collab-tab-forums');
+  await expect(page.locator('#mjc-collab-tab-body')).toContainText('Zero-Downtime API Key Rotation Playbook');
+  await expect(page.locator('#mjc-collab-tab-body')).not.toContainText('Space 2 Isolated Internal Thread');
+  await page.screenshot({ path: join(SCREENSHOTS_DIR, '07-collaboration-embedded.png'), fullPage: true });
+  const collabAxe = await new AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa']).analyze();
+  const collabCriticalOrSerious = collabAxe.violations.filter((v) => v.impact === 'critical' || v.impact === 'serious');
+  expect(collabCriticalOrSerious, `Embedded Collaboration WCAG violations: ${JSON.stringify(collabCriticalOrSerious)}`).toEqual([]);
+
   // --- 8. Zero page/console errors and zero window.print() fallback ---
   expect(pageErrors, `pageerror(s): ${JSON.stringify(pageErrors)}`).toEqual([]);
   expect(consoleErrors, `console error(s): ${JSON.stringify(consoleErrors)}`).toEqual([]);
@@ -304,6 +366,7 @@ test('Real Angular 21 Community Hub: 26 ClassFactory registrations, 4 tabs, PDF 
     fontAwesomeMode,
     fontAwesomeLoaded: faInfo.styleLoaded,
     runtimeClassFactoryRegistrationsVerified: runtimeRegs.totalVerified,
+    collaborationEmbeddedExercised: true,
     tabsExercised: TAB_KEYS,
     keyboardNavigationVerified: true,
     askFirstDeflectionExercised: true,
@@ -332,6 +395,7 @@ test('Real Angular 21 Community Hub: 26 ClassFactory registrations, 4 tabs, PDF 
       'e2e/screenshots/04-qa-canon-workbench.png',
       'e2e/screenshots/05-quadratic-ideation-wallet.png',
       'e2e/screenshots/06-living-co-authoring.png',
+      'e2e/screenshots/07-collaboration-embedded.png',
       'e2e/screenshots/community-hub.png',
     ],
   };

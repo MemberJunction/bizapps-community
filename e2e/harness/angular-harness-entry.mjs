@@ -1,18 +1,44 @@
 import '@angular/compiler';
-import { provideZonelessChangeDetection } from '@angular/core';
+import { CommonModule } from '@angular/common';
+import { Component, ChangeDetectionStrategy, provideZonelessChangeDetection } from '@angular/core';
 import { bootstrapApplication } from '@angular/platform-browser';
 import { Metadata, RunView, UserInfo } from '@memberjunction/core';
 import { GraphQLActionClient } from '@memberjunction/graphql-dataprovider';
 import { MJGlobal } from '@memberjunction/global';
 import { BaseResourceComponent } from '@memberjunction/ng-shared';
 import { BaseFormComponent } from '@memberjunction/ng-base-forms';
+import {
+  BaseSpaceOverviewCard,
+  BaseSpaceTab,
+  BaseSpaceTypeUIDriver,
+  UIDriverRegistry,
+  assembleSpaceContributions,
+} from '@mj-biz-apps/collaboration-ng-widgets';
 import { COMMUNITY_ACTION_IDS } from '@mj-biz-apps/community-core';
 import { COMMUNITY_ENTITY_NAMES } from '@mj-biz-apps/community-entities';
-import { CommunityHubResource, LoadBizAppsCommunityClient, GeneratedFormsModule } from '../../packages/Angular/dist/public-api.js';
+import {
+  CommunityHubResource,
+  CommunityCollaborationSpaceUIDriver,
+  CommunityForumsSpaceTabComponent,
+  CommunityQaCanonSpaceTabComponent,
+  CommunityIdeationSpaceTabComponent,
+  CommunityPlaybooksSpaceTabComponent,
+  CommunityOverviewHighlightsCardComponent,
+  LoadBizAppsCommunityClient,
+  GeneratedFormsModule,
+} from '../../packages/Angular/dist/public-api.js';
 
-// Trigger registration across CommunityHubResource + all 25 generated entity form components.
+// Trigger registration across CommunityHubResource, Collaboration Space extensions, and all 25 entity form components.
 LoadBizAppsCommunityClient();
 window.__generatedFormsModule = GeneratedFormsModule;
+window.__communityCollaborationExtensions = [
+  CommunityCollaborationSpaceUIDriver,
+  CommunityForumsSpaceTabComponent,
+  CommunityQaCanonSpaceTabComponent,
+  CommunityIdeationSpaceTabComponent,
+  CommunityPlaybooksSpaceTabComponent,
+  CommunityOverviewHighlightsCardComponent,
+];
 
 const GENERATED_FORM_ENTITY_NAMES = [
   'MJ_BizApps_Community: Community Member Profiles',
@@ -50,10 +76,32 @@ for (const entityName of GENERATED_FORM_ENTITY_NAMES) {
   formRegistrations[entityName] = Boolean(reg);
 }
 
+const spaceDriverInstance = UIDriverRegistry.Instance.ResolveDriver('CommunitySpaceUIDriver');
+const contributedTabs = assembleSpaceContributions(BaseSpaceTab, 'community', [], (reg, meta) => ({
+  key: meta.contributionKey,
+  label: meta.label ?? meta.contributionKey,
+  icon: meta.icon,
+  sortKey: meta.sortKey,
+  component: reg.SubClass,
+}));
+const contributedCards = assembleSpaceContributions(BaseSpaceOverviewCard, 'community', [], (reg, meta) => ({
+  key: meta.contributionKey,
+  title: meta.title ?? meta.contributionKey,
+  sortKey: meta.sortKey,
+  side: meta.side,
+  component: reg.SubClass,
+}));
+
 window.__runtimeRegistrations = {
   CommunityHubResource: Boolean(hubRegistration),
   formRegistrations,
   totalVerified: (hubRegistration ? 1 : 0) + Object.values(formRegistrations).filter(Boolean).length,
+  collaboration: {
+    driverClassName: spaceDriverInstance.constructor.name,
+    isBaseSpaceTypeUIDriver: spaceDriverInstance instanceof BaseSpaceTypeUIDriver,
+    assembledTabKeys: contributedTabs.map((t) => t.key),
+    assembledCardKeys: contributedCards.map((c) => c.key),
+  },
 };
 
 const HARNESS_USER = new UserInfo(undefined, {
@@ -66,26 +114,38 @@ const HARNESS_USER = new UserInfo(undefined, {
 const FORUM_1 = '22222222-2222-4222-8222-000000000001';
 const FORUM_2 = '22222222-2222-4222-8222-000000000002';
 const FORUM_GENERAL = '22222222-2222-4222-8222-000000000003';
+const FORUM_OTHER_SPACE = '22222222-2222-4222-8222-000000000099';
 const SPACE_1 = '33333333-3333-4333-8333-000000000001';
+const SPACE_2 = '33333333-3333-4333-8333-000000000002';
 
 const POST_FEED_1 = '44444444-4444-4444-8444-000000000001';
 const POST_FEED_2 = '44444444-4444-4444-8444-000000000002';
+const POST_FEED_OTHER_SPACE = '44444444-4444-4444-8444-000000000099';
 const Q_1 = '55555555-5555-4555-8555-000000000001';
 const Q_2 = '55555555-5555-4555-8555-000000000002';
+const Q_OTHER_SPACE = '55555555-5555-4555-8555-000000000099';
 const ANS_1 = '66666666-6666-4666-8666-000000000001';
 const ANS_2 = '66666666-6666-4666-8666-000000000002';
+const ANS_OTHER_SPACE = '66666666-6666-4666-8666-000000000099';
 const IDEA_1 = '77777777-7777-4777-8777-000000000001';
 const IDEA_2 = '77777777-7777-4777-8777-000000000002';
 const IDEA_3 = '77777777-7777-4777-8777-000000000003';
+const IDEA_OTHER_SPACE = '77777777-7777-4777-8777-000000000099';
 const DOC_1 = '88888888-8888-4888-8888-000000000001';
 const FORM_1 = '88888888-8888-4888-8888-000000000002';
 const INTERACTIVE_1 = '88888888-8888-4888-8888-000000000003';
+const DOC_OTHER_SPACE = '88888888-8888-4888-8888-000000000099';
 
 const state = {
+  spaces: [
+    { ID: SPACE_1, Name: 'Customer Success Community' },
+    { ID: SPACE_2, Name: 'Internal Security Guild' },
+  ],
   forums: [
-    { ID: FORUM_1, Name: 'Product Roadmap Q1' },
-    { ID: FORUM_2, Name: 'Enterprise Scale Q2' },
-    { ID: FORUM_GENERAL, Name: 'Knowledge & Q&A' },
+    { ID: FORUM_1, SpaceID: SPACE_1, Name: 'Product Roadmap Q1' },
+    { ID: FORUM_2, SpaceID: SPACE_1, Name: 'Enterprise Scale Q2' },
+    { ID: FORUM_GENERAL, SpaceID: SPACE_1, Name: 'Knowledge & Q&A' },
+    { ID: FORUM_OTHER_SPACE, SpaceID: SPACE_2, Name: 'Isolated Security Forum' },
   ],
   postTypes: [
     { ID: '99999999-9999-4999-8999-000000000001', Code: 'question', Name: 'Question' },
@@ -97,6 +157,7 @@ const state = {
   campaigns: [
     { ID: FORUM_1, AllocationMode: 'Quadratic', DefaultBudgetPoints: 100, MaxPointsPerIdea: null },
     { ID: FORUM_2, AllocationMode: 'Quadratic', DefaultBudgetPoints: 100, MaxPointsPerIdea: 40 },
+    { ID: FORUM_OTHER_SPACE, AllocationMode: 'Point Allocation', DefaultBudgetPoints: 50, MaxPointsPerIdea: 25 },
   ],
   posts: [
     {
@@ -111,6 +172,13 @@ const state = {
       ForumID: FORUM_GENERAL,
       Title: 'Multi-Region GraphQL Read Replica Architecture',
       BodyMarkdown: 'Summary of latency benchmarks and failover SLAs from our Q4 architecture review.',
+      Status: 'Published',
+    },
+    {
+      ID: POST_FEED_OTHER_SPACE,
+      ForumID: FORUM_OTHER_SPACE,
+      Title: 'Space 2 Isolated Internal Thread',
+      BodyMarkdown: 'Must only appear inside Space 2, never when embedded inside Space 1.',
       Status: 'Published',
     },
     {
@@ -170,6 +238,34 @@ const state = {
       Status: 'Published',
     },
     {
+      ID: DOC_OTHER_SPACE,
+      ForumID: FORUM_OTHER_SPACE,
+      Title: 'Space 2 Secret Playbook',
+      BodyMarkdown: '## Space 2 Secret Playbook\n- Security enclave rotation steps',
+      Status: 'Published',
+    },
+    {
+      ID: Q_OTHER_SPACE,
+      ForumID: FORUM_OTHER_SPACE,
+      Title: 'Space 2 Secret Q&A Entry',
+      BodyMarkdown: 'How does Space 2 isolate hardware security module keys?',
+      Status: 'Published',
+    },
+    {
+      ID: ANS_OTHER_SPACE,
+      ForumID: FORUM_OTHER_SPACE,
+      Title: 'Space 2 Secret Q&A Entry',
+      BodyMarkdown: 'Hardware keys stay pinned per Space enclave partition.',
+      Status: 'Published',
+    },
+    {
+      ID: IDEA_OTHER_SPACE,
+      ForumID: FORUM_OTHER_SPACE,
+      Title: 'Space 2 Secret Roadmap Idea',
+      BodyMarkdown: 'Federated attestation across isolated security guilds.',
+      Status: 'Published',
+    },
+    {
       ID: FORM_1,
       ForumID: FORUM_GENERAL,
       Title: 'Partner Readiness Check-In Form',
@@ -201,24 +297,40 @@ const state = {
       AIConfidenceScore: 0.78,
       IsAcceptedByAuthor: false,
     },
+    {
+      ID: ANS_OTHER_SPACE,
+      QuestionPostID: Q_OTHER_SPACE,
+      Title: 'Space 2 Secret Q&A Entry',
+      AIEpistemicStatus: 'Canon Verified',
+      AIConfidenceScore: 0.99,
+      IsAcceptedByAuthor: true,
+    },
   ],
   ideas: [
     { ID: IDEA_1, TotalPointsAllocated: 0, EffectiveQuadraticVotes: 0 },
     { ID: IDEA_2, TotalPointsAllocated: 0, EffectiveQuadraticVotes: 0 },
     { ID: IDEA_3, TotalPointsAllocated: 0, EffectiveQuadraticVotes: 0 },
+    { ID: IDEA_OTHER_SPACE, TotalPointsAllocated: 0, EffectiveQuadraticVotes: 0 },
   ],
   allocations: [],
-  artifacts: [{ ID: DOC_1 }],
+  artifacts: [{ ID: DOC_1 }, { ID: DOC_OTHER_SPACE }],
   forms: [{ ID: FORM_1 }],
   interactivePosts: [{ ID: INTERACTIVE_1, ExperienceKind: 'Trivia' }],
   questions: [
     { ID: Q_1, AcceptedAnswerPostID: ANS_1, AICanonAnswerPostID: ANS_1 },
     { ID: Q_2, AcceptedAnswerPostID: null, AICanonAnswerPostID: null },
+    { ID: Q_OTHER_SPACE, AcceptedAnswerPostID: ANS_OTHER_SPACE, AICanonAnswerPostID: ANS_OTHER_SPACE },
   ],
 };
 
-function parseInIds(extraFilter) {
-  const match = typeof extraFilter === 'string' ? extraFilter.match(/ID IN\s*\(([^)]+)\)/i) : null;
+const OTHER_SPACE_POST_ID_SET = new Set(
+  [POST_FEED_OTHER_SPACE, Q_OTHER_SPACE, ANS_OTHER_SPACE, IDEA_OTHER_SPACE, DOC_OTHER_SPACE].map((id) => id.toLowerCase()),
+);
+
+function parseInIds(extraFilter, columnName = 'ID') {
+  const escaped = columnName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const pattern = new RegExp(`(?:^|[^A-Za-z_])${escaped}\\s+IN\\s*\\(([^)]+)\\)`, 'i');
+  const match = typeof extraFilter === 'string' ? extraFilter.match(pattern) : null;
   if (!match) return null;
   return new Set(
     match[1]
@@ -233,26 +345,64 @@ function queryRowsForView(params) {
   const extraFilter = params?.ExtraFilter ?? '';
 
   switch (entityName) {
-    case 'MJ_BizApps_Community: Forums':
-      return state.forums;
-    case 'MJ_BizApps_Collaboration: Spaces':
-      return [{ ID: SPACE_1, Name: 'Customer Success Community' }];
+    case 'MJ_BizApps_Community: Forums': {
+      const spaceMatch = typeof extraFilter === 'string' ? extraFilter.match(/SpaceID\s*=\s*'([^']+)'/i) : null;
+      if (spaceMatch) {
+        return state.forums.filter((f) => f.SpaceID.toLowerCase() === spaceMatch[1].toLowerCase());
+      }
+      return state.forums.filter((f) => f.SpaceID === SPACE_1);
+    }
+    case 'MJ_BizApps_Collaboration: Spaces': {
+      const idMatch = typeof extraFilter === 'string' ? extraFilter.match(/(?:^|[^A-Za-z_])ID\s*=\s*'([^']+)'/i) : null;
+      if (idMatch) {
+        return state.spaces.filter((s) => s.ID.toLowerCase() === idMatch[1].toLowerCase());
+      }
+      return [state.spaces[0]];
+    }
     case COMMUNITY_ENTITY_NAMES.PostTypes:
       return state.postTypes;
-    case COMMUNITY_ENTITY_NAMES.ForumAnswerPosts:
-      return state.answers;
-    case COMMUNITY_ENTITY_NAMES.ForumIdeaCampaigns:
-      return state.campaigns;
-    case COMMUNITY_ENTITY_NAMES.ForumIdeaPosts:
-      return state.ideas;
-    case COMMUNITY_ENTITY_NAMES.ForumArtifactPosts:
-      return state.artifacts;
-    case COMMUNITY_ENTITY_NAMES.ForumFormPosts:
-      return state.forms;
-    case COMMUNITY_ENTITY_NAMES.ForumInteractivePosts:
-      return state.interactivePosts;
-    case COMMUNITY_ENTITY_NAMES.ForumQuestionPosts:
-      return state.questions;
+    case COMMUNITY_ENTITY_NAMES.ForumAnswerPosts: {
+      const ids = parseInIds(extraFilter, 'ID');
+      return ids
+        ? state.answers.filter((a) => ids.has(a.ID.toLowerCase()))
+        : state.answers.filter((a) => !OTHER_SPACE_POST_ID_SET.has(a.ID.toLowerCase()));
+    }
+    case COMMUNITY_ENTITY_NAMES.ForumIdeaCampaigns: {
+      const campaignIds = parseInIds(extraFilter, 'ID');
+      return campaignIds
+        ? state.campaigns.filter((c) => campaignIds.has(c.ID.toLowerCase()))
+        : state.campaigns.filter((c) => c.ID !== FORUM_OTHER_SPACE);
+    }
+    case COMMUNITY_ENTITY_NAMES.ForumIdeaPosts: {
+      const ids = parseInIds(extraFilter, 'ID');
+      return ids
+        ? state.ideas.filter((i) => ids.has(i.ID.toLowerCase()))
+        : state.ideas.filter((i) => !OTHER_SPACE_POST_ID_SET.has(i.ID.toLowerCase()));
+    }
+    case COMMUNITY_ENTITY_NAMES.ForumArtifactPosts: {
+      const ids = parseInIds(extraFilter, 'ID');
+      return ids
+        ? state.artifacts.filter((a) => ids.has(a.ID.toLowerCase()))
+        : state.artifacts.filter((a) => !OTHER_SPACE_POST_ID_SET.has(a.ID.toLowerCase()));
+    }
+    case COMMUNITY_ENTITY_NAMES.ForumFormPosts: {
+      const ids = parseInIds(extraFilter, 'ID');
+      return ids
+        ? state.forms.filter((f) => ids.has(f.ID.toLowerCase()))
+        : state.forms.filter((f) => !OTHER_SPACE_POST_ID_SET.has(f.ID.toLowerCase()));
+    }
+    case COMMUNITY_ENTITY_NAMES.ForumInteractivePosts: {
+      const ids = parseInIds(extraFilter, 'ID');
+      return ids
+        ? state.interactivePosts.filter((p) => ids.has(p.ID.toLowerCase()))
+        : state.interactivePosts.filter((p) => !OTHER_SPACE_POST_ID_SET.has(p.ID.toLowerCase()));
+    }
+    case COMMUNITY_ENTITY_NAMES.ForumQuestionPosts: {
+      const ids = parseInIds(extraFilter, 'ID');
+      return ids
+        ? state.questions.filter((q) => ids.has(q.ID.toLowerCase()))
+        : state.questions.filter((q) => !OTHER_SPACE_POST_ID_SET.has(q.ID.toLowerCase()));
+    }
     case COMMUNITY_ENTITY_NAMES.ForumIdeaAllocations: {
       const ideaMatch = typeof extraFilter === 'string' ? extraFilter.match(/IdeaPostID\s*=\s*'([^']+)'/i) : null;
       if (ideaMatch) {
@@ -261,14 +411,21 @@ function queryRowsForView(params) {
       return state.allocations;
     }
     case COMMUNITY_ENTITY_NAMES.ForumPosts: {
-      const ids = parseInIds(extraFilter);
+      let rows = state.posts;
+      const forumIds = parseInIds(extraFilter, 'ForumID');
+      const ids = parseInIds(extraFilter, 'ID');
+      if (forumIds) {
+        rows = rows.filter((p) => forumIds.has(String(p.ForumID).toLowerCase()));
+      } else if (!ids) {
+        rows = rows.filter((p) => !OTHER_SPACE_POST_ID_SET.has(p.ID.toLowerCase()));
+      }
       if (ids) {
-        return state.posts.filter((p) => ids.has(p.ID.toLowerCase()));
+        return rows.filter((p) => ids.has(p.ID.toLowerCase()));
       }
       if (extraFilter.includes('RootPostID IS NULL')) {
-        return state.posts.filter((p) => p.ID === POST_FEED_1 || p.ID === POST_FEED_2);
+        return rows.filter((p) => p.ID === POST_FEED_1 || p.ID === POST_FEED_2 || p.ID === POST_FEED_OTHER_SPACE);
       }
-      return state.posts;
+      return rows;
     }
     default:
       return [];
@@ -455,9 +612,151 @@ GraphQLActionClient.prototype.RunAction = async function (actionName, params) {
   return { Success: true, ResultCode: 'SUCCESS', Message: `Action ${actionName} executed.`, Params: [] };
 };
 
-await bootstrapApplication(CommunityHubResource, {
-  providers: [provideZonelessChangeDetection()],
-});
+const harnessMode = new URLSearchParams(window.location.search).get('mode');
+
+if (harnessMode === 'collaboration') {
+  const ctx = {
+    space: null,
+    type: null,
+    spaceTypeCode: 'community',
+    viewer: HARNESS_USER,
+    rules: {
+      Extensions: {
+        community: {
+          AskFirstEnabled: true,
+          DefaultDigestCadence: 'Daily Digest',
+        },
+      },
+    },
+  };
+  const builtinDefaults = [
+    { key: 'Overview', label: 'Overview', icon: 'fa-solid fa-gauge-high', sortKey: 10 },
+    { key: 'Library', label: 'Documents', icon: 'fa-solid fa-folder-open', sortKey: 20 },
+    { key: 'Chat', label: 'Chat', icon: 'fa-solid fa-comments', sortKey: 40 },
+  ];
+  const resolvedTabs = spaceDriverInstance.GetTabs(
+    ctx,
+    assembleSpaceContributions(BaseSpaceTab, 'community', builtinDefaults, (reg, meta) => ({
+      key: meta.contributionKey,
+      label: meta.label ?? meta.contributionKey,
+      icon: meta.icon,
+      sortKey: meta.sortKey,
+      component: reg.SubClass,
+    })),
+  );
+  const resolvedCards = spaceDriverInstance.GetOverviewCards(
+    ctx,
+    assembleSpaceContributions(BaseSpaceOverviewCard, 'community', [], (reg, meta) => ({
+      key: meta.contributionKey,
+      title: meta.title ?? meta.contributionKey,
+      sortKey: meta.sortKey,
+      side: meta.side,
+      component: reg.SubClass,
+    })),
+  );
+  const resolvedChips = spaceDriverInstance.GetHeaderChips(ctx, []);
+
+  @Component({
+    standalone: true,
+    selector: 'mjc-collab-embedded-harness',
+    imports: [CommonModule],
+    changeDetection: ChangeDetectionStrategy.OnPush,
+    template: `
+      <main class="mjc-collab-host" style="padding:16px;background:var(--mj-bg-page);min-height:100vh;">
+        <header style="background:var(--mj-bg-surface);border:1px solid var(--mj-border-default);border-radius:8px;padding:12px 16px;margin-bottom:12px;">
+          <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;">
+            <div>
+              <h1 style="margin:0;font-size:1.15rem;color:var(--mj-text-primary);">Collaboration Space · Customer Success Community</h1>
+              <div style="display:flex;gap:8px;margin-top:6px;flex-wrap:wrap;">
+                @for (chip of chips; track chip.key) {
+                  <span class="mjc-collab-chip" style="padding:2px 8px;border-radius:999px;background:var(--mj-status-info-bg);color:var(--mj-status-info-text);font-size:0.75rem;font-weight:600;">
+                    <i [class]="chip.icon" aria-hidden="true"></i> {{ chip.label }}
+                  </span>
+                }
+              </div>
+            </div>
+            <div style="display:flex;gap:8px;align-items:center;">
+              <button
+                type="button"
+                id="mjc-collab-switch-space1-btn"
+                (click)="activeSpaceId = space1Id"
+                style="padding:6px 10px;border-radius:6px;border:1px solid var(--mj-border-default);background:var(--mj-bg-surface);color:var(--mj-text-primary);cursor:pointer;font-size:0.8rem;font-weight:600;"
+              >
+                Space 1
+              </button>
+              <button
+                type="button"
+                id="mjc-collab-switch-space2-btn"
+                (click)="activeSpaceId = space2Id"
+                style="padding:6px 10px;border-radius:6px;border:1px solid var(--mj-border-default);background:var(--mj-bg-surface);color:var(--mj-text-primary);cursor:pointer;font-size:0.8rem;font-weight:600;"
+              >
+                Space 2
+              </button>
+            </div>
+          </div>
+          <nav role="tablist" aria-label="Collaboration Space Tabs" style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap;">
+            @for (tab of tabs; track tab.key) {
+              <button
+                type="button"
+                role="tab"
+                [id]="'mjc-collab-tab-' + tab.key"
+                [attr.aria-selected]="activeTabKey === tab.key"
+                (click)="activeTabKey = tab.key"
+                style="padding:6px 12px;border-radius:6px;border:1px solid var(--mj-border-default);cursor:pointer;"
+                [style.background]="activeTabKey === tab.key ? 'var(--mj-brand-primary)' : 'var(--mj-bg-surface)'"
+                [style.color]="activeTabKey === tab.key ? 'var(--mj-brand-on-primary)' : 'var(--mj-text-primary)'"
+              >
+                <i [class]="tab.icon" aria-hidden="true"></i>
+                {{ tab.label }}
+              </button>
+            }
+          </nav>
+        </header>
+
+        <section id="mjc-collab-overview-cards" style="margin-bottom:12px;">
+          @for (card of cards; track card.key) {
+            @if (card.component) {
+              <ng-container *ngComponentOutlet="card.component; inputs: { SpaceId: activeSpaceId, Sequence: card.sortKey ?? 0 }" />
+            }
+          }
+        </section>
+
+        <section id="mjc-collab-tab-body" role="tabpanel">
+          @if (activeTabComponent; as tabCmp) {
+            <ng-container *ngComponentOutlet="tabCmp; inputs: { SpaceId: activeSpaceId, SpaceTypeCode: 'community' }" />
+          }
+        </section>
+      </main>
+    `,
+  })
+  class CollaborationEmbeddedHarnessComponent {
+    space1Id = SPACE_1;
+    space2Id = SPACE_2;
+    activeSpaceId = SPACE_1;
+    tabs = resolvedTabs.filter((t) => Boolean(t.component));
+    cards = resolvedCards;
+    chips = resolvedChips;
+    activeTabKey = 'forums';
+
+    get activeTabComponent() {
+      return this.tabs.find((t) => t.key === this.activeTabKey)?.component ?? null;
+    }
+  }
+
+  const existingHost = document.querySelector('mjc-community-hub-resource');
+  if (existingHost) {
+    const embeddedHost = document.createElement('mjc-collab-embedded-harness');
+    existingHost.replaceWith(embeddedHost);
+  }
+
+  await bootstrapApplication(CollaborationEmbeddedHarnessComponent, {
+    providers: [provideZonelessChangeDetection()],
+  });
+} else {
+  await bootstrapApplication(CommunityHubResource, {
+    providers: [provideZonelessChangeDetection()],
+  });
+}
 
 await new Promise((resolve) => setTimeout(resolve, 60));
 window.__harnessReady = true;
