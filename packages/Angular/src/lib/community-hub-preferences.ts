@@ -27,6 +27,7 @@ export const COMMUNITY_HUB_PREFERENCE_KEYS = {
   selectedSpaceId: 'bizapps-community.selectedSpaceId',
   feedSort: 'bizapps-community.feedSort',
   digestFormat: 'bizapps-community.digestFormat',
+  porchCollapsed: 'bizapps-community.porchCollapsed',
 } as const;
 
 /**
@@ -37,7 +38,11 @@ export const COMMUNITY_HUB_PREFERENCE_KEYS = {
  * default", never a crash.
  */
 export class CommunityHubPreferences {
-  constructor(private readonly store: IUserPreferenceStore = UserInfoEngineAdapter) {}
+  private readonly store: IUserPreferenceStore;
+
+  constructor(store: IUserPreferenceStore = UserInfoEngineAdapter) {
+    this.store = store;
+  }
 
   public GetActiveTab(): CommunityHubTabKey | undefined {
     return this.store.GetSetting(COMMUNITY_HUB_PREFERENCE_KEYS.activeTab) as CommunityHubTabKey | undefined;
@@ -69,5 +74,13 @@ export class CommunityHubPreferences {
 
   public async SetDigestFormat(value: CommunityHubDigestFormat): Promise<boolean> {
     return this.store.SetSetting(COMMUNITY_HUB_PREFERENCE_KEYS.digestFormat, value);
+  }
+
+  public GetPorchCollapsed(): boolean {
+    return this.store.GetSetting(COMMUNITY_HUB_PREFERENCE_KEYS.porchCollapsed) === 'true';
+  }
+
+  public async SetPorchCollapsed(collapsed: boolean): Promise<boolean> {
+    return this.store.SetSetting(COMMUNITY_HUB_PREFERENCE_KEYS.porchCollapsed, collapsed ? 'true' : 'false');
   }
 }
