@@ -18,6 +18,7 @@ export function BuildCommunityHubHarnessHtml() {
     --mj-bg-page: #f5f6f8;
     --mj-bg-surface: #ffffff;
     --mj-bg-surface-card: #ffffff;
+    --mj-bg-surface-elevated: #ffffff;
     --mj-bg-surface-sunken: #eef1f5;
     --mj-bg-surface-hover: #eef1f5;
     --mj-bg-surface-active: #e2e6ec;
@@ -45,7 +46,10 @@ export function BuildCommunityHubHarnessHtml() {
     --mj-space-5: 1.25rem;
     --mj-ring-width: 2px;
     --mj-focus-ring-color: #1f4ed8;
+    --mj-status-success: #0f6b3f;
     --mj-status-success-text: #0f6b3f;
+    --mj-status-warning: #8a5a00;
+    --mj-status-danger: #a3221f;
     --mj-status-error-text: #a3221f;
     --mj-badge-info-bg: #e8eefc;
     --mj-badge-info-text: #163ba8;

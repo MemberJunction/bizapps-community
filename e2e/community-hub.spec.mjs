@@ -102,6 +102,36 @@ test('Real Angular 21 Community Hub: 26 ClassFactory registrations, 4 tabs, PDF 
   await page.click('#mjc-feed-synthesize-btn');
   await expect(page.locator('.mjc-community-hub__status')).toContainText('Synthesized');
 
+  // --- 3b. Slice 1 UX Alignment: Editorial Porch Collapse, 3 Highlight Cards, Search Spotlight, 3-Column Commons, Detail Sheet & Ask/Share Modal ---
+  await expect(page.locator('#mjc-porch-highlights-row .mjc-highlight-card')).toHaveCount(3);
+  await page.click('#mjc-porch-toggle-btn');
+  await expect(page.locator('#mjc-porch-toggle-btn')).toHaveAttribute('aria-expanded', 'false');
+  await expect(page.locator('#mjc-porch-expanded-body')).toBeHidden();
+  await page.click('#mjc-porch-toggle-btn');
+  await expect(page.locator('#mjc-porch-toggle-btn')).toHaveAttribute('aria-expanded', 'true');
+
+  await page.fill('#mjc-header-search-input', 'API key');
+  await expect(page.locator('#mjc-matched-question-spotlight')).toBeVisible();
+  await page.click('#mjc-header-search-clear-btn');
+  await expect(page.locator('#mjc-matched-question-spotlight')).toBeHidden();
+
+  // Open Slide-Over Detail Sheet Drawer and dismiss with Escape
+  await page.locator('.mjc-inspect-btn').first().click();
+  await expect(page.locator('#mjc-detail-sheet-backdrop [role="dialog"]')).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(page.locator('#mjc-detail-sheet-backdrop')).toBeHidden();
+
+  // Open + Ask or Share Modal, submit a new Discussion Post, and verify it prepends to stream
+  await page.click('#mjc-header-ask-share-btn');
+  await expect(page.locator('#mjc-ask-share-modal-backdrop [role="dialog"]')).toBeVisible();
+  await page.selectOption('#mjc-ask-share-type', 'Discussion Post');
+  await page.fill('#mjc-ask-share-title-input', 'Multi-Region Eventual Consistency Benchmarks');
+  await page.fill('#mjc-ask-share-body-input', 'Read-replica lag stayed under 40ms across US-East and EU-West.');
+  await page.fill('#mjc-ask-share-tags-input', 'Multi-Region, Observability');
+  await page.click('#mjc-ask-share-submit-btn');
+  await expect(page.locator('#mjc-ask-share-modal-backdrop')).toBeHidden();
+  await expect(page.locator('.mjc-commons__stream')).toContainText('Multi-Region Eventual Consistency Benchmarks');
+
   // --- 4. Q&A Canon Workbench: Ask Question + Submit Answer + Epistemic Grade + Promote to Canon ---
   await page.click('#mjc-hub-tab-qa-canon-workbench');
   await page.click('#mjc-qa-toggle-composer-btn');
