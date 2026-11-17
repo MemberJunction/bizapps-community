@@ -106,7 +106,8 @@
         type="search"
         class="mjc-qa-search__input"
         placeholder="Filter canon questions or answers..."
-        [(ngModel)]="searchQuery"
+        [ngModel]="searchQuery"
+        (ngModelChange)="onSearchQueryChange($event)"
       />
     </div>
   </div>

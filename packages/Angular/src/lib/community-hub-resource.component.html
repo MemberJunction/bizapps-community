@@ -2,7 +2,11 @@
   <mj-page-body [Padding]="false">
     <div class="mjc-community-hub" [attr.data-feed-count]="feedPosts.length">
       <!-- STICKY TOP HEADER BAR -->
-      <header class="mjc-hub-header">
+      <header
+        class="mjc-hub-header"
+        [attr.inert]="hasActiveOverlay ? '' : null"
+        [attr.aria-hidden]="hasActiveOverlay ? 'true' : null"
+      >
         <div class="mjc-hub-header__inner">
           <div class="mjc-hub-brand">
             <svg class="mjc-hub-brand__emblem" width="34" height="34" viewBox="0 0 36 36" aria-hidden="true">
@@ -130,7 +134,11 @@
         }
       </header>
 
-      <div class="mjc-community-hub__body">
+      <div
+        class="mjc-community-hub__body"
+        [attr.inert]="hasActiveOverlay ? '' : null"
+        [attr.aria-hidden]="hasActiveOverlay ? 'true' : null"
+      >
         @switch (activeTabKey) {
           @case ('knowledge-stream') {
             <section
@@ -301,7 +309,7 @@
                 (gradeAnswer)="GradeAnswerWithAI($event)"
                 (promoteAnswer)="PromoteAnswerToCanon($event)"
                 (newAnswerBodyChange)="newAnswerBody = $event"
-                (submitAnswer)="SubmitAnswer()"
+                (submitAnswer)="SubmitAnswer($event.itemId, $event.answerBody)"
               ></mjc-qa-canon-workbench>
             </section>
           }
@@ -491,13 +499,13 @@
                 [sandboxedMiniAppSrcdoc]="sandboxedMiniAppSrcdoc"
                 (selectDoc)="SelectLivingDoc($event)"
                 (editingDocMarkdownChange)="editingDocMarkdown = $event"
-                (saveDoc)="SaveCoAuthoringDocument()"
+                (saveDoc)="SaveCoAuthoringDocument($event.docId, $event.markdown)"
                 (synthesizeDoc)="SynthesizeFeedThread($event)"
                 (formRespondentNameChange)="formRespondentName = $event"
                 (formConfidenceRatingChange)="formConfidenceRating = $event"
                 (formCommentsChange)="formComments = $event"
-                (submitInlineForm)="SubmitInlineForm()"
-                (resetMiniApp)="ResetMiniApp()"
+                (submitInlineForm)="SubmitInlineForm($event)"
+                (resetMiniApp)="ResetMiniApp($event)"
               ></mjc-living-co-authoring>
             </section>
           }
@@ -512,10 +520,13 @@
           (click)="closeDetailSheet()"
         >
           <div
+            #detailSheetDialog
             class="mjc-drawer-panel"
             role="dialog"
             aria-modal="true"
             aria-labelledby="mjc-detail-sheet-title"
+            tabindex="-1"
+            (keydown)="onOverlayKeydown($event, 'detail')"
             (click)="$event.stopPropagation()"
           >
             <div class="mjc-drawer-header">
@@ -647,10 +658,13 @@
           (click)="closeAskShareModal()"
         >
           <div
+            #askShareDialog
             class="mjc-modal-dialog"
             role="dialog"
             aria-modal="true"
             aria-labelledby="mjc-ask-share-title"
+            tabindex="-1"
+            (keydown)="onOverlayKeydown($event, 'ask-share')"
             (click)="$event.stopPropagation()"
           >
             <div class="mjc-modal-header">
@@ -686,17 +700,36 @@
                 </div>
 
                 <div class="mjc-community-hub__field">
-                  <label for="mjc-ask-share-space" class="mjc-community-hub__label">Space</label>
-                  <select
-                    id="mjc-ask-share-space"
-                    name="askShareSpaceId"
-                    class="mjc-community-hub__input"
-                    [(ngModel)]="askShareSpaceId"
-                  >
-                    @for (space of spaceDirectory; track space.id) {
-                      <option [value]="space.id">{{ space.name }}</option>
-                    }
-                  </select>
+                  <label for="mjc-ask-share-space" class="mjc-community-hub__label">
+                    {{ isOfflineDemoMode ? 'Space' : 'Publication Forum' }}
+                  </label>
+                  @if (!isOfflineDemoMode) {
+                    <select
+                      id="mjc-ask-share-space"
+                      name="askShareForumId"
+                      class="mjc-community-hub__input"
+                      [ngModel]="askShareForumId"
+                      (ngModelChange)="onAskShareForumChange($event)"
+                    >
+                      @if (authorizedForums.length === 0) {
+                        <option value="">No authorized forums available</option>
+                      }
+                      @for (forum of authorizedForums; track forum.id) {
+                        <option [value]="forum.id">{{ forum.name }}</option>
+                      }
+                    </select>
+                  } @else {
+                    <select
+                      id="mjc-ask-share-space"
+                      name="askShareSpaceId"
+                      class="mjc-community-hub__input"
+                      [(ngModel)]="askShareSpaceId"
+                    >
+                      @for (space of spaceDirectory; track space.id) {
+                        <option [value]="space.id">{{ space.name }}</option>
+                      }
+                    </select>
+                  }
                 </div>
               </div>
 
@@ -757,6 +790,10 @@
                   [(ngModel)]="askShareTags"
                 />
               </div>
+
+              @if (askShareError) {
+                <p id="mjc-ask-share-error" class="mjc-field-error" role="alert">{{ askShareError }}</p>
+              }
 
               <div class="mjc-modal-footer">
                 <button type="button" class="mjc-community-hub__btn" (click)="closeAskShareModal()">

@@ -286,3 +286,74 @@ export function CalculateSlaCapacitySpec(input: SlaCapacityInput): SlaCapacityRe
     summaryLine: `Jitter retry window ${retryWindowMinutes} min · Target p95 <= ${latency} ms`,
   };
 }
+
+export function ResolveVisibleQaItem<T extends QaCanonItemInput>(
+  items: ReadonlyArray<T>,
+  selectedQaId: string | null,
+  filterKey: QaCanonFilterKey,
+  searchQuery: string,
+): T | null {
+  const visible = FilterQaCanonItems(items, filterKey, searchQuery);
+  if (visible.length === 0) {
+    return null;
+  }
+  return visible.find((q) => q.id === selectedQaId) ?? visible[0];
+}
+
+export function SyncQaSelection<T extends QaCanonItemInput>(state: {
+  items: ReadonlyArray<T>;
+  selectedQaId: string | null;
+  filterKey: QaCanonFilterKey;
+  searchQuery: string;
+}): { selectedQaId: string | null; changed: boolean } {
+  const active = ResolveVisibleQaItem(state.items, state.selectedQaId, state.filterKey, state.searchQuery);
+  if (!active) {
+    return { selectedQaId: state.selectedQaId, changed: false };
+  }
+  if (active.id !== state.selectedQaId) {
+    return { selectedQaId: active.id, changed: true };
+  }
+  return { selectedQaId: state.selectedQaId, changed: false };
+}
+
+export function ResolveVisibleLivingDoc<T extends LivingDocItemInput>(
+  items: ReadonlyArray<T>,
+  selectedDocId: string | null,
+  filterKey: LivingDocFilterKey,
+  searchQuery: string,
+): T | null {
+  const visible = FilterLivingDocItems(items, filterKey, searchQuery);
+  if (visible.length === 0) {
+    return null;
+  }
+  return visible.find((d) => d.id === selectedDocId) ?? visible[0];
+}
+
+export function SyncLivingDocSelection<T extends LivingDocItemInput>(state: {
+  items: ReadonlyArray<T>;
+  selectedDocId: string | null;
+  editingDocMarkdown: string;
+  filterKey: LivingDocFilterKey;
+  searchQuery: string;
+}): { selectedDocId: string | null; editingDocMarkdown: string; changed: boolean } {
+  const active = ResolveVisibleLivingDoc(state.items, state.selectedDocId, state.filterKey, state.searchQuery);
+  if (!active) {
+    return {
+      selectedDocId: state.selectedDocId,
+      editingDocMarkdown: state.editingDocMarkdown,
+      changed: false,
+    };
+  }
+  if (active.id !== state.selectedDocId) {
+    return {
+      selectedDocId: active.id,
+      editingDocMarkdown: active.bodyMarkdown,
+      changed: true,
+    };
+  }
+  return {
+    selectedDocId: state.selectedDocId,
+    editingDocMarkdown: state.editingDocMarkdown,
+    changed: false,
+  };
+}

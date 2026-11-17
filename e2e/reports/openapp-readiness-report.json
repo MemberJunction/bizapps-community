@@ -1,7 +1,7 @@
 {
   "schemaVersion": "sf-readiness/v3",
   "overallPassed": true,
-  "gitTreeClean": true,
+  "gitTreeClean": false,
   "migrationParityVerified": true,
   "pillars": {
     "formParity": {
@@ -34,7 +34,7 @@
     },
     "browserSmoke": {
       "passed": true,
-      "summary": "Chromium smoke passed across all 4 required tab(s) (evaluated 2026-11-17T13:50:49.475Z) with 0 pageErrors, 0 consoleErrors, 0 WCAG violations",
+      "summary": "Chromium smoke passed across all 4 required tab(s) (evaluated 2026-11-17T14:26:58.198Z) with 0 pageErrors, 0 consoleErrors, 0 WCAG violations",
       "checkedCount": 4,
       "violationCount": 0,
       "violations": []
@@ -46,5 +46,16 @@
       "violationCount": 0,
       "violations": []
     }
-  }
+  },
+  "gitTreeDirtyPaths": [
+    "e2e/harness/angular-harness-entry.mjs",
+    "packages/Angular/src/commons-ux-alignment.test.ts",
+    "packages/Angular/src/lib/community-hub-commons.ts",
+    "packages/Angular/src/lib/community-hub-resource.component.html",
+    "packages/Angular/src/lib/community-hub-resource.component.ts",
+    "packages/Angular/src/lib/community-hub-workbench.ts",
+    "packages/Angular/src/lib/living-co-authoring.component.ts",
+    "packages/Angular/src/lib/qa-canon-workbench.component.html",
+    "packages/Angular/src/lib/qa-canon-workbench.component.ts"
+  ]
 }

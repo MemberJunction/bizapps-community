@@ -1,3 +1,4 @@
+import type { mjBizAppsCommunityForumPostEntity } from '@mj-biz-apps/community-entities';
 import type { CommunityHubTabKey } from './community-hub-preferences.ts';
 
 export type CommunitySpaceFilterId =
@@ -124,6 +125,44 @@ export interface AskShareValidationResult {
   errors: AskShareValidationErrors;
 }
 
+export interface AuthorizedForumOption {
+  id: string;
+  name: string;
+  spaceId: CommunitySpaceFilterId;
+}
+
+export interface AskSharePostEntityLike {
+  ID: mjBizAppsCommunityForumPostEntity['ID'];
+  ForumID: mjBizAppsCommunityForumPostEntity['ForumID'];
+  AuthorUserID: mjBizAppsCommunityForumPostEntity['AuthorUserID'];
+  PostTypeID: mjBizAppsCommunityForumPostEntity['PostTypeID'];
+  Title: mjBizAppsCommunityForumPostEntity['Title'];
+  BodyMarkdown: mjBizAppsCommunityForumPostEntity['BodyMarkdown'];
+  Status: mjBizAppsCommunityForumPostEntity['Status'];
+  Save(): Promise<boolean>;
+}
+
+export interface PersistAskShareParams {
+  draft: AskShareDraft;
+  isOfflineDemoMode: boolean;
+  targetForumId: string | null | undefined;
+  allowedForumIDs: ReadonlyArray<string>;
+  authorizedForums?: ReadonlyArray<AuthorizedForumOption>;
+  postTypeIdByCode: ReadonlyMap<string, string>;
+  currentUserId: string | null | undefined;
+  authorName: string;
+  createForumPostEntity: (() => Promise<AskSharePostEntityLike | null>) | null;
+}
+
+export interface PersistAskShareResult {
+  success: boolean;
+  validationErrors: AskShareValidationErrors;
+  errorMessage: string | null;
+  persistedPostId: string | null;
+  resolvedForumId: string | null;
+  createdItem: CommunityCommonsItem | null;
+}
+
 export interface CommonsFilterCriteria {
   spaceFilter: CommunitySpaceFilterId;
   topicFilter: string | null;
@@ -139,6 +178,11 @@ export interface CommonsQAInput {
   epistemicStatus: string | null;
   confidenceScore: number | null;
   isAccepted: boolean;
+  authorName?: string | null;
+  authorRole?: string | null;
+  timestampLabel?: string | null;
+  upvoteCount?: number | null;
+  replies?: ReadonlyArray<CommunityCommonsReply>;
 }
 
 export interface CommonsIdeaInput {
@@ -148,6 +192,10 @@ export interface CommonsIdeaInput {
   summary: string;
   totalPointsAllocated: number;
   effectiveQuadraticVotes: number;
+  authorName?: string | null;
+  authorRole?: string | null;
+  timestampLabel?: string | null;
+  replies?: ReadonlyArray<CommunityCommonsReply>;
 }
 
 export interface CommonsLivingDocInput {
@@ -156,6 +204,11 @@ export interface CommonsLivingDocInput {
   bodyMarkdown: string;
   postTypeCode: 'collaborative-doc' | 'collaborative-sheet' | 'collaborative-deck' | 'interactive-experience';
   experienceKind?: string | null;
+  authorName?: string | null;
+  authorRole?: string | null;
+  timestampLabel?: string | null;
+  upvoteCount?: number | null;
+  replies?: ReadonlyArray<CommunityCommonsReply>;
 }
 
 export interface CommonsFeedPostInput {
@@ -163,6 +216,13 @@ export interface CommonsFeedPostInput {
   title: string;
   bodyMarkdown: string;
   status: string;
+  authorName?: string | null;
+  authorRole?: string | null;
+  timestampLabel?: string | null;
+  upvoteCount?: number | null;
+  upvotedByMe?: boolean;
+  replies?: ReadonlyArray<CommunityCommonsReply>;
+  spaceId?: CommunitySpaceFilterId | null;
 }
 
 export const COMMUNITY_SPACES_DIRECTORY: ReadonlyArray<CommunitySpaceDirectoryItem> = [
@@ -392,44 +452,42 @@ export function BuildCommonsStreamItems(params: {
   qaCanonItems: ReadonlyArray<CommonsQAInput>;
   ideationItems: ReadonlyArray<CommonsIdeaInput>;
   livingDocItems: ReadonlyArray<CommonsLivingDocInput>;
+  includeDemoFixtures?: boolean;
 }): CommunityCommonsItem[] {
   const items: CommunityCommonsItem[] = [];
+  const includeDemo = params.includeDemoFixtures === true;
 
   for (const post of params.feedPosts) {
     const inferred = inferSpaceAndTags(post.title, post.bodyMarkdown, 'operations-playbooks');
+    const resolvedSpaceId = post.spaceId && post.spaceId !== 'all' ? post.spaceId : inferred.spaceId;
+    const authorName = post.authorName?.trim() || 'Community Member';
+    const authorRole = post.authorRole?.trim() || 'Member';
+    const replies = post.replies ? post.replies.map((r) => ({ ...r })) : [];
+    const upvoteCount =
+      typeof post.upvoteCount === 'number' && Number.isFinite(post.upvoteCount) ? post.upvoteCount : 0;
+
     items.push({
       id: `post-${post.id}`,
       title: post.title,
       excerpt: post.bodyMarkdown.slice(0, 180) + (post.bodyMarkdown.length > 180 ? '...' : ''),
       bodyMarkdown: post.bodyMarkdown,
-      spaceId: inferred.spaceId,
-      spaceLabel: getSpaceLabel(inferred.spaceId),
+      spaceId: resolvedSpaceId,
+      spaceLabel: getSpaceLabel(resolvedSpaceId),
       streamType: 'post',
       entryTypeLabel: 'Discussion Post',
       statusBadge: post.status || 'Published',
       statusTone: 'brand',
       epistemicStatus: 'Community Thread',
       confidenceScore: null,
-      authorName: 'Community Engineering',
-      authorRole: 'Core Contributor · MemberJunction',
-      authorInitials: 'CE',
-      timestampLabel: 'Active thread',
+      authorName,
+      authorRole,
+      authorInitials: computeInitials(authorName),
+      timestampLabel: post.timestampLabel?.trim() || post.status || 'Published',
       tags: inferred.tags,
-      upvoteCount: 18,
-      upvotedByMe: false,
-      replyCount: 1,
-      replies: [
-        {
-          id: `reply-init-${post.id}`,
-          authorName: 'Platform Stewards',
-          authorRole: 'Architecture Review',
-          authorInitials: 'PS',
-          timestampLabel: '1 hour ago',
-          bodyMarkdown: 'Thread indexed in the Community Commons for peer review and living synthesis.',
-          isAccepted: false,
-          upvotes: 4,
-        },
-      ],
+      upvoteCount,
+      upvotedByMe: Boolean(post.upvotedByMe),
+      replyCount: replies.length,
+      replies,
       graduatedToDeliverable: false,
       deliverableTitle: null,
       sourceTab: 'knowledge-stream',
@@ -440,6 +498,11 @@ export function BuildCommonsStreamItems(params: {
   for (const qa of params.qaCanonItems) {
     const inferred = inferSpaceAndTags(qa.title, qa.bodyMarkdown, 'architecture-standards');
     const isVerified = qa.isAccepted || qa.epistemicStatus === 'Canon Verified' || qa.epistemicStatus === 'Verified';
+    const authorName = qa.authorName?.trim() || 'Community Member';
+    const authorRole = qa.authorRole?.trim() || 'Member';
+    const replies = qa.replies ? qa.replies.map((r) => ({ ...r })) : [];
+    const upvoteCount = typeof qa.upvoteCount === 'number' && Number.isFinite(qa.upvoteCount) ? qa.upvoteCount : 0;
+
     items.push({
       id: `qa-${qa.id}`,
       title: qa.title,
@@ -453,28 +516,15 @@ export function BuildCommonsStreamItems(params: {
       statusTone: isVerified ? 'success' : 'warning',
       epistemicStatus: qa.epistemicStatus ?? (isVerified ? 'Canon Verified' : 'Under Review'),
       confidenceScore: qa.confidenceScore,
-      authorName: 'Soraia Moreau',
-      authorRole: 'Principal Security Architect',
-      authorInitials: 'SM',
-      timestampLabel: 'Verified Canon',
+      authorName,
+      authorRole,
+      authorInitials: computeInitials(authorName),
+      timestampLabel: qa.timestampLabel?.trim() || (isVerified ? 'Verified Canon' : 'Under Review'),
       tags: inferred.tags,
-      upvoteCount: isVerified ? 29 : 11,
+      upvoteCount,
       upvotedByMe: false,
-      replyCount: isVerified ? 2 : 0,
-      replies: isVerified
-        ? [
-            {
-              id: `qa-reply-${qa.id}`,
-              authorName: 'Soraia Moreau',
-              authorRole: 'Principal Security Architect',
-              authorInitials: 'SM',
-              timestampLabel: 'Verified Answer',
-              bodyMarkdown: qa.bodyMarkdown,
-              isAccepted: true,
-              upvotes: 19,
-            },
-          ]
-        : [],
+      replyCount: replies.length,
+      replies,
       graduatedToDeliverable: false,
       deliverableTitle: null,
       sourceTab: 'qa-canon-workbench',
@@ -484,6 +534,10 @@ export function BuildCommonsStreamItems(params: {
 
   for (const idea of params.ideationItems) {
     const inferred = inferSpaceAndTags(idea.title, idea.summary, 'product-ideation');
+    const authorName = idea.authorName?.trim() || 'Community Member';
+    const authorRole = idea.authorRole?.trim() || 'Proposal Author';
+    const replies = idea.replies ? idea.replies.map((r) => ({ ...r })) : [];
+
     items.push({
       id: `idea-${idea.id}`,
       title: idea.title,
@@ -497,15 +551,15 @@ export function BuildCommonsStreamItems(params: {
       statusTone: 'brand',
       epistemicStatus: `${idea.totalPointsAllocated} Voice Credits Allocated`,
       confidenceScore: null,
-      authorName: 'Product Ideation Council',
-      authorRole: 'Community Member Proposal',
-      authorInitials: 'PI',
-      timestampLabel: 'Open Campaign',
+      authorName,
+      authorRole,
+      authorInitials: computeInitials(authorName),
+      timestampLabel: idea.timestampLabel?.trim() || 'Open Campaign',
       tags: Array.from(new Set([...inferred.tags, 'Ideation'])),
-      upvoteCount: Math.max(idea.effectiveQuadraticVotes, 5),
+      upvoteCount: typeof idea.totalPointsAllocated === 'number' ? idea.totalPointsAllocated : 0,
       upvotedByMe: false,
-      replyCount: 1,
-      replies: [],
+      replyCount: replies.length,
+      replies,
       graduatedToDeliverable: false,
       deliverableTitle: null,
       sourceTab: 'quadratic-ideation-wallet',
@@ -516,6 +570,11 @@ export function BuildCommonsStreamItems(params: {
   for (const doc of params.livingDocItems) {
     const inferred = inferSpaceAndTags(doc.title, doc.bodyMarkdown, 'operations-playbooks');
     const isInteractive = doc.postTypeCode === 'interactive-experience';
+    const authorName = doc.authorName?.trim() || 'Community Member';
+    const authorRole = doc.authorRole?.trim() || 'Co-Author';
+    const replies = doc.replies ? doc.replies.map((r) => ({ ...r })) : [];
+    const upvoteCount = typeof doc.upvoteCount === 'number' && Number.isFinite(doc.upvoteCount) ? doc.upvoteCount : 0;
+
     items.push({
       id: `doc-${doc.id}`,
       title: doc.title,
@@ -529,15 +588,15 @@ export function BuildCommonsStreamItems(params: {
       statusTone: 'success',
       epistemicStatus: 'Co-Authored Standard',
       confidenceScore: null,
-      authorName: 'Documentation Circle',
-      authorRole: 'Operations & Playbooks',
-      authorInitials: 'DC',
-      timestampLabel: 'Living revision',
+      authorName,
+      authorRole,
+      authorInitials: computeInitials(authorName),
+      timestampLabel: doc.timestampLabel?.trim() || 'Living revision',
       tags: Array.from(new Set([...inferred.tags, 'Working Groups'])),
-      upvoteCount: 22,
+      upvoteCount,
       upvotedByMe: false,
-      replyCount: 1,
-      replies: [],
+      replyCount: replies.length,
+      replies,
       graduatedToDeliverable: false,
       deliverableTitle: null,
       sourceTab: 'living-co-authoring',
@@ -545,13 +604,15 @@ export function BuildCommonsStreamItems(params: {
     });
   }
 
-  for (const supplemental of SEEDED_SUPPLEMENTAL_COMMONS_ITEMS) {
-    if (!items.some((existing) => existing.id === supplemental.id)) {
-      items.push({
-        ...supplemental,
-        tags: [...supplemental.tags],
-        replies: supplemental.replies.map((r) => ({ ...r })),
-      });
+  if (includeDemo) {
+    for (const supplemental of SEEDED_SUPPLEMENTAL_COMMONS_ITEMS) {
+      if (!items.some((existing) => existing.id === supplemental.id)) {
+        items.push({
+          ...supplemental,
+          tags: [...supplemental.tags],
+          replies: supplemental.replies.map((r) => ({ ...r })),
+        });
+      }
     }
   }
 
@@ -801,6 +862,7 @@ export function BuildEditorialPorchHighlights(params: {
   const graduationItem =
     params.commonsItems.find((i) => i.id === 'commons-wg-webhook-telemetry') ??
     params.commonsItems.find((i) => i.graduatedToDeliverable) ??
+    params.commonsItems.find((i) => i.id !== motionItem?.id && i.id !== playbookItem?.id) ??
     params.commonsItems[params.commonsItems.length - 1];
 
   const firstQa = params.qaCanonItems[0];
@@ -813,14 +875,16 @@ export function BuildEditorialPorchHighlights(params: {
       badgeText: 'Open Canon · Motion Spotlight',
       badgeTone: 'danger',
       metaText: firstQa?.epistemicStatus ? `${firstQa.epistemicStatus} · Open RFC` : 'Canon Verified · Active Motion',
-      title: motionItem?.title ?? 'RFC-2026-08: Dual-Dialect SQL & PostgreSQL Migration Parity Standard',
+      title: motionItem?.title ?? 'Verified Canon Entry',
       summary:
         motionItem?.excerpt ??
-        'Review the canonical answer pattern and active community motion governing schema parity across tenant deployments.',
-      footerMeta: firstQa ? `Canon Confidence: ${Math.round((firstQa.confidenceScore ?? 0.94) * 100)}%` : 'Open for Inspection',
+        'Review verified community canon answers and active engineering guidance.',
+      footerMeta: firstQa && typeof firstQa.confidenceScore === 'number'
+        ? `Canon Confidence: ${Math.round(firstQa.confidenceScore * 100)}%`
+        : 'Open for Inspection',
       ctaLabel: 'Inspect Motion & Canon',
       targetTab: 'qa-canon-workbench',
-      targetItemId: motionItem?.id ?? 'commons-rfc-2026-08',
+      targetItemId: motionItem?.id ?? firstQa?.id ?? '',
     },
     {
       id: 'highlight-living-playbook',
@@ -828,29 +892,240 @@ export function BuildEditorialPorchHighlights(params: {
       badgeText: 'Living Playbook · Interactive Preview',
       badgeTone: 'brand',
       metaText: firstInteractive ? `${firstInteractive.postTypeCode} · Sandboxed` : 'Co-Authored Standard',
-      title: playbookItem?.title ?? 'OAuth2 Partner Onboarding & Dual-Key Rollover Playbook',
+      title: playbookItem?.title ?? 'Living Playbook Workspace',
       summary:
         playbookItem?.excerpt ??
-        'Collaborative runbook paired with an isolated sandboxed mini-app check for zero-downtime key rotation.',
+        'Collaborative runbook paired with an isolated sandboxed mini-app check.',
       footerMeta: `${params.livingDocItems.length} Living Artifacts`,
       ctaLabel: 'Open Playbook Preview',
       targetTab: 'living-co-authoring',
-      targetItemId: playbookItem?.id ?? 'commons-wg-webhook-telemetry',
+      targetItemId: playbookItem?.id ?? firstInteractive?.id ?? '',
     },
     {
       id: 'highlight-active-graduation',
       kind: 'active-graduation',
       badgeText: 'Active Graduation · Working Group',
       badgeTone: 'success',
-      metaText: '2 of 3 Milestones Complete',
-      title: graduationItem?.title ?? 'Webhook Delivery Retry & Dead-Letter Telemetry Working Group',
+      metaText: graduationItem?.graduatedToDeliverable ? 'Graduated Deliverable' : 'Active Community Thread',
+      title: graduationItem?.title ?? 'Active Community Deliverable',
       summary:
         graduationItem?.excerpt ??
-        'Community Q&A thread graduated into a formal deliverable blueprint for cross-tenant observability.',
-      footerMeta: '5 Member Teams · Active',
+        'Community knowledge thread curated for peer review and deliverable graduation.',
+      footerMeta: `${graduationItem?.upvoteCount ?? 0} Endorsements`,
       ctaLabel: 'Review Deliverable',
-      targetTab: 'knowledge-stream',
-      targetItemId: graduationItem?.id ?? 'commons-wg-webhook-telemetry',
+      targetTab: graduationItem?.sourceTab ?? 'knowledge-stream',
+      targetItemId: graduationItem?.id ?? '',
     },
   ];
+}
+
+export function MapForumNameToSpaceId(forumName: string): CommunitySpaceFilterId {
+  const hay = forumName.trim().toLowerCase();
+  if (hay.includes('ideation') || hay.includes('roadmap') || hay.includes('product')) {
+    return 'product-ideation';
+  }
+  if (hay.includes('governance') || hay.includes('rfc') || hay.includes('policy')) {
+    return 'governance-rfcs';
+  }
+  if (hay.includes('operation') || hay.includes('playbook') || hay.includes('runbook')) {
+    return 'operations-playbooks';
+  }
+  return 'architecture-standards';
+}
+
+export function ResolveAskSharePostTypeCode(entryType: AskShareEntryType): string {
+  if (entryType === 'Question') return 'question';
+  if (entryType === 'Playbook Note') return 'collaborative-doc';
+  return 'discussion';
+}
+
+export function ResolveAuthorizedForumTarget(
+  targetForumId: string | null | undefined,
+  allowedForumIDs: ReadonlyArray<string>,
+): string | null {
+  const normalizedTarget = (targetForumId ?? '').trim().toLowerCase();
+  if (!normalizedTarget) {
+    return null;
+  }
+  for (const allowedId of allowedForumIDs) {
+    if (allowedId.trim().toLowerCase() === normalizedTarget) {
+      return allowedId;
+    }
+  }
+  return null;
+}
+
+export async function PersistAskSharePost(params: PersistAskShareParams): Promise<PersistAskShareResult> {
+  const validation = ValidateAskShareDraft(params.draft);
+  if (!validation.valid) {
+    return {
+      success: false,
+      validationErrors: validation.errors,
+      errorMessage: null,
+      persistedPostId: null,
+      resolvedForumId: null,
+      createdItem: null,
+    };
+  }
+
+  const matchedForum = params.authorizedForums?.find(
+    (f) => f.id.trim().toLowerCase() === (params.targetForumId ?? '').trim().toLowerCase(),
+  );
+  const resolvedDraft: AskShareDraft = matchedForum
+    ? { ...params.draft, spaceId: matchedForum.spaceId }
+    : params.draft;
+
+  if (params.isOfflineDemoMode) {
+    const demoItem = CreateAskShareStreamItem(
+      resolvedDraft,
+      params.authorName || 'Community Member',
+      'Demo Member',
+    );
+    return {
+      success: true,
+      validationErrors: {},
+      errorMessage: null,
+      persistedPostId: null,
+      resolvedForumId: null,
+      createdItem: demoItem,
+    };
+  }
+
+  const targetTrimmed = (params.targetForumId ?? '').trim();
+  if (!targetTrimmed) {
+    return {
+      success: false,
+      validationErrors: {},
+      errorMessage: 'No authorized publication forum is selected — cannot publish post.',
+      persistedPostId: null,
+      resolvedForumId: null,
+      createdItem: null,
+    };
+  }
+
+  const authorizedForumId = ResolveAuthorizedForumTarget(targetTrimmed, params.allowedForumIDs);
+  if (!authorizedForumId) {
+    return {
+      success: false,
+      validationErrors: {},
+      errorMessage: 'Selected publication destination is not an authorized forum for this workspace.',
+      persistedPostId: null,
+      resolvedForumId: null,
+      createdItem: null,
+    };
+  }
+
+  const typeCode = ResolveAskSharePostTypeCode(params.draft.entryType);
+  const postTypeId = params.postTypeIdByCode.get(typeCode.toLowerCase()) ?? null;
+  if (!postTypeId) {
+    return {
+      success: false,
+      validationErrors: {},
+      errorMessage: `PostType "${typeCode}" is not configured — cannot publish entry.`,
+      persistedPostId: null,
+      resolvedForumId: authorizedForumId,
+      createdItem: null,
+    };
+  }
+
+  if (!params.currentUserId || !params.createForumPostEntity) {
+    return {
+      success: false,
+      validationErrors: {},
+      errorMessage: 'Active session user or metadata provider is unavailable — cannot publish post.',
+      persistedPostId: null,
+      resolvedForumId: authorizedForumId,
+      createdItem: null,
+    };
+  }
+
+  let savedPostId: string | null = null;
+  try {
+    const post = await params.createForumPostEntity();
+    if (!post) {
+      return {
+        success: false,
+        validationErrors: {},
+        errorMessage: 'Could not instantiate Forum Post entity — draft was preserved.',
+        persistedPostId: null,
+        resolvedForumId: authorizedForumId,
+        createdItem: null,
+      };
+    }
+
+    post.ForumID = authorizedForumId;
+    post.AuthorUserID = params.currentUserId;
+    post.PostTypeID = postTypeId;
+    post.Title = params.draft.title.trim();
+    post.BodyMarkdown = params.draft.body.trim();
+    post.Status = 'Published';
+
+    const saved = await post.Save();
+    if (!saved) {
+      return {
+        success: false,
+        validationErrors: {},
+        errorMessage: 'Failed to save Forum Post on server — draft was preserved so nothing was lost.',
+        persistedPostId: null,
+        resolvedForumId: authorizedForumId,
+        createdItem: null,
+      };
+    }
+    savedPostId = post.ID;
+  } catch (err) {
+    return {
+      success: false,
+      validationErrors: {},
+      errorMessage: err instanceof Error ? err.message : 'Server error while publishing post — draft was preserved.',
+      persistedPostId: null,
+      resolvedForumId: authorizedForumId,
+      createdItem: null,
+    };
+  }
+
+  const createdItem = CreateAskShareStreamItem(
+    resolvedDraft,
+    params.authorName || 'Community Member',
+    'Member',
+  );
+  if (matchedForum) {
+    createdItem.spaceLabel = matchedForum.name;
+  }
+  if (savedPostId) {
+    createdItem.sourcePostId = savedPostId;
+  }
+
+  return {
+    success: true,
+    validationErrors: {},
+    errorMessage: null,
+    persistedPostId: savedPostId,
+    resolvedForumId: authorizedForumId,
+    createdItem,
+  };
+}
+
+export function ComputeNextTrapFocusTarget<T>(
+  focusables: ReadonlyArray<T>,
+  activeElement: T | null,
+  shiftKey: boolean,
+): T | null {
+  if (focusables.length === 0) {
+    return null;
+  }
+  const first = focusables[0];
+  const last = focusables[focusables.length - 1];
+  const currentIndex = activeElement ? focusables.indexOf(activeElement) : -1;
+
+  if (shiftKey) {
+    if (currentIndex <= 0) {
+      return last;
+    }
+    return focusables[currentIndex - 1];
+  }
+
+  if (currentIndex < 0 || currentIndex >= focusables.length - 1) {
+    return first;
+  }
+  return focusables[currentIndex + 1];
 }

@@ -1,10 +1,12 @@
-import { Component, ChangeDetectionStrategy, EventEmitter, Input, Output } from '@angular/core';
+import { Component, ChangeDetectionStrategy, EventEmitter, Input, OnChanges, Output, type SimpleChanges } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import {
   ComputeQaCanonStats,
   FilterQaCanonItems,
   GetEpistemicBadgeTone,
+  ResolveVisibleQaItem,
+  SyncQaSelection,
   type QaCanonFilterKey,
   type QaCanonItemInput,
   type QaCanonStats,
@@ -37,7 +39,7 @@ const QA_FILTER_PILLS: ReadonlyArray<QaFilterPillOption> = [
   styleUrl: './qa-canon-workbench.component.css',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
-export class QaCanonWorkbenchComponent {
+export class QaCanonWorkbenchComponent implements OnChanges {
   public readonly filterPills = QA_FILTER_PILLS;
 
   @Input() public items: ReadonlyArray<QaCanonItemInput> = [];
@@ -56,10 +58,16 @@ export class QaCanonWorkbenchComponent {
   @Output() public readonly gradeAnswer = new EventEmitter<string>();
   @Output() public readonly promoteAnswer = new EventEmitter<string>();
   @Output() public readonly newAnswerBodyChange = new EventEmitter<string>();
-  @Output() public readonly submitAnswer = new EventEmitter<void>();
+  @Output() public readonly submitAnswer = new EventEmitter<{ itemId: string; answerBody: string }>();
 
   public activeFilter: QaCanonFilterKey = 'all';
   public searchQuery = '';
+
+  public ngOnChanges(changes: SimpleChanges): void {
+    if (changes['items'] || changes['selectedQaId']) {
+      this.syncSelectionToVisible();
+    }
+  }
 
   public get stats(): QaCanonStats {
     return ComputeQaCanonStats(this.items);
@@ -70,11 +78,19 @@ export class QaCanonWorkbenchComponent {
   }
 
   public get selectedItem(): QaCanonItemInput | null {
-    const visible = this.filteredItems;
-    if (visible.length === 0) {
-      return this.items.find((q) => q.id === this.selectedQaId) ?? this.items[0] ?? null;
+    return ResolveVisibleQaItem(this.items, this.selectedQaId, this.activeFilter, this.searchQuery);
+  }
+
+  private syncSelectionToVisible(): void {
+    const sync = SyncQaSelection({
+      items: this.items,
+      selectedQaId: this.selectedQaId,
+      filterKey: this.activeFilter,
+      searchQuery: this.searchQuery,
+    });
+    if (sync.changed && sync.selectedQaId) {
+      this.selectQa.emit(sync.selectedQaId);
     }
-    return visible.find((q) => q.id === this.selectedQaId) ?? visible[0] ?? null;
   }
 
   public countForFilter(key: QaCanonFilterKey): number {
@@ -94,11 +110,18 @@ export class QaCanonWorkbenchComponent {
 
   public setFilter(key: QaCanonFilterKey): void {
     this.activeFilter = key;
+    this.syncSelectionToVisible();
+  }
+
+  public onSearchQueryChange(query: string): void {
+    this.searchQuery = query;
+    this.syncSelectionToVisible();
   }
 
   public clearFilters(): void {
     this.activeFilter = 'all';
     this.searchQuery = '';
+    this.syncSelectionToVisible();
   }
 
   public onToggleComposer(): void {
@@ -122,6 +145,9 @@ export class QaCanonWorkbenchComponent {
   }
 
   public onSubmitAnswer(): void {
-    this.submitAnswer.emit();
+    const active = this.selectedItem;
+    if (active) {
+      this.submitAnswer.emit({ itemId: active.id, answerBody: this.newAnswerBody });
+    }
   }
 }

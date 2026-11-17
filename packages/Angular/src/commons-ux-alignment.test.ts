@@ -231,6 +231,7 @@ describe('Slice 1 UX Alignment — 3-Column Commons Workspace Filtering & Layout
         postTypeCode: 'collaborative-doc',
       },
     ],
+    includeDemoFixtures: true,
   });
 
   it('exposes the 5 canonical spaces, topics, stream types, and 3-column responsive grid', () => {

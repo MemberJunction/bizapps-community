@@ -1,4 +1,4 @@
-import { Component, ChangeDetectionStrategy, EventEmitter, Input, Output } from '@angular/core';
+import { Component, ChangeDetectionStrategy, EventEmitter, Input, OnChanges, Output, type SimpleChanges } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import type { SafeHtml } from '@angular/platform-browser';
@@ -6,6 +6,8 @@ import {
   CalculateSlaCapacitySpec,
   FilterLivingDocItems,
   GetLivingDocTypeMeta,
+  ResolveVisibleLivingDoc,
+  SyncLivingDocSelection,
   type LivingDocFilterKey,
   type LivingDocItemInput,
   type LivingDocTypeMeta,
@@ -41,7 +43,7 @@ const LIVING_DOC_FILTERS: ReadonlyArray<LivingDocFilterOption> = [
   styleUrl: './living-co-authoring.component.css',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
-export class LivingCoAuthoringComponent {
+export class LivingCoAuthoringComponent implements OnChanges {
   public readonly filterOptions = LIVING_DOC_FILTERS;
 
   @Input() public items: ReadonlyArray<LivingDocItemInput> = [];
@@ -58,13 +60,13 @@ export class LivingCoAuthoringComponent {
 
   @Output() public readonly selectDoc = new EventEmitter<string>();
   @Output() public readonly editingDocMarkdownChange = new EventEmitter<string>();
-  @Output() public readonly saveDoc = new EventEmitter<void>();
+  @Output() public readonly saveDoc = new EventEmitter<{ docId: string; markdown: string }>();
   @Output() public readonly synthesizeDoc = new EventEmitter<string>();
   @Output() public readonly formRespondentNameChange = new EventEmitter<string>();
   @Output() public readonly formConfidenceRatingChange = new EventEmitter<string>();
   @Output() public readonly formCommentsChange = new EventEmitter<string>();
-  @Output() public readonly submitInlineForm = new EventEmitter<void>();
-  @Output() public readonly resetMiniApp = new EventEmitter<void>();
+  @Output() public readonly submitInlineForm = new EventEmitter<string>();
+  @Output() public readonly resetMiniApp = new EventEmitter<string>();
 
   public activeFilter: LivingDocFilterKey = 'all';
   public searchQuery = '';
@@ -81,16 +83,31 @@ export class LivingCoAuthoringComponent {
     },
   ];
 
+  public ngOnChanges(changes: SimpleChanges): void {
+    if (changes['items'] || changes['selectedDocId']) {
+      this.syncSelectionToVisible();
+    }
+  }
+
   public get filteredItems(): LivingDocItemInput[] {
     return FilterLivingDocItems(this.items, this.activeFilter, this.searchQuery);
   }
 
   public get activeDoc(): LivingDocItemInput | null {
-    const visible = this.filteredItems;
-    if (visible.length === 0) {
-      return this.items.find((d) => d.id === this.selectedDocId) ?? this.items[0] ?? null;
+    return ResolveVisibleLivingDoc(this.items, this.selectedDocId, this.activeFilter, this.searchQuery);
+  }
+
+  private syncSelectionToVisible(): void {
+    const sync = SyncLivingDocSelection({
+      items: this.items,
+      selectedDocId: this.selectedDocId,
+      editingDocMarkdown: this.editingDocMarkdown,
+      filterKey: this.activeFilter,
+      searchQuery: this.searchQuery,
+    });
+    if (sync.changed && sync.selectedDocId) {
+      this.selectDoc.emit(sync.selectedDocId);
     }
-    return visible.find((d) => d.id === this.selectedDocId) ?? visible[0] ?? null;
   }
 
   public get capacitySpec(): SlaCapacityResult {
@@ -111,11 +128,18 @@ export class LivingCoAuthoringComponent {
 
   public setFilter(key: LivingDocFilterKey): void {
     this.activeFilter = key;
+    this.syncSelectionToVisible();
+  }
+
+  public onSearchQueryChange(query: string): void {
+    this.searchQuery = query;
+    this.syncSelectionToVisible();
   }
 
   public clearFilters(): void {
     this.activeFilter = 'all';
     this.searchQuery = '';
+    this.syncSelectionToVisible();
   }
 
   public saveCapacityPreset(): void {
@@ -136,7 +160,10 @@ export class LivingCoAuthoringComponent {
   }
 
   public onSaveDoc(): void {
-    this.saveDoc.emit();
+    const doc = this.activeDoc;
+    if (doc) {
+      this.saveDoc.emit({ docId: doc.id, markdown: this.editingDocMarkdown });
+    }
   }
 
   public onSynthesizeDoc(docId: string): void {
@@ -144,10 +171,16 @@ export class LivingCoAuthoringComponent {
   }
 
   public onSubmitInlineForm(): void {
-    this.submitInlineForm.emit();
+    const doc = this.activeDoc;
+    if (doc) {
+      this.submitInlineForm.emit(doc.id);
+    }
   }
 
   public onResetMiniApp(): void {
-    this.resetMiniApp.emit();
+    const doc = this.activeDoc;
+    if (doc) {
+      this.resetMiniApp.emit(doc.id);
+    }
   }
 }

@@ -91,6 +91,8 @@ const state = {
     { ID: '99999999-9999-4999-8999-000000000001', Code: 'question', Name: 'Question' },
     { ID: '99999999-9999-4999-8999-000000000002', Code: 'answer', Name: 'Answer' },
     { ID: '99999999-9999-4999-8999-000000000003', Code: 'idea', Name: 'Idea' },
+    { ID: '99999999-9999-4999-8999-000000000004', Code: 'discussion', Name: 'Discussion' },
+    { ID: '99999999-9999-4999-8999-000000000005', Code: 'collaborative-doc', Name: 'Collaborative Doc' },
   ],
   campaigns: [
     { ID: FORUM_1, AllocationMode: 'Quadratic', DefaultBudgetPoints: 100, MaxPointsPerIdea: null },
