@@ -18,6 +18,47 @@ const FONT_MIME_TYPES = {
   '.svg': 'image/svg+xml',
 };
 
+const SINGLETON_SCOPES = ['@angular/', '@memberjunction/', '@mj-biz-apps/'];
+const SINGLETON_PACKAGES = ['rxjs', 'tslib'];
+
+function isSingletonModuleImport(specifier) {
+  return (
+    SINGLETON_SCOPES.some((prefix) => specifier.startsWith(prefix)) ||
+    SINGLETON_PACKAGES.some((pkg) => specifier === pkg || specifier.startsWith(`${pkg}/`))
+  );
+}
+
+/**
+ * Resolves Angular, MemberJunction, and BizApps singleton packages from the host package's
+ * dependency graph first so transitive imports across separately-linked workspace packages
+ * (such as `.ci/bizapps-collaboration` vs `@mj-biz-apps/community-ng`) cannot bundle a second
+ * `@memberjunction/global` or `@angular/*` instance and split `MJGlobal.Instance.ClassFactory`.
+ */
+function createHostSingletonDedupePlugin() {
+  const hostRoots = [join(REPO_ROOT, 'packages', 'Angular'), REPO_ROOT];
+  return {
+    name: 'mj-host-singleton-dedupe',
+    setup(build) {
+      build.onResolve({ filter: /^(@angular\/|@memberjunction\/|@mj-biz-apps\/|rxjs($|\/)|tslib($|\/))/ }, async (args) => {
+        if (args.pluginData?.deduped || !isSingletonModuleImport(args.path)) {
+          return null;
+        }
+        for (const resolveDir of hostRoots) {
+          const resolved = await build.resolve(args.path, {
+            resolveDir,
+            kind: args.kind,
+            pluginData: { deduped: true },
+          });
+          if (resolved.errors.length === 0 && resolved.path) {
+            return resolved;
+          }
+        }
+        return null;
+      });
+    },
+  };
+}
+
 /**
  * Bundles the real Angular 21 `CommunityHubResource` + 25 generated form registrations in memory
  * using `esbuild`, failing loudly if the Angular `dist` output cannot be bundled or linked.
@@ -42,6 +83,7 @@ async function buildAngularBrowserBundle() {
       '.svg': 'empty',
       '.png': 'empty',
     },
+    plugins: [createHostSingletonDedupePlugin()],
     logLevel: 'silent',
   });
 
