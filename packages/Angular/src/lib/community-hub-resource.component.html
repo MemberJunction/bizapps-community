@@ -285,107 +285,24 @@
               role="tabpanel"
               [attr.aria-labelledby]="'mjc-hub-tab-qa-canon-workbench'"
             >
-              <div class="mjc-community-hub__toolbar">
-                <button
-                  type="button"
-                  id="mjc-qa-toggle-composer-btn"
-                  class="mjc-community-hub__btn mjc-community-hub__btn--primary"
-                  (click)="showQuestionComposer = !showQuestionComposer"
-                >
-                  {{ showQuestionComposer ? 'Cancel Question' : 'Ask a Question' }}
-                </button>
-              </div>
-
-              @if (showQuestionComposer) {
-                <form class="mjc-community-hub__card" (ngSubmit)="CreateQuestion()">
-                  <h3 class="mjc-community-hub__card-title">Ask a Community Question</h3>
-                  <div class="mjc-community-hub__field">
-                    <label for="mjc-qa-new-title" class="mjc-community-hub__label">Question Title</label>
-                    <input
-                      id="mjc-qa-new-title"
-                      name="newQuestionTitle"
-                      class="mjc-community-hub__input"
-                      [(ngModel)]="newQuestionTitle"
-                      required
-                    />
-                  </div>
-                  <div class="mjc-community-hub__field">
-                    <label for="mjc-qa-new-body" class="mjc-community-hub__label">Details</label>
-                    <textarea
-                      id="mjc-qa-new-body"
-                      name="newQuestionBody"
-                      rows="3"
-                      class="mjc-community-hub__textarea"
-                      [(ngModel)]="newQuestionBody"
-                      required
-                    ></textarea>
-                  </div>
-                  <div class="mjc-community-hub__btn-row">
-                    <button type="submit" id="mjc-qa-submit-question-btn" class="mjc-community-hub__btn mjc-community-hub__btn--primary">
-                      Post Question
-                    </button>
-                  </div>
-                </form>
-              }
-
-              @if (qaCanonItems.length === 0) {
-                <p class="mjc-community-hub__hint">No verified Q&amp;A canon answers yet.</p>
-              } @else {
-                <div class="mjc-community-hub__split">
-                  <div class="mjc-community-hub__list" role="listbox" aria-label="Q&A items">
-                    @for (item of qaCanonItems; track item.id) {
-                      <button
-                        type="button"
-                        role="option"
-                        class="mjc-community-hub__list-item"
-                        [class.mjc-community-hub__list-item--selected]="item.id === selectedQaItem?.id"
-                        [attr.aria-selected]="item.id === selectedQaItem?.id"
-                        (click)="SelectQAQuestion(item.id)"
-                      >
-                        <span class="mjc-community-hub__list-title">{{ item.title }}</span>
-                        @if (item.epistemicStatus) {
-                          <span class="mjc-community-hub__badge">{{ item.epistemicStatus }}</span>
-                        }
-                      </button>
-                    }
-                  </div>
-                  @if (selectedQaItem; as activeQa) {
-                    <div class="mjc-community-hub__card">
-                      <h3 class="mjc-community-hub__card-title">{{ activeQa.title }}</h3>
-                      <p class="mjc-community-hub__card-body">{{ activeQa.bodyMarkdown || 'No body provided yet.' }}</p>
-                      <div class="mjc-community-hub__btn-row">
-                        <button type="button" id="mjc-qa-grade-btn" class="mjc-community-hub__btn" (click)="GradeAnswerWithAI(activeQa.id)">
-                          Grade with Epistemic AI
-                        </button>
-                        <button
-                          type="button"
-                          id="mjc-qa-promote-btn"
-                          class="mjc-community-hub__btn mjc-community-hub__btn--primary"
-                          (click)="PromoteAnswerToCanon(activeQa.id)"
-                        >
-                          {{ activeQa.isAccepted ? 'Canon Accepted' : 'Promote to Canon' }}
-                        </button>
-                      </div>
-                      <form class="mjc-community-hub__field" (ngSubmit)="SubmitAnswer()">
-                        <label for="mjc-qa-answer-input" class="mjc-community-hub__label">Submit Answer</label>
-                        <textarea
-                          id="mjc-qa-answer-input"
-                          name="newAnswerBody"
-                          rows="2"
-                          class="mjc-community-hub__textarea"
-                          [(ngModel)]="newAnswerBody"
-                        ></textarea>
-                        <div class="mjc-community-hub__btn-row">
-                          <button type="submit" id="mjc-qa-submit-answer-btn" class="mjc-community-hub__btn">Submit Answer</button>
-                        </div>
-                      </form>
-                      @if (qaActionMessage) {
-                        <p class="mjc-community-hub__status" role="status">{{ qaActionMessage }}</p>
-                      }
-                    </div>
-                  }
-                </div>
-              }
+              <mjc-qa-canon-workbench
+                [items]="qaCanonItems"
+                [selectedQaId]="selectedQaId"
+                [showQuestionComposer]="showQuestionComposer"
+                [newQuestionTitle]="newQuestionTitle"
+                [newQuestionBody]="newQuestionBody"
+                [newAnswerBody]="newAnswerBody"
+                [qaActionMessage]="qaActionMessage"
+                (toggleComposer)="showQuestionComposer = !showQuestionComposer"
+                (newQuestionTitleChange)="newQuestionTitle = $event"
+                (newQuestionBodyChange)="newQuestionBody = $event"
+                (createQuestion)="CreateQuestion()"
+                (selectQa)="SelectQAQuestion($event)"
+                (gradeAnswer)="GradeAnswerWithAI($event)"
+                (promoteAnswer)="PromoteAnswerToCanon($event)"
+                (newAnswerBodyChange)="newAnswerBody = $event"
+                (submitAnswer)="SubmitAnswer()"
+              ></mjc-qa-canon-workbench>
             </section>
           }
 
@@ -396,31 +313,58 @@
               role="tabpanel"
               [attr.aria-labelledby]="'mjc-hub-tab-quadratic-ideation-wallet'"
             >
-              <div class="mjc-community-hub__toolbar">
-                <div class="mjc-community-hub__btn-row" role="group" aria-label="Ideation Campaigns">
-                  @for (camp of campaigns; track camp.id) {
-                    <button
-                      type="button"
-                      class="mjc-community-hub__btn"
-                      [class.mjc-community-hub__btn--primary]="camp.id === activeCampaign.id"
-                      (click)="SelectCampaign(camp.id)"
-                    >
-                      {{ camp.name }} ({{ camp.budgetPoints }} pts)
-                    </button>
-                  }
+              <!-- WALLET HERO SUMMARY BANNER -->
+              <div class="mjc-wallet-hero">
+                <div class="mjc-wallet-hero__lead">
+                  <span class="mjc-wallet-hero__kicker">
+                    {{ activeCampaign.allocationMode }} Voice Credits · Participatory Roadmap
+                  </span>
+                  <h2 class="mjc-wallet-hero__title">{{ activeCampaign.name }} · Priority Wallet</h2>
+                  <p class="mjc-wallet-hero__desc">
+                    Allocate your {{ activeCampaign.budgetPoints }}-point priority budget across community initiatives.
+                    @if (activeCampaign.allocationMode === 'Quadratic') {
+                      <span>In Quadratic mode, Cost = Votes², rewarding broad consensus over single-item concentration.</span>
+                    }
+                  </p>
+                  <div class="mjc-community-hub__btn-row" role="group" aria-label="Ideation Campaigns">
+                    @for (camp of campaigns; track camp.id) {
+                      <button
+                        type="button"
+                        class="mjc-community-hub__btn"
+                        [class.mjc-community-hub__btn--primary]="camp.id === activeCampaign.id"
+                        (click)="SelectCampaign(camp.id)"
+                      >
+                        {{ camp.name }} ({{ camp.budgetPoints }} pts)
+                      </button>
+                    }
+                  </div>
                 </div>
-                <button
-                  type="button"
-                  id="mjc-idea-toggle-composer-btn"
-                  class="mjc-community-hub__btn"
-                  (click)="showIdeaComposer = !showIdeaComposer"
-                >
-                  {{ showIdeaComposer ? 'Cancel Proposal' : 'Propose Idea' }}
-                </button>
+
+                <div class="mjc-wallet-stat-card">
+                  <span class="mjc-wallet-stat-card__label">Points Remaining</span>
+                  <div class="mjc-wallet-stat-card__value">
+                    {{ remainingWalletPoints }} / {{ activeCampaign.budgetPoints }}
+                  </div>
+                  <div class="mjc-wallet-progress" aria-hidden="true">
+                    <div class="mjc-wallet-progress__fill" [style.width.%]="walletSummary.utilizationPct"></div>
+                  </div>
+                  <span class="mjc-wallet-stat-card__meta">
+                    {{ walletSummary.backedIdeasCount }} backed {{ walletSummary.backedIdeasCount === 1 ? 'initiative' : 'initiatives' }} · {{ walletSummary.utilizationPct }}% allocated
+                  </span>
+                  <button
+                    type="button"
+                    id="mjc-idea-toggle-composer-btn"
+                    class="mjc-community-hub__btn mjc-community-hub__btn--primary"
+                    (click)="showIdeaComposer = !showIdeaComposer"
+                  >
+                    {{ showIdeaComposer ? 'Cancel Proposal' : 'Propose Idea' }}
+                  </button>
+                </div>
               </div>
 
               @if (showIdeaComposer) {
                 <form class="mjc-community-hub__card" (ngSubmit)="ProposeIdea()">
+                  <h3 class="mjc-community-hub__card-title">Propose New Initiative in {{ activeCampaign.name }}</h3>
                   <div class="mjc-community-hub__field">
                     <label for="mjc-idea-new-title" class="mjc-community-hub__label">Idea Title</label>
                     <input id="mjc-idea-new-title" name="newIdeaTitle" class="mjc-community-hub__input" [(ngModel)]="newIdeaTitle" required />
@@ -442,35 +386,86 @@
               @if (visibleIdeationItems.length === 0) {
                 <p class="mjc-community-hub__hint">No ideas proposed yet in {{ activeCampaign.name }}.</p>
               } @else {
-                <div class="mjc-community-hub__list" role="listbox" aria-label="Idea proposals">
-                  @for (idea of visibleIdeationItems; track idea.id) {
-                    <button
-                      #ideaButton
-                      type="button"
-                      class="mjc-community-hub__list-item"
-                      role="option"
-                      [attr.aria-selected]="idea.id === selectedIdeaId"
-                      [attr.tabindex]="idea.id === focusedIdeaId ? 0 : -1"
-                      [class.mjc-community-hub__list-item--selected]="idea.id === selectedIdeaId"
-                      (click)="SelectIdea(idea.id)"
-                      (keydown)="OnIdeaKeydown($event, idea.id)"
-                    >
-                      <span class="mjc-community-hub__list-title">{{ idea.title }}</span>
-                      <span class="mjc-community-hub__badge">{{ idea.effectiveQuadraticVotes }} votes</span>
-                    </button>
+                <div class="mjc-ideation-workspace">
+                  <div class="mjc-ideation-grid" role="listbox" aria-label="Idea proposals">
+                    @for (idea of visibleIdeationItems; track idea.id) {
+                      <button
+                        #ideaButton
+                        type="button"
+                        class="mjc-idea-card"
+                        role="option"
+                        [attr.aria-selected]="idea.id === selectedIdeaId"
+                        [attr.tabindex]="idea.id === focusedIdeaId ? 0 : -1"
+                        [class.mjc-idea-card--selected]="idea.id === selectedIdeaId"
+                        (click)="SelectIdea(idea.id)"
+                        (keydown)="OnIdeaKeydown($event, idea.id)"
+                      >
+                        <div class="mjc-idea-card__top">
+                          <span class="mjc-community-hub__badge">{{ activeCampaign.allocationMode }}</span>
+                          <span class="mjc-idea-card__community-total">
+                            {{ idea.effectiveQuadraticVotes | number: '1.0-2' }} votes · {{ idea.totalPointsAllocated }} pts total
+                          </span>
+                        </div>
+                        <span class="mjc-idea-card__title">{{ idea.title }}</span>
+                        <span class="mjc-idea-card__summary">{{ idea.summary }}</span>
+                        <div class="mjc-idea-card__footer">
+                          <span>Your allocation: <strong>{{ idea.myPointsAllocated }} pts</strong></span>
+                          <span>{{ idea.myEffectiveVotes | number: '1.0-2' }} votes</span>
+                        </div>
+                      </button>
+                    }
+                  </div>
+
+                  @if (selectedIdeaId && !ideationLoadFailed) {
+                    <aside class="mjc-ideation-console" aria-label="Selected idea allocation console">
+                      @if (selectedIdeaItem; as activeIdea) {
+                        <div class="mjc-ideation-console__head">
+                          <span class="mjc-wallet-hero__kicker">Active Allocation Target</span>
+                          <h3 class="mjc-community-hub__card-title">{{ activeIdea.title }}</h3>
+                          <p class="mjc-ideation-console__summary">{{ activeIdea.summary }}</p>
+                        </div>
+
+                        <div class="mjc-ideation-console__metrics">
+                          <div>
+                            <span class="mjc-ideation-console__metric-label">Your Points</span>
+                            <strong class="mjc-ideation-console__metric-val">{{ pointsOnSelectedIdea }} pts</strong>
+                          </div>
+                          <div>
+                            <span class="mjc-ideation-console__metric-label">Community Votes</span>
+                            <strong class="mjc-ideation-console__metric-val">{{ activeIdea.effectiveQuadraticVotes | number: '1.0-2' }}</strong>
+                          </div>
+                          <div>
+                            <span class="mjc-ideation-console__metric-label">Other Ideas</span>
+                            <strong class="mjc-ideation-console__metric-val">{{ pointsOnOtherIdeas }} pts</strong>
+                          </div>
+                        </div>
+
+                        <div class="mjc-ideation-presets" role="group" aria-label="Quick quadratic point presets">
+                          @for (presetPts of selectedIdeaPointPresets; track presetPts) {
+                            <button
+                              type="button"
+                              class="mjc-preset-btn"
+                              [class.mjc-preset-btn--active]="presetPts === pointsOnSelectedIdea"
+                              (click)="applyQuickIdeaAllocation(presetPts)"
+                            >
+                              {{ presetPts }} pts
+                            </button>
+                          }
+                        </div>
+                      }
+
+                      <mjc-quadratic-voting-slider
+                        [ideaPostId]="selectedIdeaId"
+                        [allocationMode]="activeCampaign.allocationMode"
+                        [budgetPoints]="activeCampaign.budgetPoints"
+                        [maxPointsPerIdea]="activeCampaign.maxPointsPerIdea"
+                        [existingPointsOnOtherIdeas]="pointsOnOtherIdeas"
+                        [existingPointsOnThisIdea]="pointsOnSelectedIdea"
+                        (allocationChanged)="OnVoteAllocationChanged(selectedIdeaId, $event.pointsAllocated, $event.effectiveVotes)"
+                      ></mjc-quadratic-voting-slider>
+                    </aside>
                   }
                 </div>
-                @if (selectedIdeaId && !ideationLoadFailed) {
-                  <mjc-quadratic-voting-slider
-                    [ideaPostId]="selectedIdeaId"
-                    [allocationMode]="activeCampaign.allocationMode"
-                    [budgetPoints]="activeCampaign.budgetPoints"
-                    [maxPointsPerIdea]="activeCampaign.maxPointsPerIdea"
-                    [existingPointsOnOtherIdeas]="pointsOnOtherIdeas"
-                    [existingPointsOnThisIdea]="pointsOnSelectedIdea"
-                    (allocationChanged)="OnVoteAllocationChanged(selectedIdeaId, $event.pointsAllocated, $event.effectiveVotes)"
-                  ></mjc-quadratic-voting-slider>
-                }
               }
             </section>
           }
@@ -482,130 +477,28 @@
               role="tabpanel"
               [attr.aria-labelledby]="'mjc-hub-tab-living-co-authoring'"
             >
-              @if (livingDocItems.length === 0) {
-                <p class="mjc-community-hub__hint">No living documents or interactive mini-apps yet.</p>
-              } @else {
-                <div class="mjc-community-hub__split">
-                  <div class="mjc-community-hub__list" role="listbox" aria-label="Living Documents and Mini-Apps">
-                    @for (doc of livingDocItems; track doc.id) {
-                      <button
-                        type="button"
-                        role="option"
-                        class="mjc-community-hub__list-item"
-                        [class.mjc-community-hub__list-item--selected]="doc.id === selectedLivingDoc?.id"
-                        [attr.aria-selected]="doc.id === selectedLivingDoc?.id"
-                        (click)="SelectLivingDoc(doc.id)"
-                      >
-                        <span class="mjc-community-hub__list-title">{{ doc.title }}</span>
-                        <span class="mjc-community-hub__badge">{{ doc.postTypeCode }}</span>
-                      </button>
-                    }
-                  </div>
-
-                  @if (selectedLivingDoc; as activeDoc) {
-                    <div class="mjc-community-hub__card">
-                      <h3 class="mjc-community-hub__card-title">{{ activeDoc.title }}</h3>
-
-                      @switch (activeDoc.postTypeCode) {
-                        @case ('collaborative-doc') {
-                          <div class="mjc-community-hub__field">
-                            <label for="mjc-living-doc-editor" class="mjc-community-hub__label">Co-Authoring Markdown</label>
-                            <textarea
-                              id="mjc-living-doc-editor"
-                              name="editingDocMarkdown"
-                              rows="6"
-                              class="mjc-community-hub__textarea"
-                              [(ngModel)]="editingDocMarkdown"
-                            ></textarea>
-                          </div>
-                          <div class="mjc-community-hub__btn-row">
-                            <button
-                              type="button"
-                              id="mjc-living-doc-save-btn"
-                              class="mjc-community-hub__btn mjc-community-hub__btn--primary"
-                              (click)="SaveCoAuthoringDocument()"
-                            >
-                              Save Co-Authoring Revision
-                            </button>
-                            <button
-                              type="button"
-                              id="mjc-living-doc-synth-btn"
-                              class="mjc-community-hub__btn"
-                              (click)="SynthesizeFeedThread(activeDoc.id)"
-                            >
-                              Synthesize Document Summary
-                            </button>
-                          </div>
-                          @if (docActionMessage) {
-                            <p class="mjc-community-hub__status" role="status">{{ docActionMessage }}</p>
-                          }
-                          @if (threadSynthesisResult) {
-                            <p class="mjc-community-hub__status" role="status">{{ threadSynthesisResult }}</p>
-                          }
-                        }
-                        @case ('collaborative-sheet') {
-                          <form class="mjc-community-hub__field" (ngSubmit)="SubmitInlineForm()">
-                            <label for="mjc-form-respondent" class="mjc-community-hub__label">Member / Cohort Name</label>
-                            <input
-                              id="mjc-form-respondent"
-                              name="formRespondentName"
-                              class="mjc-community-hub__input"
-                              [(ngModel)]="formRespondentName"
-                              required
-                            />
-                            <label for="mjc-form-rating" class="mjc-community-hub__label">Readiness Confidence</label>
-                            <select
-                              id="mjc-form-rating"
-                              name="formConfidenceRating"
-                              class="mjc-community-hub__input"
-                              [(ngModel)]="formConfidenceRating"
-                            >
-                              <option value="High">High — Ready for launch</option>
-                              <option value="Medium">Medium — Minor follow-ups</option>
-                              <option value="Needs Support">Needs Support — Blocked</option>
-                            </select>
-                            <label for="mjc-form-comments" class="mjc-community-hub__label">Notes / Blockers</label>
-                            <textarea
-                              id="mjc-form-comments"
-                              name="formComments"
-                              rows="2"
-                              class="mjc-community-hub__textarea"
-                              [(ngModel)]="formComments"
-                            ></textarea>
-                            <div class="mjc-community-hub__btn-row">
-                              <button type="submit" id="mjc-form-submit-btn" class="mjc-community-hub__btn mjc-community-hub__btn--primary">
-                                Submit Inline Form Response
-                              </button>
-                            </div>
-                          </form>
-                          @if (formSubmittedMessage) {
-                            <p class="mjc-community-hub__status" role="status">{{ formSubmittedMessage }}</p>
-                          }
-                        }
-                        @case ('interactive-experience') {
-                          @if (sandboxedMiniAppSrcdoc) {
-                            <iframe
-                              id="mjc-interactive-miniapp-frame"
-                              class="mjc-community-hub__iframe"
-                              sandbox="allow-scripts"
-                              [srcdoc]="sandboxedMiniAppSrcdoc"
-                              [title]="activeDoc.title"
-                            ></iframe>
-                          }
-                          <div class="mjc-community-hub__btn-row">
-                            <button type="button" id="mjc-miniapp-reset-btn" class="mjc-community-hub__btn" (click)="ResetMiniApp()">
-                              Reset Sandboxed Mini-App
-                            </button>
-                          </div>
-                        }
-                        @default {
-                          <p class="mjc-community-hub__card-body">{{ activeDoc.bodyMarkdown }}</p>
-                        }
-                      }
-                    </div>
-                  }
-                </div>
-              }
+              <mjc-living-co-authoring
+                [items]="livingDocItems"
+                [selectedDocId]="selectedLivingDocId"
+                [editingDocMarkdown]="editingDocMarkdown"
+                [docActionMessage]="docActionMessage"
+                [threadSynthesisResult]="threadSynthesisResult"
+                [formRespondentName]="formRespondentName"
+                [formConfidenceRating]="formConfidenceRating"
+                [formComments]="formComments"
+                [formSubmissionCount]="formSubmissionCount"
+                [formSubmittedMessage]="formSubmittedMessage"
+                [sandboxedMiniAppSrcdoc]="sandboxedMiniAppSrcdoc"
+                (selectDoc)="SelectLivingDoc($event)"
+                (editingDocMarkdownChange)="editingDocMarkdown = $event"
+                (saveDoc)="SaveCoAuthoringDocument()"
+                (synthesizeDoc)="SynthesizeFeedThread($event)"
+                (formRespondentNameChange)="formRespondentName = $event"
+                (formConfidenceRatingChange)="formConfidenceRating = $event"
+                (formCommentsChange)="formComments = $event"
+                (submitInlineForm)="SubmitInlineForm()"
+                (resetMiniApp)="ResetMiniApp()"
+              ></mjc-living-co-authoring>
             </section>
           }
         }

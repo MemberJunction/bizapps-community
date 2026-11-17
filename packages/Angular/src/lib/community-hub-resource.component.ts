@@ -54,6 +54,16 @@ import {
   type MatchedCanonQuestion,
 } from './community-hub-commons.ts';
 import { KnowledgeStreamComponent, type KnowledgeStreamWalletSummaryItem } from './knowledge-stream.component.ts';
+import { QaCanonWorkbenchComponent } from './qa-canon-workbench.component.ts';
+import { LivingCoAuthoringComponent } from './living-co-authoring.component.ts';
+import {
+  ComputeIdeationWalletSummary,
+  ComputeIdeaPointPresets,
+  ComputeQuadraticEffectiveVotes,
+  DEFAULT_CAMPAIGN_BUDGET_POINTS,
+  NormalizeCampaignBudget,
+  type IdeationWalletSummary,
+} from './community-hub-workbench.ts';
 import { QuadraticVotingSliderComponent } from './widgets/quadratic-voting-slider.component.ts';
 
 export interface CommunityHubTabDefinition {
@@ -292,6 +302,8 @@ function buildMiniAppSrcdoc(title: string, kind: string): string {
     MJPageLayoutComponent,
     MJPageBodyComponent,
     KnowledgeStreamComponent,
+    QaCanonWorkbenchComponent,
+    LivingCoAuthoringComponent,
     QuadraticVotingSliderComponent,
   ],
   templateUrl: './community-hub-resource.component.html',
@@ -373,7 +385,12 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
   private miniAppResetNonce = 0;
 
   public get activeCampaign(): CommunityHubCampaign {
-    return this.campaigns.find((c) => this.selectedCampaignId && UUIDsEqual(c.id, this.selectedCampaignId)) ?? this.campaigns[0] ?? DEFAULT_CAMPAIGN;
+    const selected =
+      this.campaigns.find((c) => this.selectedCampaignId && UUIDsEqual(c.id, this.selectedCampaignId)) ??
+      this.campaigns[0] ??
+      DEFAULT_CAMPAIGN;
+    const normalizedBudget = NormalizeCampaignBudget(selected.budgetPoints, DEFAULT_CAMPAIGN_BUDGET_POINTS);
+    return normalizedBudget === selected.budgetPoints ? selected : { ...selected, budgetPoints: normalizedBudget };
   }
 
   public get visibleIdeationItems(): CommunityHubIdeaItem[] {
@@ -381,9 +398,23 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
     return this.ideationItems.filter((i) => UUIDsEqual(i.campaignId, campaignId));
   }
 
+  public get walletSummary(): IdeationWalletSummary {
+    return ComputeIdeationWalletSummary(this.visibleIdeationItems, this.activeCampaign.budgetPoints);
+  }
+
   public get remainingWalletPoints(): number {
-    const spent = this.visibleIdeationItems.reduce((sum, item) => sum + item.myPointsAllocated, 0);
-    return Math.max(0, this.activeCampaign.budgetPoints - spent);
+    return this.walletSummary.remainingPoints;
+  }
+
+  public get selectedIdeaPointPresets(): number[] {
+    if (!this.selectedIdeaItem) return [];
+    return ComputeIdeaPointPresets({
+      mode: this.activeCampaign.allocationMode,
+      currentPoints: this.pointsOnSelectedIdea,
+      remainingBudget: this.remainingWalletPoints,
+      maxPointsPerIdea: this.activeCampaign.maxPointsPerIdea,
+      budgetPoints: this.activeCampaign.budgetPoints,
+    });
   }
 
   public get walletSummaryIdeas(): ReadonlyArray<KnowledgeStreamWalletSummaryItem> {
@@ -595,13 +626,13 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
               id: c.ID,
               name: forumNameById.get(c.ID.toLowerCase()) ?? `Campaign ${c.ID.slice(0, 6)}`,
               allocationMode: c.AllocationMode,
-              budgetPoints: c.DefaultBudgetPoints,
+              budgetPoints: NormalizeCampaignBudget(c.DefaultBudgetPoints, DEFAULT_CAMPAIGN_BUDGET_POINTS),
               maxPointsPerIdea: c.MaxPointsPerIdea,
             }))
           : [DEFAULT_CAMPAIGN];
       this.campaigns = loadedCampaigns;
       if (!this.campaigns.some((c) => this.selectedCampaignId && UUIDsEqual(c.id, this.selectedCampaignId))) {
-        this.selectedCampaignId = this.campaigns[0]?.id ?? null;
+        this.selectedCampaignId = this.campaigns[0]?.id ?? DEFAULT_CAMPAIGN.id;
       }
 
       if (answersResult?.Success && answersResult.Results && answersResult.Results.length > 0) {
@@ -709,14 +740,15 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
   }
 
   private applySeededFallback(): void {
-    this.campaigns = [DEFAULT_CAMPAIGN];
+    this.campaigns = [{ ...DEFAULT_CAMPAIGN }];
     this.selectedCampaignId = DEFAULT_CAMPAIGN.id;
-    this.feedPosts = SEEDED_FEED_POSTS_FALLBACK;
+    this.allUserAllocations = [];
+    this.feedPosts = SEEDED_FEED_POSTS_FALLBACK.map((p) => ({ ...p }));
     this.selectedFeedPostId = this.feedPosts[0]?.id ?? null;
-    this.qaCanonItems = SEEDED_QA_CANON_FALLBACK;
+    this.qaCanonItems = SEEDED_QA_CANON_FALLBACK.map((q) => ({ ...q }));
     this.selectedQaId = this.qaCanonItems[0]?.id ?? null;
-    this.ideationItems = SEEDED_IDEATION_FALLBACK;
-    this.livingDocItems = SEEDED_LIVING_DOCS_FALLBACK;
+    this.ideationItems = SEEDED_IDEATION_FALLBACK.map((i) => ({ ...i }));
+    this.livingDocItems = SEEDED_LIVING_DOCS_FALLBACK.map((d) => ({ ...d }));
     this.rebuildCommonsItems();
     this.syncSelectionDefaults();
     this.cdr.markForCheck();
@@ -1145,6 +1177,7 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
   public SelectQAQuestion(itemId: string): void {
     this.selectedQaId = itemId;
     this.qaActionMessage = null;
+    this.cdr.markForCheck();
   }
 
   private resolvePostTypeId(code: string): string | null {
@@ -1470,6 +1503,12 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
     this.cdr.markForCheck();
   }
 
+  public applyQuickIdeaAllocation(points: number): void {
+    if (!this.selectedIdeaId) return;
+    const effectiveVotes = ComputeQuadraticEffectiveVotes(points, this.activeCampaign.allocationMode);
+    void this.OnVoteAllocationChanged(this.selectedIdeaId, points, effectiveVotes);
+  }
+
   public async ProposeIdea(): Promise<void> {
     const title = this.newIdeaTitle.trim();
     if (!title) return;
@@ -1664,6 +1703,7 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
     } else {
       this.sandboxedMiniAppSrcdoc = null;
     }
+    this.cdr.markForCheck();
   }
 
   public async SaveCoAuthoringDocument(): Promise<void> {
