@@ -1,12 +1,22 @@
+import { existsSync, readFileSync } from 'node:fs';
 import { createServer } from 'node:http';
-import { dirname, join } from 'node:path';
+import { dirname, extname, join, normalize } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import * as esbuild from 'esbuild';
-import { BuildCommunityHubHarnessHtml } from './build-harness.mjs';
+import { BuildCommunityHubHarnessHtml, ResolveFontAwesomeRoot } from './build-harness.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = join(HERE, '..', '..');
 const ENTRY_PATH = join(HERE, 'angular-harness-entry.mjs');
+const FONTAWESOME_FALLBACK_CSS = join(HERE, 'fontawesome-fallback.css');
+
+const FONT_MIME_TYPES = {
+  '.woff2': 'font/woff2',
+  '.woff': 'font/woff',
+  '.ttf': 'font/ttf',
+  '.eot': 'application/vnd.ms-fontobject',
+  '.svg': 'image/svg+xml',
+};
 
 /**
  * Bundles the real Angular 21 `CommunityHubResource` + 25 generated form registrations in memory
@@ -46,10 +56,14 @@ async function buildAngularBrowserBundle() {
   return jsFile.contents;
 }
 
-/** Starts the real Angular 21 harness HTTP server and returns `{ url, close }`. */
+/** Starts the real Angular 21 harness HTTP server and returns `{ url, close, fontAwesomeMode }`. */
 export async function StartHarnessServer() {
   const html = BuildCommunityHubHarnessHtml();
   const bundleBytes = await buildAngularBrowserBundle();
+  const fontAwesomeRoot = ResolveFontAwesomeRoot();
+  const fontAwesomeCssBytes = fontAwesomeRoot
+    ? readFileSync(join(fontAwesomeRoot, 'css', 'all.min.css'))
+    : readFileSync(FONTAWESOME_FALLBACK_CSS);
 
   const server = createServer((req, res) => {
     try {
@@ -63,6 +77,21 @@ export async function StartHarnessServer() {
         res.writeHead(200, { 'Content-Type': 'text/javascript; charset=utf-8' });
         res.end(bundleBytes);
         return;
+      }
+      if (urlPath === '/fontawesome/css/all.min.css') {
+        res.writeHead(200, { 'Content-Type': 'text/css; charset=utf-8' });
+        res.end(fontAwesomeCssBytes);
+        return;
+      }
+      if (fontAwesomeRoot && urlPath.startsWith('/fontawesome/webfonts/')) {
+        const requested = normalize(urlPath.replace('/fontawesome/webfonts/', '')).replace(/^(\.\.(\/|\\|$))+/, '');
+        const filePath = join(fontAwesomeRoot, 'webfonts', requested);
+        if (existsSync(filePath)) {
+          const mimeType = FONT_MIME_TYPES[extname(filePath).toLowerCase()] ?? 'application/octet-stream';
+          res.writeHead(200, { 'Content-Type': mimeType });
+          res.end(readFileSync(filePath));
+          return;
+        }
       }
       res.writeHead(404);
       res.end('Not found');
@@ -78,6 +107,7 @@ export async function StartHarnessServer() {
       const port = typeof address === 'object' && address ? address.port : 0;
       resolve({
         url: `http://127.0.0.1:${port}/`,
+        fontAwesomeMode: fontAwesomeRoot ? 'local-package' : 'svg-mask-fallback',
         close: () => new Promise((r) => server.close(() => r(undefined))),
       });
     });

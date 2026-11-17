@@ -1,3 +1,42 @@
+import { existsSync, readdirSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const HERE = dirname(fileURLToPath(import.meta.url));
+const REPO_ROOT = join(HERE, '..', '..');
+
+/**
+ * Resolves a local `@fortawesome/fontawesome-free` package root inside the workspace or pnpm store
+ * so the Playwright E2E harness serves authentic FontAwesome CSS and WOFF2 webfonts offline.
+ */
+export function ResolveFontAwesomeRoot() {
+  const directCandidates = [
+    join(REPO_ROOT, 'node_modules', '@fortawesome', 'fontawesome-free'),
+    join(REPO_ROOT, '..', 'node_modules', '@fortawesome', 'fontawesome-free'),
+  ];
+  for (const candidate of directCandidates) {
+    if (existsSync(join(candidate, 'css', 'all.min.css'))) {
+      return candidate;
+    }
+  }
+
+  for (const pnpmRoot of [
+    join(REPO_ROOT, 'node_modules', '.pnpm'),
+    join(REPO_ROOT, '..', 'node_modules', '.pnpm'),
+  ]) {
+    if (!existsSync(pnpmRoot)) continue;
+    for (const entry of readdirSync(pnpmRoot)) {
+      if (!entry.startsWith('@fortawesome+fontawesome-free@')) continue;
+      const pkgDir = join(pnpmRoot, entry, 'node_modules', '@fortawesome', 'fontawesome-free');
+      if (existsSync(join(pkgDir, 'css', 'all.min.css'))) {
+        return pkgDir;
+      }
+    }
+  }
+
+  return null;
+}
+
 /**
  * Builds the minimal host HTML document for the real compiled `@mj-biz-apps/community-ng`
  * `CommunityHubResource` Angular 21 bundle (`/harness-bundle.js`, compiled by `ngc` and bundled
@@ -5,6 +44,7 @@
  *
  * The `--mj-*` CSS custom properties below represent the MJ Explorer host theme stylesheet; the
  * shipped `@mj-biz-apps/community-ng` components reference `var(--mj-*)` exclusively.
+ * FontAwesome icons are loaded via `/fontawesome/css/all.min.css` served from local assets.
  */
 export function BuildCommunityHubHarnessHtml() {
   return `<!DOCTYPE html>
@@ -13,6 +53,7 @@ export function BuildCommunityHubHarnessHtml() {
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>BizApps Community — Real Angular 21 Community Hub (E2E)</title>
+<link rel="stylesheet" href="/fontawesome/css/all.min.css" />
 <style>
   :root {
     --mj-bg-page: #f5f6f8;

@@ -18,14 +18,17 @@ const TAB_KEYS = [
   'living-co-authoring',
 ];
 
-/** @type {{ close: () => Promise<void> }} */
+/** @type {{ url: string, fontAwesomeMode: string, close: () => Promise<void> }} */
 let harness;
 /** @type {string} */
 let harnessUrl;
+/** @type {string} */
+let fontAwesomeMode;
 
 test.beforeAll(async () => {
   harness = await StartHarnessServer();
   harnessUrl = harness.url;
+  fontAwesomeMode = harness.fontAwesomeMode;
 });
 
 test.afterAll(async () => {
@@ -61,6 +64,31 @@ test('Real Angular 21 Community Hub: 26 ClassFactory registrations, 4 tabs, PDF 
   for (const [entityName, registered] of Object.entries(runtimeRegs.formRegistrations)) {
     expect(registered, `Expected BaseFormComponent ClassFactory registration for ${entityName}`).toBe(true);
   }
+
+  // --- 0b. Verify FontAwesome CSS loaded cleanly and initial 100 pts wallet badge ---
+  const faInfo = await page.evaluate(async () => {
+    await document.fonts.ready;
+    const icon = document.querySelector('.mjc-hub-brand, .fa-solid');
+    const faEl = document.querySelector('i.fa-solid');
+    const rect = faEl ? faEl.getBoundingClientRect() : null;
+    const styleLoaded = Array.from(document.styleSheets).some((s) => (s.href ?? '').includes('/fontawesome/css/all.min.css'));
+    const computedBefore = faEl ? window.getComputedStyle(faEl, '::before').content : '';
+    return {
+      styleLoaded,
+      hasIconEl: Boolean(icon && faEl),
+      width: rect?.width ?? 0,
+      height: rect?.height ?? 0,
+      computedBefore,
+    };
+  });
+  expect(faInfo.styleLoaded).toBe(true);
+  expect(faInfo.hasIconEl).toBe(true);
+  expect(faInfo.width).toBeGreaterThan(0);
+  expect(faInfo.height).toBeGreaterThan(0);
+  await expect(page.locator('#mjc-hub-tab-quadratic-ideation-wallet .mjc-tab-badge')).toContainText('100 pts');
+
+  // Capture Screenshot 1: Editorial Porch + Sticky Header + 3 Highlight Cards
+  await page.screenshot({ path: join(SCREENSHOTS_DIR, '01-editorial-porch.png'), fullPage: false });
 
   // --- 1. All 4 tabs switch correctly ---
   for (const key of TAB_KEYS) {
@@ -115,9 +143,10 @@ test('Real Angular 21 Community Hub: 26 ClassFactory registrations, 4 tabs, PDF 
   await page.click('#mjc-header-search-clear-btn');
   await expect(page.locator('#mjc-matched-question-spotlight')).toBeHidden();
 
-  // Open Slide-Over Detail Sheet Drawer and dismiss with Escape
+  // Open Slide-Over Detail Sheet Drawer, capture screenshot, and dismiss with Escape
   await page.locator('.mjc-inspect-btn').first().click();
   await expect(page.locator('#mjc-detail-sheet-backdrop [role="dialog"]')).toBeVisible();
+  await page.screenshot({ path: join(SCREENSHOTS_DIR, '03-detail-drawer.png'), fullPage: false });
   await page.keyboard.press('Escape');
   await expect(page.locator('#mjc-detail-sheet-backdrop')).toBeHidden();
 
@@ -131,6 +160,10 @@ test('Real Angular 21 Community Hub: 26 ClassFactory registrations, 4 tabs, PDF 
   await page.click('#mjc-ask-share-submit-btn');
   await expect(page.locator('#mjc-ask-share-modal-backdrop')).toBeHidden();
   await expect(page.locator('.mjc-commons__stream')).toContainText('Multi-Region Eventual Consistency Benchmarks');
+
+  // Capture Screenshot 2: Knowledge Stream 3-Column Layout
+  await page.locator('.mjc-commons').scrollIntoViewIfNeeded();
+  await page.screenshot({ path: join(SCREENSHOTS_DIR, '02-knowledge-stream.png'), fullPage: false });
 
   // --- 4. Q&A Canon Workbench: Ask Question + Submit Answer + Epistemic Grade + Promote to Canon ---
   await page.click('#mjc-hub-tab-qa-canon-workbench');
@@ -149,6 +182,11 @@ test('Real Angular 21 Community Hub: 26 ClassFactory registrations, 4 tabs, PDF 
   await page.click('#mjc-qa-promote-btn');
   await expect(page.locator('.mjc-community-hub__status')).toContainText('Promoted');
 
+  // Exercise Slice 2 Q&A filter pill and capture Screenshot 4: Q&A Canon Workbench
+  await page.getByRole('button', { name: /Canon Verified/ }).click();
+  await page.getByRole('button', { name: /All Entries/ }).click();
+  await page.screenshot({ path: join(SCREENSHOTS_DIR, '04-qa-canon-workbench.png'), fullPage: true });
+
   // --- 5. Quadratic Ideation Wallet: Keyboard roving, Cost=Votes^2, 0-pt withdrawal, campaign isolation, proposal ---
   await page.click('#mjc-hub-tab-quadratic-ideation-wallet');
   const firstIdea = page.locator('#mjc-hub-panel-quadratic-ideation-wallet [role="option"]').first();
@@ -161,6 +199,9 @@ test('Real Angular 21 Community Hub: 26 ClassFactory registrations, 4 tabs, PDF 
   await page.dispatchEvent('#mjc-qv-slider-input', 'input');
   await expect(page.locator('.mjc-qv-slider__meta')).toContainText('Effective votes: 6');
   await expect(page.locator('.mjc-qv-slider__meta')).toContainText('Remaining budget: 64');
+
+  // Capture Screenshot 5: Quadratic Ideation Wallet with active 36-pt allocation
+  await page.screenshot({ path: join(SCREENSHOTS_DIR, '05-quadratic-ideation-wallet.png'), fullPage: true });
 
   // Withdraw allocation back to 0 cleanly (must DELETE allocation row, never fail CHECK > 0).
   await page.locator('#mjc-qv-slider-input').fill('0');
@@ -184,8 +225,9 @@ test('Real Angular 21 Community Hub: 26 ClassFactory registrations, 4 tabs, PDF 
   await page.click('#mjc-idea-submit-btn');
   await expect(page.locator('#mjc-hub-panel-quadratic-ideation-wallet')).toContainText('Support passkey step-up auth');
 
-  // --- 6. Living Co-Authoring, Inline Form & Sandboxed Mini-App ---
+  // --- 6. Living Co-Authoring, Inline Form, Capacity Calculator & Sandboxed Mini-App ---
   await page.click('#mjc-hub-tab-living-co-authoring');
+  await page.click('#mjc-calc-save-preset-btn');
   await page.fill('#mjc-living-doc-editor', '## Updated Partner Playbook\n- Enforce PKCE + key rollover alerts');
   await page.click('#mjc-living-doc-save-btn');
   await expect(page.locator('#mjc-hub-panel-living-co-authoring .mjc-community-hub__status').first()).toContainText('Saved co-authored revision');
@@ -203,7 +245,10 @@ test('Real Angular 21 Community Hub: 26 ClassFactory registrations, 4 tabs, PDF 
   await miniAppFrame.getByRole('button', { name: /Dual-active grace window/ }).click();
   await expect(miniAppFrame.locator('#out')).toContainText('Score: 100%');
 
-  // Capture representative screenshot on Knowledge Stream with active search deflection
+  // Capture Screenshot 6: Living Co-Authoring & Sandboxed Mini-Apps
+  await page.screenshot({ path: join(SCREENSHOTS_DIR, '06-living-co-authoring.png'), fullPage: true });
+
+  // Capture representative full-page screenshot on Knowledge Stream
   await page.click('#mjc-hub-tab-knowledge-stream');
   const screenshotPath = join(SCREENSHOTS_DIR, 'community-hub.png');
   await page.screenshot({ path: screenshotPath, fullPage: true });
@@ -239,6 +284,8 @@ test('Real Angular 21 Community Hub: 26 ClassFactory registrations, 4 tabs, PDF 
     schemaVersion: 'sf-e2e/v1',
     evaluatedAtIso: new Date().toISOString(),
     harnessUrl,
+    fontAwesomeMode,
+    fontAwesomeLoaded: faInfo.styleLoaded,
     runtimeClassFactoryRegistrationsVerified: runtimeRegs.totalVerified,
     tabsExercised: TAB_KEYS,
     keyboardNavigationVerified: true,
@@ -261,6 +308,15 @@ test('Real Angular 21 Community Hub: 26 ClassFactory registrations, 4 tabs, PDF 
     totalViolations,
     totalCriticalOrSeriousViolations: totalCriticalOrSerious,
     screenshotPath: 'e2e/screenshots/community-hub.png',
+    screenshots: [
+      'e2e/screenshots/01-editorial-porch.png',
+      'e2e/screenshots/02-knowledge-stream.png',
+      'e2e/screenshots/03-detail-drawer.png',
+      'e2e/screenshots/04-qa-canon-workbench.png',
+      'e2e/screenshots/05-quadratic-ideation-wallet.png',
+      'e2e/screenshots/06-living-co-authoring.png',
+      'e2e/screenshots/community-hub.png',
+    ],
   };
   writeFileSync(join(REPORTS_DIR, 'community-hub-wcag-report.json'), JSON.stringify(report, null, 2));
 });
