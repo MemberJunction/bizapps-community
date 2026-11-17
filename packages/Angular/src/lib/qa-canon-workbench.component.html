@@ -1,0 +1,249 @@
+<div class="mjc-qa-workbench">
+  <!-- HERO HEADER BANNER -->
+  <div class="mjc-qa-hero">
+    <div class="mjc-qa-hero__lead">
+      <span class="mjc-qa-hero__kicker">Epistemic Knowledge Canon</span>
+      <h2 class="mjc-qa-hero__title">Verified Q&amp;A Canon Workbench</h2>
+      <p class="mjc-qa-hero__desc">
+        Inspect dual-verified community answers, evaluate AI epistemic freshness &amp; confidence rubrics, and promote authoritative solutions into organizational canon.
+      </p>
+    </div>
+
+    <div class="mjc-qa-hero__stats">
+      <div class="mjc-qa-stat-grid">
+        <div class="mjc-qa-stat">
+          <span class="mjc-qa-stat__value">{{ stats.total }}</span>
+          <span class="mjc-qa-stat__label">Total Entries</span>
+        </div>
+        <div class="mjc-qa-stat">
+          <span class="mjc-qa-stat__value">{{ stats.canonVerifiedCount }}</span>
+          <span class="mjc-qa-stat__label">Canon Verified</span>
+        </div>
+        <div class="mjc-qa-stat">
+          <span class="mjc-qa-stat__value">{{ stats.averageConfidencePct }}%</span>
+          <span class="mjc-qa-stat__label">Avg Confidence</span>
+        </div>
+      </div>
+
+      <button
+        type="button"
+        id="mjc-qa-toggle-composer-btn"
+        class="mjc-qa-btn mjc-qa-btn--primary"
+        (click)="onToggleComposer()"
+      >
+        <i class="fa-solid fa-circle-question" aria-hidden="true"></i>
+        <span>{{ showQuestionComposer ? 'Cancel Question' : 'Ask a Question' }}</span>
+      </button>
+    </div>
+  </div>
+
+  <!-- COLLAPSIBLE ASK A QUESTION COMPOSER -->
+  @if (showQuestionComposer) {
+    <form class="mjc-qa-card mjc-qa-composer" (ngSubmit)="onCreateQuestion()">
+      <div class="mjc-qa-composer__head">
+        <div>
+          <span class="mjc-qa-composer__kicker">New Canon Question</span>
+          <h3 class="mjc-qa-card__title">Ask a Community Question</h3>
+        </div>
+      </div>
+
+      <div class="mjc-qa-field">
+        <label for="mjc-qa-new-title" class="mjc-qa-label">Question Title</label>
+        <input
+          id="mjc-qa-new-title"
+          name="newQuestionTitle"
+          class="mjc-qa-input"
+          placeholder="e.g., How do tenant schema migrations stay deterministic?"
+          [ngModel]="newQuestionTitle"
+          (ngModelChange)="newQuestionTitleChange.emit($event)"
+          required
+        />
+      </div>
+
+      <div class="mjc-qa-field">
+        <label for="mjc-qa-new-body" class="mjc-qa-label">Details &amp; Constraints</label>
+        <textarea
+          id="mjc-qa-new-body"
+          name="newQuestionBody"
+          rows="3"
+          class="mjc-qa-textarea"
+          placeholder="Include environment constraints, dialect parity requirements, or expected failure modes..."
+          [ngModel]="newQuestionBody"
+          (ngModelChange)="newQuestionBodyChange.emit($event)"
+          required
+        ></textarea>
+      </div>
+
+      <div class="mjc-qa-btn-row">
+        <button type="submit" id="mjc-qa-submit-question-btn" class="mjc-qa-btn mjc-qa-btn--primary">
+          Post Question
+        </button>
+      </div>
+    </form>
+  }
+
+  <!-- FILTER & SEARCH TOOLBAR -->
+  <div class="mjc-qa-toolbar">
+    <div class="mjc-qa-filter-pills" role="group" aria-label="Filter Q&A entries by epistemic status">
+      @for (pill of filterPills; track pill.key) {
+        <button
+          type="button"
+          class="mjc-qa-pill"
+          [class.mjc-qa-pill--active]="pill.key === activeFilter"
+          [attr.aria-pressed]="pill.key === activeFilter"
+          (click)="setFilter(pill.key)"
+        >
+          <span>{{ pill.label }}</span>
+          <span class="mjc-qa-pill__count">{{ countForFilter(pill.key) }}</span>
+        </button>
+      }
+    </div>
+
+    <div class="mjc-qa-search">
+      <label for="mjc-qa-search-input" class="mjc-sr-only">Filter Q&amp;A canon entries</label>
+      <input
+        id="mjc-qa-search-input"
+        type="search"
+        class="mjc-qa-search__input"
+        placeholder="Filter canon questions or answers..."
+        [(ngModel)]="searchQuery"
+      />
+    </div>
+  </div>
+
+  <!-- 2-COLUMN WORKBENCH SPLIT -->
+  @if (items.length === 0) {
+    <p class="mjc-qa-hint">No verified Q&amp;A canon answers yet.</p>
+  } @else if (filteredItems.length === 0) {
+    <div class="mjc-qa-card">
+      <h3 class="mjc-qa-card__title">No Q&amp;A entries match this filter</h3>
+      <p class="mjc-qa-hint">Try clearing the active epistemic filter or search query.</p>
+      <div class="mjc-qa-btn-row">
+        <button type="button" class="mjc-qa-btn" (click)="clearFilters()">Show All Entries</button>
+      </div>
+    </div>
+  } @else {
+    <div class="mjc-qa-split">
+      <!-- LEFT: Q&A LISTBOX -->
+      <div class="mjc-qa-list" role="listbox" aria-label="Q&A items">
+        @for (item of filteredItems; track item.id) {
+          <button
+            type="button"
+            role="option"
+            class="mjc-qa-list-item"
+            [class.mjc-qa-list-item--selected]="item.id === selectedItem?.id"
+            [attr.aria-selected]="item.id === selectedItem?.id"
+            (click)="onSelectItem(item.id)"
+          >
+            <div class="mjc-qa-list-item__top">
+              <span
+                class="mjc-qa-badge"
+                [class.mjc-qa-badge--success]="badgeToneFor(item) === 'success'"
+                [class.mjc-qa-badge--warning]="badgeToneFor(item) === 'warning'"
+                [class.mjc-qa-badge--danger]="badgeToneFor(item) === 'danger'"
+                [class.mjc-qa-badge--brand]="badgeToneFor(item) === 'brand'"
+              >
+                {{ item.epistemicStatus || 'Under Review' }}
+              </span>
+              @if (item.isAccepted) {
+                <span class="mjc-qa-accepted-chip">✓ Accepted</span>
+              }
+              @if (confidencePct(item); as pct) {
+                <span class="mjc-qa-confidence-chip">{{ pct }}%</span>
+              }
+            </div>
+            <span class="mjc-qa-list-item__title">{{ item.title }}</span>
+            <span class="mjc-qa-list-item__excerpt">
+              {{ item.bodyMarkdown ? (item.bodyMarkdown.length > 96 ? item.bodyMarkdown.slice(0, 96) + '...' : item.bodyMarkdown) : 'Awaiting verified answer.' }}
+            </span>
+          </button>
+        }
+      </div>
+
+      <!-- RIGHT: EPISTEMIC INSPECTOR & ANSWER COMPOSER -->
+      @if (selectedItem; as activeQa) {
+        <div class="mjc-qa-card mjc-qa-inspector">
+          <div class="mjc-qa-inspector__badges">
+            <span
+              class="mjc-qa-badge"
+              [class.mjc-qa-badge--success]="badgeToneFor(activeQa) === 'success'"
+              [class.mjc-qa-badge--warning]="badgeToneFor(activeQa) === 'warning'"
+              [class.mjc-qa-badge--danger]="badgeToneFor(activeQa) === 'danger'"
+              [class.mjc-qa-badge--brand]="badgeToneFor(activeQa) === 'brand'"
+            >
+              {{ activeQa.epistemicStatus || 'Novel Insight' }}
+            </span>
+            @if (activeQa.isAccepted) {
+              <span class="mjc-qa-accepted-chip">✓ Accepted Author Canon</span>
+            }
+          </div>
+
+          <h3 class="mjc-qa-inspector__title">{{ activeQa.title }}</h3>
+
+          <div class="mjc-qa-rubric-bar">
+            <div class="mjc-qa-rubric-bar__row">
+              <span>Human Verification: <strong>{{ activeQa.isAccepted ? 'Accepted by Author' : 'Pending Author Acceptance' }}</strong></span>
+              @if (confidencePct(activeQa); as pct) {
+                <span>AI Confidence: <strong>{{ pct }}%</strong></span>
+              } @else {
+                <span>AI Confidence: <strong>Not yet graded</strong></span>
+              }
+            </div>
+            @if (confidencePct(activeQa); as pct) {
+              <div class="mjc-qa-confidence-track" aria-hidden="true">
+                <div class="mjc-qa-confidence-fill" [style.width.%]="pct"></div>
+              </div>
+            }
+          </div>
+
+          <div class="mjc-qa-inspector__body">
+            {{ activeQa.bodyMarkdown || 'No body provided yet.' }}
+          </div>
+
+          <div class="mjc-qa-btn-row">
+            <button
+              type="button"
+              id="mjc-qa-grade-btn"
+              class="mjc-qa-btn"
+              (click)="onGradeAnswer(activeQa.id)"
+            >
+              <i class="fa-solid fa-wand-magic-sparkles" aria-hidden="true"></i>
+              <span>Grade with Epistemic AI</span>
+            </button>
+            <button
+              type="button"
+              id="mjc-qa-promote-btn"
+              class="mjc-qa-btn mjc-qa-btn--primary"
+              (click)="onPromoteAnswer(activeQa.id)"
+            >
+              <i class="fa-solid fa-check-double" aria-hidden="true"></i>
+              <span>{{ activeQa.isAccepted ? 'Canon Accepted' : 'Promote to Canon' }}</span>
+            </button>
+          </div>
+
+          @if (qaActionMessage) {
+            <p class="mjc-community-hub__status" role="status">{{ qaActionMessage }}</p>
+          }
+
+          <form class="mjc-qa-answer-form" (ngSubmit)="onSubmitAnswer()">
+            <label for="mjc-qa-answer-input" class="mjc-qa-label">Submit Answer</label>
+            <textarea
+              id="mjc-qa-answer-input"
+              name="newAnswerBody"
+              rows="3"
+              class="mjc-qa-textarea"
+              placeholder="Write a verifiable engineering answer for epistemic grading..."
+              [ngModel]="newAnswerBody"
+              (ngModelChange)="newAnswerBodyChange.emit($event)"
+            ></textarea>
+            <div class="mjc-qa-btn-row">
+              <button type="submit" id="mjc-qa-submit-answer-btn" class="mjc-qa-btn">
+                Submit Answer
+              </button>
+            </div>
+          </form>
+        </div>
+      }
+    </div>
+  }
+</div>
