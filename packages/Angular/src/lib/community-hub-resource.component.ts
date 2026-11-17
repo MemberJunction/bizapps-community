@@ -4,7 +4,10 @@ import {
   ChangeDetectorRef,
   ElementRef,
   HostListener,
+  Input,
+  OnChanges,
   OnInit,
+  type SimpleChanges,
   ViewChild,
   ViewChildren,
   QueryList,
@@ -319,7 +322,12 @@ function buildMiniAppSrcdoc(title: string, kind: string): string {
   styleUrl: './community-hub-resource.component.css',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
-export class CommunityHubResource extends BaseResourceComponent implements OnInit {
+export class CommunityHubResource extends BaseResourceComponent implements OnInit, OnChanges {
+  @Input() public ScopeSpaceId: string | null = null;
+  @Input() public InitialTabKey: CommunityHubTabKey | null = null;
+  @Input() public EmbeddedMode = false;
+  @Input() public ShowTabBar = true;
+
   public readonly tabs = COMMUNITY_HUB_TABS;
   public readonly spaceDirectory = COMMUNITY_SPACES_DIRECTORY.filter((s) => s.id !== 'all');
   public activeTabKey: CommunityHubTabKey = COMMUNITY_HUB_TABS[0].key;
@@ -525,13 +533,31 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
   private readonly sanitizer = inject(DomSanitizer);
   private readonly doc = inject(DOCUMENT);
 
+  private isInitialized = false;
+
   public override ngOnInit(): void {
     super.ngOnInit();
     queueMicrotask(() => {
       this.NotifyLoadStarted();
+      this.isInitialized = true;
       this.restoreUserPreferences();
+      if (this.InitialTabKey && this.tabs.some((t) => t.key === this.InitialTabKey)) {
+        this.activeTabKey = this.InitialTabKey;
+        this.focusedTabKey = this.InitialTabKey;
+      }
       void this.loadHubState().finally(() => this.NotifyLoadComplete());
     });
+  }
+
+  public ngOnChanges(changes: SimpleChanges): void {
+    if (changes['InitialTabKey'] && this.InitialTabKey && this.tabs.some((t) => t.key === this.InitialTabKey)) {
+      this.activeTabKey = this.InitialTabKey;
+      this.focusedTabKey = this.InitialTabKey;
+      this.cdr.markForCheck();
+    }
+    if (this.isInitialized && changes['ScopeSpaceId']) {
+      void this.loadHubState();
+    }
   }
 
   private restoreUserPreferences(): void {
@@ -565,6 +591,10 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
     });
   }
 
+  private buildUuidInClause(ids: ReadonlyArray<string>, label: string): string {
+    return ids.map((id) => `'${AssertValidUUID(id, label)}'`).join(',');
+  }
+
   private async loadHubState(): Promise<void> {
     const provider = Metadata.Provider;
     const user: UserInfo | undefined = provider?.CurrentUser;
@@ -577,48 +607,27 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
 
     try {
       const rv = new RunView();
-      const [forumsResult, answersResult, ideasResult, spaceResult, feedResult, campaignsResult, postTypesResult] = await Promise.all([
+      const rawScopeId = this.ScopeSpaceId?.trim() ?? '';
+      const scopedSpaceId = rawScopeId ? AssertValidUUID(rawScopeId, 'ScopeSpaceId') : null;
+
+      const [forumsResult, spaceResult, postTypesResult] = await Promise.all([
         rv.RunView<ForumRow>(
-          { EntityName: 'MJ_BizApps_Community: Forums', Fields: ['ID', 'Name'], ResultType: 'simple', MaxRows: 100 },
-          user,
-        ),
-        rv.RunView<AnswerPostRow & { Title: string | null }>(
           {
-            EntityName: COMMUNITY_ENTITY_NAMES.ForumAnswerPosts,
-            Fields: ['ID', 'QuestionPostID', 'Title', 'AIEpistemicStatus', 'AIConfidenceScore', 'IsAcceptedByAuthor'],
+            EntityName: 'MJ_BizApps_Community: Forums',
+            ...(scopedSpaceId ? { ExtraFilter: `SpaceID = '${scopedSpaceId}'` } : {}),
+            Fields: ['ID', 'Name'],
             ResultType: 'simple',
-            MaxRows: 50,
+            MaxRows: 100,
           },
           user,
         ),
-        LoadAllPaginatedRows<IdeaPostRow>({
-          runView: rv,
-          entityName: COMMUNITY_ENTITY_NAMES.ForumIdeaPosts,
-          extraFilter: '1=1',
-          fields: ['ID', 'TotalPointsAllocated', 'EffectiveQuadraticVotes'],
-          user,
-        }),
         rv.RunView<{ ID: string; Name: string }>(
-          { EntityName: 'MJ_BizApps_Collaboration: Spaces', Fields: ['ID', 'Name'], ResultType: 'simple', MaxRows: 1 },
-          user,
-        ),
-        rv.RunView<ForumPostRow>(
           {
-            EntityName: COMMUNITY_ENTITY_NAMES.ForumPosts,
-            ExtraFilter: `RootPostID IS NULL AND Status = 'Published'`,
-            Fields: ['ID', 'ForumID', 'Title', 'BodyMarkdown', 'Status', 'AuthorUserID'],
-            OrderBy: '__mj_CreatedAt DESC',
+            EntityName: 'MJ_BizApps_Collaboration: Spaces',
+            ...(scopedSpaceId ? { ExtraFilter: `ID = '${scopedSpaceId}'` } : {}),
+            Fields: ['ID', 'Name'],
             ResultType: 'simple',
-            MaxRows: 50,
-          },
-          user,
-        ),
-        rv.RunView<IdeaCampaignRow>(
-          {
-            EntityName: COMMUNITY_ENTITY_NAMES.ForumIdeaCampaigns,
-            Fields: ['ID', 'AllocationMode', 'DefaultBudgetPoints', 'MaxPointsPerIdea'],
-            ResultType: 'simple',
-            MaxRows: 50,
+            MaxRows: 1,
           },
           user,
         ),
@@ -645,6 +654,68 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
       this.allowedForumIDs = this.authorizedForums.map((f) => f.id);
       this.spaceName = spaceResult?.Success ? spaceResult.Results?.[0]?.Name ?? this.spaceName : this.spaceName;
 
+      if (scopedSpaceId && this.allowedForumIDs.length === 0) {
+        this.feedPosts = [];
+        this.selectedFeedPostId = null;
+        this.campaigns = [];
+        this.selectedCampaignId = null;
+        this.qaCanonItems = [];
+        this.selectedQaId = null;
+        this.ideationLoadFailed = false;
+        this.ideationErrorMessage = null;
+        this.ideationItems = [];
+        this.allUserAllocations = [];
+        this.livingDocItems = [];
+        this.rebuildCommonsItems();
+        this.syncSelectionDefaults();
+        return;
+      }
+
+      const scopedForumInList = scopedSpaceId ? this.buildUuidInClause(this.allowedForumIDs, 'forumId') : null;
+      const forumScopePredicate = scopedForumInList ? `ForumID IN (${scopedForumInList})` : null;
+
+      const [answersResult, ideasResult, feedResult, campaignsResult] = await Promise.all([
+        rv.RunView<AnswerPostRow & { Title: string | null }>(
+          {
+            EntityName: COMMUNITY_ENTITY_NAMES.ForumAnswerPosts,
+            Fields: ['ID', 'QuestionPostID', 'Title', 'AIEpistemicStatus', 'AIConfidenceScore', 'IsAcceptedByAuthor'],
+            ResultType: 'simple',
+            MaxRows: 50,
+          },
+          user,
+        ),
+        LoadAllPaginatedRows<IdeaPostRow>({
+          runView: rv,
+          entityName: COMMUNITY_ENTITY_NAMES.ForumIdeaPosts,
+          extraFilter: '1=1',
+          fields: ['ID', 'TotalPointsAllocated', 'EffectiveQuadraticVotes'],
+          user,
+        }),
+        rv.RunView<ForumPostRow>(
+          {
+            EntityName: COMMUNITY_ENTITY_NAMES.ForumPosts,
+            ExtraFilter: forumScopePredicate
+              ? `RootPostID IS NULL AND Status = 'Published' AND ${forumScopePredicate}`
+              : `RootPostID IS NULL AND Status = 'Published'`,
+            Fields: ['ID', 'ForumID', 'Title', 'BodyMarkdown', 'Status', 'AuthorUserID'],
+            OrderBy: '__mj_CreatedAt DESC',
+            ResultType: 'simple',
+            MaxRows: 50,
+          },
+          user,
+        ),
+        rv.RunView<IdeaCampaignRow>(
+          {
+            EntityName: COMMUNITY_ENTITY_NAMES.ForumIdeaCampaigns,
+            ...(scopedForumInList ? { ExtraFilter: `ID IN (${scopedForumInList})` } : {}),
+            Fields: ['ID', 'AllocationMode', 'DefaultBudgetPoints', 'MaxPointsPerIdea'],
+            ResultType: 'simple',
+            MaxRows: 50,
+          },
+          user,
+        ),
+      ]);
+
       this.feedPosts =
         feedResult?.Success && feedResult.Results && feedResult.Results.length > 0
           ? feedResult.Results.map((p) => ({
@@ -667,10 +738,12 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
               budgetPoints: NormalizeCampaignBudget(c.DefaultBudgetPoints, DEFAULT_CAMPAIGN_BUDGET_POINTS),
               maxPointsPerIdea: c.MaxPointsPerIdea,
             }))
-          : [DEFAULT_CAMPAIGN];
+          : scopedSpaceId
+            ? []
+            : [DEFAULT_CAMPAIGN];
       this.campaigns = loadedCampaigns;
       if (!this.campaigns.some((c) => this.selectedCampaignId && UUIDsEqual(c.id, this.selectedCampaignId))) {
-        this.selectedCampaignId = this.campaigns[0]?.id ?? DEFAULT_CAMPAIGN.id;
+        this.selectedCampaignId = this.campaigns[0]?.id ?? (scopedSpaceId ? null : DEFAULT_CAMPAIGN.id);
       }
 
       if (answersResult?.Success && answersResult.Results && answersResult.Results.length > 0) {
@@ -678,7 +751,9 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
         const bodyRes = await rv.RunView<Pick<ForumPostRow, 'ID' | 'ForumID' | 'Title' | 'BodyMarkdown'>>(
           {
             EntityName: COMMUNITY_ENTITY_NAMES.ForumPosts,
-            ExtraFilter: `ID IN (${answerIds})`,
+            ExtraFilter: forumScopePredicate
+              ? `ID IN (${answerIds}) AND ${forumScopePredicate}`
+              : `ID IN (${answerIds})`,
             Fields: ['ID', 'ForumID', 'Title', 'BodyMarkdown'],
             ResultType: 'simple',
             MaxRows: answersResult.Results.length,
@@ -686,7 +761,10 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
           user,
         );
         const bodyById = new Map((bodyRes?.Success ? bodyRes.Results ?? [] : []).map((p) => [p.ID.toLowerCase(), p]));
-        this.qaCanonItems = answersResult.Results.map((a) => {
+        const matchingAnswers = scopedSpaceId
+          ? answersResult.Results.filter((a) => bodyById.has(a.ID.toLowerCase()))
+          : answersResult.Results;
+        this.qaCanonItems = matchingAnswers.map((a) => {
           const post = bodyById.get(a.ID.toLowerCase());
           return {
             id: a.ID,
@@ -700,7 +778,7 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
           };
         });
       } else {
-        this.qaCanonItems = SEEDED_QA_CANON_FALLBACK;
+        this.qaCanonItems = scopedSpaceId ? [] : SEEDED_QA_CANON_FALLBACK;
       }
       this.selectedQaId = this.qaCanonItems[0]?.id ?? null;
 
@@ -714,11 +792,12 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
       } else if (ideasResult.rows.length > 0) {
         AssertValidUUID(user.ID, 'user.ID');
         const ideaPostIds = ideasResult.rows.map((i) => AssertValidUUID(i.ID, 'ideaPostId'));
+        const ideaFilter = `ID IN (${ideaPostIds.map((id) => `'${id}'`).join(',')})${forumScopePredicate ? ` AND ${forumScopePredicate}` : ''}`;
         const [ideaPostsRes, myAllocsRes] = await Promise.all([
           LoadAllPaginatedRows<Pick<ForumPostRow, 'ID' | 'ForumID' | 'Title' | 'BodyMarkdown'>>({
             runView: rv,
             entityName: COMMUNITY_ENTITY_NAMES.ForumPosts,
-            extraFilter: `ID IN (${ideaPostIds.map((id) => `'${id}'`).join(',')})`,
+            extraFilter: ideaFilter,
             fields: ['ID', 'ForumID', 'Title', 'BodyMarkdown'],
             user,
           }),
@@ -766,7 +845,7 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
         this.allUserAllocations = [];
       }
 
-      this.livingDocItems = await this.loadLivingDocItems(rv, user);
+      this.livingDocItems = await this.loadLivingDocItems(rv, user, scopedForumInList);
       this.rebuildCommonsItems();
       this.syncSelectionDefaults();
     } catch (err) {
@@ -804,7 +883,11 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
     }
   }
 
-  private async loadLivingDocItems(rv: RunView, user: UserInfo): Promise<CommunityHubLivingDocItem[]> {
+  private async loadLivingDocItems(
+    rv: RunView,
+    user: UserInfo,
+    scopedForumInList: string | null = null,
+  ): Promise<CommunityHubLivingDocItem[]> {
     const [artifactIds, formIds, interactiveIds] = await Promise.all([
       rv.RunView<SubtypeIdRow>(
         { EntityName: 'MJ_BizApps_Community: Forum Artifact Posts', Fields: ['ID'], ResultType: 'simple', MaxRows: 20 },
@@ -849,10 +932,11 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
     }
 
     const safeIds = AssertValidUUIDList(idsWithType.map((r) => r.id).join(','), 'livingDocIds');
+    const idListFilter = `ID IN (${safeIds.map((id) => `'${id}'`).join(',')})`;
     const postsResult = await rv.RunView<Pick<ForumPostRow, 'ID' | 'Title' | 'BodyMarkdown'>>(
       {
         EntityName: COMMUNITY_ENTITY_NAMES.ForumPosts,
-        ExtraFilter: `ID IN (${safeIds.map((id) => `'${id}'`).join(',')})`,
+        ExtraFilter: scopedForumInList ? `${idListFilter} AND ForumID IN (${scopedForumInList})` : idListFilter,
         Fields: ['ID', 'Title', 'BodyMarkdown'],
         ResultType: 'simple',
         MaxRows: idsWithType.length,
@@ -861,7 +945,11 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
     );
     const postById = new Map((postsResult?.Success ? postsResult.Results ?? [] : []).map((r) => [r.ID.toLowerCase(), r]));
 
-    return idsWithType.map((r) => {
+    const visibleItems = scopedForumInList
+      ? idsWithType.filter((r) => postById.has(r.id.toLowerCase()))
+      : idsWithType;
+
+    return visibleItems.map((r) => {
       const post = postById.get(r.id.toLowerCase());
       return {
         id: r.id,
@@ -1316,7 +1404,9 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
   public SelectTab(key: CommunityHubTabKey): void {
     this.activeTabKey = key;
     this.focusedTabKey = key;
-    void this.preferences.SetActiveTab(key);
+    if (!this.EmbeddedMode) {
+      void this.preferences.SetActiveTab(key);
+    }
   }
 
   public SelectFeedPost(postId: string): void {

@@ -33,10 +33,12 @@
     "@memberjunction/global": "6.3.0-edge.0",
     "@memberjunction/graphql-dataprovider": "6.3.0-edge.0",
     "@memberjunction/ng-base-forms": "6.3.0-edge.0",
+    "@memberjunction/ng-base-types": "6.3.0-edge.0",
     "@memberjunction/ng-entity-viewer": "6.3.0-edge.0",
     "@memberjunction/ng-link-directives": "6.3.0-edge.0",
     "@memberjunction/ng-shared": "6.3.0-edge.0",
-    "@memberjunction/ng-ui-components": "6.3.0-edge.0"
+    "@memberjunction/ng-ui-components": "6.3.0-edge.0",
+    "@mj-biz-apps/collaboration-ng-widgets": "^0.1.0"
   },
   "devDependencies": {
     "@angular/compiler": "21.2.22",
@@ -47,10 +49,12 @@
     "@memberjunction/global": "6.3.0-edge.0",
     "@memberjunction/graphql-dataprovider": "6.3.0-edge.0",
     "@memberjunction/ng-base-forms": "6.3.0-edge.0",
+    "@memberjunction/ng-base-types": "6.3.0-edge.0",
     "@memberjunction/ng-entity-viewer": "6.3.0-edge.0",
     "@memberjunction/ng-link-directives": "6.3.0-edge.0",
     "@memberjunction/ng-shared": "6.3.0-edge.0",
     "@memberjunction/ng-ui-components": "6.3.0-edge.0",
+    "@mj-biz-apps/collaboration-ng-widgets": "^0.1.0",
     "@types/node": "24.10.11",
     "typescript": "5.9.3"
   },

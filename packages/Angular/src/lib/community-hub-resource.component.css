@@ -12,6 +12,19 @@
   background: var(--mj-bg-page, var(--mj-bg-surface-sunken));
 }
 
+.mjc-community-hub--embedded {
+  background: transparent;
+  overflow-y: visible;
+  height: auto;
+}
+
+.mjc-community-hub--embedded .mjc-hub-header {
+  position: static;
+  border-radius: var(--mj-radius-md);
+  border: 1px solid var(--mj-border-subtle);
+  margin: 0 0 var(--mj-space-3) 0;
+}
+
 /* ─── STICKY TOP HEADER BAR ───────────────────────────────────────────────── */
 
 .mjc-hub-header {

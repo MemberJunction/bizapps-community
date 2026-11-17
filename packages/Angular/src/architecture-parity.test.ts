@@ -316,6 +316,43 @@ describe('OpenApp Readiness — 100% --mj-* design tokens (zero raw color litera
   }
 });
 
+describe('OpenApp Readiness — Collaboration Space UI Driver, BaseSpaceTab & BaseSpaceOverviewCard Integration', () => {
+  const integrationSource = stripComments(
+    readFileSync(join(ANGULAR_SRC, 'lib', 'collaboration-space-integration.ts'), 'utf8'),
+  );
+  const spaceTypeMetadata = JSON.parse(
+    readFileSync(join(HERE, '..', '..', '..', 'metadata', 'space-types', '.space-types.json'), 'utf8'),
+  ) as Array<{ fields?: { Code?: string; UIDriverClass?: string } }>;
+
+  it("registers CommunityCollaborationSpaceUIDriver under 'CommunitySpaceUIDriver' matching metadata UIDriverClass", () => {
+    const driverClassName = spaceTypeMetadata[0]?.fields?.UIDriverClass;
+    assert.equal(driverClassName, 'CommunitySpaceUIDriver');
+    assert.match(integrationSource, /@RegisterClass\(BaseSpaceTypeUIDriver,\s*'CommunitySpaceUIDriver'\)/);
+    assert.match(integrationSource, /extends BaseSpaceTypeUIDriver/);
+  });
+
+  it('registers all 4 BaseSpaceTab contributions and the Shared Overview card for community spaces with OnPush', () => {
+    for (const contributionKey of ['forums', 'qa-canon', 'ideation', 'playbooks']) {
+      assert.match(
+        integrationSource,
+        new RegExp(`contributionKey:\\s*'${contributionKey}'`),
+        `Missing BaseSpaceTab contributionKey "${contributionKey}"`,
+      );
+    }
+    assert.match(integrationSource, /@RegisterClassEx\(BaseSpaceOverviewCard,/);
+    assert.match(integrationSource, /contributionKey:\s*'community-highlights'/);
+    assert.match(integrationSource, /side:\s*'Shared'/);
+    assert.match(integrationSource, /spaceTypes:\s*\['community'\]/);
+    const onPushMatches = integrationSource.match(/changeDetection:\s*ChangeDetectionStrategy\.OnPush/g) ?? [];
+    assert.equal(onPushMatches.length, 5);
+  });
+
+  it('exports collaboration-space-integration from packages/Angular/src/public-api.ts', () => {
+    const publicApi = stripComments(readFileSync(join(ANGULAR_SRC, 'public-api.ts'), 'utf8'));
+    assert.match(publicApi, /collaboration-space-integration/);
+  });
+});
+
 describe('Build Output — dist/ carries every templateUrl/styleUrl .html/.css asset (tsc alone does not emit them)', () => {
   const DIST_DIR = join(HERE, '..', 'dist');
   const distExists = (() => {
@@ -351,4 +388,41 @@ describe('Build Output — dist/ carries every templateUrl/styleUrl .html/.css a
       });
     }
   }
+});
+
+describe('OpenApp Readiness — Collaboration Space UI Driver, BaseSpaceTab & BaseSpaceOverviewCard Integration', () => {
+  const integrationSource = stripComments(
+    readFileSync(join(ANGULAR_SRC, 'lib', 'collaboration-space-integration.ts'), 'utf8'),
+  );
+  const spaceTypeMetadata = JSON.parse(
+    readFileSync(join(HERE, '..', '..', '..', 'metadata', 'space-types', '.space-types.json'), 'utf8'),
+  ) as Array<{ fields?: { Code?: string; UIDriverClass?: string } }>;
+
+  it("registers CommunityCollaborationSpaceUIDriver under 'CommunitySpaceUIDriver' matching metadata UIDriverClass", () => {
+    const driverClassName = spaceTypeMetadata[0]?.fields?.UIDriverClass;
+    assert.equal(driverClassName, 'CommunitySpaceUIDriver');
+    assert.match(integrationSource, /@RegisterClass\(BaseSpaceTypeUIDriver,\s*'CommunitySpaceUIDriver'\)/);
+    assert.match(integrationSource, /extends BaseSpaceTypeUIDriver/);
+  });
+
+  it('registers all 4 BaseSpaceTab contributions and the Shared Overview card for community spaces with OnPush', () => {
+    for (const contributionKey of ['forums', 'qa-canon', 'ideation', 'playbooks']) {
+      assert.match(
+        integrationSource,
+        new RegExp(`contributionKey:\\s*'${contributionKey}'`),
+        `Missing BaseSpaceTab contributionKey "${contributionKey}"`,
+      );
+    }
+    assert.match(integrationSource, /@RegisterClassEx\(BaseSpaceOverviewCard,/);
+    assert.match(integrationSource, /contributionKey:\s*'community-highlights'/);
+    assert.match(integrationSource, /side:\s*'Shared'/);
+    assert.match(integrationSource, /spaceTypes:\s*\['community'\]/);
+    const onPushMatches = integrationSource.match(/changeDetection:\s*ChangeDetectionStrategy\.OnPush/g) ?? [];
+    assert.equal(onPushMatches.length, 5);
+  });
+
+  it('exports collaboration-space-integration from packages/Angular/src/public-api.ts', () => {
+    const publicApi = stripComments(readFileSync(join(ANGULAR_SRC, 'public-api.ts'), 'utf8'));
+    assert.match(publicApi, /collaboration-space-integration/);
+  });
 });

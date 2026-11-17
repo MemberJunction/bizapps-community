@@ -4,6 +4,7 @@ export * from './lib/community-hub-ideation.ts';
 export * from './lib/community-hub-preferences.ts';
 export * from './lib/community-hub-workbench.ts';
 export * from './lib/community-hub-resource.component.ts';
+export * from './lib/collaboration-space-integration.ts';
 export * from './lib/knowledge-stream.component.ts';
 export * from './lib/qa-canon-workbench.component.ts';
 export * from './lib/living-co-authoring.component.ts';
