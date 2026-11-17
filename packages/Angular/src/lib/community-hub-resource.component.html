@@ -1,26 +1,134 @@
 <mj-page-layout>
   <mj-page-body [Padding]="false">
-    <div class="mjc-community-hub">
-      <nav class="mjc-community-hub__tabs" role="tablist" aria-label="Community Hub">
-        @for (tab of tabs; track tab.key) {
-          <button
-            #tabButton
-            type="button"
-            role="tab"
-            [id]="'mjc-hub-tab-' + tab.key"
-            class="mjc-community-hub__tab"
-            [class.mjc-community-hub__tab--active]="tab.key === activeTabKey"
-            [attr.aria-selected]="tab.key === activeTabKey"
-            [attr.aria-controls]="'mjc-hub-panel-' + tab.key"
-            [attr.tabindex]="tab.key === focusedTabKey ? 0 : -1"
-            (click)="SelectTab(tab.key)"
-            (keydown)="OnTabKeydown($event, tab.key)"
-          >
-            <i [class]="tab.icon" aria-hidden="true"></i>
-            <span>{{ tab.label }}</span>
-          </button>
+    <div class="mjc-community-hub" [attr.data-feed-count]="feedPosts.length">
+      <!-- STICKY TOP HEADER BAR -->
+      <header class="mjc-hub-header">
+        <div class="mjc-hub-header__inner">
+          <div class="mjc-hub-brand">
+            <svg class="mjc-hub-brand__emblem" width="34" height="34" viewBox="0 0 36 36" aria-hidden="true">
+              <rect x="2" y="2" width="32" height="32" rx="9" class="mjc-emblem-bg" />
+              <path d="M18 9L26 14V22L18 27L10 22V14L18 9Z" class="mjc-emblem-accent" />
+            </svg>
+            <div class="mjc-hub-brand__copy">
+              <div class="mjc-hub-brand__title-row">
+                <span class="mjc-hub-brand__title">MemberJunction Community Hub</span>
+                <span class="mjc-hub-brand__pill">Commons</span>
+              </div>
+              <span class="mjc-hub-brand__subtitle">Enterprise Knowledge &amp; Governance Commons</span>
+            </div>
+          </div>
+
+          <nav class="mjc-community-hub__tabs" role="tablist" aria-label="Community Hub">
+            @for (tab of tabs; track tab.key) {
+              <button
+                #tabButton
+                type="button"
+                role="tab"
+                [id]="'mjc-hub-tab-' + tab.key"
+                class="mjc-community-hub__tab"
+                [class.mjc-community-hub__tab--active]="tab.key === activeTabKey"
+                [attr.aria-selected]="tab.key === activeTabKey"
+                [attr.aria-controls]="'mjc-hub-panel-' + tab.key"
+                [attr.tabindex]="tab.key === focusedTabKey ? 0 : -1"
+                (click)="SelectTab(tab.key)"
+                (keydown)="OnTabKeydown($event, tab.key)"
+              >
+                <i [class]="tab.icon" aria-hidden="true"></i>
+                <span>{{ tab.label }}</span>
+                @if (tab.key === 'quadratic-ideation-wallet') {
+                  <span class="mjc-tab-badge">{{ remainingWalletPoints }} pts</span>
+                }
+              </button>
+            }
+          </nav>
+
+          <div class="mjc-hub-header__actions">
+            <div class="mjc-header-search">
+              <i class="fa-solid fa-magnifying-glass mjc-header-search__icon" aria-hidden="true"></i>
+              <input
+                id="mjc-header-search-input"
+                type="search"
+                class="mjc-header-search__input"
+                aria-label="Search community threads, Q&A canon, and playbooks"
+                placeholder="Search threads, Q&A canon..."
+                [ngModel]="headerSearchQuery"
+                (ngModelChange)="onHeaderSearchChange($event)"
+              />
+              @if (headerSearchQuery.trim()) {
+                <button
+                  type="button"
+                  id="mjc-header-search-clear-btn"
+                  class="mjc-header-search__clear"
+                  aria-label="Clear search query"
+                  (click)="clearHeaderSearch()"
+                >
+                  ✕
+                </button>
+              }
+            </div>
+
+            <button
+              type="button"
+              id="mjc-header-export-pdf-btn"
+              class="mjc-community-hub__btn mjc-digest-export__button"
+              [disabled]="isExportingDigest"
+              (click)="exportDigestPdf()"
+            >
+              <i class="fa-solid fa-file-pdf" aria-hidden="true"></i>
+              <span>{{ isExportingDigest ? 'Generating PDF…' : 'Export Digest PDF' }}</span>
+            </button>
+
+            <button
+              type="button"
+              id="mjc-header-ask-share-btn"
+              class="mjc-community-hub__btn mjc-community-hub__btn--primary"
+              (click)="openAskShareModal()"
+            >
+              <span>+ Ask or Share</span>
+            </button>
+          </div>
+        </div>
+
+        @if (digestExportError) {
+          <div class="mjc-hub-header__alert" role="alert">{{ digestExportError }}</div>
         }
-      </nav>
+
+        <!-- MATCHED QUESTION SPOTLIGHT BANNER -->
+        @if (matchedCanonQuestion; as matched) {
+          <div id="mjc-matched-question-spotlight" class="mjc-spotlight-banner" role="region" aria-label="Matched Q&A Canon Spotlight">
+            <div class="mjc-spotlight-banner__content">
+              <span class="mjc-spotlight-banner__pill">
+                {{ matched.epistemicStatus }}
+                @if (matched.confidenceScore !== null) {
+                  <span>· {{ (matched.confidenceScore * 100).toFixed(0) }}%</span>
+                }
+              </span>
+              <div class="mjc-spotlight-banner__text">
+                <strong>Matched Canon Question: {{ matched.title }}</strong>
+                <span class="mjc-spotlight-banner__answer">{{ matched.answerSummary }}</span>
+              </div>
+            </div>
+            <div class="mjc-spotlight-banner__actions">
+              <button
+                type="button"
+                id="mjc-spotlight-open-answer-btn"
+                class="mjc-community-hub__btn mjc-community-hub__btn--primary"
+                (click)="openMatchedCanonSpotlight()"
+              >
+                Open Canon Answer
+              </button>
+              <button
+                type="button"
+                id="mjc-spotlight-jump-qa-btn"
+                class="mjc-community-hub__btn"
+                (click)="jumpToQaCanon(matched.id)"
+              >
+                Go to Q&amp;A Canon →
+              </button>
+            </div>
+          </div>
+        }
+      </header>
 
       <div class="mjc-community-hub__body">
         @switch (activeTabKey) {
@@ -31,51 +139,142 @@
               role="tabpanel"
               [attr.aria-labelledby]="'mjc-hub-tab-knowledge-stream'"
             >
-              <div class="mjc-community-hub__toolbar">
-                <mjc-ask-first-deflection-widget [allowedForumIDs]="allowedForumIDs"></mjc-ask-first-deflection-widget>
-                <mjc-digest-export-button [spaceName]="spaceName" [allowedForumIDs]="allowedForumIDs"></mjc-digest-export-button>
-              </div>
-              @if (feedPosts.length === 0) {
-                <p class="mjc-community-hub__hint">No posts yet in {{ spaceName }}.</p>
-              } @else {
-                <div class="mjc-community-hub__split">
-                  <div class="mjc-community-hub__list" role="listbox" aria-label="Knowledge Stream feed">
-                    @for (post of feedPosts; track post.id) {
-                      <button
-                        type="button"
-                        role="option"
-                        class="mjc-community-hub__list-item"
-                        [class.mjc-community-hub__list-item--selected]="post.id === selectedFeedPost?.id"
-                        [attr.aria-selected]="post.id === selectedFeedPost?.id"
-                        (click)="SelectFeedPost(post.id)"
-                      >
-                        <span class="mjc-community-hub__list-title">{{ post.title }}</span>
-                        <span class="mjc-community-hub__badge">{{ post.status }}</span>
-                      </button>
-                    }
+              <!-- COLLAPSIBLE EDITORIAL PORCH HERO BANNER + 3 FEATURED HIGHLIGHT CARDS -->
+              <section class="mjc-porch" aria-label="Editorial Porch">
+                <div class="mjc-porch__hero">
+                  <div class="mjc-porch__topbar">
+                    <span class="mjc-porch__edition">Weekly Community Briefing · {{ spaceName }}</span>
+                    <button
+                      type="button"
+                      id="mjc-porch-toggle-btn"
+                      class="mjc-porch__toggle"
+                      [attr.aria-expanded]="!porchCollapsed"
+                      (click)="togglePorch()"
+                    >
+                      {{ porchCollapsed ? 'Expand Editorial Porch ↓' : 'Collapse Porch ↑' }}
+                    </button>
                   </div>
-                  @if (selectedFeedPost; as activePost) {
-                    <div class="mjc-community-hub__card">
-                      <h3 class="mjc-community-hub__card-title">{{ activePost.title }}</h3>
-                      <p class="mjc-community-hub__card-body">{{ activePost.bodyMarkdown }}</p>
-                      <div class="mjc-community-hub__btn-row">
-                        <button
-                          type="button"
-                          id="mjc-feed-synthesize-btn"
-                          class="mjc-community-hub__btn mjc-community-hub__btn--primary"
-                          [disabled]="isSynthesizingFeed"
-                          (click)="SynthesizeFeedThread(activePost.id)"
-                        >
-                          {{ isSynthesizingFeed ? 'Synthesizing...' : 'Synthesize Living Thread' }}
-                        </button>
+
+                  @if (!porchCollapsed) {
+                    <div id="mjc-porch-expanded-body" class="mjc-porch__grid">
+                      <div class="mjc-porch__lead">
+                        <h1 class="mjc-porch__headline">
+                          Shared engineering standards grow stronger together. Here is what needs your review this week.
+                        </h1>
+                        <p class="mjc-porch__summary">
+                          Explore verified Q&amp;A canon, collaborate on living operational playbooks, inspect active RFC motions, and allocate quadratic priority credits across community initiatives.
+                        </p>
+                        <div class="mjc-porch__cta-row">
+                          <button
+                            type="button"
+                            class="mjc-community-hub__btn mjc-community-hub__btn--primary"
+                            (click)="openAskShareModal('Question')"
+                          >
+                            + Ask or Share
+                          </button>
+                          <button
+                            type="button"
+                            class="mjc-community-hub__btn"
+                            (click)="SelectTab('qa-canon-workbench')"
+                          >
+                            Explore Verified Q&amp;A Canon
+                          </button>
+                          <button
+                            type="button"
+                            class="mjc-community-hub__btn"
+                            (click)="SelectTab('quadratic-ideation-wallet')"
+                          >
+                            Allocate {{ remainingWalletPoints }} Priority Points
+                          </button>
+                        </div>
                       </div>
-                      @if (threadSynthesisResult) {
-                        <p class="mjc-community-hub__status" role="status">{{ threadSynthesisResult }}</p>
-                      }
+
+                      <div class="mjc-porch__callout">
+                        <div class="mjc-porch__callout-header">
+                          <span class="mjc-porch__callout-badge">Peer Review Spotlight</span>
+                          <span class="mjc-porch__callout-meta">Canon Verified</span>
+                        </div>
+                        <h2 class="mjc-porch__callout-title">
+                          {{ qaCanonItems[0]?.title || 'How do I rotate my API key without downtime?' }}
+                        </h2>
+                        <p class="mjc-porch__callout-body">
+                          {{ qaCanonItems[0]?.bodyMarkdown || 'Mint a secondary client secret, deploy the dual-key config to workers, then revoke the legacy secret after one lease interval.' }}
+                        </p>
+                        <div class="mjc-porch__callout-footer">
+                          <span>{{ qaCanonItems.length }} Verified Canon Entries</span>
+                          <button
+                            type="button"
+                            class="mjc-community-hub__btn"
+                            (click)="jumpToQaCanon(qaCanonItems[0]?.id)"
+                          >
+                            Inspect in Canon →
+                          </button>
+                        </div>
+                      </div>
                     </div>
                   }
                 </div>
-              }
+
+                @if (!porchCollapsed) {
+                  <div id="mjc-porch-highlights-row" class="mjc-porch__highlights">
+                    @for (highlight of featuredHighlights; track highlight.id) {
+                      <article class="mjc-highlight-card">
+                        <div class="mjc-highlight-card__top">
+                          <span
+                            class="mjc-highlight-card__badge"
+                            [class.mjc-highlight-card__badge--danger]="highlight.badgeTone === 'danger'"
+                            [class.mjc-highlight-card__badge--brand]="highlight.badgeTone === 'brand'"
+                            [class.mjc-highlight-card__badge--success]="highlight.badgeTone === 'success'"
+                          >
+                            {{ highlight.badgeText }}
+                          </span>
+                          <span class="mjc-highlight-card__meta">{{ highlight.metaText }}</span>
+                        </div>
+                        <h3 class="mjc-highlight-card__title">{{ highlight.title }}</h3>
+                        <p class="mjc-highlight-card__summary">{{ highlight.summary }}</p>
+                        <div class="mjc-highlight-card__footer">
+                          <span class="mjc-highlight-card__footer-meta">{{ highlight.footerMeta }}</span>
+                          <button
+                            type="button"
+                            class="mjc-highlight-card__cta"
+                            (click)="openHighlight(highlight)"
+                          >
+                            {{ highlight.ctaLabel }} →
+                          </button>
+                        </div>
+                      </article>
+                    }
+                  </div>
+                }
+              </section>
+
+              <!-- 3-COLUMN COMMONS WORKSPACE -->
+              <mjc-knowledge-stream
+                [items]="commonsItems"
+                [selectedItemId]="detailSheetItemId"
+                [activeSpaceFilter]="activeSpaceFilter"
+                [activeTopicFilter]="activeTopicFilter"
+                [activeStreamTypeFilter]="activeStreamTypeFilter"
+                [searchQuery]="headerSearchQuery"
+                [allowedForumIDs]="allowedForumIDs"
+                [isSynthesizing]="isSynthesizingFeed"
+                [threadSynthesisResult]="threadSynthesisResult"
+                [activeCampaignName]="activeCampaign.name"
+                [remainingWalletPoints]="remainingWalletPoints"
+                [totalWalletPoints]="activeCampaign.budgetPoints"
+                [walletSummaryIdeas]="walletSummaryIdeas"
+                [sessions]="sessions"
+                (spaceFilterChange)="setSpaceFilter($event)"
+                (topicFilterChange)="setTopicFilter($event)"
+                (streamTypeFilterChange)="setStreamTypeFilter($event)"
+                (filtersReset)="resetCommonsFilters()"
+                (itemInspected)="openDetailSheet($event)"
+                (itemUpvoted)="upvoteCommonsItem($event)"
+                (threadSynthesized)="SynthesizeFeedThread($event)"
+                (askShareRequested)="openAskShareModal()"
+                (navigateToTab)="SelectTab($event)"
+                (sessionRsvpToggled)="toggleSessionRsvp($event)"
+              ></mjc-knowledge-stream>
             </section>
           }
 
@@ -411,6 +610,273 @@
           }
         }
       </div>
+
+      <!-- SLIDE-OVER DETAIL SHEET DRAWER -->
+      @if (detailSheetItem; as activeDetail) {
+        <div
+          id="mjc-detail-sheet-backdrop"
+          class="mjc-drawer-backdrop"
+          (click)="closeDetailSheet()"
+        >
+          <div
+            class="mjc-drawer-panel"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="mjc-detail-sheet-title"
+            (click)="$event.stopPropagation()"
+          >
+            <div class="mjc-drawer-header">
+              <div class="mjc-drawer-header__badges">
+                <span class="mjc-community-hub__badge">{{ activeDetail.statusBadge }}</span>
+                <span class="mjc-community-hub__badge">{{ activeDetail.spaceLabel }}</span>
+              </div>
+              <button
+                type="button"
+                id="mjc-detail-sheet-close-btn"
+                class="mjc-drawer-close"
+                aria-label="Close detail sheet"
+                (click)="closeDetailSheet()"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div class="mjc-drawer-body">
+              <h2 id="mjc-detail-sheet-title" class="mjc-drawer-title">{{ activeDetail.title }}</h2>
+              <div class="mjc-drawer-author-bar">
+                <div>
+                  <strong>{{ activeDetail.authorName }}</strong>
+                  <span class="mjc-drawer-meta"> · {{ activeDetail.authorRole }} · {{ activeDetail.timestampLabel }}</span>
+                </div>
+                <div class="mjc-community-hub__btn-row">
+                  <button
+                    type="button"
+                    id="mjc-detail-upvote-btn"
+                    class="mjc-community-hub__btn"
+                    [class.mjc-community-hub__btn--primary]="activeDetail.upvotedByMe"
+                    (click)="upvoteCommonsItem(activeDetail.id)"
+                  >
+                    ▲ Endorse ({{ activeDetail.upvoteCount }})
+                  </button>
+                  <button
+                    type="button"
+                    id="mjc-detail-graduate-btn"
+                    class="mjc-community-hub__btn"
+                    [disabled]="activeDetail.graduatedToDeliverable"
+                    (click)="graduateDetailItem(activeDetail.id)"
+                  >
+                    {{ activeDetail.graduatedToDeliverable ? 'Graduated to Working Group' : 'Graduate to Deliverable' }}
+                  </button>
+                </div>
+              </div>
+
+              <div class="mjc-drawer-content">{{ activeDetail.bodyMarkdown }}</div>
+
+              @if (activeDetail.tags.length > 0) {
+                <div class="mjc-drawer-tags">
+                  @for (tag of activeDetail.tags; track tag) {
+                    <span class="mjc-community-hub__badge">#{{ tag }}</span>
+                  }
+                </div>
+              }
+
+              <div class="mjc-drawer-epistemic">
+                <div>
+                  <strong>Epistemic / Canon Metadata:</strong>
+                  <span>{{ activeDetail.epistemicStatus || 'Community Thread' }}</span>
+                  @if (activeDetail.confidenceScore !== null) {
+                    <span> · Confidence {{ (activeDetail.confidenceScore * 100).toFixed(0) }}%</span>
+                  }
+                </div>
+                <button
+                  type="button"
+                  id="mjc-detail-synthesize-btn"
+                  class="mjc-community-hub__btn"
+                  (click)="SynthesizeFeedThread(activeDetail.sourcePostId)"
+                >
+                  Synthesize Thread
+                </button>
+              </div>
+
+              @if (detailActionMessage) {
+                <p class="mjc-community-hub__status" role="status">{{ detailActionMessage }}</p>
+              }
+              @if (threadSynthesisResult) {
+                <p class="mjc-community-hub__status" role="status">{{ threadSynthesisResult }}</p>
+              }
+
+              <div class="mjc-drawer-replies">
+                <h3>Replies &amp; Endorsements ({{ activeDetail.replies.length }})</h3>
+                @if (activeDetail.replies.length === 0) {
+                  <p class="mjc-community-hub__hint">No replies yet. Add the first engineering note below.</p>
+                } @else {
+                  @for (reply of activeDetail.replies; track reply.id) {
+                    <div class="mjc-reply-card" [class.mjc-reply-card--accepted]="reply.isAccepted">
+                      <div class="mjc-reply-card__head">
+                        <strong>{{ reply.authorName }}</strong>
+                        <span>{{ reply.authorRole }} · {{ reply.timestampLabel }}</span>
+                        @if (reply.isAccepted) {
+                          <span class="mjc-community-hub__badge">✓ Verified Answer</span>
+                        }
+                      </div>
+                      <p class="mjc-reply-card__body">{{ reply.bodyMarkdown }}</p>
+                    </div>
+                  }
+                }
+
+                <form class="mjc-community-hub__field" (ngSubmit)="submitDetailReply()">
+                  <label for="mjc-detail-reply-input" class="mjc-community-hub__label">Add Reply or Note</label>
+                  <textarea
+                    id="mjc-detail-reply-input"
+                    name="detailReplyText"
+                    rows="3"
+                    class="mjc-community-hub__textarea"
+                    placeholder="Share implementation details, constraints, or verification notes..."
+                    [(ngModel)]="detailReplyText"
+                  ></textarea>
+                  <div class="mjc-community-hub__btn-row">
+                    <button type="submit" id="mjc-detail-reply-submit-btn" class="mjc-community-hub__btn mjc-community-hub__btn--primary">
+                      Post Reply
+                    </button>
+                  </div>
+                </form>
+              </div>
+            </div>
+          </div>
+        </div>
+      }
+
+      <!-- + ASK OR SHARE MODAL -->
+      @if (isAskShareModalOpen) {
+        <div
+          id="mjc-ask-share-modal-backdrop"
+          class="mjc-modal-backdrop"
+          (click)="closeAskShareModal()"
+        >
+          <div
+            class="mjc-modal-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="mjc-ask-share-title"
+            (click)="$event.stopPropagation()"
+          >
+            <div class="mjc-modal-header">
+              <div>
+                <div class="mjc-modal-kicker">Contribute to Community Hub</div>
+                <h2 id="mjc-ask-share-title" class="mjc-modal-title">Ask a Question, Share a Discussion, or Draft a Playbook</h2>
+              </div>
+              <button
+                type="button"
+                id="mjc-ask-share-close-btn"
+                class="mjc-drawer-close"
+                aria-label="Close Ask or Share modal"
+                (click)="closeAskShareModal()"
+              >
+                ✕
+              </button>
+            </div>
+
+            <form class="mjc-modal-body" (ngSubmit)="submitAskShareModal()">
+              <div class="mjc-modal-grid">
+                <div class="mjc-community-hub__field">
+                  <label for="mjc-ask-share-type" class="mjc-community-hub__label">Entry Type</label>
+                  <select
+                    id="mjc-ask-share-type"
+                    name="askShareEntryType"
+                    class="mjc-community-hub__input"
+                    [(ngModel)]="askShareEntryType"
+                  >
+                    <option value="Question">Question</option>
+                    <option value="Discussion Post">Discussion Post</option>
+                    <option value="Playbook Note">Playbook Note</option>
+                  </select>
+                </div>
+
+                <div class="mjc-community-hub__field">
+                  <label for="mjc-ask-share-space" class="mjc-community-hub__label">Space</label>
+                  <select
+                    id="mjc-ask-share-space"
+                    name="askShareSpaceId"
+                    class="mjc-community-hub__input"
+                    [(ngModel)]="askShareSpaceId"
+                  >
+                    @for (space of spaceDirectory; track space.id) {
+                      <option [value]="space.id">{{ space.name }}</option>
+                    }
+                  </select>
+                </div>
+              </div>
+
+              <div class="mjc-community-hub__field">
+                <label for="mjc-ask-share-title-input" class="mjc-community-hub__label">Title</label>
+                <input
+                  id="mjc-ask-share-title-input"
+                  name="askShareTitle"
+                  type="text"
+                  class="mjc-community-hub__input"
+                  placeholder="e.g., How do multi-region GraphQL replicas handle failover?"
+                  [(ngModel)]="askShareTitle"
+                />
+                @if (askShareValidationErrors.title) {
+                  <span class="mjc-field-error" role="alert">{{ askShareValidationErrors.title }}</span>
+                }
+              </div>
+
+              @if (askShareDeflectionMatches.length > 0) {
+                <div class="mjc-deflection-box">
+                  <div class="mjc-deflection-box__title">Matching Verified Answers Found in Canon:</div>
+                  @for (match of askShareDeflectionMatches; track match.id) {
+                    <button
+                      type="button"
+                      class="mjc-deflection-box__item"
+                      (click)="inspectAskShareDeflection(match.id)"
+                    >
+                      <span>{{ match.title }}</span>
+                      <span>View Canon →</span>
+                    </button>
+                  }
+                </div>
+              }
+
+              <div class="mjc-community-hub__field">
+                <label for="mjc-ask-share-body-input" class="mjc-community-hub__label">Body</label>
+                <textarea
+                  id="mjc-ask-share-body-input"
+                  name="askShareBody"
+                  rows="4"
+                  class="mjc-community-hub__textarea"
+                  placeholder="Provide context, architecture constraints, or runbook steps..."
+                  [(ngModel)]="askShareBody"
+                ></textarea>
+                @if (askShareValidationErrors.body) {
+                  <span class="mjc-field-error" role="alert">{{ askShareValidationErrors.body }}</span>
+                }
+              </div>
+
+              <div class="mjc-community-hub__field">
+                <label for="mjc-ask-share-tags-input" class="mjc-community-hub__label">Tags (comma-separated)</label>
+                <input
+                  id="mjc-ask-share-tags-input"
+                  name="askShareTags"
+                  type="text"
+                  class="mjc-community-hub__input"
+                  placeholder="API Security, Multi-Region, Schema Parity"
+                  [(ngModel)]="askShareTags"
+                />
+              </div>
+
+              <div class="mjc-modal-footer">
+                <button type="button" class="mjc-community-hub__btn" (click)="closeAskShareModal()">
+                  Cancel
+                </button>
+                <button type="submit" id="mjc-ask-share-submit-btn" class="mjc-community-hub__btn mjc-community-hub__btn--primary">
+                  Publish to Commons
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      }
     </div>
   </mj-page-body>
 </mj-page-layout>
