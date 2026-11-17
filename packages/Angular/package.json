@@ -15,7 +15,7 @@
   "license": "BUSL-1.1",
   "scripts": {
     "build": "node ./scripts/run-ngc.mjs",
-    "test": "node --experimental-strip-types --test src/client-bootstrap.test.ts src/architecture-parity.test.ts src/ideation-persistence.test.ts src/commons-ux-alignment.test.ts"
+    "test": "node --experimental-strip-types --test src/client-bootstrap.test.ts src/architecture-parity.test.ts src/ideation-persistence.test.ts src/commons-ux-alignment.test.ts src/workbench-ux-alignment.test.ts"
   },
   "dependencies": {
     "@mj-biz-apps/community-core": "0.1.0",
