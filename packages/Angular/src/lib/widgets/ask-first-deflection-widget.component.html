@@ -1,0 +1,22 @@
+<div class="mjc-ask-first">
+  <label class="mjc-ask-first__label" for="mjc-ask-first-input">Ask-First: search before you post</label>
+  <div class="mjc-ask-first__row">
+    <input
+      id="mjc-ask-first-input"
+      class="mjc-ask-first__input"
+      type="text"
+      placeholder="What's your question?"
+      [(ngModel)]="queryText"
+      (keyup.enter)="Search()"
+    />
+    <button type="button" class="mjc-ask-first__button" [disabled]="isSearching" (click)="Search()">
+      {{ isSearching ? 'Searching…' : 'Search' }}
+    </button>
+  </div>
+
+  @if (resultMessage) {
+    <p class="mjc-ask-first__result" [class.mjc-ask-first__result--deflected]="deflected">
+      {{ resultMessage }}
+    </p>
+  }
+</div>

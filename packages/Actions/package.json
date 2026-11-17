@@ -12,13 +12,15 @@
     "/dist"
   ],
   "scripts": {
-    "build": "tsc"
+    "build": "tsc",
+    "test": "node --experimental-strip-types --test src/custom-actions.test.ts src/custom/action-id-params.test.ts src/custom/save-or-fail.test.ts"
   },
   "license": "BUSL-1.1",
   "dependencies": {
     "@mj-biz-apps/community-core": "0.1.0",
     "@mj-biz-apps/community-engine-base": "0.1.0",
-    "@mj-biz-apps/community-entities": "0.1.0"
+    "@mj-biz-apps/community-entities": "0.1.0",
+    "pdfkit": "^0.17.2"
   },
   "peerDependencies": {
     "@memberjunction/actions": "6.3.0-edge.0",
@@ -31,6 +33,7 @@
     "@memberjunction/actions-base": "6.3.0-edge.0",
     "@memberjunction/core": "6.3.0-edge.0",
     "@memberjunction/global": "6.3.0-edge.0",
+    "@types/node": "24.10.11",
     "typescript": "5.9.3"
   },
   "repository": {

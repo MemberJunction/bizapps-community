@@ -13,6 +13,10 @@
       "EntityNamePrefix": "MJ_BizApps_Community: ",
       "Comments": null,
       "Description": "MemberJunction: BizApps Community. Member-driven forums, Q&A knowledge bases, ideation campaigns, live document co-authoring, and interactive AI experiences built on BizApps Collaboration."
+    },
+    "sync": {
+      "lastModified": "2026-11-16T20:10:05.227Z",
+      "checksum": "1f2447828ea377ac7959dee422a8b471bc12ca3e019c1cdae152b94461877c4f"
     }
   }
 ]

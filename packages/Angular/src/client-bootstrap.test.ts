@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { CommunityHubResourceModel, LoadBizAppsCommunityClient } from './public-api.ts';
+import { CommunityHubResourceModel, LoadBizAppsCommunityClient } from '../dist/lib/client-bootstrap.js';
 
 describe('@mj-biz-apps/community-ng client bootstrap', () => {
   it('bootstraps client entities and UI drivers and exposes primary hub views', () => {

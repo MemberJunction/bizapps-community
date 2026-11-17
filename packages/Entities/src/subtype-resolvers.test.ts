@@ -6,7 +6,7 @@ import {
   ForumSubtypeDirectory,
   ForumSubtypeResolver,
   PostSubtypeDirectory,
-} from './index.ts';
+} from '../dist/index.js';
 
 const IDEATION_FORUM_TYPE = 'C8A17100-4E12-4B8F-9A10-100000000003';
 const GENERAL_FORUM_TYPE = 'C8A17100-4E12-4B8F-9A10-100000000001';

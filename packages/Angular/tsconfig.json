@@ -1,10 +1,16 @@
 {
-  "extends": "../../tsconfig.server.json",
+  "extends": "../../tsconfig.angular.json",
   "compilerOptions": {
     "outDir": "dist",
     "rootDir": "src",
     "allowImportingTsExtensions": true,
     "rewriteRelativeImportExtensions": true
+  },
+  "angularCompilerOptions": {
+    "compilationMode": "partial",
+    "skipTemplateCodegen": true,
+    "enableResourceInlining": true,
+    "strictTemplates": true
   },
   "include": ["src/**/*"],
   "exclude": ["dist", "src/**/*.test.ts"]

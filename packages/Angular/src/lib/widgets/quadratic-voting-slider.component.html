@@ -1,0 +1,24 @@
+<div class="mjc-qv-slider">
+  <div class="mjc-qv-slider__row">
+    <input
+      id="mjc-qv-slider-input"
+      type="range"
+      class="mjc-qv-slider__range"
+      aria-label="Allocate quadratic voting points"
+      min="0"
+      [max]="maxPointsPerIdea ?? budgetPoints"
+      [(ngModel)]="pointsAllocated"
+      (ngModelChange)="OnSliderInput()"
+    />
+    <span class="mjc-qv-slider__points">{{ pointsAllocated }} pts</span>
+  </div>
+
+  <div class="mjc-qv-slider__meta">
+    <span>Effective votes: {{ effectiveVotes | number: '1.0-2' }}</span>
+    <span>Remaining budget: {{ validation.remainingBudgetPoints }}</span>
+  </div>
+
+  @if (!validation.valid) {
+    <p class="mjc-qv-slider__error">{{ validation.errorMessage }}</p>
+  }
+</div>

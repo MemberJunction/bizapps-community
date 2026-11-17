@@ -3,7 +3,9 @@
     "_comments": [
       "CommunitySpace is an IsA subtype of MJ_BizApps_Collaboration: Spaces and MUST carry ReadRLSFilterID = 58B6738B-13FA-4DE7-9F89-DF300C916C27 (Collaboration: Visible Spaces) for Space Participant so Collaboration's refuseSubtypeEntity check succeeds."
     ],
-    "primaryKey": { "ID": "C8A17500-4E12-4B8F-9A10-100000000001" },
+    "primaryKey": {
+      "ID": "C8A17500-4E12-4B8F-9A10-100000000001"
+    },
     "fields": {
       "EntityID": "@lookup:MJ: Entities.Name=MJ_BizApps_Community: Community Spaces",
       "RoleID": "@lookup:MJ: Roles.Name=Space Participant",
@@ -14,10 +16,16 @@
       "ReadRLSFilterID": "58B6738B-13FA-4DE7-9F89-DF300C916C27",
       "CreateRLSFilterID": "58B6738B-13FA-4DE7-9F89-DF300C916C27",
       "UpdateRLSFilterID": "58B6738B-13FA-4DE7-9F89-DF300C916C27"
+    },
+    "sync": {
+      "lastModified": "2026-11-16T20:10:31.710Z",
+      "checksum": "98b48973826c476b9e20451070f531b7bf15901e255361bdabda3ca309a13470"
     }
   },
   {
-    "primaryKey": { "ID": "C8A17500-4E12-4B8F-9A10-100000000002" },
+    "primaryKey": {
+      "ID": "C8A17500-4E12-4B8F-9A10-100000000002"
+    },
     "fields": {
       "EntityID": "@lookup:MJ: Entities.Name=MJ_BizApps_Community: Forums",
       "RoleID": "@lookup:MJ: Roles.Name=Space Participant",
@@ -26,10 +34,16 @@
       "CanUpdate": true,
       "CanDelete": false,
       "ReadRLSFilterID": "@lookup:MJ: Row Level Security Filters.Name=Community: Visible Forums"
+    },
+    "sync": {
+      "lastModified": "2026-11-16T20:10:31.769Z",
+      "checksum": "f795584feac061eeddea42171baedef2883e9d784f86c4a2aad28dc7cc7ca5de"
     }
   },
   {
-    "primaryKey": { "ID": "C8A17500-4E12-4B8F-9A10-100000000003" },
+    "primaryKey": {
+      "ID": "C8A17500-4E12-4B8F-9A10-100000000003"
+    },
     "fields": {
       "EntityID": "@lookup:MJ: Entities.Name=MJ_BizApps_Community: Forum Idea Campaigns",
       "RoleID": "@lookup:MJ: Roles.Name=Space Participant",
@@ -38,10 +52,16 @@
       "CanUpdate": true,
       "CanDelete": false,
       "ReadRLSFilterID": "@lookup:MJ: Row Level Security Filters.Name=Community: Visible Forums"
+    },
+    "sync": {
+      "lastModified": "2026-11-16T20:10:31.877Z",
+      "checksum": "6a27c27088bae2c86139b90673597f241bd8ee150e1c2da633232004f5a48623"
     }
   },
   {
-    "primaryKey": { "ID": "C8A17500-4E12-4B8F-9A10-100000000004" },
+    "primaryKey": {
+      "ID": "C8A17500-4E12-4B8F-9A10-100000000004"
+    },
     "fields": {
       "EntityID": "@lookup:MJ: Entities.Name=MJ_BizApps_Community: Forum Posts",
       "RoleID": "@lookup:MJ: Roles.Name=Space Participant",
@@ -50,10 +70,16 @@
       "CanUpdate": true,
       "CanDelete": false,
       "ReadRLSFilterID": "@lookup:MJ: Row Level Security Filters.Name=Community: Visible Forum Posts"
+    },
+    "sync": {
+      "lastModified": "2026-11-16T20:10:32.031Z",
+      "checksum": "1b59d35d484a62357a64905d78a94161f794f42a2895dfdd4f455f509c4f867e"
     }
   },
   {
-    "primaryKey": { "ID": "C8A17500-4E12-4B8F-9A10-100000000005" },
+    "primaryKey": {
+      "ID": "C8A17500-4E12-4B8F-9A10-100000000005"
+    },
     "fields": {
       "EntityID": "@lookup:MJ: Entities.Name=MJ_BizApps_Community: Forum Question Posts",
       "RoleID": "@lookup:MJ: Roles.Name=Space Participant",
@@ -62,10 +88,16 @@
       "CanUpdate": true,
       "CanDelete": false,
       "ReadRLSFilterID": "@lookup:MJ: Row Level Security Filters.Name=Community: Visible Forum Posts"
+    },
+    "sync": {
+      "lastModified": "2026-11-16T20:10:32.108Z",
+      "checksum": "a6b347f9f21973feda743510c083e6045bc200892102ec00e2aac4392f207157"
     }
   },
   {
-    "primaryKey": { "ID": "C8A17500-4E12-4B8F-9A10-100000000006" },
+    "primaryKey": {
+      "ID": "C8A17500-4E12-4B8F-9A10-100000000006"
+    },
     "fields": {
       "EntityID": "@lookup:MJ: Entities.Name=MJ_BizApps_Community: Forum Answer Posts",
       "RoleID": "@lookup:MJ: Roles.Name=Space Participant",
@@ -74,10 +106,16 @@
       "CanUpdate": true,
       "CanDelete": false,
       "ReadRLSFilterID": "@lookup:MJ: Row Level Security Filters.Name=Community: Visible Forum Posts"
+    },
+    "sync": {
+      "lastModified": "2026-11-16T20:10:32.204Z",
+      "checksum": "cc3696aaa048d60a05e873ee2f233bdf7426f1fb44a63312bbd92bce7deca236"
     }
   },
   {
-    "primaryKey": { "ID": "C8A17500-4E12-4B8F-9A10-100000000007" },
+    "primaryKey": {
+      "ID": "C8A17500-4E12-4B8F-9A10-100000000007"
+    },
     "fields": {
       "EntityID": "@lookup:MJ: Entities.Name=MJ_BizApps_Community: Forum Idea Posts",
       "RoleID": "@lookup:MJ: Roles.Name=Space Participant",
@@ -86,10 +124,16 @@
       "CanUpdate": true,
       "CanDelete": false,
       "ReadRLSFilterID": "@lookup:MJ: Row Level Security Filters.Name=Community: Visible Forum Posts"
+    },
+    "sync": {
+      "lastModified": "2026-11-16T20:10:32.299Z",
+      "checksum": "ff14e763b7b426d6287bb4f762650b80205a499e91a3052f440e55a1f45d3652"
     }
   },
   {
-    "primaryKey": { "ID": "C8A17500-4E12-4B8F-9A10-100000000008" },
+    "primaryKey": {
+      "ID": "C8A17500-4E12-4B8F-9A10-100000000008"
+    },
     "fields": {
       "EntityID": "@lookup:MJ: Entities.Name=MJ_BizApps_Community: Forum Form Posts",
       "RoleID": "@lookup:MJ: Roles.Name=Space Participant",
@@ -98,10 +142,16 @@
       "CanUpdate": true,
       "CanDelete": false,
       "ReadRLSFilterID": "@lookup:MJ: Row Level Security Filters.Name=Community: Visible Forum Posts"
+    },
+    "sync": {
+      "lastModified": "2026-11-16T20:10:32.547Z",
+      "checksum": "526f4cb73b70bf4e038aef7b20aeb049bb0069191b47d6d2ead346cf6b812833"
     }
   },
   {
-    "primaryKey": { "ID": "C8A17500-4E12-4B8F-9A10-100000000009" },
+    "primaryKey": {
+      "ID": "C8A17500-4E12-4B8F-9A10-100000000009"
+    },
     "fields": {
       "EntityID": "@lookup:MJ: Entities.Name=MJ_BizApps_Community: Forum Artifact Posts",
       "RoleID": "@lookup:MJ: Roles.Name=Space Participant",
@@ -110,10 +160,16 @@
       "CanUpdate": true,
       "CanDelete": false,
       "ReadRLSFilterID": "@lookup:MJ: Row Level Security Filters.Name=Community: Visible Forum Posts"
+    },
+    "sync": {
+      "lastModified": "2026-11-16T20:10:32.654Z",
+      "checksum": "c34c8e9b90ef0c1fa18e1e9227030e59995d03375f0ac75bff5020a01ac4d858"
     }
   },
   {
-    "primaryKey": { "ID": "C8A17500-4E12-4B8F-9A10-100000000010" },
+    "primaryKey": {
+      "ID": "C8A17500-4E12-4B8F-9A10-100000000010"
+    },
     "fields": {
       "EntityID": "@lookup:MJ: Entities.Name=MJ_BizApps_Community: Forum Case Posts",
       "RoleID": "@lookup:MJ: Roles.Name=Space Participant",
@@ -122,22 +178,34 @@
       "CanUpdate": true,
       "CanDelete": false,
       "ReadRLSFilterID": "@lookup:MJ: Row Level Security Filters.Name=Community: Visible Forum Posts"
+    },
+    "sync": {
+      "lastModified": "2026-11-16T20:10:32.736Z",
+      "checksum": "dbbb5bc5313111c28484aec605dbc1394c6acf1fec01306a0120c581abf319c9"
     }
   },
   {
-    "primaryKey": { "ID": "C8A17500-4E12-4B8F-9A10-100000000011" },
+    "primaryKey": {
+      "ID": "C8A17500-4E12-4B8F-9A10-100000000011"
+    },
     "fields": {
-      "EntityID": "@lookup:MJ: Entities.Name=MJ_BizApps_Community: Forum AMAPost",
+      "EntityID": "@lookup:MJ: Entities.Name=MJ_BizApps_Community: Forum AMA Posts",
       "RoleID": "@lookup:MJ: Roles.Name=Space Participant",
       "CanCreate": true,
       "CanRead": true,
       "CanUpdate": true,
       "CanDelete": false,
       "ReadRLSFilterID": "@lookup:MJ: Row Level Security Filters.Name=Community: Visible Forum Posts"
+    },
+    "sync": {
+      "lastModified": "2026-11-16T20:10:32.823Z",
+      "checksum": "78d518ac5ef67ffbc9d0631daca0789e296a9302257c4d1f9816132002e68899"
     }
   },
   {
-    "primaryKey": { "ID": "C8A17500-4E12-4B8F-9A10-100000000012" },
+    "primaryKey": {
+      "ID": "C8A17500-4E12-4B8F-9A10-100000000012"
+    },
     "fields": {
       "EntityID": "@lookup:MJ: Entities.Name=MJ_BizApps_Community: Forum Interactive Posts",
       "RoleID": "@lookup:MJ: Roles.Name=Space Participant",
@@ -146,10 +214,16 @@
       "CanUpdate": true,
       "CanDelete": false,
       "ReadRLSFilterID": "@lookup:MJ: Row Level Security Filters.Name=Community: Visible Forum Posts"
+    },
+    "sync": {
+      "lastModified": "2026-11-16T20:10:33.036Z",
+      "checksum": "3487dde17af2ae022b36f22eeba915691d60e8aafdcc6c7cebad2c6263a13d30"
     }
   },
   {
-    "primaryKey": { "ID": "C8A17500-4E12-4B8F-9A10-100000000013" },
+    "primaryKey": {
+      "ID": "C8A17500-4E12-4B8F-9A10-100000000013"
+    },
     "fields": {
       "EntityID": "@lookup:MJ: Entities.Name=MJ_BizApps_Community: Forum Interactive Sessions",
       "RoleID": "@lookup:MJ: Roles.Name=Space Participant",
@@ -158,10 +232,16 @@
       "CanUpdate": true,
       "CanDelete": false,
       "ReadRLSFilterID": "@lookup:MJ: Row Level Security Filters.Name=Community: Visible Forum Post Children"
+    },
+    "sync": {
+      "lastModified": "2026-11-16T20:10:33.191Z",
+      "checksum": "c80184cafb6a37b35421cd7152a6fc03f35bcae49cd1c4decea222039dd1bc42"
     }
   },
   {
-    "primaryKey": { "ID": "C8A17500-4E12-4B8F-9A10-100000000014" },
+    "primaryKey": {
+      "ID": "C8A17500-4E12-4B8F-9A10-100000000014"
+    },
     "fields": {
       "EntityID": "@lookup:MJ: Entities.Name=MJ_BizApps_Community: Forum Post Tags",
       "RoleID": "@lookup:MJ: Roles.Name=Space Participant",
@@ -170,10 +250,16 @@
       "CanUpdate": true,
       "CanDelete": false,
       "ReadRLSFilterID": "@lookup:MJ: Row Level Security Filters.Name=Community: Visible Forum Post Children"
+    },
+    "sync": {
+      "lastModified": "2026-11-16T20:10:33.300Z",
+      "checksum": "9bf5e28601e5673c3d04eb02b9861deeeff372c2ae00380178d040eabcec55c5"
     }
   },
   {
-    "primaryKey": { "ID": "C8A17500-4E12-4B8F-9A10-100000000015" },
+    "primaryKey": {
+      "ID": "C8A17500-4E12-4B8F-9A10-100000000015"
+    },
     "fields": {
       "EntityID": "@lookup:MJ: Entities.Name=MJ_BizApps_Community: Forum Post Reactions",
       "RoleID": "@lookup:MJ: Roles.Name=Space Participant",
@@ -182,10 +268,16 @@
       "CanUpdate": true,
       "CanDelete": false,
       "ReadRLSFilterID": "@lookup:MJ: Row Level Security Filters.Name=Community: Visible Forum Post Children"
+    },
+    "sync": {
+      "lastModified": "2026-11-16T20:10:33.456Z",
+      "checksum": "cf102fb6ad7b94d7c7788abff8edca6f09bb96bacd0cf697a120fd8cfffb3ca0"
     }
   },
   {
-    "primaryKey": { "ID": "C8A17500-4E12-4B8F-9A10-100000000016" },
+    "primaryKey": {
+      "ID": "C8A17500-4E12-4B8F-9A10-100000000016"
+    },
     "fields": {
       "EntityID": "@lookup:MJ: Entities.Name=MJ_BizApps_Community: Forum Post Attachments",
       "RoleID": "@lookup:MJ: Roles.Name=Space Participant",
@@ -194,10 +286,16 @@
       "CanUpdate": true,
       "CanDelete": false,
       "ReadRLSFilterID": "@lookup:MJ: Row Level Security Filters.Name=Community: Visible Forum Post Children"
+    },
+    "sync": {
+      "lastModified": "2026-11-16T20:10:33.529Z",
+      "checksum": "8d0bfbe91bf08cc649d3da562df45c77e667aa90fa637f0b049b854cf5935a31"
     }
   },
   {
-    "primaryKey": { "ID": "C8A17500-4E12-4B8F-9A10-100000000017" },
+    "primaryKey": {
+      "ID": "C8A17500-4E12-4B8F-9A10-100000000017"
+    },
     "fields": {
       "EntityID": "@lookup:MJ: Entities.Name=MJ_BizApps_Community: Forum Idea Allocations",
       "RoleID": "@lookup:MJ: Roles.Name=Space Participant",
@@ -206,10 +304,16 @@
       "CanUpdate": true,
       "CanDelete": false,
       "ReadRLSFilterID": "@lookup:MJ: Row Level Security Filters.Name=Community: Visible Forum Post Children"
+    },
+    "sync": {
+      "lastModified": "2026-11-16T20:10:33.608Z",
+      "checksum": "1461cc688e139fab82f561541f87c2c053cb6ebec626c8bf7968e59032d863cf"
     }
   },
   {
-    "primaryKey": { "ID": "C8A17500-4E12-4B8F-9A10-100000000018" },
+    "primaryKey": {
+      "ID": "C8A17500-4E12-4B8F-9A10-100000000018"
+    },
     "fields": {
       "EntityID": "@lookup:MJ: Entities.Name=MJ_BizApps_Community: Forum Types",
       "RoleID": "@lookup:MJ: Roles.Name=Space Participant",
@@ -217,10 +321,16 @@
       "CanRead": true,
       "CanUpdate": false,
       "CanDelete": false
+    },
+    "sync": {
+      "lastModified": "2026-11-16T20:10:33.968Z",
+      "checksum": "a44512d4c22bdb27b7ff38820d954b53b2853c2b2a315432fbd2aa08c93807a2"
     }
   },
   {
-    "primaryKey": { "ID": "C8A17500-4E12-4B8F-9A10-100000000019" },
+    "primaryKey": {
+      "ID": "C8A17500-4E12-4B8F-9A10-100000000019"
+    },
     "fields": {
       "EntityID": "@lookup:MJ: Entities.Name=MJ_BizApps_Community: Post Types",
       "RoleID": "@lookup:MJ: Roles.Name=Space Participant",
@@ -228,10 +338,16 @@
       "CanRead": true,
       "CanUpdate": false,
       "CanDelete": false
+    },
+    "sync": {
+      "lastModified": "2026-11-16T20:10:34.066Z",
+      "checksum": "54e2ebc3b794efeb474c6764400eed4c159881096917dcffd8b3c357c2dfa521"
     }
   },
   {
-    "primaryKey": { "ID": "C8A17500-4E12-4B8F-9A10-100000000020" },
+    "primaryKey": {
+      "ID": "C8A17500-4E12-4B8F-9A10-100000000020"
+    },
     "fields": {
       "EntityID": "@lookup:MJ: Entities.Name=MJ_BizApps_Community: Forum Role Types",
       "RoleID": "@lookup:MJ: Roles.Name=Space Participant",
@@ -239,6 +355,10 @@
       "CanRead": true,
       "CanUpdate": false,
       "CanDelete": false
+    },
+    "sync": {
+      "lastModified": "2026-11-16T20:10:34.166Z",
+      "checksum": "23ddf8dda9b0de62ad5aca9336639c139448a49913b4f388f87e9826a4998473"
     }
   }
 ]

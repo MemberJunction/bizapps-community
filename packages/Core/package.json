@@ -13,10 +13,14 @@
   ],
   "scripts": {
     "build": "tsc",
-    "test": "node --experimental-strip-types --test src/rules.test.ts"
+    "test": "node --experimental-strip-types --test src/rules.test.ts src/configuration.test.ts src/wave3-rules.test.ts src/sql-safety.test.ts"
   },
   "license": "BUSL-1.1",
+  "peerDependencies": {
+    "@memberjunction/global": "6.3.0-edge.0"
+  },
   "devDependencies": {
+    "@memberjunction/global": "6.3.0-edge.0",
     "@types/node": "24.10.11",
     "typescript": "5.9.3"
   },

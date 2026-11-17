@@ -215,3 +215,75 @@ export interface IForumAnswerPostDetails {
   AIRationaleMarkdown: string | null;
   FreshnessReviewDueAt: Date | null;
 }
+
+export interface IForumIdeaPostSummary {
+  ID: string;
+  IdeaStatus: IdeaLifecycleStatus;
+  TotalPointsAllocated: number;
+  EffectiveQuadraticVotes: number;
+  UniqueBackerCount: number;
+  TargetReleaseOrQuarter: string | null;
+  StatusRationaleMarkdown: string | null;
+  MergedIntoIdeaPostID: string | null;
+}
+
+export interface IForumIdeaAllocationSummary {
+  ID: string;
+  IdeaPostID: string;
+  UserID: string;
+  PointsAllocated: number;
+  QuadraticVotes: number;
+  RationaleComment: string | null;
+}
+
+export interface IForumFormPostSummary {
+  ID: string;
+  FormID: string;
+  FormDistributionID: string | null;
+  ShowLiveResultsInline: boolean;
+  RequirePostReplyOnSubmit: boolean;
+  ClosesAt: Date | null;
+}
+
+export interface IForumInteractivePostSummary {
+  ID: string;
+  ComponentArtifactID: string;
+  ExperienceKind: InteractiveExperienceKind;
+  ScoringMode: InteractiveScoringMode;
+  ShowLeaderboard: boolean;
+  MaxAttemptsPerMember: number | null;
+  PlayCount: number;
+  ExpiresAt: Date | null;
+}
+
+export interface IForumInteractiveSessionRecord {
+  ID: string;
+  InteractivePostID: string;
+  UserID: string;
+  AttemptNumber: number;
+  Score: number | null;
+  DurationSeconds: number | null;
+  Completed: boolean;
+  OutcomeSummary: string | null;
+}
+
+export interface IForumCasePostDetails {
+  ID: string;
+  SituationMarkdown: string;
+  ActionTakenMarkdown: string;
+  OutcomeMarkdown: string | null;
+  IsAnonymized: boolean;
+  AnonymizedAuthorAlias: string | null;
+  RedactionConfirmedByUserID: string | null;
+}
+
+export interface IForumAMAPostDetails {
+  ID: string;
+  HostUserID: string;
+  ScheduledStartAt: Date;
+  ScheduledEndAt: Date;
+  QuestionsOpenAt: Date;
+  IsLiveNow: boolean;
+  RecordingURL: string | null;
+  RecapMarkdown: string | null;
+}

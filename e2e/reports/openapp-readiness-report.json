@@ -1,0 +1,75 @@
+{
+  "schemaVersion": "sf-readiness/v3",
+  "overallPassed": true,
+  "gitTreeClean": false,
+  "migrationParityVerified": true,
+  "pillars": {
+    "formParity": {
+      "passed": true,
+      "summary": "All 25 entities registered in ClassFactory and retained in generated-forms.module.ts",
+      "checkedCount": 25,
+      "violationCount": 0,
+      "violations": []
+    },
+    "navParity": {
+      "passed": true,
+      "summary": "All 1 DefaultNavItems resolve to an active BaseResourceComponent class",
+      "checkedCount": 1,
+      "violationCount": 0,
+      "violations": []
+    },
+    "designTokens": {
+      "passed": true,
+      "summary": "Zero raw color literals across 17 .ts/.html/.css file(s)",
+      "checkedCount": 17,
+      "violationCount": 0,
+      "violations": []
+    },
+    "seedDensity": {
+      "passed": true,
+      "summary": "38 multi-domain seed record(s) across 9 categories",
+      "checkedCount": 38,
+      "violationCount": 0,
+      "violations": []
+    },
+    "browserSmoke": {
+      "passed": true,
+      "summary": "Chromium smoke passed across all 4 required tab(s) (evaluated 2026-11-17T03:21:45.260Z) with 0 pageErrors, 0 consoleErrors, 0 WCAG violations",
+      "checkedCount": 4,
+      "violationCount": 0,
+      "violations": []
+    },
+    "migrationParity": {
+      "passed": true,
+      "summary": "Migration parity verified: 25/25 tables in both dialects, fnCommunityForumAccess present in both, >= 50 blank lines before CodeGen, zero spDeleteUnneededEntityFields, teardown parity",
+      "checkedCount": 25,
+      "violationCount": 0,
+      "violations": []
+    }
+  },
+  "gitTreeDirtyPaths": [
+    "e2e/community-hub.spec.mjs",
+    "e2e/harness/build-harness.mjs",
+    "e2e/harness/serve-harness.mjs",
+    "migrations-pg/V202611060001__v0.1.x__Baseline_Tables_And_Access.pg.sql",
+    "package.json",
+    "packages/Actions/src/custom-actions.test.ts",
+    "packages/Actions/src/custom/EpistemicAnswerGradingAction.ts",
+    "packages/Angular/package.json",
+    "packages/Angular/src/architecture-parity.test.ts",
+    "packages/Angular/src/lib/community-hub-resource.component.css",
+    "packages/Angular/src/lib/community-hub-resource.component.html",
+    "packages/Angular/src/lib/community-hub-resource.component.ts",
+    "packages/Angular/src/lib/widgets/quadratic-voting-slider.component.html",
+    "packages/Angular/src/public-api.ts",
+    "packages/Angular/tsconfig.json",
+    "packages/Server/src/resolvers.ts",
+    "packages/Server/src/server.test.ts",
+    "scripts/verify-fn-community-forum-access.sql",
+    "scripts/verify-migration-parity.mjs",
+    "e2e/harness/angular-harness-entry.mjs",
+    "packages/Angular/scripts/run-ngc.mjs",
+    "packages/Angular/src/ideation-persistence.test.ts",
+    "packages/Angular/src/lib/community-hub-ideation.ts"
+  ]
+}

@@ -1,4 +1,5 @@
 import { BaseSingleton, MJGlobal } from '@memberjunction/global';
+import type { CommunityJsonObject } from '@mj-biz-apps/community-core';
 import type { IForumPostSummary, IForumSummary, IForumTypeDescriptor } from '@mj-biz-apps/community-entities';
 
 export interface ForumValidationResult {
@@ -8,7 +9,7 @@ export interface ForumValidationResult {
 
 export interface ForumAgentContextContribution {
   summary: string;
-  data?: Record<string, unknown>;
+  data?: CommunityJsonObject;
 }
 
 export interface ForumDriverContext {

@@ -14,8 +14,8 @@
   ],
   "license": "BUSL-1.1",
   "scripts": {
-    "build": "tsc",
-    "test": "node --experimental-strip-types --test src/client-bootstrap.test.ts"
+    "build": "node ./scripts/run-ngc.mjs",
+    "test": "node --experimental-strip-types --test src/client-bootstrap.test.ts src/architecture-parity.test.ts src/ideation-persistence.test.ts"
   },
   "dependencies": {
     "@mj-biz-apps/community-core": "0.1.0",
@@ -27,12 +27,30 @@
     "@angular/common": "^21.2.22",
     "@angular/core": "^21.2.22",
     "@angular/forms": "^21.2.22",
+    "@angular/platform-browser": "^21.2.22",
     "@memberjunction/core": "6.3.0-edge.0",
-    "@memberjunction/global": "6.3.0-edge.0"
+    "@memberjunction/core-entities": "6.3.0-edge.0",
+    "@memberjunction/global": "6.3.0-edge.0",
+    "@memberjunction/graphql-dataprovider": "6.3.0-edge.0",
+    "@memberjunction/ng-base-forms": "6.3.0-edge.0",
+    "@memberjunction/ng-entity-viewer": "6.3.0-edge.0",
+    "@memberjunction/ng-link-directives": "6.3.0-edge.0",
+    "@memberjunction/ng-shared": "6.3.0-edge.0",
+    "@memberjunction/ng-ui-components": "6.3.0-edge.0"
   },
   "devDependencies": {
+    "@angular/compiler": "21.2.22",
+    "@angular/compiler-cli": "21.2.22",
+    "@angular/platform-browser": "21.2.22",
     "@memberjunction/core": "6.3.0-edge.0",
+    "@memberjunction/core-entities": "6.3.0-edge.0",
     "@memberjunction/global": "6.3.0-edge.0",
+    "@memberjunction/graphql-dataprovider": "6.3.0-edge.0",
+    "@memberjunction/ng-base-forms": "6.3.0-edge.0",
+    "@memberjunction/ng-entity-viewer": "6.3.0-edge.0",
+    "@memberjunction/ng-link-directives": "6.3.0-edge.0",
+    "@memberjunction/ng-shared": "6.3.0-edge.0",
+    "@memberjunction/ng-ui-components": "6.3.0-edge.0",
     "@types/node": "24.10.11",
     "typescript": "5.9.3"
   },

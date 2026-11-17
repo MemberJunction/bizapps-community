@@ -11,6 +11,10 @@
           },
           "primaryKey": {
             "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Community: Forum Posts&Name=LinkedRecordID"
+          },
+          "sync": {
+            "lastModified": "2026-11-16T20:10:37.303Z",
+            "checksum": "ed09979be2c6bff484c8d45bb4c8fd4412cb093fc21c5f7f9ca8f1b8adca8769"
           }
         }
       ]

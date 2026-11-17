@@ -16,19 +16,22 @@ Just as `bizapps-collaboration` makes **Spaces** extensible without schema rewri
 
 ## 1. Browser-Safe Metadata Engine (`CommunityEngineBase`)
 
-Located in `@mj-biz-apps/community-engine-base` (`packages/EngineBase`), `CommunityEngineBase` extends `BaseSingleton<CommunityEngineBase>` from `@memberjunction/global` to ensure a single instance across all bundler chunks:
+Located in `@mj-biz-apps/community-engine-base` (`packages/EngineBase`), `CommunityEngineBase` extends `BaseEngine<CommunityEngineBase>` from `@memberjunction/core` — matching `CollaborationEngineBase`, the sibling it is modeled on. `BaseEngine<T>` is itself a `BaseSingleton<T>` subclass, so `CommunityEngineBase.Instance` is still a single instance across all bundler chunks; it additionally gets `Config()`/`Load()`-backed metadata loading (real `RunView` calls against `ForumType`, `PostType`, and `ForumRoleType` when a live `IMetadataProvider` is available) for free.
 
 ### Key Responsibilities
-- **O(1) Lookups**: In-memory Map indexes by `ID` and `Code` for `ForumType`, `PostType`, and `ForumRoleType`.
-- **Subtype Directory Synchronization**: Synchronizes `ForumSubtypeDirectory` and `PostSubtypeDirectory` on metadata hydration.
-- **4-Tier Configuration Cascade Resolution**: Implements `ResolveForumConfiguration(forum)` enforcing the `ForumOverridable` whitelist.
+- **O(1) Lookups**: In-memory Map indexes by `ID` and `Code` for `ForumType`, `PostType`, and `ForumRoleType`, rebuilt in `AdditionalLoading()` on every load or reload.
+- **Subtype Directory Synchronization**: Synchronizes `ForumSubtypeDirectory` and `PostSubtypeDirectory` on every load.
+- **4-Tier Configuration Cascade Resolution**: `ResolveConfiguration({ forum, space?, postType? })` implements the full cascade (§4); `ResolveForumConfiguration(forum)` is a 3-tier convenience wrapper for callers without a Space/PostType context yet.
+- **Test-Friendly Seeding**: `HydrateMetadata(...)` populates the same fields `Config()`/`Load()` would and rebuilds the caches — the path unit tests use instead of a live, configured `IMetadataProvider`.
 - **Zero Server-Only Imports**: Browser-safe so Angular client components and Node servers share the exact same resolution rules.
 
 ```typescript
-export class CommunityEngineBase extends BaseSingleton<CommunityEngineBase> {
+export class CommunityEngineBase extends BaseEngine<CommunityEngineBase> {
   public static get Instance(): CommunityEngineBase {
     return super.getInstance<CommunityEngineBase>();
   }
+
+  public async Config(forceRefresh?: boolean, contextUser?: UserInfo, provider?: IMetadataProvider): Promise<void>;
 
   public HydrateMetadata(params: {
     forumTypes: ReadonlyArray<IForumTypeDescriptor>;
@@ -50,6 +53,12 @@ export class CommunityEngineBase extends BaseSingleton<CommunityEngineBase> {
   public GetAllForumRoleTypes(): ReadonlyArray<IForumRoleTypeDescriptor>;
 
   public ResolveForumConfiguration(forum: Pick<IForumSummary, 'ForumTypeID' | 'Configuration'>): CommunityConfiguration;
+
+  public ResolveConfiguration(context: {
+    forum: Pick<IForumSummary, 'ForumTypeID' | 'Configuration'>;
+    space?: { Configuration?: string | null } | null;
+    postType?: Pick<IPostTypeDescriptor, 'Configuration'> | null;
+  }): CommunityConfiguration;
 }
 ```
 
@@ -168,16 +177,19 @@ Modeled directly on Collaboration's `SpaceSubtypeDirectory` & `SpaceSubtypeResol
 
 ## 4. The 4-Tier Configuration Cascade
 
-Implemented in `@mj-biz-apps/community-core` (`CommunityConfigurationResolver`), configuration resolves through 4 tiers:
+Implemented in `@mj-biz-apps/community-core` (`CommunityConfigurationResolver.Resolve`), lowest to highest precedence:
 
 ```
-DEFAULT_COMMUNITY_CONFIGURATION (Code defaults)
-  └── Application Settings ("CommunitySettings")
-        └── ForumType.Configuration
-              └── Forum.Configuration (Filtered strictly through ForumType.Configuration.ForumOverridable)
+DEFAULT_COMMUNITY_CONFIGURATION (Code defaults) + Application Settings ("CommunitySettings")
+  └── ForumType.Configuration                                    (unconditional — a forum's type-level defaults)
+        └── CommunitySpace's underlying Space.Configuration      (unconditional — a space's own overrides)
+              └── Forum.Configuration                            (whitelist-gated — see below)
+                    └── PostType.Configuration                   (whitelist-gated — applied last; wins ties with Forum)
 ```
 
-If a `Forum` attempts to override a setting path (such as `Posts.AllowedPostTypeCodes` or `Posts.MaxReplyDepth`) that is not listed in its `ForumType.Configuration.ForumOverridable` whitelist, `CommunityConfigurationResolver.Resolve()` rejects the unauthorized override and preserves the `ForumType` default.
+The two most specific tiers — `Forum.Configuration` and `PostType.Configuration` — are filtered strictly through the running `ForumOverridable` whitelist (owned by `ForumType.Configuration.ForumOverridable`): a nested `Posts.*`/`Synthesis.*`/`Extensions.*` path not listed there is rejected and the broader tier's value is preserved. Top-level scalar fields (`AskFirstEnabled`, `DefaultAnonymousReadMode`, `DefaultDigestCadence`, `EnableInteractiveArtifacts`) apply unconditionally at every tier, PostType winning last.
+
+`CommunityEngineBase.ResolveConfiguration({ forum, space?, postType? })` is the entry point a caller with a Space/PostType context should use; `ResolveForumConfiguration(forum)` (the 3 broadest tiers only) remains for callers — like `CommunitySpaceServerDriver`'s post-placement check — that do not yet have one.
 
 ---
 
@@ -223,9 +235,14 @@ Because `CommunitySpace` is an `IsA` child of `MJ_BizApps_Collaboration: Spaces`
 - **Working Groups (`working-group`), Projects (`project`), Cohorts (`cohort`), and Events (`event`)**: Collaboration space types.
 
 ### Thread Graduation (`ThreadGraduationService`)
-High-momentum discussions can graduate from a forum into an active working space:
-1. Validates that the requested target `SpaceType` is listed in `SpaceType.Configuration.Children.AllowedTypeCodes`.
-2. Creates the child `Space` under the current `CommunitySpace`.
-3. Sets `ForumPost.PromotedToSpaceID` pointing to the new Space.
-4. Generates a synthesized space charter from the thread's `SummaryMarkdown`.
-5. Optionally creates an initial `Task` in `__mj_BizAppsTasks.Task` linked via `ForumPost.LinkedTaskID`.
+`packages/Server` (`@mj-biz-apps/community-server`) exposes two idempotent, access-checked graduation operations:
+
+**`ValidateAndBuildGraduationPlan`** — high-momentum discussions graduate from a forum into an active working space:
+1. Requires `userCanPromoteToSpace` (the forum role's `CanPromoteToSpace` capability).
+2. Validates that the requested target `SpaceType` is listed in the caller's `allowedChildSpaceTypeCodes`.
+3. **Idempotent**: if `currentPromotedToSpaceId` (the thread's existing `ForumPost.PromotedToSpaceID`) is already set, returns that EXISTING space — it does not create a duplicate `Space`, re-seed a `Task`, or re-invite participants on a repeated call.
+4. Otherwise plans a new child `Space` under the current `CommunitySpace`, an optional initial `Task` (`ForumPost.LinkedTaskID`), and the deduplicated participant invite list.
+
+**`ValidateAndBuildCanonPromotion`** — promotes a Q&A answer into the forum's Knowledge Canon:
+1. Requires `isQuestionAuthorOrModerator` — only the question's author or a forum moderator may promote.
+2. **Idempotent**: if `currentAICanonAnswerPostId` already equals the requested `canonAnswerPostId` (`ForumQuestionPost.AICanonAnswerPostID`), `alreadyPromoted` is `true` and no further write is implied.

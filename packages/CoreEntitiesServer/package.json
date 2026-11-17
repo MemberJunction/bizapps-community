@@ -13,7 +13,7 @@
   ],
   "scripts": {
     "build": "tsc",
-    "test": "node --experimental-strip-types --test src/server-drivers.test.ts"
+    "test": "node --experimental-strip-types --test src/server-drivers.test.ts src/wave3-drivers.test.ts"
   },
   "license": "BUSL-1.1",
   "dependencies": {
