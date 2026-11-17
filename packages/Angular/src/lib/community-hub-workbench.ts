@@ -1,7 +1,11 @@
 import type { IdeationAllocationMode } from '@mj-biz-apps/community-core';
+import type {
+  mjBizAppsCommunityForumAnswerPostEntity,
+  mjBizAppsCommunityForumInteractivePostEntity,
+} from '@mj-biz-apps/community-entities';
 import type { CommunityBadgeTone } from './community-hub-commons.ts';
 
-export type QaCanonFilterKey = 'all' | 'canon-verified' | 'verified' | 'novel-insight' | 'needs-review';
+export type QaCanonFilterKey = 'all' | 'canon-verified' | 'novel-insight' | 'needs-review';
 export type LivingDocFilterKey = 'all' | 'playbooks' | 'forms' | 'mini-apps';
 
 export interface QaCanonItemInput {
@@ -9,7 +13,7 @@ export interface QaCanonItemInput {
   questionPostId: string | null;
   title: string;
   bodyMarkdown: string;
-  epistemicStatus: string | null;
+  epistemicStatus: mjBizAppsCommunityForumAnswerPostEntity['AIEpistemicStatus'];
   confidenceScore: number | null;
   isAccepted: boolean;
 }
@@ -45,7 +49,7 @@ export interface LivingDocItemInput {
   title: string;
   bodyMarkdown: string;
   postTypeCode: 'collaborative-doc' | 'collaborative-sheet' | 'collaborative-deck' | 'interactive-experience';
-  experienceKind?: string | null;
+  experienceKind?: mjBizAppsCommunityForumInteractivePostEntity['ExperienceKind'] | null;
 }
 
 export interface LivingDocTypeMeta {
@@ -87,33 +91,43 @@ export function NormalizeCampaignBudget(
   return fallback;
 }
 
-export function GetEpistemicBadgeTone(status: string | null, isAccepted: boolean): CommunityBadgeTone {
-  const normalized = (status ?? '').trim().toLowerCase();
-  if (normalized === 'conflicts with canon') {
-    return 'danger';
+export function IsCanonVerifiedQa(item: Pick<QaCanonItemInput, 'epistemicStatus' | 'isAccepted'>): boolean {
+  return item.isAccepted || item.epistemicStatus === 'Canon Verified';
+}
+
+export function GetEpistemicBadgeTone(
+  status: mjBizAppsCommunityForumAnswerPostEntity['AIEpistemicStatus'],
+  isAccepted: boolean,
+): CommunityBadgeTone {
+  switch (status) {
+    case 'Conflicts With Canon':
+      return 'danger';
+    case 'Partially Outdated':
+    case 'Novel Insight':
+      return 'warning';
+    case 'Canon Verified':
+      return 'success';
+    default:
+      return isAccepted ? 'success' : 'brand';
   }
-  if (normalized === 'partially outdated' || normalized === 'novel insight') {
-    return 'warning';
-  }
-  if (isAccepted || normalized === 'canon verified' || normalized === 'verified') {
-    return 'success';
-  }
-  return 'brand';
 }
 
 export function MatchesQaCanonFilter(item: QaCanonItemInput, filterKey: QaCanonFilterKey): boolean {
-  const normalized = (item.epistemicStatus ?? '').trim().toLowerCase();
   switch (filterKey) {
     case 'all':
       return true;
     case 'canon-verified':
-      return normalized === 'canon verified' || item.isAccepted;
-    case 'verified':
-      return normalized === 'verified' || normalized === 'canon verified' || item.isAccepted;
+      return IsCanonVerifiedQa(item);
     case 'novel-insight':
-      return normalized === 'novel insight';
+      return item.epistemicStatus === 'Novel Insight';
     case 'needs-review':
-      return normalized === 'partially outdated' || normalized === 'conflicts with canon' || normalized === '';
+      return (
+        item.epistemicStatus === 'Partially Outdated' ||
+        item.epistemicStatus === 'Conflicts With Canon' ||
+        item.epistemicStatus == null
+      );
+    default:
+      return true;
   }
 }
 
@@ -143,8 +157,7 @@ export function ComputeQaCanonStats(items: ReadonlyArray<QaCanonItemInput>): QaC
   let confidenceCount = 0;
 
   for (const item of items) {
-    const normalized = (item.epistemicStatus ?? '').trim().toLowerCase();
-    if (normalized === 'canon verified' || normalized === 'verified' || item.isAccepted) {
+    if (IsCanonVerifiedQa(item)) {
       canonVerifiedCount += 1;
     }
     if (item.isAccepted) {

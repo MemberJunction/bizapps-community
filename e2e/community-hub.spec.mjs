@@ -143,16 +143,29 @@ test('Real Angular 21 Community Hub: 26 ClassFactory registrations, 4 tabs, PDF 
   await page.click('#mjc-header-search-clear-btn');
   await expect(page.locator('#mjc-matched-question-spotlight')).toBeHidden();
 
-  // Open Slide-Over Detail Sheet Drawer, capture screenshot, and dismiss with Escape
-  await page.locator('.mjc-inspect-btn').first().click();
-  await expect(page.locator('#mjc-detail-sheet-backdrop [role="dialog"]')).toBeVisible();
+  // Open Slide-Over Detail Sheet Drawer, verify focus trap + metadata spacing + Escape focus restore
+  const firstInspectBtn = page.locator('.mjc-inspect-btn').first();
+  await firstInspectBtn.click();
+  const detailDialog = page.locator('#mjc-detail-sheet-backdrop [role="dialog"]');
+  await expect(detailDialog).toBeVisible();
+  await expect(detailDialog.locator('.mjc-drawer-epistemic')).toContainText(/Epistemic \/ Canon Metadata:\s+\S+/);
+  await page.keyboard.press('Shift+Tab');
+  const activeInsideDetailTrap = await page.evaluate(() =>
+    Boolean(document.activeElement?.closest('#mjc-detail-sheet-backdrop [role="dialog"]')),
+  );
+  expect(activeInsideDetailTrap).toBe(true);
   await page.screenshot({ path: join(SCREENSHOTS_DIR, '03-detail-drawer.png'), fullPage: false });
   await page.keyboard.press('Escape');
   await expect(page.locator('#mjc-detail-sheet-backdrop')).toBeHidden();
+  await expect(firstInspectBtn).toBeFocused();
 
-  // Open + Ask or Share Modal, submit a new Discussion Post, and verify it prepends to stream
+  // Open + Ask or Share Modal, verify fail-closed empty draft validation, then submit Discussion Post
   await page.click('#mjc-header-ask-share-btn');
-  await expect(page.locator('#mjc-ask-share-modal-backdrop [role="dialog"]')).toBeVisible();
+  const askShareDialog = page.locator('#mjc-ask-share-modal-backdrop [role="dialog"]');
+  await expect(askShareDialog).toBeVisible();
+  await page.click('#mjc-ask-share-submit-btn');
+  await expect(askShareDialog).toBeVisible();
+  await expect(askShareDialog).toContainText('Please enter a concise headline or question.');
   await page.selectOption('#mjc-ask-share-type', 'Discussion Post');
   await page.fill('#mjc-ask-share-title-input', 'Multi-Region Eventual Consistency Benchmarks');
   await page.fill('#mjc-ask-share-body-input', 'Read-replica lag stayed under 40ms across US-East and EU-West.');
@@ -182,8 +195,12 @@ test('Real Angular 21 Community Hub: 26 ClassFactory registrations, 4 tabs, PDF 
   await page.click('#mjc-qa-promote-btn');
   await expect(page.locator('.mjc-community-hub__status')).toContainText('Promoted');
 
-  // Exercise Slice 2 Q&A filter pill and capture Screenshot 4: Q&A Canon Workbench
+  // Exercise Slice 2 Q&A filter pill and verify Canon Verified KPI matches filter count
+  const canonKpiText = (
+    await page.locator('#mjc-hub-panel-qa-canon-workbench .mjc-qa-stat').nth(1).locator('.mjc-qa-stat__value').textContent()
+  )?.trim();
   await page.getByRole('button', { name: /Canon Verified/ }).click();
+  await expect(page.locator('#mjc-hub-panel-qa-canon-workbench .mjc-qa-list-item')).toHaveCount(Number(canonKpiText ?? '0'));
   await page.getByRole('button', { name: /All Entries/ }).click();
   await page.screenshot({ path: join(SCREENSHOTS_DIR, '04-qa-canon-workbench.png'), fullPage: true });
 

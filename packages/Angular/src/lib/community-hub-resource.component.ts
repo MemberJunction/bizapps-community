@@ -23,6 +23,7 @@ import {
   COMMUNITY_ENTITY_NAMES,
   type mjBizAppsCommunityForumAnswerPostEntity,
   type mjBizAppsCommunityForumIdeaPostEntity,
+  type mjBizAppsCommunityForumInteractivePostEntity,
   type mjBizAppsCommunityForumPostEntity,
   type mjBizAppsCommunityForumQuestionPostEntity,
 } from '@mj-biz-apps/community-entities';
@@ -44,6 +45,7 @@ import {
   GraduateStreamItem,
   MapForumNameToSpaceId,
   PersistAskSharePost,
+  ResolveAuthorizedForumTarget,
   SEEDED_COMMUNITY_SESSIONS,
   ToggleStreamItemUpvote,
   type AskShareEntryType,
@@ -90,9 +92,10 @@ export const COMMUNITY_HUB_TABS: ReadonlyArray<CommunityHubTabDefinition> = [
 export interface CommunityHubQACanonItem {
   id: string;
   questionPostId: string | null;
+  forumId?: string | null;
   title: string;
   bodyMarkdown: string;
-  epistemicStatus: string | null;
+  epistemicStatus: mjBizAppsCommunityForumAnswerPostEntity['AIEpistemicStatus'];
   confidenceScore: number | null;
   isAccepted: boolean;
 }
@@ -114,14 +117,14 @@ export interface CommunityHubLivingDocItem {
   title: string;
   bodyMarkdown: string;
   postTypeCode: 'collaborative-doc' | 'collaborative-sheet' | 'collaborative-deck' | 'interactive-experience';
-  experienceKind?: string | null;
+  experienceKind?: mjBizAppsCommunityForumInteractivePostEntity['ExperienceKind'] | null;
 }
 
 export interface CommunityHubFeedPost {
   id: string;
   title: string;
   bodyMarkdown: string;
-  status: string;
+  status: mjBizAppsCommunityForumPostEntity['Status'];
   authorName?: string | null;
   authorRole?: string | null;
 }
@@ -146,14 +149,14 @@ interface ForumPostRow {
   ForumID: string;
   Title: string | null;
   BodyMarkdown: string;
-  Status: string;
+  Status: mjBizAppsCommunityForumPostEntity['Status'];
   AuthorUserID?: string | null;
 }
 
 interface AnswerPostRow {
   ID: string;
   QuestionPostID: string;
-  AIEpistemicStatus: string | null;
+  AIEpistemicStatus: mjBizAppsCommunityForumAnswerPostEntity['AIEpistemicStatus'];
   AIConfidenceScore: number | null;
   IsAcceptedByAuthor: boolean;
 }
@@ -177,7 +180,7 @@ interface SubtypeIdRow {
 
 interface InteractiveSubtypeRow {
   ID: string;
-  ExperienceKind: string | null;
+  ExperienceKind: mjBizAppsCommunityForumInteractivePostEntity['ExperienceKind'] | null;
 }
 
 const DEFAULT_CAMPAIGN: CommunityHubCampaign = {
@@ -550,9 +553,14 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
     });
     const merged = [...this.userAddedCommonsItems, ...built];
     const seen = new Set<string>();
+    const seenSourcePostIds = new Set<string>();
     this.commonsItems = merged.filter((item) => {
       if (seen.has(item.id)) return false;
+      if (item.sourcePostId && seenSourcePostIds.has(item.sourcePostId)) return false;
       seen.add(item.id);
+      if (item.sourcePostId) {
+        seenSourcePostIds.add(item.sourcePostId);
+      }
       return true;
     });
   }
@@ -667,11 +675,11 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
 
       if (answersResult?.Success && answersResult.Results && answersResult.Results.length > 0) {
         const answerIds = answersResult.Results.map((a) => `'${AssertValidUUID(a.ID, 'answerId')}'`).join(',');
-        const bodyRes = await rv.RunView<Pick<ForumPostRow, 'ID' | 'Title' | 'BodyMarkdown'>>(
+        const bodyRes = await rv.RunView<Pick<ForumPostRow, 'ID' | 'ForumID' | 'Title' | 'BodyMarkdown'>>(
           {
             EntityName: COMMUNITY_ENTITY_NAMES.ForumPosts,
             ExtraFilter: `ID IN (${answerIds})`,
-            Fields: ['ID', 'Title', 'BodyMarkdown'],
+            Fields: ['ID', 'ForumID', 'Title', 'BodyMarkdown'],
             ResultType: 'simple',
             MaxRows: answersResult.Results.length,
           },
@@ -683,6 +691,7 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
           return {
             id: a.ID,
             questionPostId: a.QuestionPostID ?? null,
+            forumId: post?.ForumID ?? null,
             title: post?.Title ?? a.Title ?? 'Community Answer',
             bodyMarkdown: post?.BodyMarkdown ?? '',
             epistemicStatus: a.AIEpistemicStatus,
@@ -819,7 +828,7 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
     const idsWithType: Array<{
       id: string;
       postTypeCode: CommunityHubLivingDocItem['postTypeCode'];
-      experienceKind?: string | null;
+      experienceKind?: mjBizAppsCommunityForumInteractivePostEntity['ExperienceKind'] | null;
     }> = [
       ...(artifactIds?.Success ? artifactIds.Results ?? [] : []).map((r) => ({
         id: r.ID,
@@ -1013,7 +1022,12 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
   public openDetailSheet(itemId: string): void {
     if (!this.detailSheetItemId) {
       const active = this.doc?.activeElement;
-      if (active instanceof HTMLElement && !active.closest('[role="dialog"]')) {
+      if (
+        active instanceof HTMLElement &&
+        active !== this.doc?.body &&
+        active !== this.doc?.documentElement &&
+        !active.closest('[role="dialog"]')
+      ) {
         this.lastDetailTrigger = active;
       }
     }
@@ -1056,7 +1070,12 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
   public openAskShareModal(defaultType: AskShareEntryType = 'Question'): void {
     if (!this.isAskShareModalOpen) {
       const active = this.doc?.activeElement;
-      if (active instanceof HTMLElement && !active.closest('[role="dialog"]')) {
+      if (
+        active instanceof HTMLElement &&
+        active !== this.doc?.body &&
+        active !== this.doc?.documentElement &&
+        !active.closest('[role="dialog"]')
+      ) {
         this.lastAskShareTrigger = active;
       }
     }
@@ -1164,14 +1183,27 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
   }
 
   private restoreOverlayTriggerFocus(trigger: HTMLElement | null, fallbackSelector: string): void {
-    queueMicrotask(() => {
-      if (trigger && trigger.isConnected) {
-        trigger.focus();
-        return;
+    const attemptRestore = (): void => {
+      const validTrigger =
+        trigger &&
+        trigger.isConnected &&
+        trigger !== this.doc?.body &&
+        trigger !== this.doc?.documentElement &&
+        !trigger.closest('[inert]')
+          ? trigger
+          : null;
+      const fallback = this.doc?.querySelector<HTMLElement>(fallbackSelector) ?? null;
+      const target = validTrigger ?? (fallback && !fallback.closest('[inert]') ? fallback : null);
+      if (target) {
+        target.focus();
       }
-      const fallback = this.doc?.querySelector<HTMLElement>(fallbackSelector);
-      fallback?.focus();
-    });
+    };
+    setTimeout(() => {
+      attemptRestore();
+      if (typeof requestAnimationFrame === 'function' && this.doc?.querySelector('[inert]')) {
+        requestAnimationFrame(() => attemptRestore());
+      }
+    }, 0);
   }
 
   public inspectAskShareDeflection(qaId: string): void {
@@ -1215,6 +1247,14 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
                 user,
               )
           : null,
+      createQuestionPostEntity:
+        provider && user
+          ? () =>
+              new Metadata().GetEntityObject<mjBizAppsCommunityForumQuestionPostEntity>(
+                COMMUNITY_ENTITY_NAMES.ForumQuestionPosts,
+                user,
+              )
+          : null,
     });
 
     if (!outcome.success || !outcome.createdItem) {
@@ -1226,7 +1266,6 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
 
     const newItem = outcome.createdItem;
     this.userAddedCommonsItems.unshift(newItem);
-    this.commonsItems = [newItem, ...this.commonsItems];
     this.feedPosts = [
       {
         id: newItem.sourcePostId,
@@ -1243,6 +1282,7 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
       const qaEntry: CommunityHubQACanonItem = {
         id: newItem.sourcePostId,
         questionPostId: newItem.sourcePostId,
+        forumId: outcome.resolvedForumId,
         title: newItem.title,
         bodyMarkdown: newItem.bodyMarkdown,
         epistemicStatus: 'Novel Insight',
@@ -1251,8 +1291,19 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
       };
       this.qaCanonItems = [qaEntry, ...this.qaCanonItems];
       this.selectedQaId = qaEntry.id;
+    } else if (this.askShareEntryType === 'Playbook Note') {
+      const docEntry: CommunityHubLivingDocItem = {
+        id: newItem.sourcePostId,
+        title: newItem.title,
+        bodyMarkdown: newItem.bodyMarkdown,
+        postTypeCode: 'collaborative-doc',
+      };
+      this.livingDocItems = [docEntry, ...this.livingDocItems];
+      this.selectedLivingDocId = docEntry.id;
+      this.editingDocMarkdown = docEntry.bodyMarkdown;
     }
 
+    this.rebuildCommonsItems();
     this.selectedFeedPostId = newItem.sourcePostId;
     this.askShareTitle = '';
     this.askShareBody = '';
@@ -1322,15 +1373,50 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
     }
   }
 
+  private resolveTargetForumId(preferredForumId?: string | null): string | null {
+    const explicit = ResolveAuthorizedForumTarget(preferredForumId, this.allowedForumIDs);
+    if (explicit) {
+      return explicit;
+    }
+    if (this.activeSpaceFilter !== 'all') {
+      const spaceForum = this.authorizedForums.find((f) => f.spaceId === this.activeSpaceFilter);
+      const spaceMatch = ResolveAuthorizedForumTarget(spaceForum?.id, this.allowedForumIDs);
+      if (spaceMatch) {
+        return spaceMatch;
+      }
+    }
+    const defaultForumId = this.authorizedForums[0]?.id ?? this.allowedForumIDs[0];
+    return ResolveAuthorizedForumTarget(defaultForumId, this.allowedForumIDs);
+  }
+
+  private normalizeEpistemicStatus(
+    raw: string,
+  ): mjBizAppsCommunityForumAnswerPostEntity['AIEpistemicStatus'] {
+    switch (raw.trim()) {
+      case 'Canon Verified':
+        return 'Canon Verified';
+      case 'Conflicts With Canon':
+        return 'Conflicts With Canon';
+      case 'Novel Insight':
+        return 'Novel Insight';
+      case 'Partially Outdated':
+        return 'Partially Outdated';
+      default:
+        return null;
+    }
+  }
+
   public async CreateQuestion(): Promise<void> {
     const title = this.newQuestionTitle.trim();
     const body = this.newQuestionBody.trim();
     if (!title || !body) return;
 
+    const targetForumId = this.resolveTargetForumId();
     const generatedId = crypto.randomUUID();
     const created: CommunityHubQACanonItem = {
       id: generatedId,
       questionPostId: generatedId,
+      forumId: targetForumId,
       title,
       bodyMarkdown: body,
       epistemicStatus: 'Novel Insight',
@@ -1341,8 +1427,8 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
     const provider = Metadata.Provider;
     const user: UserInfo | undefined = provider?.CurrentUser;
     if (provider && user) {
-      if (!this.allowedForumIDs[0]) {
-        this.qaActionMessage = 'No forum is available to post a question.';
+      if (!targetForumId) {
+        this.qaActionMessage = 'No authorized forum is available to post a question.';
         this.cdr.markForCheck();
         return;
       }
@@ -1365,7 +1451,7 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
           this.cdr.markForCheck();
           return;
         }
-        post.ForumID = this.allowedForumIDs[0];
+        post.ForumID = targetForumId;
         post.AuthorUserID = user.ID;
         post.PostTypeID = postTypeId;
         post.Title = title;
@@ -1411,10 +1497,12 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
     if (!body || !target) return;
 
     const targetQuestionId = target.questionPostId ?? target.id;
+    const targetForumId = this.resolveTargetForumId(target.forumId);
     const generatedId = crypto.randomUUID();
     const newAnswer: CommunityHubQACanonItem = {
       id: generatedId,
       questionPostId: targetQuestionId,
+      forumId: targetForumId,
       title: `Re: ${target.title}`,
       bodyMarkdown: body,
       epistemicStatus: 'Novel Insight',
@@ -1425,8 +1513,8 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
     const provider = Metadata.Provider;
     const user: UserInfo | undefined = provider?.CurrentUser;
     if (provider && user) {
-      if (!this.allowedForumIDs[0]) {
-        this.qaActionMessage = 'No forum is available to submit an answer.';
+      if (!targetForumId) {
+        this.qaActionMessage = 'No authorized forum is available to submit an answer.';
         this.cdr.markForCheck();
         return;
       }
@@ -1449,7 +1537,7 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
           this.cdr.markForCheck();
           return;
         }
-        post.ForumID = this.allowedForumIDs[0];
+        post.ForumID = targetForumId;
         post.AuthorUserID = user.ID;
         post.PostTypeID = postTypeId;
         post.RootPostID = targetQuestionId;
@@ -1510,7 +1598,10 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
         const statusParam = res.Params?.find((p) => p.Name === 'EpistemicStatus')?.Value;
         const scoreParam = res.Params?.find((p) => p.Name === 'ConfidenceScore')?.Value;
         if (typeof statusParam === 'string' && statusParam.trim()) {
-          item.epistemicStatus = statusParam;
+          const parsedStatus = this.normalizeEpistemicStatus(statusParam);
+          if (parsedStatus) {
+            item.epistemicStatus = parsedStatus;
+          }
         }
         if (typeof scoreParam === 'number' && Number.isFinite(scoreParam)) {
           item.confidenceScore = scoreParam;
@@ -1870,6 +1961,7 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
     this.livingDocItems = this.livingDocItems.map((item) =>
       item.id === doc.id ? { ...item, bodyMarkdown: markdownToSave } : item,
     );
+    this.rebuildCommonsItems();
     this.docActionMessage = `Saved co-authored revision for "${doc.title}".`;
     this.cdr.markForCheck();
   }

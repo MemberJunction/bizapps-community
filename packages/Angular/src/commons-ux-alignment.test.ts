@@ -9,10 +9,13 @@ import {
   BuildEditorialPorchHighlights,
   COMMUNITY_SPACES_DIRECTORY,
   COMMUNITY_TOPIC_TAGS,
+  ComputeNextTrapFocusTarget,
   CreateAskShareStreamItem,
   FilterCommonsStream,
   FindMatchedCanonQuestion,
   GraduateStreamItem,
+  PersistAskSharePost,
+  ResolveAuthorizedForumTarget,
   SEEDED_COMMUNITY_SESSIONS,
   STREAM_TYPE_FILTER_OPTIONS,
   ToggleStreamItemUpvote,
@@ -370,5 +373,150 @@ describe('Slice 1 UX Alignment — Slide-Over Detail Sheet Drawer & + Ask or Sha
     });
     assert.equal(createdQuestion.streamType, 'verified-qa');
     assert.equal(createdQuestion.entryTypeLabel, 'Question');
+    assert.equal(createdQuestion.upvoteCount, 0);
+    assert.equal(createdQuestion.upvotedByMe, false);
+  });
+
+  it('enforces ResolveAuthorizedForumTarget case-insensitivity and ComputeNextTrapFocusTarget wrap-around', () => {
+    const allowed = ['11111111-1111-4111-8111-111111111111', '22222222-2222-4222-8222-222222222222'];
+    assert.equal(
+      ResolveAuthorizedForumTarget(' 22222222-2222-4222-8222-222222222222 ', allowed),
+      '22222222-2222-4222-8222-222222222222',
+    );
+    assert.equal(
+      ResolveAuthorizedForumTarget('22222222-2222-4222-8222-222222222222'.toUpperCase(), allowed),
+      '22222222-2222-4222-8222-222222222222',
+    );
+    assert.equal(ResolveAuthorizedForumTarget('33333333-3333-4333-8333-333333333333', allowed), null);
+    assert.equal(ResolveAuthorizedForumTarget('', allowed), null);
+
+    const els = ['first', 'middle', 'last'];
+    assert.equal(ComputeNextTrapFocusTarget([], 'first', false), null);
+    assert.equal(ComputeNextTrapFocusTarget(els, 'first', true), 'last');
+    assert.equal(ComputeNextTrapFocusTarget(els, 'last', false), 'first');
+    assert.equal(ComputeNextTrapFocusTarget(els, 'first', false), 'middle');
+    assert.equal(ComputeNextTrapFocusTarget(els, 'last', true), 'middle');
+  });
+
+  it('persists Questions with ForumQuestionPosts subtype and fails closed with rollback on invalid forum or subtype error', async () => {
+    const allowedForum = '11111111-1111-4111-8111-111111111111';
+    const postTypes = new Map<string, string>([
+      ['question', 'pt-question'],
+      ['discussion', 'pt-discussion'],
+    ]);
+
+    let postSaved = false;
+    const unauthorized = await PersistAskSharePost({
+      draft: {
+        entryType: 'Discussion Post',
+        title: 'Unauthorized forum attempt',
+        spaceId: 'architecture-standards',
+        body: 'Should never hit post.Save()',
+        tagsInput: '',
+      },
+      isOfflineDemoMode: false,
+      targetForumId: '99999999-9999-4999-8999-999999999999',
+      allowedForumIDs: [allowedForum],
+      postTypeIdByCode: postTypes,
+      currentUserId: 'user-1',
+      authorName: 'Ada',
+      createForumPostEntity: async () => ({
+        ID: 'post-1',
+        ForumID: '',
+        AuthorUserID: '',
+        PostTypeID: '',
+        Title: '',
+        BodyMarkdown: '',
+        Status: 'Draft',
+        Save: async () => {
+          postSaved = true;
+          return true;
+        },
+      }),
+    });
+    assert.equal(unauthorized.success, false);
+    assert.equal(postSaved, false);
+
+    let rolledBack = false;
+    let qSavedId: string | null = null;
+    const rollbackCase = await PersistAskSharePost({
+      draft: {
+        entryType: 'Question',
+        title: 'Question failing subtype save',
+        spaceId: 'architecture-standards',
+        body: 'Must delete base post when subtype fails.',
+        tagsInput: '',
+      },
+      isOfflineDemoMode: false,
+      targetForumId: allowedForum,
+      allowedForumIDs: [allowedForum],
+      postTypeIdByCode: postTypes,
+      currentUserId: 'user-1',
+      authorName: 'Ada',
+      createForumPostEntity: async () => ({
+        ID: 'saved-base-1',
+        ForumID: '',
+        AuthorUserID: '',
+        PostTypeID: '',
+        Title: '',
+        BodyMarkdown: '',
+        Status: 'Draft',
+        Save: async () => true,
+        Delete: async () => {
+          rolledBack = true;
+          return true;
+        },
+      }),
+      createQuestionPostEntity: async () => ({
+        ID: '',
+        Save: async () => false,
+      }),
+    });
+    assert.equal(rollbackCase.success, false);
+    assert.equal(rolledBack, true);
+
+    const successCase = await PersistAskSharePost({
+      draft: {
+        entryType: 'Question',
+        title: 'How do dual-dialect tests validate CHECK constraints?',
+        spaceId: 'architecture-standards',
+        body: 'Ensure SQL Server and PostgreSQL parity checks run cleanly.',
+        tagsInput: 'Schema',
+      },
+      isOfflineDemoMode: false,
+      targetForumId: allowedForum,
+      allowedForumIDs: [allowedForum],
+      authorizedForums: [{ id: allowedForum, name: 'Architecture & Standards', spaceId: 'architecture-standards' }],
+      postTypeIdByCode: postTypes,
+      currentUserId: 'user-1',
+      authorName: 'Ada',
+      createForumPostEntity: async () => ({
+        ID: 'saved-question-42',
+        ForumID: '',
+        AuthorUserID: '',
+        PostTypeID: '',
+        Title: '',
+        BodyMarkdown: '',
+        Status: 'Draft',
+        Save: async () => true,
+        Delete: async () => true,
+      }),
+      createQuestionPostEntity: async () => {
+        const entity = {
+          ID: '',
+          Save: async () => {
+            qSavedId = entity.ID;
+            return true;
+          },
+        };
+        return entity;
+      },
+    });
+    assert.equal(successCase.success, true);
+    assert.equal(successCase.persistedPostId, 'saved-question-42');
+    assert.equal(successCase.resolvedForumId, allowedForum);
+    assert.equal(qSavedId, 'saved-question-42');
+    assert.equal(successCase.createdItem?.upvoteCount, 0);
+    assert.equal(successCase.createdItem?.upvotedByMe, false);
   });
 });

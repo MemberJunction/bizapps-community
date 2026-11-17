@@ -1,4 +1,4 @@
-import { Component, ChangeDetectionStrategy, EventEmitter, Input, OnChanges, Output, type SimpleChanges } from '@angular/core';
+import { Component, ChangeDetectionStrategy, EventEmitter, Input, Output } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import {
@@ -39,7 +39,7 @@ const QA_FILTER_PILLS: ReadonlyArray<QaFilterPillOption> = [
   styleUrl: './qa-canon-workbench.component.css',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
-export class QaCanonWorkbenchComponent implements OnChanges {
+export class QaCanonWorkbenchComponent {
   public readonly filterPills = QA_FILTER_PILLS;
 
   @Input() public items: ReadonlyArray<QaCanonItemInput> = [];
@@ -62,12 +62,6 @@ export class QaCanonWorkbenchComponent implements OnChanges {
 
   public activeFilter: QaCanonFilterKey = 'all';
   public searchQuery = '';
-
-  public ngOnChanges(changes: SimpleChanges): void {
-    if (changes['items'] || changes['selectedQaId']) {
-      this.syncSelectionToVisible();
-    }
-  }
 
   public get stats(): QaCanonStats {
     return ComputeQaCanonStats(this.items);

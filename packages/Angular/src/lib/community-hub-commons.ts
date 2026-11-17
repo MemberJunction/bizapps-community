@@ -1,4 +1,9 @@
-import type { mjBizAppsCommunityForumPostEntity } from '@mj-biz-apps/community-entities';
+import type {
+  mjBizAppsCommunityForumAnswerPostEntity,
+  mjBizAppsCommunityForumInteractivePostEntity,
+  mjBizAppsCommunityForumPostEntity,
+  mjBizAppsCommunityForumQuestionPostEntity,
+} from '@mj-biz-apps/community-entities';
 import type { CommunityHubTabKey } from './community-hub-preferences.ts';
 
 export type CommunitySpaceFilterId =
@@ -140,6 +145,12 @@ export interface AskSharePostEntityLike {
   BodyMarkdown: mjBizAppsCommunityForumPostEntity['BodyMarkdown'];
   Status: mjBizAppsCommunityForumPostEntity['Status'];
   Save(): Promise<boolean>;
+  Delete?(): Promise<boolean>;
+}
+
+export interface AskShareQuestionPostEntityLike {
+  ID: mjBizAppsCommunityForumQuestionPostEntity['ID'];
+  Save(): Promise<boolean>;
 }
 
 export interface PersistAskShareParams {
@@ -152,6 +163,7 @@ export interface PersistAskShareParams {
   currentUserId: string | null | undefined;
   authorName: string;
   createForumPostEntity: (() => Promise<AskSharePostEntityLike | null>) | null;
+  createQuestionPostEntity?: (() => Promise<AskShareQuestionPostEntityLike | null>) | null;
 }
 
 export interface PersistAskShareResult {
@@ -175,7 +187,7 @@ export interface CommonsQAInput {
   questionPostId: string | null;
   title: string;
   bodyMarkdown: string;
-  epistemicStatus: string | null;
+  epistemicStatus: mjBizAppsCommunityForumAnswerPostEntity['AIEpistemicStatus'];
   confidenceScore: number | null;
   isAccepted: boolean;
   authorName?: string | null;
@@ -203,7 +215,7 @@ export interface CommonsLivingDocInput {
   title: string;
   bodyMarkdown: string;
   postTypeCode: 'collaborative-doc' | 'collaborative-sheet' | 'collaborative-deck' | 'interactive-experience';
-  experienceKind?: string | null;
+  experienceKind?: mjBizAppsCommunityForumInteractivePostEntity['ExperienceKind'] | null;
   authorName?: string | null;
   authorRole?: string | null;
   timestampLabel?: string | null;
@@ -215,7 +227,7 @@ export interface CommonsFeedPostInput {
   id: string;
   title: string;
   bodyMarkdown: string;
-  status: string;
+  status: mjBizAppsCommunityForumPostEntity['Status'];
   authorName?: string | null;
   authorRole?: string | null;
   timestampLabel?: string | null;
@@ -497,7 +509,7 @@ export function BuildCommonsStreamItems(params: {
 
   for (const qa of params.qaCanonItems) {
     const inferred = inferSpaceAndTags(qa.title, qa.bodyMarkdown, 'architecture-standards');
-    const isVerified = qa.isAccepted || qa.epistemicStatus === 'Canon Verified' || qa.epistemicStatus === 'Verified';
+    const isVerified = qa.isAccepted || qa.epistemicStatus === 'Canon Verified';
     const authorName = qa.authorName?.trim() || 'Community Member';
     const authorRole = qa.authorRole?.trim() || 'Member';
     const replies = qa.replies ? qa.replies.map((r) => ({ ...r })) : [];
@@ -700,7 +712,7 @@ export function FindMatchedCanonQuestion(
     questionPostId: bestQa.questionPostId,
     title: bestQa.title,
     answerSummary: bestQa.bodyMarkdown || 'Verified canonical answer available in Q&A Canon Workbench.',
-    epistemicStatus: bestQa.epistemicStatus || (bestQa.isAccepted ? 'Canon Verified' : 'Verified'),
+    epistemicStatus: bestQa.epistemicStatus || (bestQa.isAccepted ? 'Canon Verified' : 'Novel Insight'),
     confidenceScore: bestQa.confidenceScore,
     isAccepted: bestQa.isAccepted,
     sourceItemId: matchingCommons?.id ?? `qa-${bestQa.id}`,
@@ -770,8 +782,8 @@ export function CreateAskShareStreamItem(
     authorInitials: computeInitials(authorName),
     timestampLabel: 'Just now',
     tags,
-    upvoteCount: 1,
-    upvotedByMe: true,
+    upvoteCount: 0,
+    upvotedByMe: false,
     replyCount: 0,
     replies: [],
     graduatedToDeliverable: false,
@@ -1039,7 +1051,19 @@ export async function PersistAskSharePost(params: PersistAskShareParams): Promis
     };
   }
 
+  if (params.draft.entryType === 'Question' && !params.createQuestionPostEntity) {
+    return {
+      success: false,
+      validationErrors: {},
+      errorMessage: 'Question subtype provider is unavailable — cannot publish question.',
+      persistedPostId: null,
+      resolvedForumId: authorizedForumId,
+      createdItem: null,
+    };
+  }
+
   let savedPostId: string | null = null;
+  let savedPostEntity: AskSharePostEntityLike | null = null;
   try {
     const post = await params.createForumPostEntity();
     if (!post) {
@@ -1071,8 +1095,40 @@ export async function PersistAskSharePost(params: PersistAskShareParams): Promis
         createdItem: null,
       };
     }
+    savedPostEntity = post;
     savedPostId = post.ID;
+
+    if (params.draft.entryType === 'Question' && params.createQuestionPostEntity) {
+      const qPost = await params.createQuestionPostEntity();
+      if (!qPost) {
+        await savedPostEntity.Delete?.().catch(() => false);
+        return {
+          success: false,
+          validationErrors: {},
+          errorMessage: 'Could not instantiate Question subtype entity — rolled back base post.',
+          persistedPostId: null,
+          resolvedForumId: authorizedForumId,
+          createdItem: null,
+        };
+      }
+      qPost.ID = savedPostId;
+      const qSaved = await qPost.Save();
+      if (!qSaved) {
+        await savedPostEntity.Delete?.().catch(() => false);
+        return {
+          success: false,
+          validationErrors: {},
+          errorMessage: 'Failed to save Question subtype entity — rolled back base post.',
+          persistedPostId: null,
+          resolvedForumId: authorizedForumId,
+          createdItem: null,
+        };
+      }
+    }
   } catch (err) {
+    if (savedPostEntity) {
+      await savedPostEntity.Delete?.().catch(() => false);
+    }
     return {
       success: false,
       validationErrors: {},

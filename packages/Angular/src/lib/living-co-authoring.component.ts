@@ -1,4 +1,4 @@
-import { Component, ChangeDetectionStrategy, EventEmitter, Input, OnChanges, Output, type SimpleChanges } from '@angular/core';
+import { Component, ChangeDetectionStrategy, EventEmitter, Input, Output } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import type { SafeHtml } from '@angular/platform-browser';
@@ -43,7 +43,7 @@ const LIVING_DOC_FILTERS: ReadonlyArray<LivingDocFilterOption> = [
   styleUrl: './living-co-authoring.component.css',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
-export class LivingCoAuthoringComponent implements OnChanges {
+export class LivingCoAuthoringComponent {
   public readonly filterOptions = LIVING_DOC_FILTERS;
 
   @Input() public items: ReadonlyArray<LivingDocItemInput> = [];
@@ -82,12 +82,6 @@ export class LivingCoAuthoringComponent implements OnChanges {
       detail: '5 replicas · 10,800 burst msgs',
     },
   ];
-
-  public ngOnChanges(changes: SimpleChanges): void {
-    if (changes['items'] || changes['selectedDocId']) {
-      this.syncSelectionToVisible();
-    }
-  }
 
   public get filteredItems(): LivingDocItemInput[] {
     return FilterLivingDocItems(this.items, this.activeFilter, this.searchQuery);

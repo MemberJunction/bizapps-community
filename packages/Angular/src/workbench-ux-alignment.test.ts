@@ -15,6 +15,10 @@ import {
   GetEpistemicBadgeTone,
   GetLivingDocTypeMeta,
   NormalizeCampaignBudget,
+  ResolveVisibleLivingDoc,
+  ResolveVisibleQaItem,
+  SyncLivingDocSelection,
+  SyncQaSelection,
 } from './lib/community-hub-workbench.ts';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -55,7 +59,7 @@ describe('Slice 2 UX Alignment — Q&A Canon Workbench Component & Epistemic Hel
       questionPostId: 'q-1',
       title: 'How do I rotate my API key without downtime?',
       bodyMarkdown: 'Deploy secondary key before revoking legacy key.',
-      epistemicStatus: 'Canon Verified',
+      epistemicStatus: 'Canon Verified' as const,
       confidenceScore: 0.94,
       isAccepted: true,
     },
@@ -64,8 +68,8 @@ describe('Slice 2 UX Alignment — Q&A Canon Workbench Component & Epistemic Hel
       questionPostId: 'q-2',
       title: 'How do webhook delivery retries handle 429 rate limits?',
       bodyMarkdown: 'Exponential backoff honors Retry-After.',
-      epistemicStatus: 'Verified',
-      confidenceScore: 0.86,
+      epistemicStatus: 'Partially Outdated' as const,
+      confidenceScore: 0.78,
       isAccepted: false,
     },
     {
@@ -73,7 +77,7 @@ describe('Slice 2 UX Alignment — Q&A Canon Workbench Component & Epistemic Hel
       questionPostId: 'q-3',
       title: 'How should tenant schema migrations stay deterministic?',
       bodyMarkdown: 'Validate dual-dialect parity and boolean casts.',
-      epistemicStatus: 'Novel Insight',
+      epistemicStatus: 'Novel Insight' as const,
       confidenceScore: null,
       isAccepted: false,
     },
@@ -82,7 +86,7 @@ describe('Slice 2 UX Alignment — Q&A Canon Workbench Component & Epistemic Hel
       questionPostId: 'q-4',
       title: 'Legacy v1 XML token exchange endpoint',
       bodyMarkdown: 'Deprecated in favor of OAuth2 PKCE.',
-      epistemicStatus: 'Conflicts With Canon',
+      epistemicStatus: 'Conflicts With Canon' as const,
       confidenceScore: 0.4,
       isAccepted: false,
     },
@@ -91,11 +95,13 @@ describe('Slice 2 UX Alignment — Q&A Canon Workbench Component & Epistemic Hel
   it('computes accurate Q&A Canon summary stats and epistemic badge tones', () => {
     const stats = ComputeQaCanonStats(sampleQa);
     assert.equal(stats.total, 4);
-    assert.equal(stats.canonVerifiedCount, 2);
+    assert.equal(stats.canonVerifiedCount, 1);
+    assert.equal(stats.canonVerifiedCount, FilterQaCanonItems(sampleQa, 'canon-verified', '').length);
     assert.equal(stats.acceptedCount, 1);
-    assert.equal(stats.averageConfidencePct, 73);
+    assert.equal(stats.averageConfidencePct, 71);
 
     assert.equal(GetEpistemicBadgeTone('Canon Verified', true), 'success');
+    assert.equal(GetEpistemicBadgeTone('Partially Outdated', false), 'warning');
     assert.equal(GetEpistemicBadgeTone('Novel Insight', false), 'warning');
     assert.equal(GetEpistemicBadgeTone('Conflicts With Canon', false), 'danger');
   });
@@ -104,8 +110,22 @@ describe('Slice 2 UX Alignment — Q&A Canon Workbench Component & Epistemic Hel
     assert.equal(FilterQaCanonItems(sampleQa, 'all', '').length, 4);
     assert.equal(FilterQaCanonItems(sampleQa, 'canon-verified', '').length, 1);
     assert.equal(FilterQaCanonItems(sampleQa, 'novel-insight', '').length, 1);
-    assert.equal(FilterQaCanonItems(sampleQa, 'needs-review', '').length, 1);
+    assert.equal(FilterQaCanonItems(sampleQa, 'needs-review', '').length, 2);
     assert.equal(FilterQaCanonItems(sampleQa, 'all', '429 rate').length, 1);
+  });
+
+  it('syncs Q&A selection only on user filter/search helpers and omits ngOnChanges in child components', () => {
+    const visible = ResolveVisibleQaItem(sampleQa, 'qa-3', 'canon-verified', '');
+    assert.equal(visible?.id, 'qa-1');
+    const sync = SyncQaSelection({
+      items: sampleQa,
+      selectedQaId: 'qa-3',
+      filterKey: 'canon-verified',
+      searchQuery: '',
+    });
+    assert.equal(sync.changed, true);
+    assert.equal(sync.selectedQaId, 'qa-1');
+    assert.doesNotMatch(qaTs, /\bngOnChanges\b/);
   });
 
   it('wires QaCanonWorkbenchComponent with OnPush and required E2E/ARIA selectors', () => {
@@ -208,7 +228,7 @@ describe('Slice 2 UX Alignment — Living Co-Authoring & Interactive Mini-Apps W
       title: 'Platform Trivia: Test Your Onboarding Knowledge',
       bodyMarkdown: 'Interactive knowledge check',
       postTypeCode: 'interactive-experience' as const,
-      experienceKind: 'Trivia',
+      experienceKind: 'Trivia' as const,
     },
   ];
 
@@ -221,6 +241,19 @@ describe('Slice 2 UX Alignment — Living Co-Authoring & Interactive Mini-Apps W
     assert.equal(GetLivingDocTypeMeta(sampleDocs[0]).label, 'Living Playbook');
     assert.equal(GetLivingDocTypeMeta(sampleDocs[1]).label, 'Inline Form');
     assert.equal(GetLivingDocTypeMeta(sampleDocs[2]).badgeText, 'Sandbox · Trivia');
+
+    const visibleDoc = ResolveVisibleLivingDoc(sampleDocs, 'd1', 'forms', '');
+    assert.equal(visibleDoc?.id, 'd2');
+    const syncDoc = SyncLivingDocSelection({
+      items: sampleDocs,
+      selectedDocId: 'd1',
+      editingDocMarkdown: '',
+      filterKey: 'forms',
+      searchQuery: '',
+    });
+    assert.equal(syncDoc.changed, true);
+    assert.equal(syncDoc.selectedDocId, 'd2');
+    assert.doesNotMatch(livingTs, /\bngOnChanges\b/);
   });
 
   it('computes domain-neutral SLA & Capacity calculator specs deterministically', () => {
