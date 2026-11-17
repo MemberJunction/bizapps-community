@@ -52,7 +52,7 @@ function checkGitTreeClean() {
       .split('\n')
       .filter((line) => line.length > 0)
       .map((line) => line.slice(3).trim())
-      .filter((path) => path.length > 0 && !reportOutputPaths.has(path));
+      .filter((path) => path.length > 0 && !reportOutputPaths.has(path) && !path.startsWith('e2e/screenshots/'));
     return { clean: dirtyPaths.length === 0, dirtyPaths };
   } catch (err) {
     return { clean: false, dirtyPaths: [], error: err instanceof Error ? err.message : String(err) };

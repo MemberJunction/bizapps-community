@@ -3,12 +3,14 @@ import {
   ChangeDetectionStrategy,
   ChangeDetectorRef,
   ElementRef,
+  HostListener,
   OnInit,
+  ViewChild,
   ViewChildren,
   QueryList,
   inject,
 } from '@angular/core';
-import { CommonModule } from '@angular/common';
+import { CommonModule, DOCUMENT } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { DomSanitizer, type SafeHtml } from '@angular/platform-browser';
 import { CompositeKey, Metadata, RunView, type UserInfo } from '@memberjunction/core';
@@ -21,6 +23,7 @@ import {
   COMMUNITY_ENTITY_NAMES,
   type mjBizAppsCommunityForumAnswerPostEntity,
   type mjBizAppsCommunityForumIdeaPostEntity,
+  type mjBizAppsCommunityForumInteractivePostEntity,
   type mjBizAppsCommunityForumPostEntity,
   type mjBizAppsCommunityForumQuestionPostEntity,
 } from '@mj-biz-apps/community-entities';
@@ -32,9 +35,41 @@ import {
   PersistIdeaAllocationAtomic,
   type IdeaAllocationAggregateRow,
 } from './community-hub-ideation.ts';
-import { AskFirstDeflectionWidgetComponent } from './widgets/ask-first-deflection-widget.component.ts';
+import {
+  AddStreamItemReply,
+  BuildCommonsStreamItems,
+  BuildEditorialPorchHighlights,
+  COMMUNITY_SPACES_DIRECTORY,
+  ComputeNextTrapFocusTarget,
+  FindMatchedCanonQuestion,
+  GraduateStreamItem,
+  MapForumNameToSpaceId,
+  PersistAskSharePost,
+  ResolveAuthorizedForumTarget,
+  SEEDED_COMMUNITY_SESSIONS,
+  ToggleStreamItemUpvote,
+  type AskShareEntryType,
+  type AskShareValidationErrors,
+  type AuthorizedForumOption,
+  type CommunityCommonsItem,
+  type CommunityFeaturedHighlight,
+  type CommunitySessionItem,
+  type CommunitySpaceFilterId,
+  type CommunityStreamTypeFilter,
+  type MatchedCanonQuestion,
+} from './community-hub-commons.ts';
+import { KnowledgeStreamComponent, type KnowledgeStreamWalletSummaryItem } from './knowledge-stream.component.ts';
+import { QaCanonWorkbenchComponent } from './qa-canon-workbench.component.ts';
+import { LivingCoAuthoringComponent } from './living-co-authoring.component.ts';
+import {
+  ComputeIdeationWalletSummary,
+  ComputeIdeaPointPresets,
+  ComputeQuadraticEffectiveVotes,
+  DEFAULT_CAMPAIGN_BUDGET_POINTS,
+  NormalizeCampaignBudget,
+  type IdeationWalletSummary,
+} from './community-hub-workbench.ts';
 import { QuadraticVotingSliderComponent } from './widgets/quadratic-voting-slider.component.ts';
-import { DigestExportButtonComponent } from './widgets/digest-export-button.component.ts';
 
 export interface CommunityHubTabDefinition {
   key: CommunityHubTabKey;
@@ -57,9 +92,10 @@ export const COMMUNITY_HUB_TABS: ReadonlyArray<CommunityHubTabDefinition> = [
 export interface CommunityHubQACanonItem {
   id: string;
   questionPostId: string | null;
+  forumId?: string | null;
   title: string;
   bodyMarkdown: string;
-  epistemicStatus: string | null;
+  epistemicStatus: mjBizAppsCommunityForumAnswerPostEntity['AIEpistemicStatus'];
   confidenceScore: number | null;
   isAccepted: boolean;
 }
@@ -81,14 +117,16 @@ export interface CommunityHubLivingDocItem {
   title: string;
   bodyMarkdown: string;
   postTypeCode: 'collaborative-doc' | 'collaborative-sheet' | 'collaborative-deck' | 'interactive-experience';
-  experienceKind?: string | null;
+  experienceKind?: mjBizAppsCommunityForumInteractivePostEntity['ExperienceKind'] | null;
 }
 
 export interface CommunityHubFeedPost {
   id: string;
   title: string;
   bodyMarkdown: string;
-  status: string;
+  status: mjBizAppsCommunityForumPostEntity['Status'];
+  authorName?: string | null;
+  authorRole?: string | null;
 }
 
 /** An Ideation Campaign's wallet rules (`ForumIdeaCampaign` IS-A `Forum`), bound onto the
@@ -111,13 +149,14 @@ interface ForumPostRow {
   ForumID: string;
   Title: string | null;
   BodyMarkdown: string;
-  Status: string;
+  Status: mjBizAppsCommunityForumPostEntity['Status'];
+  AuthorUserID?: string | null;
 }
 
 interface AnswerPostRow {
   ID: string;
   QuestionPostID: string;
-  AIEpistemicStatus: string | null;
+  AIEpistemicStatus: mjBizAppsCommunityForumAnswerPostEntity['AIEpistemicStatus'];
   AIConfidenceScore: number | null;
   IsAcceptedByAuthor: boolean;
 }
@@ -141,7 +180,7 @@ interface SubtypeIdRow {
 
 interface InteractiveSubtypeRow {
   ID: string;
-  ExperienceKind: string | null;
+  ExperienceKind: mjBizAppsCommunityForumInteractivePostEntity['ExperienceKind'] | null;
 }
 
 const DEFAULT_CAMPAIGN: CommunityHubCampaign = {
@@ -155,8 +194,9 @@ const DEFAULT_CAMPAIGN: CommunityHubCampaign = {
 const SEEDED_FEED_POSTS_FALLBACK: CommunityHubFeedPost[] = [
   {
     id: 'seed-feed-1',
-    title: 'Welcome to the Customer Community Portal!',
-    bodyMarkdown: 'Share onboarding wins, API key rotation playbooks, and multi-region architecture lessons.',
+    title: 'Zero-Downtime API Key Rotation & Multi-Region Rollover Guide',
+    bodyMarkdown:
+      'Provision a secondary client secret, roll worker secrets across active regions, verify lease telemetry, and revoke legacy keys after one lease interval.',
     status: 'Published',
   },
 ];
@@ -166,7 +206,8 @@ const SEEDED_QA_CANON_FALLBACK: CommunityHubQACanonItem[] = [
     id: 'seed-answer-1',
     questionPostId: 'seed-question-1',
     title: 'How do I rotate my API key without downtime?',
-    bodyMarkdown: 'Mint a secondary client secret, deploy the dual-key config to workers, then revoke the legacy secret after one lease interval.',
+    bodyMarkdown:
+      'Mint a secondary client secret, deploy the dual-key config to workers, then revoke the legacy secret after one lease interval.',
     epistemicStatus: 'Canon Verified',
     confidenceScore: 0.94,
     isAccepted: true,
@@ -255,9 +296,10 @@ function buildMiniAppSrcdoc(title: string, kind: string): string {
 
 /**
  * Top-level Community Hub resource (`Application.DefaultNavItems[].DriverClass` =
- * `'CommunityHubResource'` in `metadata/applications/.applications.json`). Hosts all 4 interactive
- * Community Hub workspaces: Knowledge Stream, Q&A Canon Workbench, Campaign-Scoped Quadratic
- * Ideation Wallet, and Living Co-Authoring / Inline Forms / Sandboxed Mini-Apps.
+ * `'CommunityHubResource'` in `metadata/applications/.applications.json`). Hosts the sticky shell,
+ * collapsible editorial porch, 3-column Knowledge Stream Commons, Q&A Canon Workbench, Campaign-Scoped
+ * Quadratic Ideation Wallet, Living Co-Authoring / Sandboxed Mini-Apps, Slide-Over Detail Sheet
+ * drawer, and Ask/Share composer modal.
  */
 @RegisterClass(BaseResourceComponent, 'CommunityHubResource')
 @Component({
@@ -268,9 +310,10 @@ function buildMiniAppSrcdoc(title: string, kind: string): string {
     FormsModule,
     MJPageLayoutComponent,
     MJPageBodyComponent,
-    AskFirstDeflectionWidgetComponent,
+    KnowledgeStreamComponent,
+    QaCanonWorkbenchComponent,
+    LivingCoAuthoringComponent,
     QuadraticVotingSliderComponent,
-    DigestExportButtonComponent,
   ],
   templateUrl: './community-hub-resource.component.html',
   styleUrl: './community-hub-resource.component.css',
@@ -278,15 +321,47 @@ function buildMiniAppSrcdoc(title: string, kind: string): string {
 })
 export class CommunityHubResource extends BaseResourceComponent implements OnInit {
   public readonly tabs = COMMUNITY_HUB_TABS;
+  public readonly spaceDirectory = COMMUNITY_SPACES_DIRECTORY.filter((s) => s.id !== 'all');
   public activeTabKey: CommunityHubTabKey = COMMUNITY_HUB_TABS[0].key;
   public focusedTabKey: CommunityHubTabKey = COMMUNITY_HUB_TABS[0].key;
 
-  public spaceName = 'Community';
+  public spaceName = 'MemberJunction Community';
+  public isOfflineDemoMode = false;
+  public authorizedForums: AuthorizedForumOption[] = [];
   public allowedForumIDs: string[] = [];
   public feedPosts: CommunityHubFeedPost[] = [];
   public selectedFeedPostId: string | null = null;
   public threadSynthesisResult: string | null = null;
   public isSynthesizingFeed = false;
+
+  // Sticky Header Search, Digest Export & Editorial Porch state
+  public headerSearchQuery = '';
+  public porchCollapsed = false;
+  public isExportingDigest = false;
+  public digestExportError: string | null = null;
+
+  // 3-Column Commons Workspace state
+  public commonsItems: CommunityCommonsItem[] = [];
+  public activeSpaceFilter: CommunitySpaceFilterId = 'all';
+  public activeTopicFilter: string | null = null;
+  public activeStreamTypeFilter: CommunityStreamTypeFilter = 'all';
+  public sessions: CommunitySessionItem[] = SEEDED_COMMUNITY_SESSIONS.map((s) => ({ ...s }));
+
+  // Slide-Over Detail Sheet Drawer state
+  public detailSheetItemId: string | null = null;
+  public detailReplyText = '';
+  public detailActionMessage: string | null = null;
+
+  // Ask or Share Modal state
+  public isAskShareModalOpen = false;
+  public askShareEntryType: AskShareEntryType = 'Question';
+  public askShareTitle = '';
+  public askShareSpaceId: CommunitySpaceFilterId = 'architecture-standards';
+  public askShareForumId = '';
+  public askShareBody = '';
+  public askShareTags = '';
+  public askShareValidationErrors: AskShareValidationErrors = {};
+  public askShareError: string | null = null;
 
   public qaCanonItems: CommunityHubQACanonItem[] = [];
   public selectedQaId: string | null = null;
@@ -308,6 +383,7 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
   public newIdeaTitle = '';
   public newIdeaSummary = '';
   private readonly postTypeIdByCode = new Map<string, string>();
+  private readonly userAddedCommonsItems: CommunityCommonsItem[] = [];
 
   public livingDocItems: CommunityHubLivingDocItem[] = [];
   public selectedLivingDocId: string | null = null;
@@ -322,12 +398,78 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
   private miniAppResetNonce = 0;
 
   public get activeCampaign(): CommunityHubCampaign {
-    return this.campaigns.find((c) => this.selectedCampaignId && UUIDsEqual(c.id, this.selectedCampaignId)) ?? this.campaigns[0] ?? DEFAULT_CAMPAIGN;
+    const selected =
+      this.campaigns.find((c) => this.selectedCampaignId && UUIDsEqual(c.id, this.selectedCampaignId)) ??
+      this.campaigns[0] ??
+      DEFAULT_CAMPAIGN;
+    const normalizedBudget = NormalizeCampaignBudget(selected.budgetPoints, DEFAULT_CAMPAIGN_BUDGET_POINTS);
+    return normalizedBudget === selected.budgetPoints ? selected : { ...selected, budgetPoints: normalizedBudget };
   }
 
   public get visibleIdeationItems(): CommunityHubIdeaItem[] {
     const campaignId = this.activeCampaign.id;
     return this.ideationItems.filter((i) => UUIDsEqual(i.campaignId, campaignId));
+  }
+
+  public get walletSummary(): IdeationWalletSummary {
+    return ComputeIdeationWalletSummary(this.visibleIdeationItems, this.activeCampaign.budgetPoints);
+  }
+
+  public get remainingWalletPoints(): number {
+    return this.walletSummary.remainingPoints;
+  }
+
+  public get selectedIdeaPointPresets(): number[] {
+    if (!this.selectedIdeaItem) return [];
+    return ComputeIdeaPointPresets({
+      mode: this.activeCampaign.allocationMode,
+      currentPoints: this.pointsOnSelectedIdea,
+      remainingBudget: this.remainingWalletPoints,
+      maxPointsPerIdea: this.activeCampaign.maxPointsPerIdea,
+      budgetPoints: this.activeCampaign.budgetPoints,
+    });
+  }
+
+  public get walletSummaryIdeas(): ReadonlyArray<KnowledgeStreamWalletSummaryItem> {
+    return this.visibleIdeationItems.map((i) => ({
+      id: i.id,
+      title: i.title,
+      myPointsAllocated: i.myPointsAllocated,
+    }));
+  }
+
+  public get matchedCanonQuestion(): MatchedCanonQuestion | null {
+    return FindMatchedCanonQuestion(this.headerSearchQuery, this.qaCanonItems, this.commonsItems);
+  }
+
+  public get featuredHighlights(): ReadonlyArray<CommunityFeaturedHighlight> {
+    return BuildEditorialPorchHighlights({
+      commonsItems: this.commonsItems,
+      qaCanonItems: this.qaCanonItems,
+      livingDocItems: this.livingDocItems,
+    });
+  }
+
+  public get detailSheetItem(): CommunityCommonsItem | null {
+    if (!this.detailSheetItemId) return null;
+    return this.commonsItems.find((item) => item.id === this.detailSheetItemId) ?? null;
+  }
+
+  public get hasActiveOverlay(): boolean {
+    return Boolean(this.detailSheetItem || this.isAskShareModalOpen);
+  }
+
+  public get askShareDeflectionMatches(): ReadonlyArray<CommunityHubQACanonItem> {
+    const q = this.askShareTitle.trim().toLowerCase();
+    if (q.length < 4) return [];
+    const words = q.split(/\s+/).filter((w) => w.length > 3);
+    if (words.length === 0) return [];
+    return this.qaCanonItems
+      .filter((item) => {
+        const hay = `${item.title} ${item.bodyMarkdown}`.toLowerCase();
+        return words.some((w) => hay.includes(w));
+      })
+      .slice(0, 2);
   }
 
   public get selectedFeedPost(): CommunityHubFeedPost | null {
@@ -372,26 +514,55 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
 
   @ViewChildren('tabButton') private tabButtons!: QueryList<ElementRef<HTMLButtonElement>>;
   @ViewChildren('ideaButton') private ideaButtons!: QueryList<ElementRef<HTMLButtonElement>>;
+  @ViewChild('detailSheetDialog') private detailSheetDialog?: ElementRef<HTMLElement>;
+  @ViewChild('askShareDialog') private askShareDialog?: ElementRef<HTMLElement>;
+
+  private lastDetailTrigger: HTMLElement | null = null;
+  private lastAskShareTrigger: HTMLElement | null = null;
 
   private readonly preferences = new CommunityHubPreferences();
   private readonly cdr = inject(ChangeDetectorRef);
   private readonly sanitizer = inject(DomSanitizer);
+  private readonly doc = inject(DOCUMENT);
 
   public override ngOnInit(): void {
     super.ngOnInit();
     queueMicrotask(() => {
       this.NotifyLoadStarted();
-      this.restoreActiveTabPreference();
+      this.restoreUserPreferences();
       void this.loadHubState().finally(() => this.NotifyLoadComplete());
     });
   }
 
-  private restoreActiveTabPreference(): void {
+  private restoreUserPreferences(): void {
     const saved = this.preferences.GetActiveTab();
     if (saved && this.tabs.some((tab) => tab.key === saved)) {
       this.activeTabKey = saved;
       this.focusedTabKey = saved;
     }
+    this.porchCollapsed = this.preferences.GetPorchCollapsed();
+  }
+
+  private rebuildCommonsItems(): void {
+    const built = BuildCommonsStreamItems({
+      feedPosts: this.feedPosts,
+      qaCanonItems: this.qaCanonItems,
+      ideationItems: this.ideationItems,
+      livingDocItems: this.livingDocItems,
+      includeDemoFixtures: this.isOfflineDemoMode,
+    });
+    const merged = [...this.userAddedCommonsItems, ...built];
+    const seen = new Set<string>();
+    const seenSourcePostIds = new Set<string>();
+    this.commonsItems = merged.filter((item) => {
+      if (seen.has(item.id)) return false;
+      if (item.sourcePostId && seenSourcePostIds.has(item.sourcePostId)) return false;
+      seen.add(item.id);
+      if (item.sourcePostId) {
+        seenSourcePostIds.add(item.sourcePostId);
+      }
+      return true;
+    });
   }
 
   private async loadHubState(): Promise<void> {
@@ -401,6 +572,8 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
       this.applySeededFallback();
       return;
     }
+
+    this.isOfflineDemoMode = false;
 
     try {
       const rv = new RunView();
@@ -433,7 +606,7 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
           {
             EntityName: COMMUNITY_ENTITY_NAMES.ForumPosts,
             ExtraFilter: `RootPostID IS NULL AND Status = 'Published'`,
-            Fields: ['ID', 'ForumID', 'Title', 'BodyMarkdown', 'Status'],
+            Fields: ['ID', 'ForumID', 'Title', 'BodyMarkdown', 'Status', 'AuthorUserID'],
             OrderBy: '__mj_CreatedAt DESC',
             ResultType: 'simple',
             MaxRows: 50,
@@ -464,7 +637,12 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
 
       const forumRows = forumsResult?.Success ? forumsResult.Results ?? [] : [];
       const forumNameById = new Map(forumRows.map((f) => [f.ID.toLowerCase(), f.Name]));
-      this.allowedForumIDs = forumRows.map((f) => f.ID);
+      this.authorizedForums = forumRows.map((f) => ({
+        id: f.ID,
+        name: f.Name,
+        spaceId: MapForumNameToSpaceId(f.Name),
+      }));
+      this.allowedForumIDs = this.authorizedForums.map((f) => f.id);
       this.spaceName = spaceResult?.Success ? spaceResult.Results?.[0]?.Name ?? this.spaceName : this.spaceName;
 
       this.feedPosts =
@@ -474,8 +652,10 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
               title: p.Title ?? 'Untitled Thread',
               bodyMarkdown: p.BodyMarkdown ?? '',
               status: p.Status,
+              authorName: p.AuthorUserID && UUIDsEqual(p.AuthorUserID, user.ID) ? user.Name : 'Community Member',
+              authorRole: 'Member',
             }))
-          : SEEDED_FEED_POSTS_FALLBACK;
+          : [];
       this.selectedFeedPostId = this.feedPosts[0]?.id ?? null;
 
       const loadedCampaigns: CommunityHubCampaign[] =
@@ -484,22 +664,22 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
               id: c.ID,
               name: forumNameById.get(c.ID.toLowerCase()) ?? `Campaign ${c.ID.slice(0, 6)}`,
               allocationMode: c.AllocationMode,
-              budgetPoints: c.DefaultBudgetPoints,
+              budgetPoints: NormalizeCampaignBudget(c.DefaultBudgetPoints, DEFAULT_CAMPAIGN_BUDGET_POINTS),
               maxPointsPerIdea: c.MaxPointsPerIdea,
             }))
           : [DEFAULT_CAMPAIGN];
       this.campaigns = loadedCampaigns;
       if (!this.campaigns.some((c) => this.selectedCampaignId && UUIDsEqual(c.id, this.selectedCampaignId))) {
-        this.selectedCampaignId = this.campaigns[0]?.id ?? null;
+        this.selectedCampaignId = this.campaigns[0]?.id ?? DEFAULT_CAMPAIGN.id;
       }
 
       if (answersResult?.Success && answersResult.Results && answersResult.Results.length > 0) {
         const answerIds = answersResult.Results.map((a) => `'${AssertValidUUID(a.ID, 'answerId')}'`).join(',');
-        const bodyRes = await rv.RunView<Pick<ForumPostRow, 'ID' | 'Title' | 'BodyMarkdown'>>(
+        const bodyRes = await rv.RunView<Pick<ForumPostRow, 'ID' | 'ForumID' | 'Title' | 'BodyMarkdown'>>(
           {
             EntityName: COMMUNITY_ENTITY_NAMES.ForumPosts,
             ExtraFilter: `ID IN (${answerIds})`,
-            Fields: ['ID', 'Title', 'BodyMarkdown'],
+            Fields: ['ID', 'ForumID', 'Title', 'BodyMarkdown'],
             ResultType: 'simple',
             MaxRows: answersResult.Results.length,
           },
@@ -511,6 +691,7 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
           return {
             id: a.ID,
             questionPostId: a.QuestionPostID ?? null,
+            forumId: post?.ForumID ?? null,
             title: post?.Title ?? a.Title ?? 'Community Answer',
             bodyMarkdown: post?.BodyMarkdown ?? '',
             epistemicStatus: a.AIEpistemicStatus,
@@ -586,6 +767,7 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
       }
 
       this.livingDocItems = await this.loadLivingDocItems(rv, user);
+      this.rebuildCommonsItems();
       this.syncSelectionDefaults();
     } catch (err) {
       this.ideationLoadFailed = true;
@@ -597,14 +779,18 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
   }
 
   private applySeededFallback(): void {
-    this.campaigns = [DEFAULT_CAMPAIGN];
+    this.isOfflineDemoMode = true;
+    this.authorizedForums = [];
+    this.campaigns = [{ ...DEFAULT_CAMPAIGN }];
     this.selectedCampaignId = DEFAULT_CAMPAIGN.id;
-    this.feedPosts = SEEDED_FEED_POSTS_FALLBACK;
+    this.allUserAllocations = [];
+    this.feedPosts = SEEDED_FEED_POSTS_FALLBACK.map((p) => ({ ...p }));
     this.selectedFeedPostId = this.feedPosts[0]?.id ?? null;
-    this.qaCanonItems = SEEDED_QA_CANON_FALLBACK;
+    this.qaCanonItems = SEEDED_QA_CANON_FALLBACK.map((q) => ({ ...q }));
     this.selectedQaId = this.qaCanonItems[0]?.id ?? null;
-    this.ideationItems = SEEDED_IDEATION_FALLBACK;
-    this.livingDocItems = SEEDED_LIVING_DOCS_FALLBACK;
+    this.ideationItems = SEEDED_IDEATION_FALLBACK.map((i) => ({ ...i }));
+    this.livingDocItems = SEEDED_LIVING_DOCS_FALLBACK.map((d) => ({ ...d }));
+    this.rebuildCommonsItems();
     this.syncSelectionDefaults();
     this.cdr.markForCheck();
   }
@@ -642,7 +828,7 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
     const idsWithType: Array<{
       id: string;
       postTypeCode: CommunityHubLivingDocItem['postTypeCode'];
-      experienceKind?: string | null;
+      experienceKind?: mjBizAppsCommunityForumInteractivePostEntity['ExperienceKind'] | null;
     }> = [
       ...(artifactIds?.Success ? artifactIds.Results ?? [] : []).map((r) => ({
         id: r.ID,
@@ -659,7 +845,7 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
       })),
     ];
     if (idsWithType.length === 0) {
-      return SEEDED_LIVING_DOCS_FALLBACK;
+      return this.isOfflineDemoMode ? SEEDED_LIVING_DOCS_FALLBACK : [];
     }
 
     const safeIds = AssertValidUUIDList(idsWithType.map((r) => r.id).join(','), 'livingDocIds');
@@ -685,6 +871,446 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
         experienceKind: r.experienceKind ?? null,
       };
     });
+  }
+
+  // ─── Sticky Top Shell, Search Spotlight, Porch & Digest PDF Export ────────
+
+  public onHeaderSearchChange(query: string): void {
+    this.headerSearchQuery = query;
+    this.cdr.markForCheck();
+  }
+
+  public clearHeaderSearch(): void {
+    this.headerSearchQuery = '';
+    this.cdr.markForCheck();
+  }
+
+  public openMatchedCanonSpotlight(): void {
+    const matched = this.matchedCanonQuestion;
+    if (!matched) return;
+    if (this.commonsItems.some((i) => i.id === matched.sourceItemId)) {
+      this.openDetailSheet(matched.sourceItemId);
+      return;
+    }
+    this.jumpToQaCanon(matched.id);
+  }
+
+  public jumpToQaCanon(qaId?: string | null): void {
+    if (qaId && this.qaCanonItems.some((q) => q.id === qaId)) {
+      this.selectedQaId = qaId;
+    }
+    this.SelectTab('qa-canon-workbench');
+    this.cdr.markForCheck();
+  }
+
+  public togglePorch(): void {
+    this.porchCollapsed = !this.porchCollapsed;
+    void this.preferences.SetPorchCollapsed(this.porchCollapsed);
+    this.cdr.markForCheck();
+  }
+
+  public openHighlight(highlight: CommunityFeaturedHighlight): void {
+    if (this.commonsItems.some((item) => item.id === highlight.targetItemId)) {
+      this.openDetailSheet(highlight.targetItemId);
+      return;
+    }
+    this.SelectTab(highlight.targetTab);
+  }
+
+  public async exportDigestPdf(): Promise<void> {
+    if (this.isExportingDigest) return;
+    const effectiveSpaceName = this.spaceName.trim() || 'MemberJunction Community';
+    this.isExportingDigest = true;
+    this.digestExportError = null;
+    this.cdr.markForCheck();
+
+    try {
+      const provider = Metadata.Provider as GraphQLDataProvider | undefined;
+      if (!provider) {
+        this.digestExportError = 'Digest export requires an active GraphQL connection.';
+        return;
+      }
+      const actionClient = new GraphQLActionClient(provider);
+      const result = await actionClient.RunAction(COMMUNITY_ACTION_IDS.ExportDigestPDF, [
+        { Name: 'SpaceName', Value: effectiveSpaceName, Type: 'Input' },
+        { Name: 'AllowedForumIDs', Value: this.allowedForumIDs.join(','), Type: 'Input' },
+      ]);
+
+      if (!result.Success) {
+        this.digestExportError = result.Message ?? 'Digest export failed.';
+        return;
+      }
+
+      const pdfBase64Param = result.Params?.find((p) => p.Name === 'PDFBase64');
+      const pdfBase64 = typeof pdfBase64Param?.Value === 'string' ? pdfBase64Param.Value : null;
+      if (pdfBase64) {
+        this.downloadPdfBytes(pdfBase64, `${effectiveSpaceName}-community-digest.pdf`);
+      } else {
+        this.digestExportError = 'The action did not return a PDF.';
+      }
+    } catch (err) {
+      this.digestExportError = err instanceof Error ? err.message : 'Digest export failed.';
+    } finally {
+      this.isExportingDigest = false;
+      this.cdr.markForCheck();
+    }
+  }
+
+  private downloadPdfBytes(base64: string, fileName: string): void {
+    const bytes = atob(base64);
+    const buffer = new Uint8Array(bytes.length);
+    for (let i = 0; i < bytes.length; i++) {
+      buffer[i] = bytes.charCodeAt(i);
+    }
+    const blob = new Blob([buffer], { type: 'application/pdf' });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = fileName;
+    anchor.click();
+    URL.revokeObjectURL(url);
+  }
+
+  // ─── 3-Column Commons Workspace Handlers ──────────────────────────────────
+
+  public setSpaceFilter(spaceId: CommunitySpaceFilterId): void {
+    this.activeSpaceFilter = spaceId;
+    this.cdr.markForCheck();
+  }
+
+  public setTopicFilter(topic: string | null): void {
+    this.activeTopicFilter = topic;
+    this.cdr.markForCheck();
+  }
+
+  public setStreamTypeFilter(streamType: CommunityStreamTypeFilter): void {
+    this.activeStreamTypeFilter = streamType;
+    this.cdr.markForCheck();
+  }
+
+  public resetCommonsFilters(): void {
+    this.activeSpaceFilter = 'all';
+    this.activeTopicFilter = null;
+    this.activeStreamTypeFilter = 'all';
+    this.headerSearchQuery = '';
+    this.cdr.markForCheck();
+  }
+
+  public upvoteCommonsItem(itemId: string): void {
+    this.commonsItems = ToggleStreamItemUpvote(this.commonsItems, itemId);
+    this.cdr.markForCheck();
+  }
+
+  public toggleSessionRsvp(sessionId: string): void {
+    this.sessions = this.sessions.map((s) => (s.id === sessionId ? { ...s, rsvped: !s.rsvped } : s));
+    this.cdr.markForCheck();
+  }
+
+  // ─── Slide-Over Detail Sheet Drawer ───────────────────────────────────────
+
+  @HostListener('document:keydown.escape')
+  public onDocumentEscape(): void {
+    if (this.isAskShareModalOpen) {
+      this.closeAskShareModal();
+      return;
+    }
+    if (this.detailSheetItemId) {
+      this.closeDetailSheet();
+    }
+  }
+
+  public openDetailSheet(itemId: string): void {
+    if (!this.detailSheetItemId) {
+      const active = this.doc?.activeElement;
+      if (
+        active instanceof HTMLElement &&
+        active !== this.doc?.body &&
+        active !== this.doc?.documentElement &&
+        !active.closest('[role="dialog"]')
+      ) {
+        this.lastDetailTrigger = active;
+      }
+    }
+    this.detailSheetItemId = itemId;
+    this.detailReplyText = '';
+    this.detailActionMessage = null;
+    this.cdr.markForCheck();
+    this.scheduleOverlayInitialFocus('detail');
+  }
+
+  public closeDetailSheet(): void {
+    const trigger = this.lastDetailTrigger;
+    this.lastDetailTrigger = null;
+    this.detailSheetItemId = null;
+    this.detailReplyText = '';
+    this.detailActionMessage = null;
+    this.cdr.markForCheck();
+    this.restoreOverlayTriggerFocus(trigger, '.mjc-inspect-btn');
+  }
+
+  public submitDetailReply(): void {
+    const item = this.detailSheetItem;
+    const text = this.detailReplyText.trim();
+    if (!item || !text) return;
+    const authorName = Metadata.Provider?.CurrentUser?.Name || 'Community Member';
+    this.commonsItems = AddStreamItemReply(this.commonsItems, item.id, text, authorName);
+    this.detailReplyText = '';
+    this.detailActionMessage = 'Reply added to thread.';
+    this.cdr.markForCheck();
+  }
+
+  public graduateDetailItem(itemId: string): void {
+    this.commonsItems = GraduateStreamItem(this.commonsItems, itemId);
+    this.detailActionMessage = 'Thread graduated into an active Working Group deliverable.';
+    this.cdr.markForCheck();
+  }
+
+  // ─── Ask or Share Modal ───────────────────────────────────────────────────
+
+  public openAskShareModal(defaultType: AskShareEntryType = 'Question'): void {
+    if (!this.isAskShareModalOpen) {
+      const active = this.doc?.activeElement;
+      if (
+        active instanceof HTMLElement &&
+        active !== this.doc?.body &&
+        active !== this.doc?.documentElement &&
+        !active.closest('[role="dialog"]')
+      ) {
+        this.lastAskShareTrigger = active;
+      }
+    }
+    this.isAskShareModalOpen = true;
+    this.askShareEntryType = defaultType;
+    this.askShareTitle = '';
+    if (!this.isOfflineDemoMode && this.authorizedForums.length > 0) {
+      const preferred =
+        (this.activeSpaceFilter !== 'all'
+          ? this.authorizedForums.find((f) => f.spaceId === this.activeSpaceFilter)
+          : undefined) ?? this.authorizedForums[0];
+      this.askShareForumId = preferred.id;
+      this.askShareSpaceId = preferred.spaceId;
+    } else {
+      this.askShareForumId = '';
+      this.askShareSpaceId = this.activeSpaceFilter !== 'all' ? this.activeSpaceFilter : 'architecture-standards';
+    }
+    this.askShareBody = '';
+    this.askShareTags = '';
+    this.askShareValidationErrors = {};
+    this.askShareError = null;
+    this.cdr.markForCheck();
+    this.scheduleOverlayInitialFocus('ask-share');
+  }
+
+  public onAskShareForumChange(forumId: string): void {
+    this.askShareForumId = forumId;
+    const matched = this.authorizedForums.find((f) => UUIDsEqual(f.id, forumId));
+    if (matched) {
+      this.askShareSpaceId = matched.spaceId;
+    }
+    this.askShareError = null;
+    this.cdr.markForCheck();
+  }
+
+  public closeAskShareModal(): void {
+    const trigger = this.lastAskShareTrigger;
+    this.lastAskShareTrigger = null;
+    this.isAskShareModalOpen = false;
+    this.askShareValidationErrors = {};
+    this.askShareError = null;
+    this.cdr.markForCheck();
+    this.restoreOverlayTriggerFocus(trigger, '#mjc-header-ask-share-btn');
+  }
+
+  public onOverlayKeydown(event: KeyboardEvent, kind: 'detail' | 'ask-share'): void {
+    if (event.key !== 'Tab') {
+      return;
+    }
+    const dialogEl =
+      kind === 'detail' ? this.detailSheetDialog?.nativeElement : this.askShareDialog?.nativeElement;
+    if (!dialogEl) {
+      return;
+    }
+    const focusables = this.getVisibleFocusableElements(dialogEl);
+    if (focusables.length === 0) {
+      event.preventDefault();
+      dialogEl.focus();
+      return;
+    }
+    const active = this.doc?.activeElement instanceof HTMLElement ? this.doc.activeElement : null;
+    const nextTarget = ComputeNextTrapFocusTarget(focusables, active, event.shiftKey);
+    if (nextTarget) {
+      event.preventDefault();
+      nextTarget.focus();
+    }
+  }
+
+  private getVisibleFocusableElements(container: HTMLElement): HTMLElement[] {
+    const selector =
+      'a[href], button:not([disabled]), input:not([disabled]):not([type="hidden"]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+    const candidates = Array.from(container.querySelectorAll<HTMLElement>(selector));
+    return candidates.filter((el) => {
+      if (el.hasAttribute('hidden') || el.getAttribute('aria-hidden') === 'true') {
+        return false;
+      }
+      if (typeof el.getClientRects === 'function' && el.getClientRects().length === 0) {
+        return false;
+      }
+      return true;
+    });
+  }
+
+  private scheduleOverlayInitialFocus(kind: 'detail' | 'ask-share'): void {
+    queueMicrotask(() => {
+      const moved = this.focusOverlayEntryControl(kind);
+      if (!moved) {
+        setTimeout(() => {
+          this.focusOverlayEntryControl(kind);
+        }, 0);
+      }
+    });
+  }
+
+  private focusOverlayEntryControl(kind: 'detail' | 'ask-share'): boolean {
+    const dialogEl =
+      kind === 'detail' ? this.detailSheetDialog?.nativeElement : this.askShareDialog?.nativeElement;
+    if (!dialogEl) {
+      return false;
+    }
+    const focusables = this.getVisibleFocusableElements(dialogEl);
+    const target = focusables[0] ?? dialogEl;
+    target.focus();
+    return this.doc?.activeElement === target;
+  }
+
+  private restoreOverlayTriggerFocus(trigger: HTMLElement | null, fallbackSelector: string): void {
+    const attemptRestore = (): void => {
+      const validTrigger =
+        trigger &&
+        trigger.isConnected &&
+        trigger !== this.doc?.body &&
+        trigger !== this.doc?.documentElement &&
+        !trigger.closest('[inert]')
+          ? trigger
+          : null;
+      const fallback = this.doc?.querySelector<HTMLElement>(fallbackSelector) ?? null;
+      const target = validTrigger ?? (fallback && !fallback.closest('[inert]') ? fallback : null);
+      if (target) {
+        target.focus();
+      }
+    };
+    setTimeout(() => {
+      attemptRestore();
+      if (typeof requestAnimationFrame === 'function' && this.doc?.querySelector('[inert]')) {
+        requestAnimationFrame(() => attemptRestore());
+      }
+    }, 0);
+  }
+
+  public inspectAskShareDeflection(qaId: string): void {
+    this.closeAskShareModal();
+    const matchItem = this.commonsItems.find((i) => i.sourcePostId === qaId);
+    if (matchItem) {
+      this.openDetailSheet(matchItem.id);
+    } else {
+      this.jumpToQaCanon(qaId);
+    }
+  }
+
+  public async submitAskShareModal(): Promise<void> {
+    this.askShareError = null;
+    const provider = Metadata.Provider;
+    const user: UserInfo | undefined = provider?.CurrentUser;
+    if (!this.isOfflineDemoMode && provider && user) {
+      await this.ensurePostTypesLoaded(user).catch(() => undefined);
+    }
+
+    const outcome = await PersistAskSharePost({
+      draft: {
+        entryType: this.askShareEntryType,
+        title: this.askShareTitle,
+        spaceId: this.askShareSpaceId,
+        body: this.askShareBody,
+        tagsInput: this.askShareTags,
+      },
+      isOfflineDemoMode: this.isOfflineDemoMode || !provider || !user,
+      targetForumId: this.askShareForumId,
+      allowedForumIDs: this.allowedForumIDs,
+      authorizedForums: this.authorizedForums,
+      postTypeIdByCode: this.postTypeIdByCode,
+      currentUserId: user?.ID,
+      authorName: user?.Name || 'Community Member',
+      createForumPostEntity:
+        provider && user
+          ? () =>
+              new Metadata().GetEntityObject<mjBizAppsCommunityForumPostEntity>(
+                COMMUNITY_ENTITY_NAMES.ForumPosts,
+                user,
+              )
+          : null,
+      createQuestionPostEntity:
+        provider && user
+          ? () =>
+              new Metadata().GetEntityObject<mjBizAppsCommunityForumQuestionPostEntity>(
+                COMMUNITY_ENTITY_NAMES.ForumQuestionPosts,
+                user,
+              )
+          : null,
+    });
+
+    if (!outcome.success || !outcome.createdItem) {
+      this.askShareValidationErrors = outcome.validationErrors;
+      this.askShareError = outcome.errorMessage;
+      this.cdr.markForCheck();
+      return;
+    }
+
+    const newItem = outcome.createdItem;
+    this.userAddedCommonsItems.unshift(newItem);
+    this.feedPosts = [
+      {
+        id: newItem.sourcePostId,
+        title: newItem.title,
+        bodyMarkdown: newItem.bodyMarkdown,
+        status: 'Published',
+        authorName: newItem.authorName,
+        authorRole: newItem.authorRole,
+      },
+      ...this.feedPosts,
+    ];
+
+    if (this.askShareEntryType === 'Question') {
+      const qaEntry: CommunityHubQACanonItem = {
+        id: newItem.sourcePostId,
+        questionPostId: newItem.sourcePostId,
+        forumId: outcome.resolvedForumId,
+        title: newItem.title,
+        bodyMarkdown: newItem.bodyMarkdown,
+        epistemicStatus: 'Novel Insight',
+        confidenceScore: null,
+        isAccepted: false,
+      };
+      this.qaCanonItems = [qaEntry, ...this.qaCanonItems];
+      this.selectedQaId = qaEntry.id;
+    } else if (this.askShareEntryType === 'Playbook Note') {
+      const docEntry: CommunityHubLivingDocItem = {
+        id: newItem.sourcePostId,
+        title: newItem.title,
+        bodyMarkdown: newItem.bodyMarkdown,
+        postTypeCode: 'collaborative-doc',
+      };
+      this.livingDocItems = [docEntry, ...this.livingDocItems];
+      this.selectedLivingDocId = docEntry.id;
+      this.editingDocMarkdown = docEntry.bodyMarkdown;
+    }
+
+    this.rebuildCommonsItems();
+    this.selectedFeedPostId = newItem.sourcePostId;
+    this.askShareTitle = '';
+    this.askShareBody = '';
+    this.askShareTags = '';
+    this.askShareValidationErrors = {};
+    this.askShareError = null;
+    this.closeAskShareModal();
   }
 
   public SelectTab(key: CommunityHubTabKey): void {
@@ -727,10 +1353,11 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
   public SelectQAQuestion(itemId: string): void {
     this.selectedQaId = itemId;
     this.qaActionMessage = null;
+    this.cdr.markForCheck();
   }
 
   private resolvePostTypeId(code: string): string | null {
-    return this.postTypeIdByCode.get(code.trim().toLowerCase()) ?? this.postTypeIdByCode.values().next().value ?? null;
+    return this.postTypeIdByCode.get(code.trim().toLowerCase()) ?? null;
   }
 
   private async ensurePostTypesLoaded(user: UserInfo): Promise<void> {
@@ -746,15 +1373,50 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
     }
   }
 
+  private resolveTargetForumId(preferredForumId?: string | null): string | null {
+    const explicit = ResolveAuthorizedForumTarget(preferredForumId, this.allowedForumIDs);
+    if (explicit) {
+      return explicit;
+    }
+    if (this.activeSpaceFilter !== 'all') {
+      const spaceForum = this.authorizedForums.find((f) => f.spaceId === this.activeSpaceFilter);
+      const spaceMatch = ResolveAuthorizedForumTarget(spaceForum?.id, this.allowedForumIDs);
+      if (spaceMatch) {
+        return spaceMatch;
+      }
+    }
+    const defaultForumId = this.authorizedForums[0]?.id ?? this.allowedForumIDs[0];
+    return ResolveAuthorizedForumTarget(defaultForumId, this.allowedForumIDs);
+  }
+
+  private normalizeEpistemicStatus(
+    raw: string,
+  ): mjBizAppsCommunityForumAnswerPostEntity['AIEpistemicStatus'] {
+    switch (raw.trim()) {
+      case 'Canon Verified':
+        return 'Canon Verified';
+      case 'Conflicts With Canon':
+        return 'Conflicts With Canon';
+      case 'Novel Insight':
+        return 'Novel Insight';
+      case 'Partially Outdated':
+        return 'Partially Outdated';
+      default:
+        return null;
+    }
+  }
+
   public async CreateQuestion(): Promise<void> {
     const title = this.newQuestionTitle.trim();
     const body = this.newQuestionBody.trim();
     if (!title || !body) return;
 
+    const targetForumId = this.resolveTargetForumId();
     const generatedId = crypto.randomUUID();
     const created: CommunityHubQACanonItem = {
       id: generatedId,
       questionPostId: generatedId,
+      forumId: targetForumId,
       title,
       bodyMarkdown: body,
       epistemicStatus: 'Novel Insight',
@@ -765,8 +1427,8 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
     const provider = Metadata.Provider;
     const user: UserInfo | undefined = provider?.CurrentUser;
     if (provider && user) {
-      if (!this.allowedForumIDs[0]) {
-        this.qaActionMessage = 'No forum is available to post a question.';
+      if (!targetForumId) {
+        this.qaActionMessage = 'No authorized forum is available to post a question.';
         this.cdr.markForCheck();
         return;
       }
@@ -789,7 +1451,7 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
           this.cdr.markForCheck();
           return;
         }
-        post.ForumID = this.allowedForumIDs[0];
+        post.ForumID = targetForumId;
         post.AuthorUserID = user.ID;
         post.PostTypeID = postTypeId;
         post.Title = title;
@@ -819,6 +1481,7 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
     }
 
     this.qaCanonItems = [created, ...this.qaCanonItems];
+    this.rebuildCommonsItems();
     this.selectedQaId = created.id;
     this.newQuestionTitle = '';
     this.newQuestionBody = '';
@@ -827,16 +1490,19 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
     this.cdr.markForCheck();
   }
 
-  public async SubmitAnswer(): Promise<void> {
-    const body = this.newAnswerBody.trim();
-    const target = this.selectedQaItem;
+  public async SubmitAnswer(targetItemId?: string, answerBodyOverride?: string): Promise<void> {
+    const body = (answerBodyOverride ?? this.newAnswerBody).trim();
+    const target =
+      (targetItemId ? this.qaCanonItems.find((q) => q.id === targetItemId) : null) ?? this.selectedQaItem;
     if (!body || !target) return;
 
     const targetQuestionId = target.questionPostId ?? target.id;
+    const targetForumId = this.resolveTargetForumId(target.forumId);
     const generatedId = crypto.randomUUID();
     const newAnswer: CommunityHubQACanonItem = {
       id: generatedId,
       questionPostId: targetQuestionId,
+      forumId: targetForumId,
       title: `Re: ${target.title}`,
       bodyMarkdown: body,
       epistemicStatus: 'Novel Insight',
@@ -847,8 +1513,8 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
     const provider = Metadata.Provider;
     const user: UserInfo | undefined = provider?.CurrentUser;
     if (provider && user) {
-      if (!this.allowedForumIDs[0]) {
-        this.qaActionMessage = 'No forum is available to submit an answer.';
+      if (!targetForumId) {
+        this.qaActionMessage = 'No authorized forum is available to submit an answer.';
         this.cdr.markForCheck();
         return;
       }
@@ -871,7 +1537,7 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
           this.cdr.markForCheck();
           return;
         }
-        post.ForumID = this.allowedForumIDs[0];
+        post.ForumID = targetForumId;
         post.AuthorUserID = user.ID;
         post.PostTypeID = postTypeId;
         post.RootPostID = targetQuestionId;
@@ -905,6 +1571,7 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
     }
 
     this.qaCanonItems = [newAnswer, ...this.qaCanonItems];
+    this.rebuildCommonsItems();
     this.selectedQaId = newAnswer.id;
     this.newAnswerBody = '';
     this.qaActionMessage = 'Answer submitted for Epistemic grading.';
@@ -931,7 +1598,10 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
         const statusParam = res.Params?.find((p) => p.Name === 'EpistemicStatus')?.Value;
         const scoreParam = res.Params?.find((p) => p.Name === 'ConfidenceScore')?.Value;
         if (typeof statusParam === 'string' && statusParam.trim()) {
-          item.epistemicStatus = statusParam;
+          const parsedStatus = this.normalizeEpistemicStatus(statusParam);
+          if (parsedStatus) {
+            item.epistemicStatus = parsedStatus;
+          }
         }
         if (typeof scoreParam === 'number' && Number.isFinite(scoreParam)) {
           item.confidenceScore = scoreParam;
@@ -939,6 +1609,7 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
           item.confidenceScore = Number(scoreParam);
         }
         this.qaActionMessage = res.Message || `Graded "${item.title}".`;
+        this.rebuildCommonsItems();
         this.cdr.markForCheck();
         return;
       } catch (err) {
@@ -951,6 +1622,7 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
     item.epistemicStatus = 'Canon Verified';
     item.confidenceScore = 0.91;
     this.qaActionMessage = `Graded "${item.title}" as Canon Verified (0.91 confidence).`;
+    this.rebuildCommonsItems();
     this.cdr.markForCheck();
   }
 
@@ -1028,6 +1700,7 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
     item.isAccepted = true;
     item.epistemicStatus = 'Canon Verified';
     this.qaActionMessage = `Promoted "${item.title}" to Knowledge Canon.`;
+    this.rebuildCommonsItems();
     this.cdr.markForCheck();
   }
 
@@ -1045,6 +1718,12 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
     this.focusedIdeaId = ideaId;
     this.ideationErrorMessage = null;
     this.cdr.markForCheck();
+  }
+
+  public applyQuickIdeaAllocation(points: number): void {
+    if (!this.selectedIdeaId) return;
+    const effectiveVotes = ComputeQuadraticEffectiveVotes(points, this.activeCampaign.allocationMode);
+    void this.OnVoteAllocationChanged(this.selectedIdeaId, points, effectiveVotes);
   }
 
   public async ProposeIdea(): Promise<void> {
@@ -1117,6 +1796,7 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
     }
 
     this.ideationItems = [created, ...this.ideationItems];
+    this.rebuildCommonsItems();
     this.selectedIdeaId = created.id;
     this.focusedIdeaId = created.id;
     this.newIdeaTitle = '';
@@ -1240,11 +1920,18 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
     } else {
       this.sandboxedMiniAppSrcdoc = null;
     }
+    this.cdr.markForCheck();
   }
 
-  public async SaveCoAuthoringDocument(): Promise<void> {
-    const doc = this.selectedLivingDoc;
+  public async SaveCoAuthoringDocument(targetDocId?: string, markdownOverride?: string): Promise<void> {
+    const doc =
+      (targetDocId ? this.livingDocItems.find((d) => d.id === targetDocId) : null) ?? this.selectedLivingDoc;
     if (!doc) return;
+    if (targetDocId && this.selectedLivingDocId !== targetDocId) {
+      this.selectedLivingDocId = targetDocId;
+    }
+    const markdownToSave = markdownOverride ?? this.editingDocMarkdown;
+    this.editingDocMarkdown = markdownToSave;
     const provider = Metadata.Provider;
     const user: UserInfo | undefined = provider?.CurrentUser;
     if (provider && user) {
@@ -1259,7 +1946,7 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
           this.cdr.markForCheck();
           return;
         }
-        post.BodyMarkdown = this.editingDocMarkdown;
+        post.BodyMarkdown = markdownToSave;
         if (!(await post.Save())) {
           this.docActionMessage = `Failed saving co-authored revision for "${doc.title}".`;
           this.cdr.markForCheck();
@@ -1271,23 +1958,34 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
         return;
       }
     }
-    doc.bodyMarkdown = this.editingDocMarkdown;
+    this.livingDocItems = this.livingDocItems.map((item) =>
+      item.id === doc.id ? { ...item, bodyMarkdown: markdownToSave } : item,
+    );
+    this.rebuildCommonsItems();
     this.docActionMessage = `Saved co-authored revision for "${doc.title}".`;
     this.cdr.markForCheck();
   }
 
-  public SubmitInlineForm(): void {
-    const doc = this.selectedLivingDoc;
+  public SubmitInlineForm(targetDocId?: string): void {
+    const doc =
+      (targetDocId ? this.livingDocItems.find((d) => d.id === targetDocId) : null) ?? this.selectedLivingDoc;
     if (!doc) return;
+    if (targetDocId && this.selectedLivingDocId !== targetDocId) {
+      this.selectedLivingDocId = targetDocId;
+    }
     this.formSubmissionCount += 1;
     this.formSubmittedMessage = `Recorded submission #${this.formSubmissionCount} for "${doc.title}" (Confidence: ${this.formConfidenceRating}).`;
     this.formComments = '';
     this.cdr.markForCheck();
   }
 
-  public ResetMiniApp(): void {
-    const doc = this.selectedLivingDoc;
+  public ResetMiniApp(targetDocId?: string): void {
+    const doc =
+      (targetDocId ? this.livingDocItems.find((d) => d.id === targetDocId) : null) ?? this.selectedLivingDoc;
     if (!doc || doc.postTypeCode !== 'interactive-experience') return;
+    if (targetDocId && this.selectedLivingDocId !== targetDocId) {
+      this.selectedLivingDocId = targetDocId;
+    }
     this.miniAppResetNonce += 1;
     const rawHtml = buildMiniAppSrcdoc(`${doc.title} #${this.miniAppResetNonce}`, doc.experienceKind ?? 'Interactive');
     this.sandboxedMiniAppSrcdoc = this.sanitizer.bypassSecurityTrustHtml(rawHtml);
@@ -1333,7 +2031,7 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
   }
 
   public override async GetResourceDisplayName(_data: ResourceData): Promise<string> {
-    return this.spaceName ? `${this.spaceName} — Community Hub` : 'Community Hub';
+    return this.spaceName ? `${this.spaceName} — Community Hub` : 'MemberJunction Community Hub';
   }
 
   public override async GetResourceIconClass(_data: ResourceData): Promise<string> {

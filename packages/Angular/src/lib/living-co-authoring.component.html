@@ -1,0 +1,278 @@
+<div class="mjc-living-workbench">
+  <!-- HERO BANNER -->
+  <div class="mjc-living-hero">
+    <div class="mjc-living-hero__lead">
+      <span class="mjc-living-hero__kicker">Living Community Canon &amp; Sandboxed Mini-Apps</span>
+      <h2 class="mjc-living-hero__title">Playbooks, Inline Forms &amp; Interactive Utilities</h2>
+      <p class="mjc-living-hero__desc">
+        Co-author operational playbooks with AI synthesis, capture structured readiness check-ins via inline forms, and execute sandboxed interactive mini-apps.
+      </p>
+    </div>
+
+    <div class="mjc-living-hero__controls">
+      <div class="mjc-living-pills" role="group" aria-label="Filter living artifacts by type">
+        @for (opt of filterOptions; track opt.key) {
+          <button
+            type="button"
+            class="mjc-living-pill"
+            [class.mjc-living-pill--active]="opt.key === activeFilter"
+            [attr.aria-pressed]="opt.key === activeFilter"
+            (click)="setFilter(opt.key)"
+          >
+            <span>{{ opt.label }}</span>
+            <span class="mjc-living-pill__count">{{ countForFilter(opt.key) }}</span>
+          </button>
+        }
+      </div>
+    </div>
+  </div>
+
+  <!-- INTERACTIVE COMMUNITY CAPACITY & SLA CALCULATOR UTILITY -->
+  <div class="mjc-calc-card">
+    <div class="mjc-calc-card__intro">
+      <span class="mjc-calc-card__badge">Interactive Engineering Utility</span>
+      <h3 class="mjc-calc-card__title">Multi-Region Read Replica &amp; Webhook Retry Capacity Calculator</h3>
+      <p class="mjc-calc-card__desc">
+        Compute recommended read replicas, burst queue capacity, and retry backoff windows from target throughput and latency SLOs.
+      </p>
+    </div>
+
+    <div class="mjc-calc-card__body">
+      <div class="mjc-calc-inputs">
+        <div class="mjc-calc-tile">
+          <label for="mjc-calc-rps" class="mjc-calc-tile__label">Target Throughput (RPS)</label>
+          <input
+            id="mjc-calc-rps"
+            type="number"
+            min="10"
+            max="50000"
+            class="mjc-calc-tile__input"
+            [(ngModel)]="targetRps"
+          />
+        </div>
+        <div class="mjc-calc-tile">
+          <label for="mjc-calc-latency" class="mjc-calc-tile__label">Max p95 Latency (ms)</label>
+          <input
+            id="mjc-calc-latency"
+            type="number"
+            min="20"
+            max="5000"
+            class="mjc-calc-tile__input"
+            [(ngModel)]="maxP95LatencyMs"
+          />
+        </div>
+        <div class="mjc-calc-tile">
+          <label for="mjc-calc-topology" class="mjc-calc-tile__label">Deployment Profile</label>
+          <select id="mjc-calc-topology" class="mjc-calc-tile__input" [(ngModel)]="topologyProfile">
+            <option value="single-region">Single Region</option>
+            <option value="multi-region-active">Multi-Region Active</option>
+            <option value="regulated-isolated">Regulated Isolated</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="mjc-calc-output">
+        <div>
+          <div class="mjc-calc-output__kicker">Recommended Architecture Spec</div>
+          <div class="mjc-calc-output__sub">{{ capacitySpec.summaryLine }}</div>
+        </div>
+        <div class="mjc-calc-output__actions">
+          <strong class="mjc-calc-output__spec">{{ capacitySpec.headlineSpec }}</strong>
+          <button type="button" id="mjc-calc-save-preset-btn" class="mjc-living-btn mjc-living-btn--primary" (click)="saveCapacityPreset()">
+            Save Spec Preset
+          </button>
+        </div>
+      </div>
+
+      @if (savedPresets.length > 0) {
+        <div class="mjc-calc-presets" aria-label="Saved capacity presets">
+          @for (preset of savedPresets; track preset.id) {
+            <span class="mjc-calc-preset-pill">
+              <span>{{ preset.label }}:</span>
+              <strong>{{ preset.detail }}</strong>
+            </span>
+          }
+        </div>
+      }
+    </div>
+  </div>
+
+  <!-- 2-COLUMN ARTIFACT DIRECTORY & WORKSPACE -->
+  @if (items.length === 0) {
+    <p class="mjc-living-hint">No living documents or interactive mini-apps yet.</p>
+  } @else if (filteredItems.length === 0) {
+    <div class="mjc-living-card">
+      <h3 class="mjc-living-card__title">No matching artifacts in this filter</h3>
+      <p class="mjc-living-hint">Switch back to All Artifacts to view playbooks, inline forms, and mini-apps.</p>
+      <div class="mjc-living-btn-row">
+        <button type="button" class="mjc-living-btn" (click)="clearFilters()">Show All Artifacts</button>
+      </div>
+    </div>
+  } @else {
+    <div class="mjc-living-split">
+      <!-- LEFT: ARTIFACT LISTBOX -->
+      <div class="mjc-living-list" role="listbox" aria-label="Living Documents and Mini-Apps">
+        @for (doc of filteredItems; track doc.id) {
+          <button
+            type="button"
+            role="option"
+            class="mjc-living-list-item"
+            [class.mjc-living-list-item--selected]="doc.id === activeDoc?.id"
+            [attr.aria-selected]="doc.id === activeDoc?.id"
+            (click)="onSelectDoc(doc.id)"
+          >
+            <div class="mjc-living-list-item__top">
+              <span
+                class="mjc-living-badge"
+                [class.mjc-living-badge--brand]="metaFor(doc).tone === 'brand'"
+                [class.mjc-living-badge--success]="metaFor(doc).tone === 'success'"
+                [class.mjc-living-badge--warning]="metaFor(doc).tone === 'warning'"
+              >
+                <i [class]="metaFor(doc).icon" aria-hidden="true"></i>
+                <span>{{ metaFor(doc).badgeText }}</span>
+              </span>
+              <span class="mjc-living-code-chip">{{ doc.postTypeCode }}</span>
+            </div>
+            <span class="mjc-living-list-item__title">{{ doc.title }}</span>
+            <span class="mjc-living-list-item__excerpt">
+              {{ doc.bodyMarkdown ? (doc.bodyMarkdown.length > 92 ? doc.bodyMarkdown.slice(0, 92) + '...' : doc.bodyMarkdown) : 'Open artifact workspace.' }}
+            </span>
+          </button>
+        }
+      </div>
+
+      <!-- RIGHT: ACTIVE DOCUMENT / INLINE FORM / SANDBOXED MINI-APP -->
+      @if (activeDoc; as doc) {
+        <div class="mjc-living-card">
+          <div class="mjc-living-card__head">
+            <div>
+              <span
+                class="mjc-living-badge"
+                [class.mjc-living-badge--brand]="metaFor(doc).tone === 'brand'"
+                [class.mjc-living-badge--success]="metaFor(doc).tone === 'success'"
+                [class.mjc-living-badge--warning]="metaFor(doc).tone === 'warning'"
+              >
+                <i [class]="metaFor(doc).icon" aria-hidden="true"></i>
+                <span>{{ metaFor(doc).badgeText }}</span>
+              </span>
+              <h3 class="mjc-living-card__title">{{ doc.title }}</h3>
+            </div>
+          </div>
+
+          @switch (doc.postTypeCode) {
+            @case ('collaborative-doc') {
+              <div class="mjc-living-field">
+                <label for="mjc-living-doc-editor" class="mjc-living-label">Co-Authoring Markdown</label>
+                <textarea
+                  id="mjc-living-doc-editor"
+                  name="editingDocMarkdown"
+                  rows="7"
+                  class="mjc-living-textarea"
+                  [ngModel]="editingDocMarkdown"
+                  (ngModelChange)="editingDocMarkdownChange.emit($event)"
+                ></textarea>
+              </div>
+              <div class="mjc-living-btn-row">
+                <button
+                  type="button"
+                  id="mjc-living-doc-save-btn"
+                  class="mjc-living-btn mjc-living-btn--primary"
+                  (click)="onSaveDoc()"
+                >
+                  Save Co-Authoring Revision
+                </button>
+                <button
+                  type="button"
+                  id="mjc-living-doc-synth-btn"
+                  class="mjc-living-btn"
+                  (click)="onSynthesizeDoc(doc.id)"
+                >
+                  <i class="fa-solid fa-wand-magic-sparkles" aria-hidden="true"></i>
+                  <span>Synthesize Document Summary</span>
+                </button>
+              </div>
+              @if (docActionMessage) {
+                <p class="mjc-community-hub__status" role="status">{{ docActionMessage }}</p>
+              }
+              @if (threadSynthesisResult) {
+                <p class="mjc-community-hub__status" role="status">{{ threadSynthesisResult }}</p>
+              }
+            }
+            @case ('collaborative-sheet') {
+              <form class="mjc-living-form" (ngSubmit)="onSubmitInlineForm()">
+                <div class="mjc-living-field">
+                  <label for="mjc-form-respondent" class="mjc-living-label">Member / Cohort Name</label>
+                  <input
+                    id="mjc-form-respondent"
+                    name="formRespondentName"
+                    class="mjc-living-input"
+                    [ngModel]="formRespondentName"
+                    (ngModelChange)="formRespondentNameChange.emit($event)"
+                    required
+                  />
+                </div>
+                <div class="mjc-living-field">
+                  <label for="mjc-form-rating" class="mjc-living-label">Readiness Confidence</label>
+                  <select
+                    id="mjc-form-rating"
+                    name="formConfidenceRating"
+                    class="mjc-living-input"
+                    [ngModel]="formConfidenceRating"
+                    (ngModelChange)="formConfidenceRatingChange.emit($event)"
+                  >
+                    <option value="High">High — Ready for launch</option>
+                    <option value="Medium">Medium — Minor follow-ups</option>
+                    <option value="Needs Support">Needs Support — Blocked</option>
+                  </select>
+                </div>
+                <div class="mjc-living-field">
+                  <label for="mjc-form-comments" class="mjc-living-label">Notes / Blockers</label>
+                  <textarea
+                    id="mjc-form-comments"
+                    name="formComments"
+                    rows="3"
+                    class="mjc-living-textarea"
+                    [ngModel]="formComments"
+                    (ngModelChange)="formCommentsChange.emit($event)"
+                  ></textarea>
+                </div>
+                <div class="mjc-living-btn-row">
+                  <button type="submit" id="mjc-form-submit-btn" class="mjc-living-btn mjc-living-btn--primary">
+                    Submit Inline Form Response
+                  </button>
+                  <span class="mjc-living-code-chip">{{ formSubmissionCount }} recorded</span>
+                </div>
+              </form>
+              @if (formSubmittedMessage) {
+                <p class="mjc-community-hub__status" role="status">{{ formSubmittedMessage }}</p>
+              }
+            }
+            @case ('interactive-experience') {
+              <p class="mjc-living-sandbox-note">
+                <i class="fa-solid fa-shield-halved" aria-hidden="true"></i>
+                <span>Executed inside an isolated <code>sandbox="allow-scripts"</code> frame with zero parent DOM access.</span>
+              </p>
+              @if (sandboxedMiniAppSrcdoc) {
+                <iframe
+                  id="mjc-interactive-miniapp-frame"
+                  class="mjc-living-iframe"
+                  sandbox="allow-scripts"
+                  [srcdoc]="sandboxedMiniAppSrcdoc"
+                  [title]="doc.title"
+                ></iframe>
+              }
+              <div class="mjc-living-btn-row">
+                <button type="button" id="mjc-miniapp-reset-btn" class="mjc-living-btn" (click)="onResetMiniApp()">
+                  Reset Sandboxed Mini-App
+                </button>
+              </div>
+            }
+            @default {
+              <p class="mjc-living-card__body">{{ doc.bodyMarkdown }}</p>
+            }
+          }
+        </div>
+      }
+    </div>
+  }
+</div>
