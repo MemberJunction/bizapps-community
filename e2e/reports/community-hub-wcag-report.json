@@ -1,7 +1,8 @@
 {
   "schemaVersion": "sf-e2e/v1",
-  "evaluatedAtIso": "2026-11-16T23:45:26.047Z",
-  "harnessUrl": "http://127.0.0.1:60245/",
+  "evaluatedAtIso": "2026-11-17T03:21:45.260Z",
+  "harnessUrl": "http://127.0.0.1:49387/",
+  "runtimeClassFactoryRegistrationsVerified": 26,
   "tabsExercised": [
     "knowledge-stream",
     "qa-canon-workbench",
@@ -11,6 +12,11 @@
   "keyboardNavigationVerified": true,
   "askFirstDeflectionExercised": true,
   "digestExportExercised": true,
+  "digestExportPdfVerified": true,
+  "qaCanonWorkbenchExercised": true,
+  "livingCoAuthoringExercised": true,
+  "inlineFormExercised": true,
+  "sandboxedMiniAppExercised": true,
   "quadraticVotingExercised": true,
   "windowPrintCalled": false,
   "quadraticVoting": {

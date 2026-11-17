@@ -572,9 +572,9 @@ CREATE TABLE __mj_BizAppsCommunity."ForumSubscription" (
  CONSTRAINT "FK_ForumSubscription_RootPost" FOREIGN KEY ("RootPostID") REFERENCES __mj_BizAppsCommunity."ForumPost"("ID"),
  CONSTRAINT "FK_ForumSubscription_TopicTag" FOREIGN KEY ("TopicTagID") REFERENCES __mj_BizAppsCommunity."ForumTopicTag"("ID"),
  CONSTRAINT "CK_ForumSubscription_Target" CHECK (
- ("CASE" "WHEN" "ForumID" IS NOT NULL "THEN" 1 "ELSE" 0 "END" +
- "CASE" "WHEN" "RootPostID" IS NOT NULL "THEN" 1 "ELSE" 0 "END" +
- "CASE" "WHEN" "TopicTagID" IS NOT NULL "THEN" 1 "ELSE" 0 "END") = 1
+ (CASE WHEN "ForumID" IS NOT NULL THEN 1 ELSE 0 END +
+ CASE WHEN "RootPostID" IS NOT NULL THEN 1 ELSE 0 END +
+ CASE WHEN "TopicTagID" IS NOT NULL THEN 1 ELSE 0 END) = 1
  ),
  CONSTRAINT "CK_ForumSubscription_DeliveryLevel" CHECK ("DeliveryLevel" IN ('Every Post', 'First Post Only', 'Digest Only', 'Muted'))
 );
@@ -624,935 +624,102 @@ CREATE INDEX IF NOT EXISTS "IX_ForumInteractiveSession_Score" ON __mj_BizAppsCom
 
 /* SQL text to add default constraint for special date field __mj_CreatedAt in entity __mj_BizAppsCommunity.ForumIdeaAllocation */
 ALTER TABLE __mj_BizAppsCommunity."ForumIdeaAllocation" ALTER COLUMN "__mj_CreatedAt" SET DEFAULT NOW();
-/* SQL text to drop default existing default constraints in entity __mj_BizAppsCommunity.ForumIdeaAllocation */
-DECLARE @constraintName VARCHAR(255);
-
-SELECT @constraintName = d.name
-FROM sys.tables t
-JOIN sys.schemas s ON t.schema_id = s.schema_id
-JOIN sys.columns c ON t.object_id = c.object_id
-JOIN sys.default_constraints d ON c.default_object_id = d.object_id
-WHERE s.name = '__mj_BizAppsCommunity'
-AND t.name = 'ForumIdeaAllocation'
-AND c.name = '__mj_UpdatedAt';
-
-IF @constraintName IS NOT NULL
-BEGIN
-    EXEC('ALTER TABLE [__mj_BizAppsCommunity].[ForumIdeaAllocation] DROP CONSTRAINT ' + @constraintName);
-END;
-
 /* SQL text to add default constraint for special date field __mj_UpdatedAt in entity __mj_BizAppsCommunity.ForumIdeaAllocation */
 ALTER TABLE __mj_BizAppsCommunity."ForumIdeaAllocation" ALTER COLUMN "__mj_UpdatedAt" SET DEFAULT NOW();
-/* SQL text to drop default existing default constraints in entity __mj_BizAppsCommunity.ForumPostFlag */
-DECLARE @constraintName VARCHAR(255);
-
-SELECT @constraintName = d.name
-FROM sys.tables t
-JOIN sys.schemas s ON t.schema_id = s.schema_id
-JOIN sys.columns c ON t.object_id = c.object_id
-JOIN sys.default_constraints d ON c.default_object_id = d.object_id
-WHERE s.name = '__mj_BizAppsCommunity'
-AND t.name = 'ForumPostFlag'
-AND c.name = '__mj_CreatedAt';
-
-IF @constraintName IS NOT NULL
-BEGIN
-    EXEC('ALTER TABLE [__mj_BizAppsCommunity].[ForumPostFlag] DROP CONSTRAINT ' + @constraintName);
-END;
-
 /* SQL text to add default constraint for special date field __mj_CreatedAt in entity __mj_BizAppsCommunity.ForumPostFlag */
 ALTER TABLE __mj_BizAppsCommunity."ForumPostFlag" ALTER COLUMN "__mj_CreatedAt" SET DEFAULT NOW();
-/* SQL text to drop default existing default constraints in entity __mj_BizAppsCommunity.ForumPostFlag */
-DECLARE @constraintName VARCHAR(255);
-
-SELECT @constraintName = d.name
-FROM sys.tables t
-JOIN sys.schemas s ON t.schema_id = s.schema_id
-JOIN sys.columns c ON t.object_id = c.object_id
-JOIN sys.default_constraints d ON c.default_object_id = d.object_id
-WHERE s.name = '__mj_BizAppsCommunity'
-AND t.name = 'ForumPostFlag'
-AND c.name = '__mj_UpdatedAt';
-
-IF @constraintName IS NOT NULL
-BEGIN
-    EXEC('ALTER TABLE [__mj_BizAppsCommunity].[ForumPostFlag] DROP CONSTRAINT ' + @constraintName);
-END;
-
 /* SQL text to add default constraint for special date field __mj_UpdatedAt in entity __mj_BizAppsCommunity.ForumPostFlag */
 ALTER TABLE __mj_BizAppsCommunity."ForumPostFlag" ALTER COLUMN "__mj_UpdatedAt" SET DEFAULT NOW();
-/* SQL text to drop default existing default constraints in entity __mj_BizAppsCommunity.ForumMember */
-DECLARE @constraintName VARCHAR(255);
-
-SELECT @constraintName = d.name
-FROM sys.tables t
-JOIN sys.schemas s ON t.schema_id = s.schema_id
-JOIN sys.columns c ON t.object_id = c.object_id
-JOIN sys.default_constraints d ON c.default_object_id = d.object_id
-WHERE s.name = '__mj_BizAppsCommunity'
-AND t.name = 'ForumMember'
-AND c.name = '__mj_CreatedAt';
-
-IF @constraintName IS NOT NULL
-BEGIN
-    EXEC('ALTER TABLE [__mj_BizAppsCommunity].[ForumMember] DROP CONSTRAINT ' + @constraintName);
-END;
-
 /* SQL text to add default constraint for special date field __mj_CreatedAt in entity __mj_BizAppsCommunity.ForumMember */
 ALTER TABLE __mj_BizAppsCommunity."ForumMember" ALTER COLUMN "__mj_CreatedAt" SET DEFAULT NOW();
-/* SQL text to drop default existing default constraints in entity __mj_BizAppsCommunity.ForumMember */
-DECLARE @constraintName VARCHAR(255);
-
-SELECT @constraintName = d.name
-FROM sys.tables t
-JOIN sys.schemas s ON t.schema_id = s.schema_id
-JOIN sys.columns c ON t.object_id = c.object_id
-JOIN sys.default_constraints d ON c.default_object_id = d.object_id
-WHERE s.name = '__mj_BizAppsCommunity'
-AND t.name = 'ForumMember'
-AND c.name = '__mj_UpdatedAt';
-
-IF @constraintName IS NOT NULL
-BEGIN
-    EXEC('ALTER TABLE [__mj_BizAppsCommunity].[ForumMember] DROP CONSTRAINT ' + @constraintName);
-END;
-
 /* SQL text to add default constraint for special date field __mj_UpdatedAt in entity __mj_BizAppsCommunity.ForumMember */
 ALTER TABLE __mj_BizAppsCommunity."ForumMember" ALTER COLUMN "__mj_UpdatedAt" SET DEFAULT NOW();
-/* SQL text to drop default existing default constraints in entity __mj_BizAppsCommunity.ForumPostTag */
-DECLARE @constraintName VARCHAR(255);
-
-SELECT @constraintName = d.name
-FROM sys.tables t
-JOIN sys.schemas s ON t.schema_id = s.schema_id
-JOIN sys.columns c ON t.object_id = c.object_id
-JOIN sys.default_constraints d ON c.default_object_id = d.object_id
-WHERE s.name = '__mj_BizAppsCommunity'
-AND t.name = 'ForumPostTag'
-AND c.name = '__mj_CreatedAt';
-
-IF @constraintName IS NOT NULL
-BEGIN
-    EXEC('ALTER TABLE [__mj_BizAppsCommunity].[ForumPostTag] DROP CONSTRAINT ' + @constraintName);
-END;
-
 /* SQL text to add default constraint for special date field __mj_CreatedAt in entity __mj_BizAppsCommunity.ForumPostTag */
 ALTER TABLE __mj_BizAppsCommunity."ForumPostTag" ALTER COLUMN "__mj_CreatedAt" SET DEFAULT NOW();
-/* SQL text to drop default existing default constraints in entity __mj_BizAppsCommunity.ForumPostTag */
-DECLARE @constraintName VARCHAR(255);
-
-SELECT @constraintName = d.name
-FROM sys.tables t
-JOIN sys.schemas s ON t.schema_id = s.schema_id
-JOIN sys.columns c ON t.object_id = c.object_id
-JOIN sys.default_constraints d ON c.default_object_id = d.object_id
-WHERE s.name = '__mj_BizAppsCommunity'
-AND t.name = 'ForumPostTag'
-AND c.name = '__mj_UpdatedAt';
-
-IF @constraintName IS NOT NULL
-BEGIN
-    EXEC('ALTER TABLE [__mj_BizAppsCommunity].[ForumPostTag] DROP CONSTRAINT ' + @constraintName);
-END;
-
 /* SQL text to add default constraint for special date field __mj_UpdatedAt in entity __mj_BizAppsCommunity.ForumPostTag */
 ALTER TABLE __mj_BizAppsCommunity."ForumPostTag" ALTER COLUMN "__mj_UpdatedAt" SET DEFAULT NOW();
-/* SQL text to drop default existing default constraints in entity __mj_BizAppsCommunity.CommunitySpace */
-DECLARE @constraintName VARCHAR(255);
-
-SELECT @constraintName = d.name
-FROM sys.tables t
-JOIN sys.schemas s ON t.schema_id = s.schema_id
-JOIN sys.columns c ON t.object_id = c.object_id
-JOIN sys.default_constraints d ON c.default_object_id = d.object_id
-WHERE s.name = '__mj_BizAppsCommunity'
-AND t.name = 'CommunitySpace'
-AND c.name = '__mj_CreatedAt';
-
-IF @constraintName IS NOT NULL
-BEGIN
-    EXEC('ALTER TABLE [__mj_BizAppsCommunity].[CommunitySpace] DROP CONSTRAINT ' + @constraintName);
-END;
-
 /* SQL text to add default constraint for special date field __mj_CreatedAt in entity __mj_BizAppsCommunity.CommunitySpace */
 ALTER TABLE __mj_BizAppsCommunity."CommunitySpace" ALTER COLUMN "__mj_CreatedAt" SET DEFAULT NOW();
-/* SQL text to drop default existing default constraints in entity __mj_BizAppsCommunity.CommunitySpace */
-DECLARE @constraintName VARCHAR(255);
-
-SELECT @constraintName = d.name
-FROM sys.tables t
-JOIN sys.schemas s ON t.schema_id = s.schema_id
-JOIN sys.columns c ON t.object_id = c.object_id
-JOIN sys.default_constraints d ON c.default_object_id = d.object_id
-WHERE s.name = '__mj_BizAppsCommunity'
-AND t.name = 'CommunitySpace'
-AND c.name = '__mj_UpdatedAt';
-
-IF @constraintName IS NOT NULL
-BEGIN
-    EXEC('ALTER TABLE [__mj_BizAppsCommunity].[CommunitySpace] DROP CONSTRAINT ' + @constraintName);
-END;
-
 /* SQL text to add default constraint for special date field __mj_UpdatedAt in entity __mj_BizAppsCommunity.CommunitySpace */
 ALTER TABLE __mj_BizAppsCommunity."CommunitySpace" ALTER COLUMN "__mj_UpdatedAt" SET DEFAULT NOW();
-/* SQL text to drop default existing default constraints in entity __mj_BizAppsCommunity.Forum */
-DECLARE @constraintName VARCHAR(255);
-
-SELECT @constraintName = d.name
-FROM sys.tables t
-JOIN sys.schemas s ON t.schema_id = s.schema_id
-JOIN sys.columns c ON t.object_id = c.object_id
-JOIN sys.default_constraints d ON c.default_object_id = d.object_id
-WHERE s.name = '__mj_BizAppsCommunity'
-AND t.name = 'Forum'
-AND c.name = '__mj_CreatedAt';
-
-IF @constraintName IS NOT NULL
-BEGIN
-    EXEC('ALTER TABLE [__mj_BizAppsCommunity].[Forum] DROP CONSTRAINT ' + @constraintName);
-END;
-
 /* SQL text to add default constraint for special date field __mj_CreatedAt in entity __mj_BizAppsCommunity.Forum */
 ALTER TABLE __mj_BizAppsCommunity."Forum" ALTER COLUMN "__mj_CreatedAt" SET DEFAULT NOW();
-/* SQL text to drop default existing default constraints in entity __mj_BizAppsCommunity.Forum */
-DECLARE @constraintName VARCHAR(255);
-
-SELECT @constraintName = d.name
-FROM sys.tables t
-JOIN sys.schemas s ON t.schema_id = s.schema_id
-JOIN sys.columns c ON t.object_id = c.object_id
-JOIN sys.default_constraints d ON c.default_object_id = d.object_id
-WHERE s.name = '__mj_BizAppsCommunity'
-AND t.name = 'Forum'
-AND c.name = '__mj_UpdatedAt';
-
-IF @constraintName IS NOT NULL
-BEGIN
-    EXEC('ALTER TABLE [__mj_BizAppsCommunity].[Forum] DROP CONSTRAINT ' + @constraintName);
-END;
-
 /* SQL text to add default constraint for special date field __mj_UpdatedAt in entity __mj_BizAppsCommunity.Forum */
 ALTER TABLE __mj_BizAppsCommunity."Forum" ALTER COLUMN "__mj_UpdatedAt" SET DEFAULT NOW();
-/* SQL text to drop default existing default constraints in entity __mj_BizAppsCommunity.ForumArtifactPost */
-DECLARE @constraintName VARCHAR(255);
-
-SELECT @constraintName = d.name
-FROM sys.tables t
-JOIN sys.schemas s ON t.schema_id = s.schema_id
-JOIN sys.columns c ON t.object_id = c.object_id
-JOIN sys.default_constraints d ON c.default_object_id = d.object_id
-WHERE s.name = '__mj_BizAppsCommunity'
-AND t.name = 'ForumArtifactPost'
-AND c.name = '__mj_CreatedAt';
-
-IF @constraintName IS NOT NULL
-BEGIN
-    EXEC('ALTER TABLE [__mj_BizAppsCommunity].[ForumArtifactPost] DROP CONSTRAINT ' + @constraintName);
-END;
-
 /* SQL text to add default constraint for special date field __mj_CreatedAt in entity __mj_BizAppsCommunity.ForumArtifactPost */
 ALTER TABLE __mj_BizAppsCommunity."ForumArtifactPost" ALTER COLUMN "__mj_CreatedAt" SET DEFAULT NOW();
-/* SQL text to drop default existing default constraints in entity __mj_BizAppsCommunity.ForumArtifactPost */
-DECLARE @constraintName VARCHAR(255);
-
-SELECT @constraintName = d.name
-FROM sys.tables t
-JOIN sys.schemas s ON t.schema_id = s.schema_id
-JOIN sys.columns c ON t.object_id = c.object_id
-JOIN sys.default_constraints d ON c.default_object_id = d.object_id
-WHERE s.name = '__mj_BizAppsCommunity'
-AND t.name = 'ForumArtifactPost'
-AND c.name = '__mj_UpdatedAt';
-
-IF @constraintName IS NOT NULL
-BEGIN
-    EXEC('ALTER TABLE [__mj_BizAppsCommunity].[ForumArtifactPost] DROP CONSTRAINT ' + @constraintName);
-END;
-
 /* SQL text to add default constraint for special date field __mj_UpdatedAt in entity __mj_BizAppsCommunity.ForumArtifactPost */
 ALTER TABLE __mj_BizAppsCommunity."ForumArtifactPost" ALTER COLUMN "__mj_UpdatedAt" SET DEFAULT NOW();
-/* SQL text to drop default existing default constraints in entity __mj_BizAppsCommunity.CommunityMemberProfile */
-DECLARE @constraintName VARCHAR(255);
-
-SELECT @constraintName = d.name
-FROM sys.tables t
-JOIN sys.schemas s ON t.schema_id = s.schema_id
-JOIN sys.columns c ON t.object_id = c.object_id
-JOIN sys.default_constraints d ON c.default_object_id = d.object_id
-WHERE s.name = '__mj_BizAppsCommunity'
-AND t.name = 'CommunityMemberProfile'
-AND c.name = '__mj_CreatedAt';
-
-IF @constraintName IS NOT NULL
-BEGIN
-    EXEC('ALTER TABLE [__mj_BizAppsCommunity].[CommunityMemberProfile] DROP CONSTRAINT ' + @constraintName);
-END;
-
 /* SQL text to add default constraint for special date field __mj_CreatedAt in entity __mj_BizAppsCommunity.CommunityMemberProfile */
 ALTER TABLE __mj_BizAppsCommunity."CommunityMemberProfile" ALTER COLUMN "__mj_CreatedAt" SET DEFAULT NOW();
-/* SQL text to drop default existing default constraints in entity __mj_BizAppsCommunity.CommunityMemberProfile */
-DECLARE @constraintName VARCHAR(255);
-
-SELECT @constraintName = d.name
-FROM sys.tables t
-JOIN sys.schemas s ON t.schema_id = s.schema_id
-JOIN sys.columns c ON t.object_id = c.object_id
-JOIN sys.default_constraints d ON c.default_object_id = d.object_id
-WHERE s.name = '__mj_BizAppsCommunity'
-AND t.name = 'CommunityMemberProfile'
-AND c.name = '__mj_UpdatedAt';
-
-IF @constraintName IS NOT NULL
-BEGIN
-    EXEC('ALTER TABLE [__mj_BizAppsCommunity].[CommunityMemberProfile] DROP CONSTRAINT ' + @constraintName);
-END;
-
 /* SQL text to add default constraint for special date field __mj_UpdatedAt in entity __mj_BizAppsCommunity.CommunityMemberProfile */
 ALTER TABLE __mj_BizAppsCommunity."CommunityMemberProfile" ALTER COLUMN "__mj_UpdatedAt" SET DEFAULT NOW();
-/* SQL text to drop default existing default constraints in entity __mj_BizAppsCommunity.ForumSubscription */
-DECLARE @constraintName VARCHAR(255);
-
-SELECT @constraintName = d.name
-FROM sys.tables t
-JOIN sys.schemas s ON t.schema_id = s.schema_id
-JOIN sys.columns c ON t.object_id = c.object_id
-JOIN sys.default_constraints d ON c.default_object_id = d.object_id
-WHERE s.name = '__mj_BizAppsCommunity'
-AND t.name = 'ForumSubscription'
-AND c.name = '__mj_CreatedAt';
-
-IF @constraintName IS NOT NULL
-BEGIN
-    EXEC('ALTER TABLE [__mj_BizAppsCommunity].[ForumSubscription] DROP CONSTRAINT ' + @constraintName);
-END;
-
 /* SQL text to add default constraint for special date field __mj_CreatedAt in entity __mj_BizAppsCommunity.ForumSubscription */
 ALTER TABLE __mj_BizAppsCommunity."ForumSubscription" ALTER COLUMN "__mj_CreatedAt" SET DEFAULT NOW();
-/* SQL text to drop default existing default constraints in entity __mj_BizAppsCommunity.ForumSubscription */
-DECLARE @constraintName VARCHAR(255);
-
-SELECT @constraintName = d.name
-FROM sys.tables t
-JOIN sys.schemas s ON t.schema_id = s.schema_id
-JOIN sys.columns c ON t.object_id = c.object_id
-JOIN sys.default_constraints d ON c.default_object_id = d.object_id
-WHERE s.name = '__mj_BizAppsCommunity'
-AND t.name = 'ForumSubscription'
-AND c.name = '__mj_UpdatedAt';
-
-IF @constraintName IS NOT NULL
-BEGIN
-    EXEC('ALTER TABLE [__mj_BizAppsCommunity].[ForumSubscription] DROP CONSTRAINT ' + @constraintName);
-END;
-
 /* SQL text to add default constraint for special date field __mj_UpdatedAt in entity __mj_BizAppsCommunity.ForumSubscription */
 ALTER TABLE __mj_BizAppsCommunity."ForumSubscription" ALTER COLUMN "__mj_UpdatedAt" SET DEFAULT NOW();
-/* SQL text to drop default existing default constraints in entity __mj_BizAppsCommunity.ForumRoleType */
-DECLARE @constraintName VARCHAR(255);
-
-SELECT @constraintName = d.name
-FROM sys.tables t
-JOIN sys.schemas s ON t.schema_id = s.schema_id
-JOIN sys.columns c ON t.object_id = c.object_id
-JOIN sys.default_constraints d ON c.default_object_id = d.object_id
-WHERE s.name = '__mj_BizAppsCommunity'
-AND t.name = 'ForumRoleType'
-AND c.name = '__mj_CreatedAt';
-
-IF @constraintName IS NOT NULL
-BEGIN
-    EXEC('ALTER TABLE [__mj_BizAppsCommunity].[ForumRoleType] DROP CONSTRAINT ' + @constraintName);
-END;
-
 /* SQL text to add default constraint for special date field __mj_CreatedAt in entity __mj_BizAppsCommunity.ForumRoleType */
 ALTER TABLE __mj_BizAppsCommunity."ForumRoleType" ALTER COLUMN "__mj_CreatedAt" SET DEFAULT NOW();
-/* SQL text to drop default existing default constraints in entity __mj_BizAppsCommunity.ForumRoleType */
-DECLARE @constraintName VARCHAR(255);
-
-SELECT @constraintName = d.name
-FROM sys.tables t
-JOIN sys.schemas s ON t.schema_id = s.schema_id
-JOIN sys.columns c ON t.object_id = c.object_id
-JOIN sys.default_constraints d ON c.default_object_id = d.object_id
-WHERE s.name = '__mj_BizAppsCommunity'
-AND t.name = 'ForumRoleType'
-AND c.name = '__mj_UpdatedAt';
-
-IF @constraintName IS NOT NULL
-BEGIN
-    EXEC('ALTER TABLE [__mj_BizAppsCommunity].[ForumRoleType] DROP CONSTRAINT ' + @constraintName);
-END;
-
 /* SQL text to add default constraint for special date field __mj_UpdatedAt in entity __mj_BizAppsCommunity.ForumRoleType */
 ALTER TABLE __mj_BizAppsCommunity."ForumRoleType" ALTER COLUMN "__mj_UpdatedAt" SET DEFAULT NOW();
-/* SQL text to drop default existing default constraints in entity __mj_BizAppsCommunity.ForumAMAPost */
-DECLARE @constraintName VARCHAR(255);
-
-SELECT @constraintName = d.name
-FROM sys.tables t
-JOIN sys.schemas s ON t.schema_id = s.schema_id
-JOIN sys.columns c ON t.object_id = c.object_id
-JOIN sys.default_constraints d ON c.default_object_id = d.object_id
-WHERE s.name = '__mj_BizAppsCommunity'
-AND t.name = 'ForumAMAPost'
-AND c.name = '__mj_CreatedAt';
-
-IF @constraintName IS NOT NULL
-BEGIN
-    EXEC('ALTER TABLE [__mj_BizAppsCommunity].[ForumAMAPost] DROP CONSTRAINT ' + @constraintName);
-END;
-
 /* SQL text to add default constraint for special date field __mj_CreatedAt in entity __mj_BizAppsCommunity.ForumAMAPost */
 ALTER TABLE __mj_BizAppsCommunity."ForumAMAPost" ALTER COLUMN "__mj_CreatedAt" SET DEFAULT NOW();
-/* SQL text to drop default existing default constraints in entity __mj_BizAppsCommunity.ForumAMAPost */
-DECLARE @constraintName VARCHAR(255);
-
-SELECT @constraintName = d.name
-FROM sys.tables t
-JOIN sys.schemas s ON t.schema_id = s.schema_id
-JOIN sys.columns c ON t.object_id = c.object_id
-JOIN sys.default_constraints d ON c.default_object_id = d.object_id
-WHERE s.name = '__mj_BizAppsCommunity'
-AND t.name = 'ForumAMAPost'
-AND c.name = '__mj_UpdatedAt';
-
-IF @constraintName IS NOT NULL
-BEGIN
-    EXEC('ALTER TABLE [__mj_BizAppsCommunity].[ForumAMAPost] DROP CONSTRAINT ' + @constraintName);
-END;
-
 /* SQL text to add default constraint for special date field __mj_UpdatedAt in entity __mj_BizAppsCommunity.ForumAMAPost */
 ALTER TABLE __mj_BizAppsCommunity."ForumAMAPost" ALTER COLUMN "__mj_UpdatedAt" SET DEFAULT NOW();
-/* SQL text to drop default existing default constraints in entity __mj_BizAppsCommunity.ForumPostAttachment */
-DECLARE @constraintName VARCHAR(255);
-
-SELECT @constraintName = d.name
-FROM sys.tables t
-JOIN sys.schemas s ON t.schema_id = s.schema_id
-JOIN sys.columns c ON t.object_id = c.object_id
-JOIN sys.default_constraints d ON c.default_object_id = d.object_id
-WHERE s.name = '__mj_BizAppsCommunity'
-AND t.name = 'ForumPostAttachment'
-AND c.name = '__mj_CreatedAt';
-
-IF @constraintName IS NOT NULL
-BEGIN
-    EXEC('ALTER TABLE [__mj_BizAppsCommunity].[ForumPostAttachment] DROP CONSTRAINT ' + @constraintName);
-END;
-
 /* SQL text to add default constraint for special date field __mj_CreatedAt in entity __mj_BizAppsCommunity.ForumPostAttachment */
 ALTER TABLE __mj_BizAppsCommunity."ForumPostAttachment" ALTER COLUMN "__mj_CreatedAt" SET DEFAULT NOW();
-/* SQL text to drop default existing default constraints in entity __mj_BizAppsCommunity.ForumPostAttachment */
-DECLARE @constraintName VARCHAR(255);
-
-SELECT @constraintName = d.name
-FROM sys.tables t
-JOIN sys.schemas s ON t.schema_id = s.schema_id
-JOIN sys.columns c ON t.object_id = c.object_id
-JOIN sys.default_constraints d ON c.default_object_id = d.object_id
-WHERE s.name = '__mj_BizAppsCommunity'
-AND t.name = 'ForumPostAttachment'
-AND c.name = '__mj_UpdatedAt';
-
-IF @constraintName IS NOT NULL
-BEGIN
-    EXEC('ALTER TABLE [__mj_BizAppsCommunity].[ForumPostAttachment] DROP CONSTRAINT ' + @constraintName);
-END;
-
 /* SQL text to add default constraint for special date field __mj_UpdatedAt in entity __mj_BizAppsCommunity.ForumPostAttachment */
 ALTER TABLE __mj_BizAppsCommunity."ForumPostAttachment" ALTER COLUMN "__mj_UpdatedAt" SET DEFAULT NOW();
-/* SQL text to drop default existing default constraints in entity __mj_BizAppsCommunity.PostType */
-DECLARE @constraintName VARCHAR(255);
-
-SELECT @constraintName = d.name
-FROM sys.tables t
-JOIN sys.schemas s ON t.schema_id = s.schema_id
-JOIN sys.columns c ON t.object_id = c.object_id
-JOIN sys.default_constraints d ON c.default_object_id = d.object_id
-WHERE s.name = '__mj_BizAppsCommunity'
-AND t.name = 'PostType'
-AND c.name = '__mj_CreatedAt';
-
-IF @constraintName IS NOT NULL
-BEGIN
-    EXEC('ALTER TABLE [__mj_BizAppsCommunity].[PostType] DROP CONSTRAINT ' + @constraintName);
-END;
-
 /* SQL text to add default constraint for special date field __mj_CreatedAt in entity __mj_BizAppsCommunity.PostType */
 ALTER TABLE __mj_BizAppsCommunity."PostType" ALTER COLUMN "__mj_CreatedAt" SET DEFAULT NOW();
-/* SQL text to drop default existing default constraints in entity __mj_BizAppsCommunity.PostType */
-DECLARE @constraintName VARCHAR(255);
-
-SELECT @constraintName = d.name
-FROM sys.tables t
-JOIN sys.schemas s ON t.schema_id = s.schema_id
-JOIN sys.columns c ON t.object_id = c.object_id
-JOIN sys.default_constraints d ON c.default_object_id = d.object_id
-WHERE s.name = '__mj_BizAppsCommunity'
-AND t.name = 'PostType'
-AND c.name = '__mj_UpdatedAt';
-
-IF @constraintName IS NOT NULL
-BEGIN
-    EXEC('ALTER TABLE [__mj_BizAppsCommunity].[PostType] DROP CONSTRAINT ' + @constraintName);
-END;
-
 /* SQL text to add default constraint for special date field __mj_UpdatedAt in entity __mj_BizAppsCommunity.PostType */
 ALTER TABLE __mj_BizAppsCommunity."PostType" ALTER COLUMN "__mj_UpdatedAt" SET DEFAULT NOW();
-/* SQL text to drop default existing default constraints in entity __mj_BizAppsCommunity.ForumTopicTag */
-DECLARE @constraintName VARCHAR(255);
-
-SELECT @constraintName = d.name
-FROM sys.tables t
-JOIN sys.schemas s ON t.schema_id = s.schema_id
-JOIN sys.columns c ON t.object_id = c.object_id
-JOIN sys.default_constraints d ON c.default_object_id = d.object_id
-WHERE s.name = '__mj_BizAppsCommunity'
-AND t.name = 'ForumTopicTag'
-AND c.name = '__mj_CreatedAt';
-
-IF @constraintName IS NOT NULL
-BEGIN
-    EXEC('ALTER TABLE [__mj_BizAppsCommunity].[ForumTopicTag] DROP CONSTRAINT ' + @constraintName);
-END;
-
 /* SQL text to add default constraint for special date field __mj_CreatedAt in entity __mj_BizAppsCommunity.ForumTopicTag */
 ALTER TABLE __mj_BizAppsCommunity."ForumTopicTag" ALTER COLUMN "__mj_CreatedAt" SET DEFAULT NOW();
-/* SQL text to drop default existing default constraints in entity __mj_BizAppsCommunity.ForumTopicTag */
-DECLARE @constraintName VARCHAR(255);
-
-SELECT @constraintName = d.name
-FROM sys.tables t
-JOIN sys.schemas s ON t.schema_id = s.schema_id
-JOIN sys.columns c ON t.object_id = c.object_id
-JOIN sys.default_constraints d ON c.default_object_id = d.object_id
-WHERE s.name = '__mj_BizAppsCommunity'
-AND t.name = 'ForumTopicTag'
-AND c.name = '__mj_UpdatedAt';
-
-IF @constraintName IS NOT NULL
-BEGIN
-    EXEC('ALTER TABLE [__mj_BizAppsCommunity].[ForumTopicTag] DROP CONSTRAINT ' + @constraintName);
-END;
-
 /* SQL text to add default constraint for special date field __mj_UpdatedAt in entity __mj_BizAppsCommunity.ForumTopicTag */
 ALTER TABLE __mj_BizAppsCommunity."ForumTopicTag" ALTER COLUMN "__mj_UpdatedAt" SET DEFAULT NOW();
-/* SQL text to drop default existing default constraints in entity __mj_BizAppsCommunity.ForumIdeaPost */
-DECLARE @constraintName VARCHAR(255);
-
-SELECT @constraintName = d.name
-FROM sys.tables t
-JOIN sys.schemas s ON t.schema_id = s.schema_id
-JOIN sys.columns c ON t.object_id = c.object_id
-JOIN sys.default_constraints d ON c.default_object_id = d.object_id
-WHERE s.name = '__mj_BizAppsCommunity'
-AND t.name = 'ForumIdeaPost'
-AND c.name = '__mj_CreatedAt';
-
-IF @constraintName IS NOT NULL
-BEGIN
-    EXEC('ALTER TABLE [__mj_BizAppsCommunity].[ForumIdeaPost] DROP CONSTRAINT ' + @constraintName);
-END;
-
 /* SQL text to add default constraint for special date field __mj_CreatedAt in entity __mj_BizAppsCommunity.ForumIdeaPost */
 ALTER TABLE __mj_BizAppsCommunity."ForumIdeaPost" ALTER COLUMN "__mj_CreatedAt" SET DEFAULT NOW();
-/* SQL text to drop default existing default constraints in entity __mj_BizAppsCommunity.ForumIdeaPost */
-DECLARE @constraintName VARCHAR(255);
-
-SELECT @constraintName = d.name
-FROM sys.tables t
-JOIN sys.schemas s ON t.schema_id = s.schema_id
-JOIN sys.columns c ON t.object_id = c.object_id
-JOIN sys.default_constraints d ON c.default_object_id = d.object_id
-WHERE s.name = '__mj_BizAppsCommunity'
-AND t.name = 'ForumIdeaPost'
-AND c.name = '__mj_UpdatedAt';
-
-IF @constraintName IS NOT NULL
-BEGIN
-    EXEC('ALTER TABLE [__mj_BizAppsCommunity].[ForumIdeaPost] DROP CONSTRAINT ' + @constraintName);
-END;
-
 /* SQL text to add default constraint for special date field __mj_UpdatedAt in entity __mj_BizAppsCommunity.ForumIdeaPost */
 ALTER TABLE __mj_BizAppsCommunity."ForumIdeaPost" ALTER COLUMN "__mj_UpdatedAt" SET DEFAULT NOW();
-/* SQL text to drop default existing default constraints in entity __mj_BizAppsCommunity.ForumQuestionPost */
-DECLARE @constraintName VARCHAR(255);
-
-SELECT @constraintName = d.name
-FROM sys.tables t
-JOIN sys.schemas s ON t.schema_id = s.schema_id
-JOIN sys.columns c ON t.object_id = c.object_id
-JOIN sys.default_constraints d ON c.default_object_id = d.object_id
-WHERE s.name = '__mj_BizAppsCommunity'
-AND t.name = 'ForumQuestionPost'
-AND c.name = '__mj_CreatedAt';
-
-IF @constraintName IS NOT NULL
-BEGIN
-    EXEC('ALTER TABLE [__mj_BizAppsCommunity].[ForumQuestionPost] DROP CONSTRAINT ' + @constraintName);
-END;
-
 /* SQL text to add default constraint for special date field __mj_CreatedAt in entity __mj_BizAppsCommunity.ForumQuestionPost */
 ALTER TABLE __mj_BizAppsCommunity."ForumQuestionPost" ALTER COLUMN "__mj_CreatedAt" SET DEFAULT NOW();
-/* SQL text to drop default existing default constraints in entity __mj_BizAppsCommunity.ForumQuestionPost */
-DECLARE @constraintName VARCHAR(255);
-
-SELECT @constraintName = d.name
-FROM sys.tables t
-JOIN sys.schemas s ON t.schema_id = s.schema_id
-JOIN sys.columns c ON t.object_id = c.object_id
-JOIN sys.default_constraints d ON c.default_object_id = d.object_id
-WHERE s.name = '__mj_BizAppsCommunity'
-AND t.name = 'ForumQuestionPost'
-AND c.name = '__mj_UpdatedAt';
-
-IF @constraintName IS NOT NULL
-BEGIN
-    EXEC('ALTER TABLE [__mj_BizAppsCommunity].[ForumQuestionPost] DROP CONSTRAINT ' + @constraintName);
-END;
-
 /* SQL text to add default constraint for special date field __mj_UpdatedAt in entity __mj_BizAppsCommunity.ForumQuestionPost */
 ALTER TABLE __mj_BizAppsCommunity."ForumQuestionPost" ALTER COLUMN "__mj_UpdatedAt" SET DEFAULT NOW();
-/* SQL text to drop default existing default constraints in entity __mj_BizAppsCommunity.ForumPostReaction */
-DECLARE @constraintName VARCHAR(255);
-
-SELECT @constraintName = d.name
-FROM sys.tables t
-JOIN sys.schemas s ON t.schema_id = s.schema_id
-JOIN sys.columns c ON t.object_id = c.object_id
-JOIN sys.default_constraints d ON c.default_object_id = d.object_id
-WHERE s.name = '__mj_BizAppsCommunity'
-AND t.name = 'ForumPostReaction'
-AND c.name = '__mj_CreatedAt';
-
-IF @constraintName IS NOT NULL
-BEGIN
-    EXEC('ALTER TABLE [__mj_BizAppsCommunity].[ForumPostReaction] DROP CONSTRAINT ' + @constraintName);
-END;
-
 /* SQL text to add default constraint for special date field __mj_CreatedAt in entity __mj_BizAppsCommunity.ForumPostReaction */
 ALTER TABLE __mj_BizAppsCommunity."ForumPostReaction" ALTER COLUMN "__mj_CreatedAt" SET DEFAULT NOW();
-/* SQL text to drop default existing default constraints in entity __mj_BizAppsCommunity.ForumPostReaction */
-DECLARE @constraintName VARCHAR(255);
-
-SELECT @constraintName = d.name
-FROM sys.tables t
-JOIN sys.schemas s ON t.schema_id = s.schema_id
-JOIN sys.columns c ON t.object_id = c.object_id
-JOIN sys.default_constraints d ON c.default_object_id = d.object_id
-WHERE s.name = '__mj_BizAppsCommunity'
-AND t.name = 'ForumPostReaction'
-AND c.name = '__mj_UpdatedAt';
-
-IF @constraintName IS NOT NULL
-BEGIN
-    EXEC('ALTER TABLE [__mj_BizAppsCommunity].[ForumPostReaction] DROP CONSTRAINT ' + @constraintName);
-END;
-
 /* SQL text to add default constraint for special date field __mj_UpdatedAt in entity __mj_BizAppsCommunity.ForumPostReaction */
 ALTER TABLE __mj_BizAppsCommunity."ForumPostReaction" ALTER COLUMN "__mj_UpdatedAt" SET DEFAULT NOW();
-/* SQL text to drop default existing default constraints in entity __mj_BizAppsCommunity.ForumInteractivePost */
-DECLARE @constraintName VARCHAR(255);
-
-SELECT @constraintName = d.name
-FROM sys.tables t
-JOIN sys.schemas s ON t.schema_id = s.schema_id
-JOIN sys.columns c ON t.object_id = c.object_id
-JOIN sys.default_constraints d ON c.default_object_id = d.object_id
-WHERE s.name = '__mj_BizAppsCommunity'
-AND t.name = 'ForumInteractivePost'
-AND c.name = '__mj_CreatedAt';
-
-IF @constraintName IS NOT NULL
-BEGIN
-    EXEC('ALTER TABLE [__mj_BizAppsCommunity].[ForumInteractivePost] DROP CONSTRAINT ' + @constraintName);
-END;
-
 /* SQL text to add default constraint for special date field __mj_CreatedAt in entity __mj_BizAppsCommunity.ForumInteractivePost */
 ALTER TABLE __mj_BizAppsCommunity."ForumInteractivePost" ALTER COLUMN "__mj_CreatedAt" SET DEFAULT NOW();
-/* SQL text to drop default existing default constraints in entity __mj_BizAppsCommunity.ForumInteractivePost */
-DECLARE @constraintName VARCHAR(255);
-
-SELECT @constraintName = d.name
-FROM sys.tables t
-JOIN sys.schemas s ON t.schema_id = s.schema_id
-JOIN sys.columns c ON t.object_id = c.object_id
-JOIN sys.default_constraints d ON c.default_object_id = d.object_id
-WHERE s.name = '__mj_BizAppsCommunity'
-AND t.name = 'ForumInteractivePost'
-AND c.name = '__mj_UpdatedAt';
-
-IF @constraintName IS NOT NULL
-BEGIN
-    EXEC('ALTER TABLE [__mj_BizAppsCommunity].[ForumInteractivePost] DROP CONSTRAINT ' + @constraintName);
-END;
-
 /* SQL text to add default constraint for special date field __mj_UpdatedAt in entity __mj_BizAppsCommunity.ForumInteractivePost */
 ALTER TABLE __mj_BizAppsCommunity."ForumInteractivePost" ALTER COLUMN "__mj_UpdatedAt" SET DEFAULT NOW();
-/* SQL text to drop default existing default constraints in entity __mj_BizAppsCommunity.ForumAnswerPost */
-DECLARE @constraintName VARCHAR(255);
-
-SELECT @constraintName = d.name
-FROM sys.tables t
-JOIN sys.schemas s ON t.schema_id = s.schema_id
-JOIN sys.columns c ON t.object_id = c.object_id
-JOIN sys.default_constraints d ON c.default_object_id = d.object_id
-WHERE s.name = '__mj_BizAppsCommunity'
-AND t.name = 'ForumAnswerPost'
-AND c.name = '__mj_CreatedAt';
-
-IF @constraintName IS NOT NULL
-BEGIN
-    EXEC('ALTER TABLE [__mj_BizAppsCommunity].[ForumAnswerPost] DROP CONSTRAINT ' + @constraintName);
-END;
-
 /* SQL text to add default constraint for special date field __mj_CreatedAt in entity __mj_BizAppsCommunity.ForumAnswerPost */
 ALTER TABLE __mj_BizAppsCommunity."ForumAnswerPost" ALTER COLUMN "__mj_CreatedAt" SET DEFAULT NOW();
-/* SQL text to drop default existing default constraints in entity __mj_BizAppsCommunity.ForumAnswerPost */
-DECLARE @constraintName VARCHAR(255);
-
-SELECT @constraintName = d.name
-FROM sys.tables t
-JOIN sys.schemas s ON t.schema_id = s.schema_id
-JOIN sys.columns c ON t.object_id = c.object_id
-JOIN sys.default_constraints d ON c.default_object_id = d.object_id
-WHERE s.name = '__mj_BizAppsCommunity'
-AND t.name = 'ForumAnswerPost'
-AND c.name = '__mj_UpdatedAt';
-
-IF @constraintName IS NOT NULL
-BEGIN
-    EXEC('ALTER TABLE [__mj_BizAppsCommunity].[ForumAnswerPost] DROP CONSTRAINT ' + @constraintName);
-END;
-
 /* SQL text to add default constraint for special date field __mj_UpdatedAt in entity __mj_BizAppsCommunity.ForumAnswerPost */
 ALTER TABLE __mj_BizAppsCommunity."ForumAnswerPost" ALTER COLUMN "__mj_UpdatedAt" SET DEFAULT NOW();
-/* SQL text to drop default existing default constraints in entity __mj_BizAppsCommunity.ForumFormPost */
-DECLARE @constraintName VARCHAR(255);
-
-SELECT @constraintName = d.name
-FROM sys.tables t
-JOIN sys.schemas s ON t.schema_id = s.schema_id
-JOIN sys.columns c ON t.object_id = c.object_id
-JOIN sys.default_constraints d ON c.default_object_id = d.object_id
-WHERE s.name = '__mj_BizAppsCommunity'
-AND t.name = 'ForumFormPost'
-AND c.name = '__mj_CreatedAt';
-
-IF @constraintName IS NOT NULL
-BEGIN
-    EXEC('ALTER TABLE [__mj_BizAppsCommunity].[ForumFormPost] DROP CONSTRAINT ' + @constraintName);
-END;
-
 /* SQL text to add default constraint for special date field __mj_CreatedAt in entity __mj_BizAppsCommunity.ForumFormPost */
 ALTER TABLE __mj_BizAppsCommunity."ForumFormPost" ALTER COLUMN "__mj_CreatedAt" SET DEFAULT NOW();
-/* SQL text to drop default existing default constraints in entity __mj_BizAppsCommunity.ForumFormPost */
-DECLARE @constraintName VARCHAR(255);
-
-SELECT @constraintName = d.name
-FROM sys.tables t
-JOIN sys.schemas s ON t.schema_id = s.schema_id
-JOIN sys.columns c ON t.object_id = c.object_id
-JOIN sys.default_constraints d ON c.default_object_id = d.object_id
-WHERE s.name = '__mj_BizAppsCommunity'
-AND t.name = 'ForumFormPost'
-AND c.name = '__mj_UpdatedAt';
-
-IF @constraintName IS NOT NULL
-BEGIN
-    EXEC('ALTER TABLE [__mj_BizAppsCommunity].[ForumFormPost] DROP CONSTRAINT ' + @constraintName);
-END;
-
 /* SQL text to add default constraint for special date field __mj_UpdatedAt in entity __mj_BizAppsCommunity.ForumFormPost */
 ALTER TABLE __mj_BizAppsCommunity."ForumFormPost" ALTER COLUMN "__mj_UpdatedAt" SET DEFAULT NOW();
-/* SQL text to drop default existing default constraints in entity __mj_BizAppsCommunity.ForumIdeaCampaign */
-DECLARE @constraintName VARCHAR(255);
-
-SELECT @constraintName = d.name
-FROM sys.tables t
-JOIN sys.schemas s ON t.schema_id = s.schema_id
-JOIN sys.columns c ON t.object_id = c.object_id
-JOIN sys.default_constraints d ON c.default_object_id = d.object_id
-WHERE s.name = '__mj_BizAppsCommunity'
-AND t.name = 'ForumIdeaCampaign'
-AND c.name = '__mj_CreatedAt';
-
-IF @constraintName IS NOT NULL
-BEGIN
-    EXEC('ALTER TABLE [__mj_BizAppsCommunity].[ForumIdeaCampaign] DROP CONSTRAINT ' + @constraintName);
-END;
-
 /* SQL text to add default constraint for special date field __mj_CreatedAt in entity __mj_BizAppsCommunity.ForumIdeaCampaign */
 ALTER TABLE __mj_BizAppsCommunity."ForumIdeaCampaign" ALTER COLUMN "__mj_CreatedAt" SET DEFAULT NOW();
-/* SQL text to drop default existing default constraints in entity __mj_BizAppsCommunity.ForumIdeaCampaign */
-DECLARE @constraintName VARCHAR(255);
-
-SELECT @constraintName = d.name
-FROM sys.tables t
-JOIN sys.schemas s ON t.schema_id = s.schema_id
-JOIN sys.columns c ON t.object_id = c.object_id
-JOIN sys.default_constraints d ON c.default_object_id = d.object_id
-WHERE s.name = '__mj_BizAppsCommunity'
-AND t.name = 'ForumIdeaCampaign'
-AND c.name = '__mj_UpdatedAt';
-
-IF @constraintName IS NOT NULL
-BEGIN
-    EXEC('ALTER TABLE [__mj_BizAppsCommunity].[ForumIdeaCampaign] DROP CONSTRAINT ' + @constraintName);
-END;
-
 /* SQL text to add default constraint for special date field __mj_UpdatedAt in entity __mj_BizAppsCommunity.ForumIdeaCampaign */
 ALTER TABLE __mj_BizAppsCommunity."ForumIdeaCampaign" ALTER COLUMN "__mj_UpdatedAt" SET DEFAULT NOW();
-/* SQL text to drop default existing default constraints in entity __mj_BizAppsCommunity.ForumInteractiveSession */
-DECLARE @constraintName VARCHAR(255);
-
-SELECT @constraintName = d.name
-FROM sys.tables t
-JOIN sys.schemas s ON t.schema_id = s.schema_id
-JOIN sys.columns c ON t.object_id = c.object_id
-JOIN sys.default_constraints d ON c.default_object_id = d.object_id
-WHERE s.name = '__mj_BizAppsCommunity'
-AND t.name = 'ForumInteractiveSession'
-AND c.name = '__mj_CreatedAt';
-
-IF @constraintName IS NOT NULL
-BEGIN
-    EXEC('ALTER TABLE [__mj_BizAppsCommunity].[ForumInteractiveSession] DROP CONSTRAINT ' + @constraintName);
-END;
-
 /* SQL text to add default constraint for special date field __mj_CreatedAt in entity __mj_BizAppsCommunity.ForumInteractiveSession */
 ALTER TABLE __mj_BizAppsCommunity."ForumInteractiveSession" ALTER COLUMN "__mj_CreatedAt" SET DEFAULT NOW();
-/* SQL text to drop default existing default constraints in entity __mj_BizAppsCommunity.ForumInteractiveSession */
-DECLARE @constraintName VARCHAR(255);
-
-SELECT @constraintName = d.name
-FROM sys.tables t
-JOIN sys.schemas s ON t.schema_id = s.schema_id
-JOIN sys.columns c ON t.object_id = c.object_id
-JOIN sys.default_constraints d ON c.default_object_id = d.object_id
-WHERE s.name = '__mj_BizAppsCommunity'
-AND t.name = 'ForumInteractiveSession'
-AND c.name = '__mj_UpdatedAt';
-
-IF @constraintName IS NOT NULL
-BEGIN
-    EXEC('ALTER TABLE [__mj_BizAppsCommunity].[ForumInteractiveSession] DROP CONSTRAINT ' + @constraintName);
-END;
-
 /* SQL text to add default constraint for special date field __mj_UpdatedAt in entity __mj_BizAppsCommunity.ForumInteractiveSession */
 ALTER TABLE __mj_BizAppsCommunity."ForumInteractiveSession" ALTER COLUMN "__mj_UpdatedAt" SET DEFAULT NOW();
-/* SQL text to drop default existing default constraints in entity __mj_BizAppsCommunity.ForumPost */
-DECLARE @constraintName VARCHAR(255);
-
-SELECT @constraintName = d.name
-FROM sys.tables t
-JOIN sys.schemas s ON t.schema_id = s.schema_id
-JOIN sys.columns c ON t.object_id = c.object_id
-JOIN sys.default_constraints d ON c.default_object_id = d.object_id
-WHERE s.name = '__mj_BizAppsCommunity'
-AND t.name = 'ForumPost'
-AND c.name = '__mj_CreatedAt';
-
-IF @constraintName IS NOT NULL
-BEGIN
-    EXEC('ALTER TABLE [__mj_BizAppsCommunity].[ForumPost] DROP CONSTRAINT ' + @constraintName);
-END;
-
 /* SQL text to add default constraint for special date field __mj_CreatedAt in entity __mj_BizAppsCommunity.ForumPost */
 ALTER TABLE __mj_BizAppsCommunity."ForumPost" ALTER COLUMN "__mj_CreatedAt" SET DEFAULT NOW();
-/* SQL text to drop default existing default constraints in entity __mj_BizAppsCommunity.ForumPost */
-DECLARE @constraintName VARCHAR(255);
-
-SELECT @constraintName = d.name
-FROM sys.tables t
-JOIN sys.schemas s ON t.schema_id = s.schema_id
-JOIN sys.columns c ON t.object_id = c.object_id
-JOIN sys.default_constraints d ON c.default_object_id = d.object_id
-WHERE s.name = '__mj_BizAppsCommunity'
-AND t.name = 'ForumPost'
-AND c.name = '__mj_UpdatedAt';
-
-IF @constraintName IS NOT NULL
-BEGIN
-    EXEC('ALTER TABLE [__mj_BizAppsCommunity].[ForumPost] DROP CONSTRAINT ' + @constraintName);
-END;
-
 /* SQL text to add default constraint for special date field __mj_UpdatedAt in entity __mj_BizAppsCommunity.ForumPost */
 ALTER TABLE __mj_BizAppsCommunity."ForumPost" ALTER COLUMN "__mj_UpdatedAt" SET DEFAULT NOW();
-/* SQL text to drop default existing default constraints in entity __mj_BizAppsCommunity.ForumCasePost */
-DECLARE @constraintName VARCHAR(255);
-
-SELECT @constraintName = d.name
-FROM sys.tables t
-JOIN sys.schemas s ON t.schema_id = s.schema_id
-JOIN sys.columns c ON t.object_id = c.object_id
-JOIN sys.default_constraints d ON c.default_object_id = d.object_id
-WHERE s.name = '__mj_BizAppsCommunity'
-AND t.name = 'ForumCasePost'
-AND c.name = '__mj_CreatedAt';
-
-IF @constraintName IS NOT NULL
-BEGIN
-    EXEC('ALTER TABLE [__mj_BizAppsCommunity].[ForumCasePost] DROP CONSTRAINT ' + @constraintName);
-END;
-
 /* SQL text to add default constraint for special date field __mj_CreatedAt in entity __mj_BizAppsCommunity.ForumCasePost */
 ALTER TABLE __mj_BizAppsCommunity."ForumCasePost" ALTER COLUMN "__mj_CreatedAt" SET DEFAULT NOW();
-/* SQL text to drop default existing default constraints in entity __mj_BizAppsCommunity.ForumCasePost */
-DECLARE @constraintName VARCHAR(255);
-
-SELECT @constraintName = d.name
-FROM sys.tables t
-JOIN sys.schemas s ON t.schema_id = s.schema_id
-JOIN sys.columns c ON t.object_id = c.object_id
-JOIN sys.default_constraints d ON c.default_object_id = d.object_id
-WHERE s.name = '__mj_BizAppsCommunity'
-AND t.name = 'ForumCasePost'
-AND c.name = '__mj_UpdatedAt';
-
-IF @constraintName IS NOT NULL
-BEGIN
-    EXEC('ALTER TABLE [__mj_BizAppsCommunity].[ForumCasePost] DROP CONSTRAINT ' + @constraintName);
-END;
-
 /* SQL text to add default constraint for special date field __mj_UpdatedAt in entity __mj_BizAppsCommunity.ForumCasePost */
 ALTER TABLE __mj_BizAppsCommunity."ForumCasePost" ALTER COLUMN "__mj_UpdatedAt" SET DEFAULT NOW();
-/* SQL text to drop default existing default constraints in entity __mj_BizAppsCommunity.ForumType */
-DECLARE @constraintName VARCHAR(255);
-
-SELECT @constraintName = d.name
-FROM sys.tables t
-JOIN sys.schemas s ON t.schema_id = s.schema_id
-JOIN sys.columns c ON t.object_id = c.object_id
-JOIN sys.default_constraints d ON c.default_object_id = d.object_id
-WHERE s.name = '__mj_BizAppsCommunity'
-AND t.name = 'ForumType'
-AND c.name = '__mj_CreatedAt';
-
-IF @constraintName IS NOT NULL
-BEGIN
-    EXEC('ALTER TABLE [__mj_BizAppsCommunity].[ForumType] DROP CONSTRAINT ' + @constraintName);
-END;
-
 /* SQL text to add default constraint for special date field __mj_CreatedAt in entity __mj_BizAppsCommunity.ForumType */
 ALTER TABLE __mj_BizAppsCommunity."ForumType" ALTER COLUMN "__mj_CreatedAt" SET DEFAULT NOW();
-/* SQL text to drop default existing default constraints in entity __mj_BizAppsCommunity.ForumType */
-DECLARE @constraintName VARCHAR(255);
-
-SELECT @constraintName = d.name
-FROM sys.tables t
-JOIN sys.schemas s ON t.schema_id = s.schema_id
-JOIN sys.columns c ON t.object_id = c.object_id
-JOIN sys.default_constraints d ON c.default_object_id = d.object_id
-WHERE s.name = '__mj_BizAppsCommunity'
-AND t.name = 'ForumType'
-AND c.name = '__mj_UpdatedAt';
-
-IF @constraintName IS NOT NULL
-BEGIN
-    EXEC('ALTER TABLE [__mj_BizAppsCommunity].[ForumType] DROP CONSTRAINT ' + @constraintName);
-END;
-
 ALTER TABLE __mj_BizAppsCommunity."ForumType" ALTER COLUMN "__mj_UpdatedAt" SET DEFAULT NOW();
 /* SQL text to insert 250 new entity field(s) */
 
@@ -1681,25 +848,32 @@ CREATE INDEX IF NOT EXISTS "IDX_AUTO_MJ_FKEY_Forum_ForumTypeID" ON __mj_BizAppsC
 --     in a single composable TVF without referencing non-existent columns.
 -- -----------------------------------------------------------------------------
 CREATE FUNCTION __mj_BizAppsCommunity."fnCommunityForumAccess"(p_UserID UUID)
-RETURNS TABLE
-AS
-RETURN (
+RETURNS TABLE (
+    "ForumID" UUID,
+    "SpaceID" UUID,
+    "CanSeeTeam" BOOLEAN,
+    "CanPost" BOOLEAN,
+    "CanModerate" BOOLEAN
+)
+LANGUAGE SQL
+STABLE
+AS $$
     SELECT
-        f."ID" AS ForumID,
-        f."SpaceID",
-        sa."CanSeeTeam",
-        CAST(
+        f."ID" AS "ForumID",
+        f."SpaceID" AS "SpaceID",
+        sa."CanSeeTeam" AS "CanSeeTeam",
+        (
             CASE
-                WHEN f."Status" = 'Locked' THEN 0
-                WHEN ss."ReadOnly" = TRUE THEN 0
-                WHEN sa."CanContribute" = FALSE THEN 0
-                WHEN fm."Status" = 'Muted' THEN 0
-                WHEN fr."CanCreateRootPost" = FALSE AND fr."CanReply" = FALSE THEN 0
-                WHEN f."PostingPolicy" = 'ReadOnly' AND COALESCE(fr."CanConfigureForum", FALSE) = FALSE THEN 0
-                ELSE 1
-            END AS BOOLEAN
-        ) AS CanPost,
-        CAST(COALESCE(fr."CanModerateQueue", FALSE) AS BOOLEAN) AS CanModerate
+                WHEN f."Status" = 'Locked' THEN FALSE
+                WHEN ss."ReadOnly" = TRUE THEN FALSE
+                WHEN sa."CanContribute" = FALSE THEN FALSE
+                WHEN fm."Status" = 'Muted' THEN FALSE
+                WHEN fr."CanCreateRootPost" = FALSE AND fr."CanReply" = FALSE THEN FALSE
+                WHEN f."PostingPolicy" = 'ReadOnly' AND COALESCE(fr."CanConfigureForum", FALSE) = FALSE THEN FALSE
+                ELSE TRUE
+            END
+        ) AS "CanPost",
+        COALESCE(fr."CanModerateQueue", FALSE) AS "CanModerate"
     FROM __mj_BizAppsCommunity."Forum" AS f
     INNER JOIN __mj_BizAppsCollaboration."fnCollaborationAccess"(p_UserID) AS sa
         ON sa."SpaceID" = f."SpaceID"
@@ -1720,8 +894,8 @@ RETURN (
         )
         OR (
             fm."Status" = 'Active'
-        )
-);
+        );
+$$;
 
 
 -- ===================== Views =====================
@@ -4559,7 +3733,7 @@ INSERT INTO ${mjSchema}."ApplicationEntity"
 
 INSERT INTO ${mjSchema}."EntityPermission"
                 ("EntityID", "RoleID", "Type", "CanRead", "CanCreate", "CanUpdate", "CanDelete", "__mj_CreatedAt", "__mj_UpdatedAt")
-              SELECT CAST('fe0569d0-425e-4d60-9978-b931db4681cd' AS UUID), CAST('E0AFCCEC-6A37-EF11-86D4-000D3A4E707E' AS UUID), 'Allow', 1, 0, 0, 0, NOW(), NOW()
+              SELECT CAST('fe0569d0-425e-4d60-9978-b931db4681cd' AS UUID), CAST('E0AFCCEC-6A37-EF11-86D4-000D3A4E707E' AS UUID), 'Allow', true, false, false, false, NOW(), NOW()
               WHERE NOT EXISTS (
                 SELECT 1 FROM ${mjSchema}."EntityPermission"
                 WHERE "EntityID" = CAST('fe0569d0-425e-4d60-9978-b931db4681cd' AS UUID) AND "RoleID" = CAST('E0AFCCEC-6A37-EF11-86D4-000D3A4E707E' AS UUID) AND "Type" = 'Allow'
@@ -4569,7 +3743,7 @@ INSERT INTO ${mjSchema}."EntityPermission"
 
 INSERT INTO ${mjSchema}."EntityPermission"
                 ("EntityID", "RoleID", "Type", "CanRead", "CanCreate", "CanUpdate", "CanDelete", "__mj_CreatedAt", "__mj_UpdatedAt")
-              SELECT CAST('fe0569d0-425e-4d60-9978-b931db4681cd' AS UUID), CAST('DEAFCCEC-6A37-EF11-86D4-000D3A4E707E' AS UUID), 'Allow', 1, 1, 1, 1, NOW(), NOW()
+              SELECT CAST('fe0569d0-425e-4d60-9978-b931db4681cd' AS UUID), CAST('DEAFCCEC-6A37-EF11-86D4-000D3A4E707E' AS UUID), 'Allow', true, true, true, true, NOW(), NOW()
               WHERE NOT EXISTS (
                 SELECT 1 FROM ${mjSchema}."EntityPermission"
                 WHERE "EntityID" = CAST('fe0569d0-425e-4d60-9978-b931db4681cd' AS UUID) AND "RoleID" = CAST('DEAFCCEC-6A37-EF11-86D4-000D3A4E707E' AS UUID) AND "Type" = 'Allow'
@@ -4579,7 +3753,7 @@ INSERT INTO ${mjSchema}."EntityPermission"
 
 INSERT INTO ${mjSchema}."EntityPermission"
                 ("EntityID", "RoleID", "Type", "CanRead", "CanCreate", "CanUpdate", "CanDelete", "__mj_CreatedAt", "__mj_UpdatedAt")
-              SELECT CAST('fe0569d0-425e-4d60-9978-b931db4681cd' AS UUID), CAST('DFAFCCEC-6A37-EF11-86D4-000D3A4E707E' AS UUID), 'Allow', 1, 1, 1, 1, NOW(), NOW()
+              SELECT CAST('fe0569d0-425e-4d60-9978-b931db4681cd' AS UUID), CAST('DFAFCCEC-6A37-EF11-86D4-000D3A4E707E' AS UUID), 'Allow', true, true, true, true, NOW(), NOW()
               WHERE NOT EXISTS (
                 SELECT 1 FROM ${mjSchema}."EntityPermission"
                 WHERE "EntityID" = CAST('fe0569d0-425e-4d60-9978-b931db4681cd' AS UUID) AND "RoleID" = CAST('DFAFCCEC-6A37-EF11-86D4-000D3A4E707E' AS UUID) AND "Type" = 'Allow'
@@ -4644,7 +3818,7 @@ INSERT INTO ${mjSchema}."ApplicationEntity"
 
 INSERT INTO ${mjSchema}."EntityPermission"
                 ("EntityID", "RoleID", "Type", "CanRead", "CanCreate", "CanUpdate", "CanDelete", "__mj_CreatedAt", "__mj_UpdatedAt")
-              SELECT CAST('11e2f99e-8245-48d6-bcd7-97eed5b35cbd' AS UUID), CAST('E0AFCCEC-6A37-EF11-86D4-000D3A4E707E' AS UUID), 'Allow', 1, 0, 0, 0, NOW(), NOW()
+              SELECT CAST('11e2f99e-8245-48d6-bcd7-97eed5b35cbd' AS UUID), CAST('E0AFCCEC-6A37-EF11-86D4-000D3A4E707E' AS UUID), 'Allow', true, false, false, false, NOW(), NOW()
               WHERE NOT EXISTS (
                 SELECT 1 FROM ${mjSchema}."EntityPermission"
                 WHERE "EntityID" = CAST('11e2f99e-8245-48d6-bcd7-97eed5b35cbd' AS UUID) AND "RoleID" = CAST('E0AFCCEC-6A37-EF11-86D4-000D3A4E707E' AS UUID) AND "Type" = 'Allow'
@@ -4654,7 +3828,7 @@ INSERT INTO ${mjSchema}."EntityPermission"
 
 INSERT INTO ${mjSchema}."EntityPermission"
                 ("EntityID", "RoleID", "Type", "CanRead", "CanCreate", "CanUpdate", "CanDelete", "__mj_CreatedAt", "__mj_UpdatedAt")
-              SELECT CAST('11e2f99e-8245-48d6-bcd7-97eed5b35cbd' AS UUID), CAST('DEAFCCEC-6A37-EF11-86D4-000D3A4E707E' AS UUID), 'Allow', 1, 1, 1, 1, NOW(), NOW()
+              SELECT CAST('11e2f99e-8245-48d6-bcd7-97eed5b35cbd' AS UUID), CAST('DEAFCCEC-6A37-EF11-86D4-000D3A4E707E' AS UUID), 'Allow', true, true, true, true, NOW(), NOW()
               WHERE NOT EXISTS (
                 SELECT 1 FROM ${mjSchema}."EntityPermission"
                 WHERE "EntityID" = CAST('11e2f99e-8245-48d6-bcd7-97eed5b35cbd' AS UUID) AND "RoleID" = CAST('DEAFCCEC-6A37-EF11-86D4-000D3A4E707E' AS UUID) AND "Type" = 'Allow'
@@ -4664,7 +3838,7 @@ INSERT INTO ${mjSchema}."EntityPermission"
 
 INSERT INTO ${mjSchema}."EntityPermission"
                 ("EntityID", "RoleID", "Type", "CanRead", "CanCreate", "CanUpdate", "CanDelete", "__mj_CreatedAt", "__mj_UpdatedAt")
-              SELECT CAST('11e2f99e-8245-48d6-bcd7-97eed5b35cbd' AS UUID), CAST('DFAFCCEC-6A37-EF11-86D4-000D3A4E707E' AS UUID), 'Allow', 1, 1, 1, 1, NOW(), NOW()
+              SELECT CAST('11e2f99e-8245-48d6-bcd7-97eed5b35cbd' AS UUID), CAST('DFAFCCEC-6A37-EF11-86D4-000D3A4E707E' AS UUID), 'Allow', true, true, true, true, NOW(), NOW()
               WHERE NOT EXISTS (
                 SELECT 1 FROM ${mjSchema}."EntityPermission"
                 WHERE "EntityID" = CAST('11e2f99e-8245-48d6-bcd7-97eed5b35cbd' AS UUID) AND "RoleID" = CAST('DFAFCCEC-6A37-EF11-86D4-000D3A4E707E' AS UUID) AND "Type" = 'Allow'
@@ -4729,7 +3903,7 @@ INSERT INTO ${mjSchema}."ApplicationEntity"
 
 INSERT INTO ${mjSchema}."EntityPermission"
                 ("EntityID", "RoleID", "Type", "CanRead", "CanCreate", "CanUpdate", "CanDelete", "__mj_CreatedAt", "__mj_UpdatedAt")
-              SELECT CAST('88ca3b8b-e554-4b20-8dd8-ff608a8168a7' AS UUID), CAST('E0AFCCEC-6A37-EF11-86D4-000D3A4E707E' AS UUID), 'Allow', 1, 0, 0, 0, NOW(), NOW()
+              SELECT CAST('88ca3b8b-e554-4b20-8dd8-ff608a8168a7' AS UUID), CAST('E0AFCCEC-6A37-EF11-86D4-000D3A4E707E' AS UUID), 'Allow', true, false, false, false, NOW(), NOW()
               WHERE NOT EXISTS (
                 SELECT 1 FROM ${mjSchema}."EntityPermission"
                 WHERE "EntityID" = CAST('88ca3b8b-e554-4b20-8dd8-ff608a8168a7' AS UUID) AND "RoleID" = CAST('E0AFCCEC-6A37-EF11-86D4-000D3A4E707E' AS UUID) AND "Type" = 'Allow'
@@ -4739,7 +3913,7 @@ INSERT INTO ${mjSchema}."EntityPermission"
 
 INSERT INTO ${mjSchema}."EntityPermission"
                 ("EntityID", "RoleID", "Type", "CanRead", "CanCreate", "CanUpdate", "CanDelete", "__mj_CreatedAt", "__mj_UpdatedAt")
-              SELECT CAST('88ca3b8b-e554-4b20-8dd8-ff608a8168a7' AS UUID), CAST('DEAFCCEC-6A37-EF11-86D4-000D3A4E707E' AS UUID), 'Allow', 1, 1, 1, 1, NOW(), NOW()
+              SELECT CAST('88ca3b8b-e554-4b20-8dd8-ff608a8168a7' AS UUID), CAST('DEAFCCEC-6A37-EF11-86D4-000D3A4E707E' AS UUID), 'Allow', true, true, true, true, NOW(), NOW()
               WHERE NOT EXISTS (
                 SELECT 1 FROM ${mjSchema}."EntityPermission"
                 WHERE "EntityID" = CAST('88ca3b8b-e554-4b20-8dd8-ff608a8168a7' AS UUID) AND "RoleID" = CAST('DEAFCCEC-6A37-EF11-86D4-000D3A4E707E' AS UUID) AND "Type" = 'Allow'
@@ -4749,7 +3923,7 @@ INSERT INTO ${mjSchema}."EntityPermission"
 
 INSERT INTO ${mjSchema}."EntityPermission"
                 ("EntityID", "RoleID", "Type", "CanRead", "CanCreate", "CanUpdate", "CanDelete", "__mj_CreatedAt", "__mj_UpdatedAt")
-              SELECT CAST('88ca3b8b-e554-4b20-8dd8-ff608a8168a7' AS UUID), CAST('DFAFCCEC-6A37-EF11-86D4-000D3A4E707E' AS UUID), 'Allow', 1, 1, 1, 1, NOW(), NOW()
+              SELECT CAST('88ca3b8b-e554-4b20-8dd8-ff608a8168a7' AS UUID), CAST('DFAFCCEC-6A37-EF11-86D4-000D3A4E707E' AS UUID), 'Allow', true, true, true, true, NOW(), NOW()
               WHERE NOT EXISTS (
                 SELECT 1 FROM ${mjSchema}."EntityPermission"
                 WHERE "EntityID" = CAST('88ca3b8b-e554-4b20-8dd8-ff608a8168a7' AS UUID) AND "RoleID" = CAST('DFAFCCEC-6A37-EF11-86D4-000D3A4E707E' AS UUID) AND "Type" = 'Allow'
@@ -4814,7 +3988,7 @@ INSERT INTO ${mjSchema}."ApplicationEntity"
 
 INSERT INTO ${mjSchema}."EntityPermission"
                 ("EntityID", "RoleID", "Type", "CanRead", "CanCreate", "CanUpdate", "CanDelete", "__mj_CreatedAt", "__mj_UpdatedAt")
-              SELECT CAST('4ef61e74-5d87-4f3c-8be2-b3ab9f880d1a' AS UUID), CAST('E0AFCCEC-6A37-EF11-86D4-000D3A4E707E' AS UUID), 'Allow', 1, 0, 0, 0, NOW(), NOW()
+              SELECT CAST('4ef61e74-5d87-4f3c-8be2-b3ab9f880d1a' AS UUID), CAST('E0AFCCEC-6A37-EF11-86D4-000D3A4E707E' AS UUID), 'Allow', true, false, false, false, NOW(), NOW()
               WHERE NOT EXISTS (
                 SELECT 1 FROM ${mjSchema}."EntityPermission"
                 WHERE "EntityID" = CAST('4ef61e74-5d87-4f3c-8be2-b3ab9f880d1a' AS UUID) AND "RoleID" = CAST('E0AFCCEC-6A37-EF11-86D4-000D3A4E707E' AS UUID) AND "Type" = 'Allow'
@@ -4824,7 +3998,7 @@ INSERT INTO ${mjSchema}."EntityPermission"
 
 INSERT INTO ${mjSchema}."EntityPermission"
                 ("EntityID", "RoleID", "Type", "CanRead", "CanCreate", "CanUpdate", "CanDelete", "__mj_CreatedAt", "__mj_UpdatedAt")
-              SELECT CAST('4ef61e74-5d87-4f3c-8be2-b3ab9f880d1a' AS UUID), CAST('DEAFCCEC-6A37-EF11-86D4-000D3A4E707E' AS UUID), 'Allow', 1, 1, 1, 1, NOW(), NOW()
+              SELECT CAST('4ef61e74-5d87-4f3c-8be2-b3ab9f880d1a' AS UUID), CAST('DEAFCCEC-6A37-EF11-86D4-000D3A4E707E' AS UUID), 'Allow', true, true, true, true, NOW(), NOW()
               WHERE NOT EXISTS (
                 SELECT 1 FROM ${mjSchema}."EntityPermission"
                 WHERE "EntityID" = CAST('4ef61e74-5d87-4f3c-8be2-b3ab9f880d1a' AS UUID) AND "RoleID" = CAST('DEAFCCEC-6A37-EF11-86D4-000D3A4E707E' AS UUID) AND "Type" = 'Allow'
@@ -4834,7 +4008,7 @@ INSERT INTO ${mjSchema}."EntityPermission"
 
 INSERT INTO ${mjSchema}."EntityPermission"
                 ("EntityID", "RoleID", "Type", "CanRead", "CanCreate", "CanUpdate", "CanDelete", "__mj_CreatedAt", "__mj_UpdatedAt")
-              SELECT CAST('4ef61e74-5d87-4f3c-8be2-b3ab9f880d1a' AS UUID), CAST('DFAFCCEC-6A37-EF11-86D4-000D3A4E707E' AS UUID), 'Allow', 1, 1, 1, 1, NOW(), NOW()
+              SELECT CAST('4ef61e74-5d87-4f3c-8be2-b3ab9f880d1a' AS UUID), CAST('DFAFCCEC-6A37-EF11-86D4-000D3A4E707E' AS UUID), 'Allow', true, true, true, true, NOW(), NOW()
               WHERE NOT EXISTS (
                 SELECT 1 FROM ${mjSchema}."EntityPermission"
                 WHERE "EntityID" = CAST('4ef61e74-5d87-4f3c-8be2-b3ab9f880d1a' AS UUID) AND "RoleID" = CAST('DFAFCCEC-6A37-EF11-86D4-000D3A4E707E' AS UUID) AND "Type" = 'Allow'
@@ -4899,7 +4073,7 @@ INSERT INTO ${mjSchema}."ApplicationEntity"
 
 INSERT INTO ${mjSchema}."EntityPermission"
                 ("EntityID", "RoleID", "Type", "CanRead", "CanCreate", "CanUpdate", "CanDelete", "__mj_CreatedAt", "__mj_UpdatedAt")
-              SELECT CAST('bb3d6bf2-3185-46e2-8ae2-6ae272542bc8' AS UUID), CAST('E0AFCCEC-6A37-EF11-86D4-000D3A4E707E' AS UUID), 'Allow', 1, 0, 0, 0, NOW(), NOW()
+              SELECT CAST('bb3d6bf2-3185-46e2-8ae2-6ae272542bc8' AS UUID), CAST('E0AFCCEC-6A37-EF11-86D4-000D3A4E707E' AS UUID), 'Allow', true, false, false, false, NOW(), NOW()
               WHERE NOT EXISTS (
                 SELECT 1 FROM ${mjSchema}."EntityPermission"
                 WHERE "EntityID" = CAST('bb3d6bf2-3185-46e2-8ae2-6ae272542bc8' AS UUID) AND "RoleID" = CAST('E0AFCCEC-6A37-EF11-86D4-000D3A4E707E' AS UUID) AND "Type" = 'Allow'
@@ -4909,7 +4083,7 @@ INSERT INTO ${mjSchema}."EntityPermission"
 
 INSERT INTO ${mjSchema}."EntityPermission"
                 ("EntityID", "RoleID", "Type", "CanRead", "CanCreate", "CanUpdate", "CanDelete", "__mj_CreatedAt", "__mj_UpdatedAt")
-              SELECT CAST('bb3d6bf2-3185-46e2-8ae2-6ae272542bc8' AS UUID), CAST('DEAFCCEC-6A37-EF11-86D4-000D3A4E707E' AS UUID), 'Allow', 1, 1, 1, 1, NOW(), NOW()
+              SELECT CAST('bb3d6bf2-3185-46e2-8ae2-6ae272542bc8' AS UUID), CAST('DEAFCCEC-6A37-EF11-86D4-000D3A4E707E' AS UUID), 'Allow', true, true, true, true, NOW(), NOW()
               WHERE NOT EXISTS (
                 SELECT 1 FROM ${mjSchema}."EntityPermission"
                 WHERE "EntityID" = CAST('bb3d6bf2-3185-46e2-8ae2-6ae272542bc8' AS UUID) AND "RoleID" = CAST('DEAFCCEC-6A37-EF11-86D4-000D3A4E707E' AS UUID) AND "Type" = 'Allow'
@@ -4919,7 +4093,7 @@ INSERT INTO ${mjSchema}."EntityPermission"
 
 INSERT INTO ${mjSchema}."EntityPermission"
                 ("EntityID", "RoleID", "Type", "CanRead", "CanCreate", "CanUpdate", "CanDelete", "__mj_CreatedAt", "__mj_UpdatedAt")
-              SELECT CAST('bb3d6bf2-3185-46e2-8ae2-6ae272542bc8' AS UUID), CAST('DFAFCCEC-6A37-EF11-86D4-000D3A4E707E' AS UUID), 'Allow', 1, 1, 1, 1, NOW(), NOW()
+              SELECT CAST('bb3d6bf2-3185-46e2-8ae2-6ae272542bc8' AS UUID), CAST('DFAFCCEC-6A37-EF11-86D4-000D3A4E707E' AS UUID), 'Allow', true, true, true, true, NOW(), NOW()
               WHERE NOT EXISTS (
                 SELECT 1 FROM ${mjSchema}."EntityPermission"
                 WHERE "EntityID" = CAST('bb3d6bf2-3185-46e2-8ae2-6ae272542bc8' AS UUID) AND "RoleID" = CAST('DFAFCCEC-6A37-EF11-86D4-000D3A4E707E' AS UUID) AND "Type" = 'Allow'
@@ -4984,7 +4158,7 @@ INSERT INTO ${mjSchema}."ApplicationEntity"
 
 INSERT INTO ${mjSchema}."EntityPermission"
                 ("EntityID", "RoleID", "Type", "CanRead", "CanCreate", "CanUpdate", "CanDelete", "__mj_CreatedAt", "__mj_UpdatedAt")
-              SELECT CAST('fad4d0d0-6b26-4814-a0b8-e61480ac3375' AS UUID), CAST('E0AFCCEC-6A37-EF11-86D4-000D3A4E707E' AS UUID), 'Allow', 1, 0, 0, 0, NOW(), NOW()
+              SELECT CAST('fad4d0d0-6b26-4814-a0b8-e61480ac3375' AS UUID), CAST('E0AFCCEC-6A37-EF11-86D4-000D3A4E707E' AS UUID), 'Allow', true, false, false, false, NOW(), NOW()
               WHERE NOT EXISTS (
                 SELECT 1 FROM ${mjSchema}."EntityPermission"
                 WHERE "EntityID" = CAST('fad4d0d0-6b26-4814-a0b8-e61480ac3375' AS UUID) AND "RoleID" = CAST('E0AFCCEC-6A37-EF11-86D4-000D3A4E707E' AS UUID) AND "Type" = 'Allow'
@@ -4994,7 +4168,7 @@ INSERT INTO ${mjSchema}."EntityPermission"
 
 INSERT INTO ${mjSchema}."EntityPermission"
                 ("EntityID", "RoleID", "Type", "CanRead", "CanCreate", "CanUpdate", "CanDelete", "__mj_CreatedAt", "__mj_UpdatedAt")
-              SELECT CAST('fad4d0d0-6b26-4814-a0b8-e61480ac3375' AS UUID), CAST('DEAFCCEC-6A37-EF11-86D4-000D3A4E707E' AS UUID), 'Allow', 1, 1, 1, 1, NOW(), NOW()
+              SELECT CAST('fad4d0d0-6b26-4814-a0b8-e61480ac3375' AS UUID), CAST('DEAFCCEC-6A37-EF11-86D4-000D3A4E707E' AS UUID), 'Allow', true, true, true, true, NOW(), NOW()
               WHERE NOT EXISTS (
                 SELECT 1 FROM ${mjSchema}."EntityPermission"
                 WHERE "EntityID" = CAST('fad4d0d0-6b26-4814-a0b8-e61480ac3375' AS UUID) AND "RoleID" = CAST('DEAFCCEC-6A37-EF11-86D4-000D3A4E707E' AS UUID) AND "Type" = 'Allow'
@@ -5004,7 +4178,7 @@ INSERT INTO ${mjSchema}."EntityPermission"
 
 INSERT INTO ${mjSchema}."EntityPermission"
                 ("EntityID", "RoleID", "Type", "CanRead", "CanCreate", "CanUpdate", "CanDelete", "__mj_CreatedAt", "__mj_UpdatedAt")
-              SELECT CAST('fad4d0d0-6b26-4814-a0b8-e61480ac3375' AS UUID), CAST('DFAFCCEC-6A37-EF11-86D4-000D3A4E707E' AS UUID), 'Allow', 1, 1, 1, 1, NOW(), NOW()
+              SELECT CAST('fad4d0d0-6b26-4814-a0b8-e61480ac3375' AS UUID), CAST('DFAFCCEC-6A37-EF11-86D4-000D3A4E707E' AS UUID), 'Allow', true, true, true, true, NOW(), NOW()
               WHERE NOT EXISTS (
                 SELECT 1 FROM ${mjSchema}."EntityPermission"
                 WHERE "EntityID" = CAST('fad4d0d0-6b26-4814-a0b8-e61480ac3375' AS UUID) AND "RoleID" = CAST('DFAFCCEC-6A37-EF11-86D4-000D3A4E707E' AS UUID) AND "Type" = 'Allow'
@@ -5069,7 +4243,7 @@ INSERT INTO ${mjSchema}."ApplicationEntity"
 
 INSERT INTO ${mjSchema}."EntityPermission"
                 ("EntityID", "RoleID", "Type", "CanRead", "CanCreate", "CanUpdate", "CanDelete", "__mj_CreatedAt", "__mj_UpdatedAt")
-              SELECT CAST('d3d8ac88-6421-414d-8db9-24ae78d213b9' AS UUID), CAST('E0AFCCEC-6A37-EF11-86D4-000D3A4E707E' AS UUID), 'Allow', 1, 0, 0, 0, NOW(), NOW()
+              SELECT CAST('d3d8ac88-6421-414d-8db9-24ae78d213b9' AS UUID), CAST('E0AFCCEC-6A37-EF11-86D4-000D3A4E707E' AS UUID), 'Allow', true, false, false, false, NOW(), NOW()
               WHERE NOT EXISTS (
                 SELECT 1 FROM ${mjSchema}."EntityPermission"
                 WHERE "EntityID" = CAST('d3d8ac88-6421-414d-8db9-24ae78d213b9' AS UUID) AND "RoleID" = CAST('E0AFCCEC-6A37-EF11-86D4-000D3A4E707E' AS UUID) AND "Type" = 'Allow'
@@ -5079,7 +4253,7 @@ INSERT INTO ${mjSchema}."EntityPermission"
 
 INSERT INTO ${mjSchema}."EntityPermission"
                 ("EntityID", "RoleID", "Type", "CanRead", "CanCreate", "CanUpdate", "CanDelete", "__mj_CreatedAt", "__mj_UpdatedAt")
-              SELECT CAST('d3d8ac88-6421-414d-8db9-24ae78d213b9' AS UUID), CAST('DEAFCCEC-6A37-EF11-86D4-000D3A4E707E' AS UUID), 'Allow', 1, 1, 1, 1, NOW(), NOW()
+              SELECT CAST('d3d8ac88-6421-414d-8db9-24ae78d213b9' AS UUID), CAST('DEAFCCEC-6A37-EF11-86D4-000D3A4E707E' AS UUID), 'Allow', true, true, true, true, NOW(), NOW()
               WHERE NOT EXISTS (
                 SELECT 1 FROM ${mjSchema}."EntityPermission"
                 WHERE "EntityID" = CAST('d3d8ac88-6421-414d-8db9-24ae78d213b9' AS UUID) AND "RoleID" = CAST('DEAFCCEC-6A37-EF11-86D4-000D3A4E707E' AS UUID) AND "Type" = 'Allow'
@@ -5089,7 +4263,7 @@ INSERT INTO ${mjSchema}."EntityPermission"
 
 INSERT INTO ${mjSchema}."EntityPermission"
                 ("EntityID", "RoleID", "Type", "CanRead", "CanCreate", "CanUpdate", "CanDelete", "__mj_CreatedAt", "__mj_UpdatedAt")
-              SELECT CAST('d3d8ac88-6421-414d-8db9-24ae78d213b9' AS UUID), CAST('DFAFCCEC-6A37-EF11-86D4-000D3A4E707E' AS UUID), 'Allow', 1, 1, 1, 1, NOW(), NOW()
+              SELECT CAST('d3d8ac88-6421-414d-8db9-24ae78d213b9' AS UUID), CAST('DFAFCCEC-6A37-EF11-86D4-000D3A4E707E' AS UUID), 'Allow', true, true, true, true, NOW(), NOW()
               WHERE NOT EXISTS (
                 SELECT 1 FROM ${mjSchema}."EntityPermission"
                 WHERE "EntityID" = CAST('d3d8ac88-6421-414d-8db9-24ae78d213b9' AS UUID) AND "RoleID" = CAST('DFAFCCEC-6A37-EF11-86D4-000D3A4E707E' AS UUID) AND "Type" = 'Allow'
@@ -5154,7 +4328,7 @@ INSERT INTO ${mjSchema}."ApplicationEntity"
 
 INSERT INTO ${mjSchema}."EntityPermission"
                 ("EntityID", "RoleID", "Type", "CanRead", "CanCreate", "CanUpdate", "CanDelete", "__mj_CreatedAt", "__mj_UpdatedAt")
-              SELECT CAST('1f13a4d7-a3be-4de1-9e4c-c65ccea9cf61' AS UUID), CAST('E0AFCCEC-6A37-EF11-86D4-000D3A4E707E' AS UUID), 'Allow', 1, 0, 0, 0, NOW(), NOW()
+              SELECT CAST('1f13a4d7-a3be-4de1-9e4c-c65ccea9cf61' AS UUID), CAST('E0AFCCEC-6A37-EF11-86D4-000D3A4E707E' AS UUID), 'Allow', true, false, false, false, NOW(), NOW()
               WHERE NOT EXISTS (
                 SELECT 1 FROM ${mjSchema}."EntityPermission"
                 WHERE "EntityID" = CAST('1f13a4d7-a3be-4de1-9e4c-c65ccea9cf61' AS UUID) AND "RoleID" = CAST('E0AFCCEC-6A37-EF11-86D4-000D3A4E707E' AS UUID) AND "Type" = 'Allow'
@@ -5164,7 +4338,7 @@ INSERT INTO ${mjSchema}."EntityPermission"
 
 INSERT INTO ${mjSchema}."EntityPermission"
                 ("EntityID", "RoleID", "Type", "CanRead", "CanCreate", "CanUpdate", "CanDelete", "__mj_CreatedAt", "__mj_UpdatedAt")
-              SELECT CAST('1f13a4d7-a3be-4de1-9e4c-c65ccea9cf61' AS UUID), CAST('DEAFCCEC-6A37-EF11-86D4-000D3A4E707E' AS UUID), 'Allow', 1, 1, 1, 1, NOW(), NOW()
+              SELECT CAST('1f13a4d7-a3be-4de1-9e4c-c65ccea9cf61' AS UUID), CAST('DEAFCCEC-6A37-EF11-86D4-000D3A4E707E' AS UUID), 'Allow', true, true, true, true, NOW(), NOW()
               WHERE NOT EXISTS (
                 SELECT 1 FROM ${mjSchema}."EntityPermission"
                 WHERE "EntityID" = CAST('1f13a4d7-a3be-4de1-9e4c-c65ccea9cf61' AS UUID) AND "RoleID" = CAST('DEAFCCEC-6A37-EF11-86D4-000D3A4E707E' AS UUID) AND "Type" = 'Allow'
@@ -5174,7 +4348,7 @@ INSERT INTO ${mjSchema}."EntityPermission"
 
 INSERT INTO ${mjSchema}."EntityPermission"
                 ("EntityID", "RoleID", "Type", "CanRead", "CanCreate", "CanUpdate", "CanDelete", "__mj_CreatedAt", "__mj_UpdatedAt")
-              SELECT CAST('1f13a4d7-a3be-4de1-9e4c-c65ccea9cf61' AS UUID), CAST('DFAFCCEC-6A37-EF11-86D4-000D3A4E707E' AS UUID), 'Allow', 1, 1, 1, 1, NOW(), NOW()
+              SELECT CAST('1f13a4d7-a3be-4de1-9e4c-c65ccea9cf61' AS UUID), CAST('DFAFCCEC-6A37-EF11-86D4-000D3A4E707E' AS UUID), 'Allow', true, true, true, true, NOW(), NOW()
               WHERE NOT EXISTS (
                 SELECT 1 FROM ${mjSchema}."EntityPermission"
                 WHERE "EntityID" = CAST('1f13a4d7-a3be-4de1-9e4c-c65ccea9cf61' AS UUID) AND "RoleID" = CAST('DFAFCCEC-6A37-EF11-86D4-000D3A4E707E' AS UUID) AND "Type" = 'Allow'
@@ -5239,7 +4413,7 @@ INSERT INTO ${mjSchema}."ApplicationEntity"
 
 INSERT INTO ${mjSchema}."EntityPermission"
                 ("EntityID", "RoleID", "Type", "CanRead", "CanCreate", "CanUpdate", "CanDelete", "__mj_CreatedAt", "__mj_UpdatedAt")
-              SELECT CAST('de26acb1-882c-4f8a-87ba-8834308b5ac8' AS UUID), CAST('E0AFCCEC-6A37-EF11-86D4-000D3A4E707E' AS UUID), 'Allow', 1, 0, 0, 0, NOW(), NOW()
+              SELECT CAST('de26acb1-882c-4f8a-87ba-8834308b5ac8' AS UUID), CAST('E0AFCCEC-6A37-EF11-86D4-000D3A4E707E' AS UUID), 'Allow', true, false, false, false, NOW(), NOW()
               WHERE NOT EXISTS (
                 SELECT 1 FROM ${mjSchema}."EntityPermission"
                 WHERE "EntityID" = CAST('de26acb1-882c-4f8a-87ba-8834308b5ac8' AS UUID) AND "RoleID" = CAST('E0AFCCEC-6A37-EF11-86D4-000D3A4E707E' AS UUID) AND "Type" = 'Allow'
@@ -5249,7 +4423,7 @@ INSERT INTO ${mjSchema}."EntityPermission"
 
 INSERT INTO ${mjSchema}."EntityPermission"
                 ("EntityID", "RoleID", "Type", "CanRead", "CanCreate", "CanUpdate", "CanDelete", "__mj_CreatedAt", "__mj_UpdatedAt")
-              SELECT CAST('de26acb1-882c-4f8a-87ba-8834308b5ac8' AS UUID), CAST('DEAFCCEC-6A37-EF11-86D4-000D3A4E707E' AS UUID), 'Allow', 1, 1, 1, 1, NOW(), NOW()
+              SELECT CAST('de26acb1-882c-4f8a-87ba-8834308b5ac8' AS UUID), CAST('DEAFCCEC-6A37-EF11-86D4-000D3A4E707E' AS UUID), 'Allow', true, true, true, true, NOW(), NOW()
               WHERE NOT EXISTS (
                 SELECT 1 FROM ${mjSchema}."EntityPermission"
                 WHERE "EntityID" = CAST('de26acb1-882c-4f8a-87ba-8834308b5ac8' AS UUID) AND "RoleID" = CAST('DEAFCCEC-6A37-EF11-86D4-000D3A4E707E' AS UUID) AND "Type" = 'Allow'
@@ -5259,7 +4433,7 @@ INSERT INTO ${mjSchema}."EntityPermission"
 
 INSERT INTO ${mjSchema}."EntityPermission"
                 ("EntityID", "RoleID", "Type", "CanRead", "CanCreate", "CanUpdate", "CanDelete", "__mj_CreatedAt", "__mj_UpdatedAt")
-              SELECT CAST('de26acb1-882c-4f8a-87ba-8834308b5ac8' AS UUID), CAST('DFAFCCEC-6A37-EF11-86D4-000D3A4E707E' AS UUID), 'Allow', 1, 1, 1, 1, NOW(), NOW()
+              SELECT CAST('de26acb1-882c-4f8a-87ba-8834308b5ac8' AS UUID), CAST('DFAFCCEC-6A37-EF11-86D4-000D3A4E707E' AS UUID), 'Allow', true, true, true, true, NOW(), NOW()
               WHERE NOT EXISTS (
                 SELECT 1 FROM ${mjSchema}."EntityPermission"
                 WHERE "EntityID" = CAST('de26acb1-882c-4f8a-87ba-8834308b5ac8' AS UUID) AND "RoleID" = CAST('DFAFCCEC-6A37-EF11-86D4-000D3A4E707E' AS UUID) AND "Type" = 'Allow'
@@ -5324,7 +4498,7 @@ INSERT INTO ${mjSchema}."ApplicationEntity"
 
 INSERT INTO ${mjSchema}."EntityPermission"
                 ("EntityID", "RoleID", "Type", "CanRead", "CanCreate", "CanUpdate", "CanDelete", "__mj_CreatedAt", "__mj_UpdatedAt")
-              SELECT CAST('515f5e8e-6260-4ab1-9609-bbd19316e2c7' AS UUID), CAST('E0AFCCEC-6A37-EF11-86D4-000D3A4E707E' AS UUID), 'Allow', 1, 0, 0, 0, NOW(), NOW()
+              SELECT CAST('515f5e8e-6260-4ab1-9609-bbd19316e2c7' AS UUID), CAST('E0AFCCEC-6A37-EF11-86D4-000D3A4E707E' AS UUID), 'Allow', true, false, false, false, NOW(), NOW()
               WHERE NOT EXISTS (
                 SELECT 1 FROM ${mjSchema}."EntityPermission"
                 WHERE "EntityID" = CAST('515f5e8e-6260-4ab1-9609-bbd19316e2c7' AS UUID) AND "RoleID" = CAST('E0AFCCEC-6A37-EF11-86D4-000D3A4E707E' AS UUID) AND "Type" = 'Allow'
@@ -5334,7 +4508,7 @@ INSERT INTO ${mjSchema}."EntityPermission"
 
 INSERT INTO ${mjSchema}."EntityPermission"
                 ("EntityID", "RoleID", "Type", "CanRead", "CanCreate", "CanUpdate", "CanDelete", "__mj_CreatedAt", "__mj_UpdatedAt")
-              SELECT CAST('515f5e8e-6260-4ab1-9609-bbd19316e2c7' AS UUID), CAST('DEAFCCEC-6A37-EF11-86D4-000D3A4E707E' AS UUID), 'Allow', 1, 1, 1, 1, NOW(), NOW()
+              SELECT CAST('515f5e8e-6260-4ab1-9609-bbd19316e2c7' AS UUID), CAST('DEAFCCEC-6A37-EF11-86D4-000D3A4E707E' AS UUID), 'Allow', true, true, true, true, NOW(), NOW()
               WHERE NOT EXISTS (
                 SELECT 1 FROM ${mjSchema}."EntityPermission"
                 WHERE "EntityID" = CAST('515f5e8e-6260-4ab1-9609-bbd19316e2c7' AS UUID) AND "RoleID" = CAST('DEAFCCEC-6A37-EF11-86D4-000D3A4E707E' AS UUID) AND "Type" = 'Allow'
@@ -5344,7 +4518,7 @@ INSERT INTO ${mjSchema}."EntityPermission"
 
 INSERT INTO ${mjSchema}."EntityPermission"
                 ("EntityID", "RoleID", "Type", "CanRead", "CanCreate", "CanUpdate", "CanDelete", "__mj_CreatedAt", "__mj_UpdatedAt")
-              SELECT CAST('515f5e8e-6260-4ab1-9609-bbd19316e2c7' AS UUID), CAST('DFAFCCEC-6A37-EF11-86D4-000D3A4E707E' AS UUID), 'Allow', 1, 1, 1, 1, NOW(), NOW()
+              SELECT CAST('515f5e8e-6260-4ab1-9609-bbd19316e2c7' AS UUID), CAST('DFAFCCEC-6A37-EF11-86D4-000D3A4E707E' AS UUID), 'Allow', true, true, true, true, NOW(), NOW()
               WHERE NOT EXISTS (
                 SELECT 1 FROM ${mjSchema}."EntityPermission"
                 WHERE "EntityID" = CAST('515f5e8e-6260-4ab1-9609-bbd19316e2c7' AS UUID) AND "RoleID" = CAST('DFAFCCEC-6A37-EF11-86D4-000D3A4E707E' AS UUID) AND "Type" = 'Allow'
@@ -5409,7 +4583,7 @@ INSERT INTO ${mjSchema}."ApplicationEntity"
 
 INSERT INTO ${mjSchema}."EntityPermission"
                 ("EntityID", "RoleID", "Type", "CanRead", "CanCreate", "CanUpdate", "CanDelete", "__mj_CreatedAt", "__mj_UpdatedAt")
-              SELECT CAST('83ca1249-f6f3-4fb7-8d9a-cc008b9e190f' AS UUID), CAST('E0AFCCEC-6A37-EF11-86D4-000D3A4E707E' AS UUID), 'Allow', 1, 0, 0, 0, NOW(), NOW()
+              SELECT CAST('83ca1249-f6f3-4fb7-8d9a-cc008b9e190f' AS UUID), CAST('E0AFCCEC-6A37-EF11-86D4-000D3A4E707E' AS UUID), 'Allow', true, false, false, false, NOW(), NOW()
               WHERE NOT EXISTS (
                 SELECT 1 FROM ${mjSchema}."EntityPermission"
                 WHERE "EntityID" = CAST('83ca1249-f6f3-4fb7-8d9a-cc008b9e190f' AS UUID) AND "RoleID" = CAST('E0AFCCEC-6A37-EF11-86D4-000D3A4E707E' AS UUID) AND "Type" = 'Allow'
@@ -5419,7 +4593,7 @@ INSERT INTO ${mjSchema}."EntityPermission"
 
 INSERT INTO ${mjSchema}."EntityPermission"
                 ("EntityID", "RoleID", "Type", "CanRead", "CanCreate", "CanUpdate", "CanDelete", "__mj_CreatedAt", "__mj_UpdatedAt")
-              SELECT CAST('83ca1249-f6f3-4fb7-8d9a-cc008b9e190f' AS UUID), CAST('DEAFCCEC-6A37-EF11-86D4-000D3A4E707E' AS UUID), 'Allow', 1, 1, 1, 1, NOW(), NOW()
+              SELECT CAST('83ca1249-f6f3-4fb7-8d9a-cc008b9e190f' AS UUID), CAST('DEAFCCEC-6A37-EF11-86D4-000D3A4E707E' AS UUID), 'Allow', true, true, true, true, NOW(), NOW()
               WHERE NOT EXISTS (
                 SELECT 1 FROM ${mjSchema}."EntityPermission"
                 WHERE "EntityID" = CAST('83ca1249-f6f3-4fb7-8d9a-cc008b9e190f' AS UUID) AND "RoleID" = CAST('DEAFCCEC-6A37-EF11-86D4-000D3A4E707E' AS UUID) AND "Type" = 'Allow'
@@ -5429,7 +4603,7 @@ INSERT INTO ${mjSchema}."EntityPermission"
 
 INSERT INTO ${mjSchema}."EntityPermission"
                 ("EntityID", "RoleID", "Type", "CanRead", "CanCreate", "CanUpdate", "CanDelete", "__mj_CreatedAt", "__mj_UpdatedAt")
-              SELECT CAST('83ca1249-f6f3-4fb7-8d9a-cc008b9e190f' AS UUID), CAST('DFAFCCEC-6A37-EF11-86D4-000D3A4E707E' AS UUID), 'Allow', 1, 1, 1, 1, NOW(), NOW()
+              SELECT CAST('83ca1249-f6f3-4fb7-8d9a-cc008b9e190f' AS UUID), CAST('DFAFCCEC-6A37-EF11-86D4-000D3A4E707E' AS UUID), 'Allow', true, true, true, true, NOW(), NOW()
               WHERE NOT EXISTS (
                 SELECT 1 FROM ${mjSchema}."EntityPermission"
                 WHERE "EntityID" = CAST('83ca1249-f6f3-4fb7-8d9a-cc008b9e190f' AS UUID) AND "RoleID" = CAST('DFAFCCEC-6A37-EF11-86D4-000D3A4E707E' AS UUID) AND "Type" = 'Allow'
@@ -5494,7 +4668,7 @@ INSERT INTO ${mjSchema}."ApplicationEntity"
 
 INSERT INTO ${mjSchema}."EntityPermission"
                 ("EntityID", "RoleID", "Type", "CanRead", "CanCreate", "CanUpdate", "CanDelete", "__mj_CreatedAt", "__mj_UpdatedAt")
-              SELECT CAST('d41bd167-4548-4608-a40a-90074161b387' AS UUID), CAST('E0AFCCEC-6A37-EF11-86D4-000D3A4E707E' AS UUID), 'Allow', 1, 0, 0, 0, NOW(), NOW()
+              SELECT CAST('d41bd167-4548-4608-a40a-90074161b387' AS UUID), CAST('E0AFCCEC-6A37-EF11-86D4-000D3A4E707E' AS UUID), 'Allow', true, false, false, false, NOW(), NOW()
               WHERE NOT EXISTS (
                 SELECT 1 FROM ${mjSchema}."EntityPermission"
                 WHERE "EntityID" = CAST('d41bd167-4548-4608-a40a-90074161b387' AS UUID) AND "RoleID" = CAST('E0AFCCEC-6A37-EF11-86D4-000D3A4E707E' AS UUID) AND "Type" = 'Allow'
@@ -5504,7 +4678,7 @@ INSERT INTO ${mjSchema}."EntityPermission"
 
 INSERT INTO ${mjSchema}."EntityPermission"
                 ("EntityID", "RoleID", "Type", "CanRead", "CanCreate", "CanUpdate", "CanDelete", "__mj_CreatedAt", "__mj_UpdatedAt")
-              SELECT CAST('d41bd167-4548-4608-a40a-90074161b387' AS UUID), CAST('DEAFCCEC-6A37-EF11-86D4-000D3A4E707E' AS UUID), 'Allow', 1, 1, 1, 1, NOW(), NOW()
+              SELECT CAST('d41bd167-4548-4608-a40a-90074161b387' AS UUID), CAST('DEAFCCEC-6A37-EF11-86D4-000D3A4E707E' AS UUID), 'Allow', true, true, true, true, NOW(), NOW()
               WHERE NOT EXISTS (
                 SELECT 1 FROM ${mjSchema}."EntityPermission"
                 WHERE "EntityID" = CAST('d41bd167-4548-4608-a40a-90074161b387' AS UUID) AND "RoleID" = CAST('DEAFCCEC-6A37-EF11-86D4-000D3A4E707E' AS UUID) AND "Type" = 'Allow'
@@ -5514,7 +4688,7 @@ INSERT INTO ${mjSchema}."EntityPermission"
 
 INSERT INTO ${mjSchema}."EntityPermission"
                 ("EntityID", "RoleID", "Type", "CanRead", "CanCreate", "CanUpdate", "CanDelete", "__mj_CreatedAt", "__mj_UpdatedAt")
-              SELECT CAST('d41bd167-4548-4608-a40a-90074161b387' AS UUID), CAST('DFAFCCEC-6A37-EF11-86D4-000D3A4E707E' AS UUID), 'Allow', 1, 1, 1, 1, NOW(), NOW()
+              SELECT CAST('d41bd167-4548-4608-a40a-90074161b387' AS UUID), CAST('DFAFCCEC-6A37-EF11-86D4-000D3A4E707E' AS UUID), 'Allow', true, true, true, true, NOW(), NOW()
               WHERE NOT EXISTS (
                 SELECT 1 FROM ${mjSchema}."EntityPermission"
                 WHERE "EntityID" = CAST('d41bd167-4548-4608-a40a-90074161b387' AS UUID) AND "RoleID" = CAST('DFAFCCEC-6A37-EF11-86D4-000D3A4E707E' AS UUID) AND "Type" = 'Allow'
@@ -5579,7 +4753,7 @@ INSERT INTO ${mjSchema}."ApplicationEntity"
 
 INSERT INTO ${mjSchema}."EntityPermission"
                 ("EntityID", "RoleID", "Type", "CanRead", "CanCreate", "CanUpdate", "CanDelete", "__mj_CreatedAt", "__mj_UpdatedAt")
-              SELECT CAST('85ecb1d3-0e0b-41d8-82e1-94bd5584fe9f' AS UUID), CAST('E0AFCCEC-6A37-EF11-86D4-000D3A4E707E' AS UUID), 'Allow', 1, 0, 0, 0, NOW(), NOW()
+              SELECT CAST('85ecb1d3-0e0b-41d8-82e1-94bd5584fe9f' AS UUID), CAST('E0AFCCEC-6A37-EF11-86D4-000D3A4E707E' AS UUID), 'Allow', true, false, false, false, NOW(), NOW()
               WHERE NOT EXISTS (
                 SELECT 1 FROM ${mjSchema}."EntityPermission"
                 WHERE "EntityID" = CAST('85ecb1d3-0e0b-41d8-82e1-94bd5584fe9f' AS UUID) AND "RoleID" = CAST('E0AFCCEC-6A37-EF11-86D4-000D3A4E707E' AS UUID) AND "Type" = 'Allow'
@@ -5589,7 +4763,7 @@ INSERT INTO ${mjSchema}."EntityPermission"
 
 INSERT INTO ${mjSchema}."EntityPermission"
                 ("EntityID", "RoleID", "Type", "CanRead", "CanCreate", "CanUpdate", "CanDelete", "__mj_CreatedAt", "__mj_UpdatedAt")
-              SELECT CAST('85ecb1d3-0e0b-41d8-82e1-94bd5584fe9f' AS UUID), CAST('DEAFCCEC-6A37-EF11-86D4-000D3A4E707E' AS UUID), 'Allow', 1, 1, 1, 1, NOW(), NOW()
+              SELECT CAST('85ecb1d3-0e0b-41d8-82e1-94bd5584fe9f' AS UUID), CAST('DEAFCCEC-6A37-EF11-86D4-000D3A4E707E' AS UUID), 'Allow', true, true, true, true, NOW(), NOW()
               WHERE NOT EXISTS (
                 SELECT 1 FROM ${mjSchema}."EntityPermission"
                 WHERE "EntityID" = CAST('85ecb1d3-0e0b-41d8-82e1-94bd5584fe9f' AS UUID) AND "RoleID" = CAST('DEAFCCEC-6A37-EF11-86D4-000D3A4E707E' AS UUID) AND "Type" = 'Allow'
@@ -5599,7 +4773,7 @@ INSERT INTO ${mjSchema}."EntityPermission"
 
 INSERT INTO ${mjSchema}."EntityPermission"
                 ("EntityID", "RoleID", "Type", "CanRead", "CanCreate", "CanUpdate", "CanDelete", "__mj_CreatedAt", "__mj_UpdatedAt")
-              SELECT CAST('85ecb1d3-0e0b-41d8-82e1-94bd5584fe9f' AS UUID), CAST('DFAFCCEC-6A37-EF11-86D4-000D3A4E707E' AS UUID), 'Allow', 1, 1, 1, 1, NOW(), NOW()
+              SELECT CAST('85ecb1d3-0e0b-41d8-82e1-94bd5584fe9f' AS UUID), CAST('DFAFCCEC-6A37-EF11-86D4-000D3A4E707E' AS UUID), 'Allow', true, true, true, true, NOW(), NOW()
               WHERE NOT EXISTS (
                 SELECT 1 FROM ${mjSchema}."EntityPermission"
                 WHERE "EntityID" = CAST('85ecb1d3-0e0b-41d8-82e1-94bd5584fe9f' AS UUID) AND "RoleID" = CAST('DFAFCCEC-6A37-EF11-86D4-000D3A4E707E' AS UUID) AND "Type" = 'Allow'
@@ -5664,7 +4838,7 @@ INSERT INTO ${mjSchema}."ApplicationEntity"
 
 INSERT INTO ${mjSchema}."EntityPermission"
                 ("EntityID", "RoleID", "Type", "CanRead", "CanCreate", "CanUpdate", "CanDelete", "__mj_CreatedAt", "__mj_UpdatedAt")
-              SELECT CAST('863c68e4-d58a-465f-97de-098400dd851e' AS UUID), CAST('E0AFCCEC-6A37-EF11-86D4-000D3A4E707E' AS UUID), 'Allow', 1, 0, 0, 0, NOW(), NOW()
+              SELECT CAST('863c68e4-d58a-465f-97de-098400dd851e' AS UUID), CAST('E0AFCCEC-6A37-EF11-86D4-000D3A4E707E' AS UUID), 'Allow', true, false, false, false, NOW(), NOW()
               WHERE NOT EXISTS (
                 SELECT 1 FROM ${mjSchema}."EntityPermission"
                 WHERE "EntityID" = CAST('863c68e4-d58a-465f-97de-098400dd851e' AS UUID) AND "RoleID" = CAST('E0AFCCEC-6A37-EF11-86D4-000D3A4E707E' AS UUID) AND "Type" = 'Allow'
@@ -5674,7 +4848,7 @@ INSERT INTO ${mjSchema}."EntityPermission"
 
 INSERT INTO ${mjSchema}."EntityPermission"
                 ("EntityID", "RoleID", "Type", "CanRead", "CanCreate", "CanUpdate", "CanDelete", "__mj_CreatedAt", "__mj_UpdatedAt")
-              SELECT CAST('863c68e4-d58a-465f-97de-098400dd851e' AS UUID), CAST('DEAFCCEC-6A37-EF11-86D4-000D3A4E707E' AS UUID), 'Allow', 1, 1, 1, 1, NOW(), NOW()
+              SELECT CAST('863c68e4-d58a-465f-97de-098400dd851e' AS UUID), CAST('DEAFCCEC-6A37-EF11-86D4-000D3A4E707E' AS UUID), 'Allow', true, true, true, true, NOW(), NOW()
               WHERE NOT EXISTS (
                 SELECT 1 FROM ${mjSchema}."EntityPermission"
                 WHERE "EntityID" = CAST('863c68e4-d58a-465f-97de-098400dd851e' AS UUID) AND "RoleID" = CAST('DEAFCCEC-6A37-EF11-86D4-000D3A4E707E' AS UUID) AND "Type" = 'Allow'
@@ -5684,7 +4858,7 @@ INSERT INTO ${mjSchema}."EntityPermission"
 
 INSERT INTO ${mjSchema}."EntityPermission"
                 ("EntityID", "RoleID", "Type", "CanRead", "CanCreate", "CanUpdate", "CanDelete", "__mj_CreatedAt", "__mj_UpdatedAt")
-              SELECT CAST('863c68e4-d58a-465f-97de-098400dd851e' AS UUID), CAST('DFAFCCEC-6A37-EF11-86D4-000D3A4E707E' AS UUID), 'Allow', 1, 1, 1, 1, NOW(), NOW()
+              SELECT CAST('863c68e4-d58a-465f-97de-098400dd851e' AS UUID), CAST('DFAFCCEC-6A37-EF11-86D4-000D3A4E707E' AS UUID), 'Allow', true, true, true, true, NOW(), NOW()
               WHERE NOT EXISTS (
                 SELECT 1 FROM ${mjSchema}."EntityPermission"
                 WHERE "EntityID" = CAST('863c68e4-d58a-465f-97de-098400dd851e' AS UUID) AND "RoleID" = CAST('DFAFCCEC-6A37-EF11-86D4-000D3A4E707E' AS UUID) AND "Type" = 'Allow'
@@ -5749,7 +4923,7 @@ INSERT INTO ${mjSchema}."ApplicationEntity"
 
 INSERT INTO ${mjSchema}."EntityPermission"
                 ("EntityID", "RoleID", "Type", "CanRead", "CanCreate", "CanUpdate", "CanDelete", "__mj_CreatedAt", "__mj_UpdatedAt")
-              SELECT CAST('caae3b44-4d9a-40be-9b76-799d8fd8b575' AS UUID), CAST('E0AFCCEC-6A37-EF11-86D4-000D3A4E707E' AS UUID), 'Allow', 1, 0, 0, 0, NOW(), NOW()
+              SELECT CAST('caae3b44-4d9a-40be-9b76-799d8fd8b575' AS UUID), CAST('E0AFCCEC-6A37-EF11-86D4-000D3A4E707E' AS UUID), 'Allow', true, false, false, false, NOW(), NOW()
               WHERE NOT EXISTS (
                 SELECT 1 FROM ${mjSchema}."EntityPermission"
                 WHERE "EntityID" = CAST('caae3b44-4d9a-40be-9b76-799d8fd8b575' AS UUID) AND "RoleID" = CAST('E0AFCCEC-6A37-EF11-86D4-000D3A4E707E' AS UUID) AND "Type" = 'Allow'
@@ -5759,7 +4933,7 @@ INSERT INTO ${mjSchema}."EntityPermission"
 
 INSERT INTO ${mjSchema}."EntityPermission"
                 ("EntityID", "RoleID", "Type", "CanRead", "CanCreate", "CanUpdate", "CanDelete", "__mj_CreatedAt", "__mj_UpdatedAt")
-              SELECT CAST('caae3b44-4d9a-40be-9b76-799d8fd8b575' AS UUID), CAST('DEAFCCEC-6A37-EF11-86D4-000D3A4E707E' AS UUID), 'Allow', 1, 1, 1, 1, NOW(), NOW()
+              SELECT CAST('caae3b44-4d9a-40be-9b76-799d8fd8b575' AS UUID), CAST('DEAFCCEC-6A37-EF11-86D4-000D3A4E707E' AS UUID), 'Allow', true, true, true, true, NOW(), NOW()
               WHERE NOT EXISTS (
                 SELECT 1 FROM ${mjSchema}."EntityPermission"
                 WHERE "EntityID" = CAST('caae3b44-4d9a-40be-9b76-799d8fd8b575' AS UUID) AND "RoleID" = CAST('DEAFCCEC-6A37-EF11-86D4-000D3A4E707E' AS UUID) AND "Type" = 'Allow'
@@ -5769,7 +4943,7 @@ INSERT INTO ${mjSchema}."EntityPermission"
 
 INSERT INTO ${mjSchema}."EntityPermission"
                 ("EntityID", "RoleID", "Type", "CanRead", "CanCreate", "CanUpdate", "CanDelete", "__mj_CreatedAt", "__mj_UpdatedAt")
-              SELECT CAST('caae3b44-4d9a-40be-9b76-799d8fd8b575' AS UUID), CAST('DFAFCCEC-6A37-EF11-86D4-000D3A4E707E' AS UUID), 'Allow', 1, 1, 1, 1, NOW(), NOW()
+              SELECT CAST('caae3b44-4d9a-40be-9b76-799d8fd8b575' AS UUID), CAST('DFAFCCEC-6A37-EF11-86D4-000D3A4E707E' AS UUID), 'Allow', true, true, true, true, NOW(), NOW()
               WHERE NOT EXISTS (
                 SELECT 1 FROM ${mjSchema}."EntityPermission"
                 WHERE "EntityID" = CAST('caae3b44-4d9a-40be-9b76-799d8fd8b575' AS UUID) AND "RoleID" = CAST('DFAFCCEC-6A37-EF11-86D4-000D3A4E707E' AS UUID) AND "Type" = 'Allow'
@@ -5834,7 +5008,7 @@ INSERT INTO ${mjSchema}."ApplicationEntity"
 
 INSERT INTO ${mjSchema}."EntityPermission"
                 ("EntityID", "RoleID", "Type", "CanRead", "CanCreate", "CanUpdate", "CanDelete", "__mj_CreatedAt", "__mj_UpdatedAt")
-              SELECT CAST('859a20e1-b08c-47ff-b45f-8a696181e311' AS UUID), CAST('E0AFCCEC-6A37-EF11-86D4-000D3A4E707E' AS UUID), 'Allow', 1, 0, 0, 0, NOW(), NOW()
+              SELECT CAST('859a20e1-b08c-47ff-b45f-8a696181e311' AS UUID), CAST('E0AFCCEC-6A37-EF11-86D4-000D3A4E707E' AS UUID), 'Allow', true, false, false, false, NOW(), NOW()
               WHERE NOT EXISTS (
                 SELECT 1 FROM ${mjSchema}."EntityPermission"
                 WHERE "EntityID" = CAST('859a20e1-b08c-47ff-b45f-8a696181e311' AS UUID) AND "RoleID" = CAST('E0AFCCEC-6A37-EF11-86D4-000D3A4E707E' AS UUID) AND "Type" = 'Allow'
@@ -5844,7 +5018,7 @@ INSERT INTO ${mjSchema}."EntityPermission"
 
 INSERT INTO ${mjSchema}."EntityPermission"
                 ("EntityID", "RoleID", "Type", "CanRead", "CanCreate", "CanUpdate", "CanDelete", "__mj_CreatedAt", "__mj_UpdatedAt")
-              SELECT CAST('859a20e1-b08c-47ff-b45f-8a696181e311' AS UUID), CAST('DEAFCCEC-6A37-EF11-86D4-000D3A4E707E' AS UUID), 'Allow', 1, 1, 1, 1, NOW(), NOW()
+              SELECT CAST('859a20e1-b08c-47ff-b45f-8a696181e311' AS UUID), CAST('DEAFCCEC-6A37-EF11-86D4-000D3A4E707E' AS UUID), 'Allow', true, true, true, true, NOW(), NOW()
               WHERE NOT EXISTS (
                 SELECT 1 FROM ${mjSchema}."EntityPermission"
                 WHERE "EntityID" = CAST('859a20e1-b08c-47ff-b45f-8a696181e311' AS UUID) AND "RoleID" = CAST('DEAFCCEC-6A37-EF11-86D4-000D3A4E707E' AS UUID) AND "Type" = 'Allow'
@@ -5854,7 +5028,7 @@ INSERT INTO ${mjSchema}."EntityPermission"
 
 INSERT INTO ${mjSchema}."EntityPermission"
                 ("EntityID", "RoleID", "Type", "CanRead", "CanCreate", "CanUpdate", "CanDelete", "__mj_CreatedAt", "__mj_UpdatedAt")
-              SELECT CAST('859a20e1-b08c-47ff-b45f-8a696181e311' AS UUID), CAST('DFAFCCEC-6A37-EF11-86D4-000D3A4E707E' AS UUID), 'Allow', 1, 1, 1, 1, NOW(), NOW()
+              SELECT CAST('859a20e1-b08c-47ff-b45f-8a696181e311' AS UUID), CAST('DFAFCCEC-6A37-EF11-86D4-000D3A4E707E' AS UUID), 'Allow', true, true, true, true, NOW(), NOW()
               WHERE NOT EXISTS (
                 SELECT 1 FROM ${mjSchema}."EntityPermission"
                 WHERE "EntityID" = CAST('859a20e1-b08c-47ff-b45f-8a696181e311' AS UUID) AND "RoleID" = CAST('DFAFCCEC-6A37-EF11-86D4-000D3A4E707E' AS UUID) AND "Type" = 'Allow'
@@ -5919,7 +5093,7 @@ INSERT INTO ${mjSchema}."ApplicationEntity"
 
 INSERT INTO ${mjSchema}."EntityPermission"
                 ("EntityID", "RoleID", "Type", "CanRead", "CanCreate", "CanUpdate", "CanDelete", "__mj_CreatedAt", "__mj_UpdatedAt")
-              SELECT CAST('a6d25850-af7e-4a45-ad38-987c6c73d296' AS UUID), CAST('E0AFCCEC-6A37-EF11-86D4-000D3A4E707E' AS UUID), 'Allow', 1, 0, 0, 0, NOW(), NOW()
+              SELECT CAST('a6d25850-af7e-4a45-ad38-987c6c73d296' AS UUID), CAST('E0AFCCEC-6A37-EF11-86D4-000D3A4E707E' AS UUID), 'Allow', true, false, false, false, NOW(), NOW()
               WHERE NOT EXISTS (
                 SELECT 1 FROM ${mjSchema}."EntityPermission"
                 WHERE "EntityID" = CAST('a6d25850-af7e-4a45-ad38-987c6c73d296' AS UUID) AND "RoleID" = CAST('E0AFCCEC-6A37-EF11-86D4-000D3A4E707E' AS UUID) AND "Type" = 'Allow'
@@ -5929,7 +5103,7 @@ INSERT INTO ${mjSchema}."EntityPermission"
 
 INSERT INTO ${mjSchema}."EntityPermission"
                 ("EntityID", "RoleID", "Type", "CanRead", "CanCreate", "CanUpdate", "CanDelete", "__mj_CreatedAt", "__mj_UpdatedAt")
-              SELECT CAST('a6d25850-af7e-4a45-ad38-987c6c73d296' AS UUID), CAST('DEAFCCEC-6A37-EF11-86D4-000D3A4E707E' AS UUID), 'Allow', 1, 1, 1, 1, NOW(), NOW()
+              SELECT CAST('a6d25850-af7e-4a45-ad38-987c6c73d296' AS UUID), CAST('DEAFCCEC-6A37-EF11-86D4-000D3A4E707E' AS UUID), 'Allow', true, true, true, true, NOW(), NOW()
               WHERE NOT EXISTS (
                 SELECT 1 FROM ${mjSchema}."EntityPermission"
                 WHERE "EntityID" = CAST('a6d25850-af7e-4a45-ad38-987c6c73d296' AS UUID) AND "RoleID" = CAST('DEAFCCEC-6A37-EF11-86D4-000D3A4E707E' AS UUID) AND "Type" = 'Allow'
@@ -5939,7 +5113,7 @@ INSERT INTO ${mjSchema}."EntityPermission"
 
 INSERT INTO ${mjSchema}."EntityPermission"
                 ("EntityID", "RoleID", "Type", "CanRead", "CanCreate", "CanUpdate", "CanDelete", "__mj_CreatedAt", "__mj_UpdatedAt")
-              SELECT CAST('a6d25850-af7e-4a45-ad38-987c6c73d296' AS UUID), CAST('DFAFCCEC-6A37-EF11-86D4-000D3A4E707E' AS UUID), 'Allow', 1, 1, 1, 1, NOW(), NOW()
+              SELECT CAST('a6d25850-af7e-4a45-ad38-987c6c73d296' AS UUID), CAST('DFAFCCEC-6A37-EF11-86D4-000D3A4E707E' AS UUID), 'Allow', true, true, true, true, NOW(), NOW()
               WHERE NOT EXISTS (
                 SELECT 1 FROM ${mjSchema}."EntityPermission"
                 WHERE "EntityID" = CAST('a6d25850-af7e-4a45-ad38-987c6c73d296' AS UUID) AND "RoleID" = CAST('DFAFCCEC-6A37-EF11-86D4-000D3A4E707E' AS UUID) AND "Type" = 'Allow'
@@ -6004,7 +5178,7 @@ INSERT INTO ${mjSchema}."ApplicationEntity"
 
 INSERT INTO ${mjSchema}."EntityPermission"
                 ("EntityID", "RoleID", "Type", "CanRead", "CanCreate", "CanUpdate", "CanDelete", "__mj_CreatedAt", "__mj_UpdatedAt")
-              SELECT CAST('7cc91c1a-75a6-47ed-aaf1-2d8872d4d367' AS UUID), CAST('E0AFCCEC-6A37-EF11-86D4-000D3A4E707E' AS UUID), 'Allow', 1, 0, 0, 0, NOW(), NOW()
+              SELECT CAST('7cc91c1a-75a6-47ed-aaf1-2d8872d4d367' AS UUID), CAST('E0AFCCEC-6A37-EF11-86D4-000D3A4E707E' AS UUID), 'Allow', true, false, false, false, NOW(), NOW()
               WHERE NOT EXISTS (
                 SELECT 1 FROM ${mjSchema}."EntityPermission"
                 WHERE "EntityID" = CAST('7cc91c1a-75a6-47ed-aaf1-2d8872d4d367' AS UUID) AND "RoleID" = CAST('E0AFCCEC-6A37-EF11-86D4-000D3A4E707E' AS UUID) AND "Type" = 'Allow'
@@ -6014,7 +5188,7 @@ INSERT INTO ${mjSchema}."EntityPermission"
 
 INSERT INTO ${mjSchema}."EntityPermission"
                 ("EntityID", "RoleID", "Type", "CanRead", "CanCreate", "CanUpdate", "CanDelete", "__mj_CreatedAt", "__mj_UpdatedAt")
-              SELECT CAST('7cc91c1a-75a6-47ed-aaf1-2d8872d4d367' AS UUID), CAST('DEAFCCEC-6A37-EF11-86D4-000D3A4E707E' AS UUID), 'Allow', 1, 1, 1, 1, NOW(), NOW()
+              SELECT CAST('7cc91c1a-75a6-47ed-aaf1-2d8872d4d367' AS UUID), CAST('DEAFCCEC-6A37-EF11-86D4-000D3A4E707E' AS UUID), 'Allow', true, true, true, true, NOW(), NOW()
               WHERE NOT EXISTS (
                 SELECT 1 FROM ${mjSchema}."EntityPermission"
                 WHERE "EntityID" = CAST('7cc91c1a-75a6-47ed-aaf1-2d8872d4d367' AS UUID) AND "RoleID" = CAST('DEAFCCEC-6A37-EF11-86D4-000D3A4E707E' AS UUID) AND "Type" = 'Allow'
@@ -6024,7 +5198,7 @@ INSERT INTO ${mjSchema}."EntityPermission"
 
 INSERT INTO ${mjSchema}."EntityPermission"
                 ("EntityID", "RoleID", "Type", "CanRead", "CanCreate", "CanUpdate", "CanDelete", "__mj_CreatedAt", "__mj_UpdatedAt")
-              SELECT CAST('7cc91c1a-75a6-47ed-aaf1-2d8872d4d367' AS UUID), CAST('DFAFCCEC-6A37-EF11-86D4-000D3A4E707E' AS UUID), 'Allow', 1, 1, 1, 1, NOW(), NOW()
+              SELECT CAST('7cc91c1a-75a6-47ed-aaf1-2d8872d4d367' AS UUID), CAST('DFAFCCEC-6A37-EF11-86D4-000D3A4E707E' AS UUID), 'Allow', true, true, true, true, NOW(), NOW()
               WHERE NOT EXISTS (
                 SELECT 1 FROM ${mjSchema}."EntityPermission"
                 WHERE "EntityID" = CAST('7cc91c1a-75a6-47ed-aaf1-2d8872d4d367' AS UUID) AND "RoleID" = CAST('DFAFCCEC-6A37-EF11-86D4-000D3A4E707E' AS UUID) AND "Type" = 'Allow'
@@ -6089,7 +5263,7 @@ INSERT INTO ${mjSchema}."ApplicationEntity"
 
 INSERT INTO ${mjSchema}."EntityPermission"
                 ("EntityID", "RoleID", "Type", "CanRead", "CanCreate", "CanUpdate", "CanDelete", "__mj_CreatedAt", "__mj_UpdatedAt")
-              SELECT CAST('87537743-ec80-477c-8246-c590a01c47cd' AS UUID), CAST('E0AFCCEC-6A37-EF11-86D4-000D3A4E707E' AS UUID), 'Allow', 1, 0, 0, 0, NOW(), NOW()
+              SELECT CAST('87537743-ec80-477c-8246-c590a01c47cd' AS UUID), CAST('E0AFCCEC-6A37-EF11-86D4-000D3A4E707E' AS UUID), 'Allow', true, false, false, false, NOW(), NOW()
               WHERE NOT EXISTS (
                 SELECT 1 FROM ${mjSchema}."EntityPermission"
                 WHERE "EntityID" = CAST('87537743-ec80-477c-8246-c590a01c47cd' AS UUID) AND "RoleID" = CAST('E0AFCCEC-6A37-EF11-86D4-000D3A4E707E' AS UUID) AND "Type" = 'Allow'
@@ -6099,7 +5273,7 @@ INSERT INTO ${mjSchema}."EntityPermission"
 
 INSERT INTO ${mjSchema}."EntityPermission"
                 ("EntityID", "RoleID", "Type", "CanRead", "CanCreate", "CanUpdate", "CanDelete", "__mj_CreatedAt", "__mj_UpdatedAt")
-              SELECT CAST('87537743-ec80-477c-8246-c590a01c47cd' AS UUID), CAST('DEAFCCEC-6A37-EF11-86D4-000D3A4E707E' AS UUID), 'Allow', 1, 1, 1, 1, NOW(), NOW()
+              SELECT CAST('87537743-ec80-477c-8246-c590a01c47cd' AS UUID), CAST('DEAFCCEC-6A37-EF11-86D4-000D3A4E707E' AS UUID), 'Allow', true, true, true, true, NOW(), NOW()
               WHERE NOT EXISTS (
                 SELECT 1 FROM ${mjSchema}."EntityPermission"
                 WHERE "EntityID" = CAST('87537743-ec80-477c-8246-c590a01c47cd' AS UUID) AND "RoleID" = CAST('DEAFCCEC-6A37-EF11-86D4-000D3A4E707E' AS UUID) AND "Type" = 'Allow'
@@ -6109,7 +5283,7 @@ INSERT INTO ${mjSchema}."EntityPermission"
 
 INSERT INTO ${mjSchema}."EntityPermission"
                 ("EntityID", "RoleID", "Type", "CanRead", "CanCreate", "CanUpdate", "CanDelete", "__mj_CreatedAt", "__mj_UpdatedAt")
-              SELECT CAST('87537743-ec80-477c-8246-c590a01c47cd' AS UUID), CAST('DFAFCCEC-6A37-EF11-86D4-000D3A4E707E' AS UUID), 'Allow', 1, 1, 1, 1, NOW(), NOW()
+              SELECT CAST('87537743-ec80-477c-8246-c590a01c47cd' AS UUID), CAST('DFAFCCEC-6A37-EF11-86D4-000D3A4E707E' AS UUID), 'Allow', true, true, true, true, NOW(), NOW()
               WHERE NOT EXISTS (
                 SELECT 1 FROM ${mjSchema}."EntityPermission"
                 WHERE "EntityID" = CAST('87537743-ec80-477c-8246-c590a01c47cd' AS UUID) AND "RoleID" = CAST('DFAFCCEC-6A37-EF11-86D4-000D3A4E707E' AS UUID) AND "Type" = 'Allow'
@@ -6174,7 +5348,7 @@ INSERT INTO ${mjSchema}."ApplicationEntity"
 
 INSERT INTO ${mjSchema}."EntityPermission"
                 ("EntityID", "RoleID", "Type", "CanRead", "CanCreate", "CanUpdate", "CanDelete", "__mj_CreatedAt", "__mj_UpdatedAt")
-              SELECT CAST('27bce338-2ab8-452f-a645-693aa04814ad' AS UUID), CAST('E0AFCCEC-6A37-EF11-86D4-000D3A4E707E' AS UUID), 'Allow', 1, 0, 0, 0, NOW(), NOW()
+              SELECT CAST('27bce338-2ab8-452f-a645-693aa04814ad' AS UUID), CAST('E0AFCCEC-6A37-EF11-86D4-000D3A4E707E' AS UUID), 'Allow', true, false, false, false, NOW(), NOW()
               WHERE NOT EXISTS (
                 SELECT 1 FROM ${mjSchema}."EntityPermission"
                 WHERE "EntityID" = CAST('27bce338-2ab8-452f-a645-693aa04814ad' AS UUID) AND "RoleID" = CAST('E0AFCCEC-6A37-EF11-86D4-000D3A4E707E' AS UUID) AND "Type" = 'Allow'
@@ -6184,7 +5358,7 @@ INSERT INTO ${mjSchema}."EntityPermission"
 
 INSERT INTO ${mjSchema}."EntityPermission"
                 ("EntityID", "RoleID", "Type", "CanRead", "CanCreate", "CanUpdate", "CanDelete", "__mj_CreatedAt", "__mj_UpdatedAt")
-              SELECT CAST('27bce338-2ab8-452f-a645-693aa04814ad' AS UUID), CAST('DEAFCCEC-6A37-EF11-86D4-000D3A4E707E' AS UUID), 'Allow', 1, 1, 1, 1, NOW(), NOW()
+              SELECT CAST('27bce338-2ab8-452f-a645-693aa04814ad' AS UUID), CAST('DEAFCCEC-6A37-EF11-86D4-000D3A4E707E' AS UUID), 'Allow', true, true, true, true, NOW(), NOW()
               WHERE NOT EXISTS (
                 SELECT 1 FROM ${mjSchema}."EntityPermission"
                 WHERE "EntityID" = CAST('27bce338-2ab8-452f-a645-693aa04814ad' AS UUID) AND "RoleID" = CAST('DEAFCCEC-6A37-EF11-86D4-000D3A4E707E' AS UUID) AND "Type" = 'Allow'
@@ -6194,7 +5368,7 @@ INSERT INTO ${mjSchema}."EntityPermission"
 
 INSERT INTO ${mjSchema}."EntityPermission"
                 ("EntityID", "RoleID", "Type", "CanRead", "CanCreate", "CanUpdate", "CanDelete", "__mj_CreatedAt", "__mj_UpdatedAt")
-              SELECT CAST('27bce338-2ab8-452f-a645-693aa04814ad' AS UUID), CAST('DFAFCCEC-6A37-EF11-86D4-000D3A4E707E' AS UUID), 'Allow', 1, 1, 1, 1, NOW(), NOW()
+              SELECT CAST('27bce338-2ab8-452f-a645-693aa04814ad' AS UUID), CAST('DFAFCCEC-6A37-EF11-86D4-000D3A4E707E' AS UUID), 'Allow', true, true, true, true, NOW(), NOW()
               WHERE NOT EXISTS (
                 SELECT 1 FROM ${mjSchema}."EntityPermission"
                 WHERE "EntityID" = CAST('27bce338-2ab8-452f-a645-693aa04814ad' AS UUID) AND "RoleID" = CAST('DFAFCCEC-6A37-EF11-86D4-000D3A4E707E' AS UUID) AND "Type" = 'Allow'
@@ -6259,7 +5433,7 @@ INSERT INTO ${mjSchema}."ApplicationEntity"
 
 INSERT INTO ${mjSchema}."EntityPermission"
                 ("EntityID", "RoleID", "Type", "CanRead", "CanCreate", "CanUpdate", "CanDelete", "__mj_CreatedAt", "__mj_UpdatedAt")
-              SELECT CAST('47b526d9-2919-4104-9461-f1a1e906233e' AS UUID), CAST('E0AFCCEC-6A37-EF11-86D4-000D3A4E707E' AS UUID), 'Allow', 1, 0, 0, 0, NOW(), NOW()
+              SELECT CAST('47b526d9-2919-4104-9461-f1a1e906233e' AS UUID), CAST('E0AFCCEC-6A37-EF11-86D4-000D3A4E707E' AS UUID), 'Allow', true, false, false, false, NOW(), NOW()
               WHERE NOT EXISTS (
                 SELECT 1 FROM ${mjSchema}."EntityPermission"
                 WHERE "EntityID" = CAST('47b526d9-2919-4104-9461-f1a1e906233e' AS UUID) AND "RoleID" = CAST('E0AFCCEC-6A37-EF11-86D4-000D3A4E707E' AS UUID) AND "Type" = 'Allow'
@@ -6269,7 +5443,7 @@ INSERT INTO ${mjSchema}."EntityPermission"
 
 INSERT INTO ${mjSchema}."EntityPermission"
                 ("EntityID", "RoleID", "Type", "CanRead", "CanCreate", "CanUpdate", "CanDelete", "__mj_CreatedAt", "__mj_UpdatedAt")
-              SELECT CAST('47b526d9-2919-4104-9461-f1a1e906233e' AS UUID), CAST('DEAFCCEC-6A37-EF11-86D4-000D3A4E707E' AS UUID), 'Allow', 1, 1, 1, 1, NOW(), NOW()
+              SELECT CAST('47b526d9-2919-4104-9461-f1a1e906233e' AS UUID), CAST('DEAFCCEC-6A37-EF11-86D4-000D3A4E707E' AS UUID), 'Allow', true, true, true, true, NOW(), NOW()
               WHERE NOT EXISTS (
                 SELECT 1 FROM ${mjSchema}."EntityPermission"
                 WHERE "EntityID" = CAST('47b526d9-2919-4104-9461-f1a1e906233e' AS UUID) AND "RoleID" = CAST('DEAFCCEC-6A37-EF11-86D4-000D3A4E707E' AS UUID) AND "Type" = 'Allow'
@@ -6279,7 +5453,7 @@ INSERT INTO ${mjSchema}."EntityPermission"
 
 INSERT INTO ${mjSchema}."EntityPermission"
                 ("EntityID", "RoleID", "Type", "CanRead", "CanCreate", "CanUpdate", "CanDelete", "__mj_CreatedAt", "__mj_UpdatedAt")
-              SELECT CAST('47b526d9-2919-4104-9461-f1a1e906233e' AS UUID), CAST('DFAFCCEC-6A37-EF11-86D4-000D3A4E707E' AS UUID), 'Allow', 1, 1, 1, 1, NOW(), NOW()
+              SELECT CAST('47b526d9-2919-4104-9461-f1a1e906233e' AS UUID), CAST('DFAFCCEC-6A37-EF11-86D4-000D3A4E707E' AS UUID), 'Allow', true, true, true, true, NOW(), NOW()
               WHERE NOT EXISTS (
                 SELECT 1 FROM ${mjSchema}."EntityPermission"
                 WHERE "EntityID" = CAST('47b526d9-2919-4104-9461-f1a1e906233e' AS UUID) AND "RoleID" = CAST('DFAFCCEC-6A37-EF11-86D4-000D3A4E707E' AS UUID) AND "Type" = 'Allow'
@@ -6344,7 +5518,7 @@ INSERT INTO ${mjSchema}."ApplicationEntity"
 
 INSERT INTO ${mjSchema}."EntityPermission"
                 ("EntityID", "RoleID", "Type", "CanRead", "CanCreate", "CanUpdate", "CanDelete", "__mj_CreatedAt", "__mj_UpdatedAt")
-              SELECT CAST('dae68750-41c7-4b0e-9e81-56c4a000c32c' AS UUID), CAST('E0AFCCEC-6A37-EF11-86D4-000D3A4E707E' AS UUID), 'Allow', 1, 0, 0, 0, NOW(), NOW()
+              SELECT CAST('dae68750-41c7-4b0e-9e81-56c4a000c32c' AS UUID), CAST('E0AFCCEC-6A37-EF11-86D4-000D3A4E707E' AS UUID), 'Allow', true, false, false, false, NOW(), NOW()
               WHERE NOT EXISTS (
                 SELECT 1 FROM ${mjSchema}."EntityPermission"
                 WHERE "EntityID" = CAST('dae68750-41c7-4b0e-9e81-56c4a000c32c' AS UUID) AND "RoleID" = CAST('E0AFCCEC-6A37-EF11-86D4-000D3A4E707E' AS UUID) AND "Type" = 'Allow'
@@ -6354,7 +5528,7 @@ INSERT INTO ${mjSchema}."EntityPermission"
 
 INSERT INTO ${mjSchema}."EntityPermission"
                 ("EntityID", "RoleID", "Type", "CanRead", "CanCreate", "CanUpdate", "CanDelete", "__mj_CreatedAt", "__mj_UpdatedAt")
-              SELECT CAST('dae68750-41c7-4b0e-9e81-56c4a000c32c' AS UUID), CAST('DEAFCCEC-6A37-EF11-86D4-000D3A4E707E' AS UUID), 'Allow', 1, 1, 1, 1, NOW(), NOW()
+              SELECT CAST('dae68750-41c7-4b0e-9e81-56c4a000c32c' AS UUID), CAST('DEAFCCEC-6A37-EF11-86D4-000D3A4E707E' AS UUID), 'Allow', true, true, true, true, NOW(), NOW()
               WHERE NOT EXISTS (
                 SELECT 1 FROM ${mjSchema}."EntityPermission"
                 WHERE "EntityID" = CAST('dae68750-41c7-4b0e-9e81-56c4a000c32c' AS UUID) AND "RoleID" = CAST('DEAFCCEC-6A37-EF11-86D4-000D3A4E707E' AS UUID) AND "Type" = 'Allow'
@@ -6364,7 +5538,7 @@ INSERT INTO ${mjSchema}."EntityPermission"
 
 INSERT INTO ${mjSchema}."EntityPermission"
                 ("EntityID", "RoleID", "Type", "CanRead", "CanCreate", "CanUpdate", "CanDelete", "__mj_CreatedAt", "__mj_UpdatedAt")
-              SELECT CAST('dae68750-41c7-4b0e-9e81-56c4a000c32c' AS UUID), CAST('DFAFCCEC-6A37-EF11-86D4-000D3A4E707E' AS UUID), 'Allow', 1, 1, 1, 1, NOW(), NOW()
+              SELECT CAST('dae68750-41c7-4b0e-9e81-56c4a000c32c' AS UUID), CAST('DFAFCCEC-6A37-EF11-86D4-000D3A4E707E' AS UUID), 'Allow', true, true, true, true, NOW(), NOW()
               WHERE NOT EXISTS (
                 SELECT 1 FROM ${mjSchema}."EntityPermission"
                 WHERE "EntityID" = CAST('dae68750-41c7-4b0e-9e81-56c4a000c32c' AS UUID) AND "RoleID" = CAST('DFAFCCEC-6A37-EF11-86D4-000D3A4E707E' AS UUID) AND "Type" = 'Allow'
@@ -6429,7 +5603,7 @@ INSERT INTO ${mjSchema}."ApplicationEntity"
 
 INSERT INTO ${mjSchema}."EntityPermission"
                 ("EntityID", "RoleID", "Type", "CanRead", "CanCreate", "CanUpdate", "CanDelete", "__mj_CreatedAt", "__mj_UpdatedAt")
-              SELECT CAST('e16910a4-d686-467c-9f0f-2592ea4c0bdf' AS UUID), CAST('E0AFCCEC-6A37-EF11-86D4-000D3A4E707E' AS UUID), 'Allow', 1, 0, 0, 0, NOW(), NOW()
+              SELECT CAST('e16910a4-d686-467c-9f0f-2592ea4c0bdf' AS UUID), CAST('E0AFCCEC-6A37-EF11-86D4-000D3A4E707E' AS UUID), 'Allow', true, false, false, false, NOW(), NOW()
               WHERE NOT EXISTS (
                 SELECT 1 FROM ${mjSchema}."EntityPermission"
                 WHERE "EntityID" = CAST('e16910a4-d686-467c-9f0f-2592ea4c0bdf' AS UUID) AND "RoleID" = CAST('E0AFCCEC-6A37-EF11-86D4-000D3A4E707E' AS UUID) AND "Type" = 'Allow'
@@ -6439,7 +5613,7 @@ INSERT INTO ${mjSchema}."EntityPermission"
 
 INSERT INTO ${mjSchema}."EntityPermission"
                 ("EntityID", "RoleID", "Type", "CanRead", "CanCreate", "CanUpdate", "CanDelete", "__mj_CreatedAt", "__mj_UpdatedAt")
-              SELECT CAST('e16910a4-d686-467c-9f0f-2592ea4c0bdf' AS UUID), CAST('DEAFCCEC-6A37-EF11-86D4-000D3A4E707E' AS UUID), 'Allow', 1, 1, 1, 1, NOW(), NOW()
+              SELECT CAST('e16910a4-d686-467c-9f0f-2592ea4c0bdf' AS UUID), CAST('DEAFCCEC-6A37-EF11-86D4-000D3A4E707E' AS UUID), 'Allow', true, true, true, true, NOW(), NOW()
               WHERE NOT EXISTS (
                 SELECT 1 FROM ${mjSchema}."EntityPermission"
                 WHERE "EntityID" = CAST('e16910a4-d686-467c-9f0f-2592ea4c0bdf' AS UUID) AND "RoleID" = CAST('DEAFCCEC-6A37-EF11-86D4-000D3A4E707E' AS UUID) AND "Type" = 'Allow'
@@ -6449,7 +5623,7 @@ INSERT INTO ${mjSchema}."EntityPermission"
 
 INSERT INTO ${mjSchema}."EntityPermission"
                 ("EntityID", "RoleID", "Type", "CanRead", "CanCreate", "CanUpdate", "CanDelete", "__mj_CreatedAt", "__mj_UpdatedAt")
-              SELECT CAST('e16910a4-d686-467c-9f0f-2592ea4c0bdf' AS UUID), CAST('DFAFCCEC-6A37-EF11-86D4-000D3A4E707E' AS UUID), 'Allow', 1, 1, 1, 1, NOW(), NOW()
+              SELECT CAST('e16910a4-d686-467c-9f0f-2592ea4c0bdf' AS UUID), CAST('DFAFCCEC-6A37-EF11-86D4-000D3A4E707E' AS UUID), 'Allow', true, true, true, true, NOW(), NOW()
               WHERE NOT EXISTS (
                 SELECT 1 FROM ${mjSchema}."EntityPermission"
                 WHERE "EntityID" = CAST('e16910a4-d686-467c-9f0f-2592ea4c0bdf' AS UUID) AND "RoleID" = CAST('DFAFCCEC-6A37-EF11-86D4-000D3A4E707E' AS UUID) AND "Type" = 'Allow'
@@ -6514,7 +5688,7 @@ INSERT INTO ${mjSchema}."ApplicationEntity"
 
 INSERT INTO ${mjSchema}."EntityPermission"
                 ("EntityID", "RoleID", "Type", "CanRead", "CanCreate", "CanUpdate", "CanDelete", "__mj_CreatedAt", "__mj_UpdatedAt")
-              SELECT CAST('837352f3-61a4-49c3-a9ae-c00575bb3338' AS UUID), CAST('E0AFCCEC-6A37-EF11-86D4-000D3A4E707E' AS UUID), 'Allow', 1, 0, 0, 0, NOW(), NOW()
+              SELECT CAST('837352f3-61a4-49c3-a9ae-c00575bb3338' AS UUID), CAST('E0AFCCEC-6A37-EF11-86D4-000D3A4E707E' AS UUID), 'Allow', true, false, false, false, NOW(), NOW()
               WHERE NOT EXISTS (
                 SELECT 1 FROM ${mjSchema}."EntityPermission"
                 WHERE "EntityID" = CAST('837352f3-61a4-49c3-a9ae-c00575bb3338' AS UUID) AND "RoleID" = CAST('E0AFCCEC-6A37-EF11-86D4-000D3A4E707E' AS UUID) AND "Type" = 'Allow'
@@ -6524,7 +5698,7 @@ INSERT INTO ${mjSchema}."EntityPermission"
 
 INSERT INTO ${mjSchema}."EntityPermission"
                 ("EntityID", "RoleID", "Type", "CanRead", "CanCreate", "CanUpdate", "CanDelete", "__mj_CreatedAt", "__mj_UpdatedAt")
-              SELECT CAST('837352f3-61a4-49c3-a9ae-c00575bb3338' AS UUID), CAST('DEAFCCEC-6A37-EF11-86D4-000D3A4E707E' AS UUID), 'Allow', 1, 1, 1, 1, NOW(), NOW()
+              SELECT CAST('837352f3-61a4-49c3-a9ae-c00575bb3338' AS UUID), CAST('DEAFCCEC-6A37-EF11-86D4-000D3A4E707E' AS UUID), 'Allow', true, true, true, true, NOW(), NOW()
               WHERE NOT EXISTS (
                 SELECT 1 FROM ${mjSchema}."EntityPermission"
                 WHERE "EntityID" = CAST('837352f3-61a4-49c3-a9ae-c00575bb3338' AS UUID) AND "RoleID" = CAST('DEAFCCEC-6A37-EF11-86D4-000D3A4E707E' AS UUID) AND "Type" = 'Allow'
@@ -6534,7 +5708,7 @@ INSERT INTO ${mjSchema}."EntityPermission"
 
 INSERT INTO ${mjSchema}."EntityPermission"
                 ("EntityID", "RoleID", "Type", "CanRead", "CanCreate", "CanUpdate", "CanDelete", "__mj_CreatedAt", "__mj_UpdatedAt")
-              SELECT CAST('837352f3-61a4-49c3-a9ae-c00575bb3338' AS UUID), CAST('DFAFCCEC-6A37-EF11-86D4-000D3A4E707E' AS UUID), 'Allow', 1, 1, 1, 1, NOW(), NOW()
+              SELECT CAST('837352f3-61a4-49c3-a9ae-c00575bb3338' AS UUID), CAST('DFAFCCEC-6A37-EF11-86D4-000D3A4E707E' AS UUID), 'Allow', true, true, true, true, NOW(), NOW()
               WHERE NOT EXISTS (
                 SELECT 1 FROM ${mjSchema}."EntityPermission"
                 WHERE "EntityID" = CAST('837352f3-61a4-49c3-a9ae-c00575bb3338' AS UUID) AND "RoleID" = CAST('DFAFCCEC-6A37-EF11-86D4-000D3A4E707E' AS UUID) AND "Type" = 'Allow'
@@ -6599,7 +5773,7 @@ INSERT INTO ${mjSchema}."ApplicationEntity"
 
 INSERT INTO ${mjSchema}."EntityPermission"
                 ("EntityID", "RoleID", "Type", "CanRead", "CanCreate", "CanUpdate", "CanDelete", "__mj_CreatedAt", "__mj_UpdatedAt")
-              SELECT CAST('dc02712c-8f0d-4cca-8571-6fe022fd0eb4' AS UUID), CAST('E0AFCCEC-6A37-EF11-86D4-000D3A4E707E' AS UUID), 'Allow', 1, 0, 0, 0, NOW(), NOW()
+              SELECT CAST('dc02712c-8f0d-4cca-8571-6fe022fd0eb4' AS UUID), CAST('E0AFCCEC-6A37-EF11-86D4-000D3A4E707E' AS UUID), 'Allow', true, false, false, false, NOW(), NOW()
               WHERE NOT EXISTS (
                 SELECT 1 FROM ${mjSchema}."EntityPermission"
                 WHERE "EntityID" = CAST('dc02712c-8f0d-4cca-8571-6fe022fd0eb4' AS UUID) AND "RoleID" = CAST('E0AFCCEC-6A37-EF11-86D4-000D3A4E707E' AS UUID) AND "Type" = 'Allow'
@@ -6609,7 +5783,7 @@ INSERT INTO ${mjSchema}."EntityPermission"
 
 INSERT INTO ${mjSchema}."EntityPermission"
                 ("EntityID", "RoleID", "Type", "CanRead", "CanCreate", "CanUpdate", "CanDelete", "__mj_CreatedAt", "__mj_UpdatedAt")
-              SELECT CAST('dc02712c-8f0d-4cca-8571-6fe022fd0eb4' AS UUID), CAST('DEAFCCEC-6A37-EF11-86D4-000D3A4E707E' AS UUID), 'Allow', 1, 1, 1, 1, NOW(), NOW()
+              SELECT CAST('dc02712c-8f0d-4cca-8571-6fe022fd0eb4' AS UUID), CAST('DEAFCCEC-6A37-EF11-86D4-000D3A4E707E' AS UUID), 'Allow', true, true, true, true, NOW(), NOW()
               WHERE NOT EXISTS (
                 SELECT 1 FROM ${mjSchema}."EntityPermission"
                 WHERE "EntityID" = CAST('dc02712c-8f0d-4cca-8571-6fe022fd0eb4' AS UUID) AND "RoleID" = CAST('DEAFCCEC-6A37-EF11-86D4-000D3A4E707E' AS UUID) AND "Type" = 'Allow'
@@ -6619,29 +5793,13 @@ INSERT INTO ${mjSchema}."EntityPermission"
 
 INSERT INTO ${mjSchema}."EntityPermission"
                 ("EntityID", "RoleID", "Type", "CanRead", "CanCreate", "CanUpdate", "CanDelete", "__mj_CreatedAt", "__mj_UpdatedAt")
-              SELECT CAST('dc02712c-8f0d-4cca-8571-6fe022fd0eb4' AS UUID), CAST('DFAFCCEC-6A37-EF11-86D4-000D3A4E707E' AS UUID), 'Allow', 1, 1, 1, 1, NOW(), NOW()
+              SELECT CAST('dc02712c-8f0d-4cca-8571-6fe022fd0eb4' AS UUID), CAST('DFAFCCEC-6A37-EF11-86D4-000D3A4E707E' AS UUID), 'Allow', true, true, true, true, NOW(), NOW()
               WHERE NOT EXISTS (
                 SELECT 1 FROM ${mjSchema}."EntityPermission"
                 WHERE "EntityID" = CAST('dc02712c-8f0d-4cca-8571-6fe022fd0eb4' AS UUID) AND "RoleID" = CAST('DFAFCCEC-6A37-EF11-86D4-000D3A4E707E' AS UUID) AND "Type" = 'Allow'
               );
 
 /* SQL text to update existing entities from schema */
-
-DO $mj$
-DECLARE
-  v_constraintName VARCHAR(255);
-BEGIN
-  SELECT d.name INTO v_constraintName FROM sys.tables t
-  JOIN sys.schemas s ON t.schema_id = s.schema_id
-  JOIN sys.columns c ON t.object_id = c.object_id
-  JOIN sys.default_constraints d ON c.default_object_id = d.object_id
-  WHERE s.name = '__mj_BizAppsCommunity'
-  AND t.name = 'ForumIdeaAllocation'
-  AND c.name = '__mj_CreatedAt';
-  IF v_constraintName IS NOT NULL THEN
-  EXECUTE format('ALTER TABLE __mj_BizAppsCommunity."ForumIdeaAllocation" DROP CONSTRAINT %I', v_constraintName);
-  END;
-END $mj$;
 
 DO $$
 BEGIN

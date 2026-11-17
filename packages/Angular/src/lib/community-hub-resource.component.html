@@ -31,22 +31,54 @@
               role="tabpanel"
               [attr.aria-labelledby]="'mjc-hub-tab-knowledge-stream'"
             >
-              <mjc-ask-first-deflection-widget [allowedForumIDs]="allowedForumIDs"></mjc-ask-first-deflection-widget>
-              <mjc-digest-export-button [spaceName]="spaceName" [allowedForumIDs]="allowedForumIDs"></mjc-digest-export-button>
+              <div class="mjc-community-hub__toolbar">
+                <mjc-ask-first-deflection-widget [allowedForumIDs]="allowedForumIDs"></mjc-ask-first-deflection-widget>
+                <mjc-digest-export-button [spaceName]="spaceName" [allowedForumIDs]="allowedForumIDs"></mjc-digest-export-button>
+              </div>
               @if (feedPosts.length === 0) {
                 <p class="mjc-community-hub__hint">No posts yet in {{ spaceName }}.</p>
               } @else {
-                <ul class="mjc-community-hub__list" aria-label="Knowledge Stream feed">
-                  @for (post of feedPosts; track post.id) {
-                    <li class="mjc-community-hub__list-item">
-                      <span class="mjc-community-hub__list-title">{{ post.title }}</span>
-                      <span class="mjc-community-hub__badge">{{ post.status }}</span>
-                    </li>
+                <div class="mjc-community-hub__split">
+                  <div class="mjc-community-hub__list" role="listbox" aria-label="Knowledge Stream feed">
+                    @for (post of feedPosts; track post.id) {
+                      <button
+                        type="button"
+                        role="option"
+                        class="mjc-community-hub__list-item"
+                        [class.mjc-community-hub__list-item--selected]="post.id === selectedFeedPost?.id"
+                        [attr.aria-selected]="post.id === selectedFeedPost?.id"
+                        (click)="SelectFeedPost(post.id)"
+                      >
+                        <span class="mjc-community-hub__list-title">{{ post.title }}</span>
+                        <span class="mjc-community-hub__badge">{{ post.status }}</span>
+                      </button>
+                    }
+                  </div>
+                  @if (selectedFeedPost; as activePost) {
+                    <div class="mjc-community-hub__card">
+                      <h3 class="mjc-community-hub__card-title">{{ activePost.title }}</h3>
+                      <p class="mjc-community-hub__card-body">{{ activePost.bodyMarkdown }}</p>
+                      <div class="mjc-community-hub__btn-row">
+                        <button
+                          type="button"
+                          id="mjc-feed-synthesize-btn"
+                          class="mjc-community-hub__btn mjc-community-hub__btn--primary"
+                          [disabled]="isSynthesizingFeed"
+                          (click)="SynthesizeFeedThread(activePost.id)"
+                        >
+                          {{ isSynthesizingFeed ? 'Synthesizing...' : 'Synthesize Living Thread' }}
+                        </button>
+                      </div>
+                      @if (threadSynthesisResult) {
+                        <p class="mjc-community-hub__status" role="status">{{ threadSynthesisResult }}</p>
+                      }
+                    </div>
                   }
-                </ul>
+                </div>
               }
             </section>
           }
+
           @case ('qa-canon-workbench') {
             <section
               [id]="'mjc-hub-panel-qa-canon-workbench'"
@@ -54,22 +86,110 @@
               role="tabpanel"
               [attr.aria-labelledby]="'mjc-hub-tab-qa-canon-workbench'"
             >
+              <div class="mjc-community-hub__toolbar">
+                <button
+                  type="button"
+                  id="mjc-qa-toggle-composer-btn"
+                  class="mjc-community-hub__btn mjc-community-hub__btn--primary"
+                  (click)="showQuestionComposer = !showQuestionComposer"
+                >
+                  {{ showQuestionComposer ? 'Cancel Question' : 'Ask a Question' }}
+                </button>
+              </div>
+
+              @if (showQuestionComposer) {
+                <form class="mjc-community-hub__card" (ngSubmit)="CreateQuestion()">
+                  <h3 class="mjc-community-hub__card-title">Ask a Community Question</h3>
+                  <div class="mjc-community-hub__field">
+                    <label for="mjc-qa-new-title" class="mjc-community-hub__label">Question Title</label>
+                    <input
+                      id="mjc-qa-new-title"
+                      name="newQuestionTitle"
+                      class="mjc-community-hub__input"
+                      [(ngModel)]="newQuestionTitle"
+                      required
+                    />
+                  </div>
+                  <div class="mjc-community-hub__field">
+                    <label for="mjc-qa-new-body" class="mjc-community-hub__label">Details</label>
+                    <textarea
+                      id="mjc-qa-new-body"
+                      name="newQuestionBody"
+                      rows="3"
+                      class="mjc-community-hub__textarea"
+                      [(ngModel)]="newQuestionBody"
+                      required
+                    ></textarea>
+                  </div>
+                  <div class="mjc-community-hub__btn-row">
+                    <button type="submit" id="mjc-qa-submit-question-btn" class="mjc-community-hub__btn mjc-community-hub__btn--primary">
+                      Post Question
+                    </button>
+                  </div>
+                </form>
+              }
+
               @if (qaCanonItems.length === 0) {
                 <p class="mjc-community-hub__hint">No verified Q&amp;A canon answers yet.</p>
               } @else {
-                <ul class="mjc-community-hub__list">
-                  @for (item of qaCanonItems; track item.id) {
-                    <li class="mjc-community-hub__list-item">
-                      <span class="mjc-community-hub__list-title">{{ item.title }}</span>
-                      @if (item.epistemicStatus) {
-                        <span class="mjc-community-hub__badge">{{ item.epistemicStatus }}</span>
+                <div class="mjc-community-hub__split">
+                  <div class="mjc-community-hub__list" role="listbox" aria-label="Q&A items">
+                    @for (item of qaCanonItems; track item.id) {
+                      <button
+                        type="button"
+                        role="option"
+                        class="mjc-community-hub__list-item"
+                        [class.mjc-community-hub__list-item--selected]="item.id === selectedQaItem?.id"
+                        [attr.aria-selected]="item.id === selectedQaItem?.id"
+                        (click)="SelectQAQuestion(item.id)"
+                      >
+                        <span class="mjc-community-hub__list-title">{{ item.title }}</span>
+                        @if (item.epistemicStatus) {
+                          <span class="mjc-community-hub__badge">{{ item.epistemicStatus }}</span>
+                        }
+                      </button>
+                    }
+                  </div>
+                  @if (selectedQaItem; as activeQa) {
+                    <div class="mjc-community-hub__card">
+                      <h3 class="mjc-community-hub__card-title">{{ activeQa.title }}</h3>
+                      <p class="mjc-community-hub__card-body">{{ activeQa.bodyMarkdown || 'No body provided yet.' }}</p>
+                      <div class="mjc-community-hub__btn-row">
+                        <button type="button" id="mjc-qa-grade-btn" class="mjc-community-hub__btn" (click)="GradeAnswerWithAI(activeQa.id)">
+                          Grade with Epistemic AI
+                        </button>
+                        <button
+                          type="button"
+                          id="mjc-qa-promote-btn"
+                          class="mjc-community-hub__btn mjc-community-hub__btn--primary"
+                          (click)="PromoteAnswerToCanon(activeQa.id)"
+                        >
+                          {{ activeQa.isAccepted ? 'Canon Accepted' : 'Promote to Canon' }}
+                        </button>
+                      </div>
+                      <form class="mjc-community-hub__field" (ngSubmit)="SubmitAnswer()">
+                        <label for="mjc-qa-answer-input" class="mjc-community-hub__label">Submit Answer</label>
+                        <textarea
+                          id="mjc-qa-answer-input"
+                          name="newAnswerBody"
+                          rows="2"
+                          class="mjc-community-hub__textarea"
+                          [(ngModel)]="newAnswerBody"
+                        ></textarea>
+                        <div class="mjc-community-hub__btn-row">
+                          <button type="submit" id="mjc-qa-submit-answer-btn" class="mjc-community-hub__btn">Submit Answer</button>
+                        </div>
+                      </form>
+                      @if (qaActionMessage) {
+                        <p class="mjc-community-hub__status" role="status">{{ qaActionMessage }}</p>
                       }
-                    </li>
+                    </div>
                   }
-                </ul>
+                </div>
               }
             </section>
           }
+
           @case ('quadratic-ideation-wallet') {
             <section
               [id]="'mjc-hub-panel-quadratic-ideation-wallet'"
@@ -77,30 +197,71 @@
               role="tabpanel"
               [attr.aria-labelledby]="'mjc-hub-tab-quadratic-ideation-wallet'"
             >
-              @if (ideationItems.length === 0) {
-                <p class="mjc-community-hub__hint">No ideas proposed yet.</p>
-              } @else {
-                <ul class="mjc-community-hub__list" role="listbox" aria-label="Idea proposals">
-                  @for (idea of ideationItems; track idea.id) {
-                    <li class="mjc-community-hub__list-item-wrapper">
-                      <button
-                        #ideaButton
-                        type="button"
-                        class="mjc-community-hub__list-item"
-                        role="option"
-                        [attr.aria-selected]="idea.id === selectedIdeaId"
-                        [attr.tabindex]="idea.id === focusedIdeaId ? 0 : -1"
-                        [class.mjc-community-hub__list-item--selected]="idea.id === selectedIdeaId"
-                        (click)="SelectIdea(idea.id)"
-                        (keydown)="OnIdeaKeydown($event, idea.id)"
-                      >
-                        <span class="mjc-community-hub__list-title">{{ idea.title }}</span>
-                        <span class="mjc-community-hub__badge">{{ idea.effectiveQuadraticVotes }} votes</span>
-                      </button>
-                    </li>
+              <div class="mjc-community-hub__toolbar">
+                <div class="mjc-community-hub__btn-row" role="group" aria-label="Ideation Campaigns">
+                  @for (camp of campaigns; track camp.id) {
+                    <button
+                      type="button"
+                      class="mjc-community-hub__btn"
+                      [class.mjc-community-hub__btn--primary]="camp.id === activeCampaign.id"
+                      (click)="SelectCampaign(camp.id)"
+                    >
+                      {{ camp.name }} ({{ camp.budgetPoints }} pts)
+                    </button>
                   }
-                </ul>
-                @if (selectedIdeaId) {
+                </div>
+                <button
+                  type="button"
+                  id="mjc-idea-toggle-composer-btn"
+                  class="mjc-community-hub__btn"
+                  (click)="showIdeaComposer = !showIdeaComposer"
+                >
+                  {{ showIdeaComposer ? 'Cancel Proposal' : 'Propose Idea' }}
+                </button>
+              </div>
+
+              @if (showIdeaComposer) {
+                <form class="mjc-community-hub__card" (ngSubmit)="ProposeIdea()">
+                  <div class="mjc-community-hub__field">
+                    <label for="mjc-idea-new-title" class="mjc-community-hub__label">Idea Title</label>
+                    <input id="mjc-idea-new-title" name="newIdeaTitle" class="mjc-community-hub__input" [(ngModel)]="newIdeaTitle" required />
+                  </div>
+                  <div class="mjc-community-hub__field">
+                    <label for="mjc-idea-new-summary" class="mjc-community-hub__label">Summary</label>
+                    <textarea id="mjc-idea-new-summary" name="newIdeaSummary" rows="2" class="mjc-community-hub__textarea" [(ngModel)]="newIdeaSummary"></textarea>
+                  </div>
+                  <div class="mjc-community-hub__btn-row">
+                    <button type="submit" id="mjc-idea-submit-btn" class="mjc-community-hub__btn mjc-community-hub__btn--primary">Submit Idea</button>
+                  </div>
+                </form>
+              }
+
+              @if (ideationErrorMessage) {
+                <p class="mjc-community-hub__error" role="alert">{{ ideationErrorMessage }}</p>
+              }
+
+              @if (visibleIdeationItems.length === 0) {
+                <p class="mjc-community-hub__hint">No ideas proposed yet in {{ activeCampaign.name }}.</p>
+              } @else {
+                <div class="mjc-community-hub__list" role="listbox" aria-label="Idea proposals">
+                  @for (idea of visibleIdeationItems; track idea.id) {
+                    <button
+                      #ideaButton
+                      type="button"
+                      class="mjc-community-hub__list-item"
+                      role="option"
+                      [attr.aria-selected]="idea.id === selectedIdeaId"
+                      [attr.tabindex]="idea.id === focusedIdeaId ? 0 : -1"
+                      [class.mjc-community-hub__list-item--selected]="idea.id === selectedIdeaId"
+                      (click)="SelectIdea(idea.id)"
+                      (keydown)="OnIdeaKeydown($event, idea.id)"
+                    >
+                      <span class="mjc-community-hub__list-title">{{ idea.title }}</span>
+                      <span class="mjc-community-hub__badge">{{ idea.effectiveQuadraticVotes }} votes</span>
+                    </button>
+                  }
+                </div>
+                @if (selectedIdeaId && !ideationLoadFailed) {
                   <mjc-quadratic-voting-slider
                     [ideaPostId]="selectedIdeaId"
                     [allocationMode]="activeCampaign.allocationMode"
@@ -114,6 +275,7 @@
               }
             </section>
           }
+
           @case ('living-co-authoring') {
             <section
               [id]="'mjc-hub-panel-living-co-authoring'"
@@ -124,14 +286,126 @@
               @if (livingDocItems.length === 0) {
                 <p class="mjc-community-hub__hint">No living documents or interactive mini-apps yet.</p>
               } @else {
-                <ul class="mjc-community-hub__list">
-                  @for (doc of livingDocItems; track doc.id) {
-                    <li class="mjc-community-hub__list-item">
-                      <span class="mjc-community-hub__list-title">{{ doc.title }}</span>
-                      <span class="mjc-community-hub__badge">{{ doc.postTypeCode }}</span>
-                    </li>
+                <div class="mjc-community-hub__split">
+                  <div class="mjc-community-hub__list" role="listbox" aria-label="Living Documents and Mini-Apps">
+                    @for (doc of livingDocItems; track doc.id) {
+                      <button
+                        type="button"
+                        role="option"
+                        class="mjc-community-hub__list-item"
+                        [class.mjc-community-hub__list-item--selected]="doc.id === selectedLivingDoc?.id"
+                        [attr.aria-selected]="doc.id === selectedLivingDoc?.id"
+                        (click)="SelectLivingDoc(doc.id)"
+                      >
+                        <span class="mjc-community-hub__list-title">{{ doc.title }}</span>
+                        <span class="mjc-community-hub__badge">{{ doc.postTypeCode }}</span>
+                      </button>
+                    }
+                  </div>
+
+                  @if (selectedLivingDoc; as activeDoc) {
+                    <div class="mjc-community-hub__card">
+                      <h3 class="mjc-community-hub__card-title">{{ activeDoc.title }}</h3>
+
+                      @switch (activeDoc.postTypeCode) {
+                        @case ('collaborative-doc') {
+                          <div class="mjc-community-hub__field">
+                            <label for="mjc-living-doc-editor" class="mjc-community-hub__label">Co-Authoring Markdown</label>
+                            <textarea
+                              id="mjc-living-doc-editor"
+                              name="editingDocMarkdown"
+                              rows="6"
+                              class="mjc-community-hub__textarea"
+                              [(ngModel)]="editingDocMarkdown"
+                            ></textarea>
+                          </div>
+                          <div class="mjc-community-hub__btn-row">
+                            <button
+                              type="button"
+                              id="mjc-living-doc-save-btn"
+                              class="mjc-community-hub__btn mjc-community-hub__btn--primary"
+                              (click)="SaveCoAuthoringDocument()"
+                            >
+                              Save Co-Authoring Revision
+                            </button>
+                            <button
+                              type="button"
+                              id="mjc-living-doc-synth-btn"
+                              class="mjc-community-hub__btn"
+                              (click)="SynthesizeFeedThread(activeDoc.id)"
+                            >
+                              Synthesize Document Summary
+                            </button>
+                          </div>
+                          @if (docActionMessage) {
+                            <p class="mjc-community-hub__status" role="status">{{ docActionMessage }}</p>
+                          }
+                          @if (threadSynthesisResult) {
+                            <p class="mjc-community-hub__status" role="status">{{ threadSynthesisResult }}</p>
+                          }
+                        }
+                        @case ('collaborative-sheet') {
+                          <form class="mjc-community-hub__field" (ngSubmit)="SubmitInlineForm()">
+                            <label for="mjc-form-respondent" class="mjc-community-hub__label">Member / Cohort Name</label>
+                            <input
+                              id="mjc-form-respondent"
+                              name="formRespondentName"
+                              class="mjc-community-hub__input"
+                              [(ngModel)]="formRespondentName"
+                              required
+                            />
+                            <label for="mjc-form-rating" class="mjc-community-hub__label">Readiness Confidence</label>
+                            <select
+                              id="mjc-form-rating"
+                              name="formConfidenceRating"
+                              class="mjc-community-hub__input"
+                              [(ngModel)]="formConfidenceRating"
+                            >
+                              <option value="High">High — Ready for launch</option>
+                              <option value="Medium">Medium — Minor follow-ups</option>
+                              <option value="Needs Support">Needs Support — Blocked</option>
+                            </select>
+                            <label for="mjc-form-comments" class="mjc-community-hub__label">Notes / Blockers</label>
+                            <textarea
+                              id="mjc-form-comments"
+                              name="formComments"
+                              rows="2"
+                              class="mjc-community-hub__textarea"
+                              [(ngModel)]="formComments"
+                            ></textarea>
+                            <div class="mjc-community-hub__btn-row">
+                              <button type="submit" id="mjc-form-submit-btn" class="mjc-community-hub__btn mjc-community-hub__btn--primary">
+                                Submit Inline Form Response
+                              </button>
+                            </div>
+                          </form>
+                          @if (formSubmittedMessage) {
+                            <p class="mjc-community-hub__status" role="status">{{ formSubmittedMessage }}</p>
+                          }
+                        }
+                        @case ('interactive-experience') {
+                          @if (sandboxedMiniAppSrcdoc) {
+                            <iframe
+                              id="mjc-interactive-miniapp-frame"
+                              class="mjc-community-hub__iframe"
+                              sandbox="allow-scripts"
+                              [srcdoc]="sandboxedMiniAppSrcdoc"
+                              [title]="activeDoc.title"
+                            ></iframe>
+                          }
+                          <div class="mjc-community-hub__btn-row">
+                            <button type="button" id="mjc-miniapp-reset-btn" class="mjc-community-hub__btn" (click)="ResetMiniApp()">
+                              Reset Sandboxed Mini-App
+                            </button>
+                          </div>
+                        }
+                        @default {
+                          <p class="mjc-community-hub__card-body">{{ activeDoc.bodyMarkdown }}</p>
+                        }
+                      }
+                    </div>
                   }
-                </ul>
+                </div>
               }
             </section>
           }

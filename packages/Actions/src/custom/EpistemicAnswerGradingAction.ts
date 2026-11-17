@@ -126,7 +126,11 @@ export class EpistemicAnswerGradingAction extends BaseAction {
     const content = ExtractAuthoritativeContent(answerPostId, link.QuestionPostID, postsResult.Results);
     if (!content) return null;
 
-    const canonAnswerPostId = questionCanonResult?.Success ? questionCanonResult.Results?.[0]?.AICanonAnswerPostID : null;
+    if (!questionCanonResult?.Success || !questionCanonResult.Results || questionCanonResult.Results.length === 0) {
+      return null;
+    }
+
+    const canonAnswerPostId = questionCanonResult.Results[0].AICanonAnswerPostID;
     let priorCanonAnswerMarkdown: string | null = null;
     if (canonAnswerPostId) {
       const canonResult = await new RunView().RunView<PostBodyRow>(
@@ -139,7 +143,10 @@ export class EpistemicAnswerGradingAction extends BaseAction {
         },
         user,
       );
-      priorCanonAnswerMarkdown = canonResult?.Success ? canonResult.Results?.[0]?.BodyMarkdown ?? null : null;
+      if (!canonResult?.Success || !canonResult.Results?.[0]?.BodyMarkdown) {
+        return null;
+      }
+      priorCanonAnswerMarkdown = canonResult.Results[0].BodyMarkdown;
     }
 
     return { ...content, priorCanonAnswerMarkdown };
@@ -158,6 +165,13 @@ export class EpistemicAnswerGradingAction extends BaseAction {
       CompositeKey.FromID(answerPostId),
       user,
     );
+    if (!answer) {
+      return {
+        Success: false,
+        ResultCode: 'ANSWER_NOT_FOUND',
+        Message: `Forum Answer Post ${answerPostId} was not found.`,
+      };
+    }
     answer.AIEpistemicStatus = result.epistemicStatus;
     answer.AIConfidenceScore = result.confidenceScore;
     answer.AIRationaleMarkdown = result.rationaleMarkdown;

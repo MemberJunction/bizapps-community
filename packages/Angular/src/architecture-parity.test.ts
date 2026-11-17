@@ -243,16 +243,19 @@ describe('OpenApp Readiness — CommunityHubResource architecture', () => {
     assert.match(componentSource, /idea\.effectiveQuadraticVotes = otherBackersVotes \+ effectiveVotes/);
   });
 
-  it('OnVoteAllocationChanged (CR-04/CR-21) checks both Save() results and reverts the optimistic update on failure or a thrown error', () => {
-    assert.match(componentSource, /const allocSaved = await this\.persistVoteAllocation/);
-    assert.match(componentSource, /const postSaved = allocSaved \? await this\.persistIdeaAggregate/);
-    assert.match(componentSource, /if \(!allocSaved \|\| !postSaved\) \{\s*\n\s*Object\.assign\(idea, previous\)/);
-    assert.match(componentSource, /\} catch \{[\s\S]{0,200}Object\.assign\(idea, previous\)/);
+  it('OnVoteAllocationChanged (CR-04/CR-21) delegates to fail-closed PersistIdeaAllocationAtomic and reverts the optimistic update on failure or thrown error', () => {
+    const ideationSource = readFileSync(join(ANGULAR_SRC, 'lib', 'community-hub-ideation.ts'), 'utf8');
+    assert.match(componentSource, /const outcome = await PersistIdeaAllocationAtomic\(/);
+    assert.match(componentSource, /if \(!outcome\.success\) \{\s*\n\s*Object\.assign\(idea, previous\)/);
+    assert.match(componentSource, /\} catch \(err\) \{[\s\S]{0,200}Object\.assign\(idea, previous\)/);
+    assert.match(ideationSource, /const allRowsResult = await LoadAllPaginatedRows/);
+    assert.match(ideationSource, /await revertAllocation\(\)/);
   });
 
-  it('persistIdeaAggregate excludes 0-point allocations from UniqueBackerCount (CR-04/CR-21)', () => {
-    assert.match(componentSource, /const backingAllocations = allocations\.filter\(\(a\) => a\.PointsAllocated > 0\)/);
-    assert.match(componentSource, /ideaPost\.UniqueBackerCount = backingAllocations\.length/);
+  it('ComputeIdeaAggregateFromAllocations excludes 0-point allocations from UniqueBackerCount (CR-04/CR-21)', () => {
+    const ideationSource = readFileSync(join(ANGULAR_SRC, 'lib', 'community-hub-ideation.ts'), 'utf8');
+    assert.match(ideationSource, /const backing = allocations\.filter\(\(a\) => a\.PointsAllocated > 0\)/);
+    assert.match(ideationSource, /uniqueBackerCount: backing\.length/);
   });
 
   it('binds the active Ideation Campaign wallet rules and per-idea point breakdown onto the Quadratic Voting slider (CR-21)', () => {

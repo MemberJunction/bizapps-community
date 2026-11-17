@@ -1,8 +1,10 @@
-import { describe, it } from 'node:test';
+import { describe, it, mock } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { Metadata, RunView, UserInfo } from '@memberjunction/core';
+import { RunActionParams } from '@memberjunction/actions-base';
 import { ComputeAskFirstDeflection, type AskFirstCandidate } from './custom/ask-first-deflection.ts';
 import { GradeEpistemicAnswer } from './custom/epistemic-answer-grading.ts';
 import { SynthesizeLivingThread } from './custom/living-thread-synthesis.ts';
@@ -204,5 +206,95 @@ describe('EpistemicAnswerGradingAction — CR-06/CR-20 fail-closed authoritative
     // (no AnswerPostID) branch.
     const nonPersistenceBranch = actionSource.split('} else {')[1]?.split('const result = GradeEpistemicAnswer')[0] ?? '';
     assert.match(nonPersistenceBranch, /paramValue\(params, 'PriorCanonAnswerMarkdown'\)/);
+  });
+
+  it('executes EpistemicAnswerGradingAction fail-closed with AUTHORITATIVE_LOAD_FAILED and zero Save() calls when question canon lookup or referenced canon body fails', async () => {
+    const { EpistemicAnswerGradingAction } = await import('../dist/index.js');
+    const action = new EpistemicAnswerGradingAction();
+    let saveCalls = 0;
+
+    mock.method(Metadata.prototype, 'GetEntityObject', async () => ({
+      Save: async () => {
+        saveCalls++;
+        return true;
+      },
+    }));
+
+    const answerId = '11111111-1111-4111-8111-111111111111';
+    const questionId = '22222222-2222-4222-8222-222222222222';
+    const canonId = '33333333-3333-4333-8333-333333333333';
+
+    // Case 1: questionCanonResult fails -> must return AUTHORITATIVE_LOAD_FAILED and 0 writes
+    mock.method(RunView.prototype, 'RunView', async (params: { EntityName: string }) => {
+      if (params.EntityName === 'MJ_BizApps_Community: Forum Answer Posts') {
+        return { Success: true, Results: [{ ID: answerId, QuestionPostID: questionId }] };
+      }
+      if (params.EntityName === 'MJ_BizApps_Community: Forum Posts') {
+        return {
+          Success: true,
+          Results: [
+            { ID: questionId, BodyMarkdown: 'Question body' },
+            { ID: answerId, BodyMarkdown: 'Answer body' },
+          ],
+        };
+      }
+      if (params.EntityName === 'MJ_BizApps_Community: Forum Question Posts') {
+        return { Success: false, Results: [], ErrorMessage: 'Simulated canon query failure' };
+      }
+      return { Success: true, Results: [] };
+    });
+
+    const user = new UserInfo(undefined, { ID: '44444444-4444-4444-8444-444444444444' });
+    const runParams1 = new RunActionParams();
+    runParams1.Params = [{ Name: 'AnswerPostID', Value: answerId, Type: 'Input' }];
+    runParams1.ContextUser = user;
+    runParams1.Filters = [];
+    const res1 = await action.Run(runParams1);
+    assert.equal(res1.Success, false);
+    assert.equal(res1.ResultCode, 'AUTHORITATIVE_LOAD_FAILED');
+    assert.equal(saveCalls, 0);
+
+    mock.restoreAll();
+
+    // Case 2: AICanonAnswerPostID is populated, but loading the referenced canon post body fails -> 0 writes
+    let postCall = 0;
+    mock.method(Metadata.prototype, 'GetEntityObject', async () => ({
+      Save: async () => {
+        saveCalls++;
+        return true;
+      },
+    }));
+    mock.method(RunView.prototype, 'RunView', async (params: { EntityName: string }) => {
+      if (params.EntityName === 'MJ_BizApps_Community: Forum Answer Posts') {
+        return { Success: true, Results: [{ ID: answerId, QuestionPostID: questionId }] };
+      }
+      if (params.EntityName === 'MJ_BizApps_Community: Forum Question Posts') {
+        return { Success: true, Results: [{ ID: questionId, AICanonAnswerPostID: canonId }] };
+      }
+      if (params.EntityName === 'MJ_BizApps_Community: Forum Posts') {
+        postCall++;
+        if (postCall === 1) {
+          return {
+            Success: true,
+            Results: [
+              { ID: questionId, BodyMarkdown: 'Question body' },
+              { ID: answerId, BodyMarkdown: 'Answer body' },
+            ],
+          };
+        }
+        return { Success: false, Results: [], ErrorMessage: 'Canon post load failure' };
+      }
+      return { Success: true, Results: [] };
+    });
+
+    const runParams2 = new RunActionParams();
+    runParams2.Params = [{ Name: 'AnswerPostID', Value: answerId, Type: 'Input' }];
+    runParams2.ContextUser = user;
+    runParams2.Filters = [];
+    const res2 = await action.Run(runParams2);
+    assert.equal(res2.Success, false);
+    assert.equal(res2.ResultCode, 'AUTHORITATIVE_LOAD_FAILED');
+    assert.equal(saveCalls, 0);
+    mock.restoreAll();
   });
 });

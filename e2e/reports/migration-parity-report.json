@@ -1,6 +1,6 @@
 {
   "schemaVersion": "sf-migration-parity/v1",
-  "evaluatedAtIso": "2026-11-16T23:45:23.321Z",
+  "evaluatedAtIso": "2026-11-17T03:21:39.200Z",
   "overallPassed": true,
   "expectedTableCount": 25,
   "sqlServerMigration": {
@@ -41,9 +41,9 @@
     "violations": []
   },
   "postgresMigration": {
-    "sha256": "f8c2c65c21c37c82dc62dec66799345bc2248e87f2345c76a52fa24ade513400",
-    "byteLength": 1051178,
-    "lineCount": 32625,
+    "sha256": "53754f8c6f18eb2cf740e921d7289192e1c9fff11fc1929edacf4fb8f08ec3ae",
+    "byteLength": 1022029,
+    "lineCount": 31783,
     "tableCount": 25,
     "tables": [
       "CommunityMemberProfile",
@@ -110,7 +110,7 @@
     "violations": []
   },
   "verifyFnCommunityForumAccessScript": {
-    "throwAssertionCount": 7,
+    "throwAssertionCount": 8,
     "violations": []
   },
   "violations": []

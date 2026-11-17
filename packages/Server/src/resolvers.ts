@@ -1,5 +1,5 @@
-import { randomUUID } from 'node:crypto';
-import { BaseEntity, CompositeKey, Metadata, RunView, type UserInfo } from '@memberjunction/core';
+import { createHash } from 'node:crypto';
+import { BaseEntity, CompositeKey, Metadata, RunView, type TransactionGroupBase, type UserInfo } from '@memberjunction/core';
 import { UUIDsEqual } from '@memberjunction/global';
 import type { MJTaskEntity } from '@memberjunction/core-entities';
 import { AssertValidUUID, AssertValidUUIDList, CommunityRules, EscapeSqlLiteral, type AnonymousReadMode } from '@mj-biz-apps/community-core';
@@ -143,6 +143,17 @@ export function ValidateCanonPromotionCrossReferences(params: {
   }
 }
 
+/** Derives a deterministic RFC-4122 UUID from a fixed namespace + root post ID so retries and crash
+ * recovery across processes converge on the exact same Space/Task primary key rather than creating
+ * duplicate rows on every retry. */
+export function BuildDeterministicGraduationUUID(scope: 'space' | 'task', rootPostId: string): string {
+  const hash = createHash('sha256').update(`mj-bizapps-community:graduation:${scope}:${rootPostId.trim().toLowerCase()}`).digest();
+  hash[6] = (hash[6] & 0x0f) | 0x40;
+  hash[8] = (hash[8] & 0x3f) | 0x80;
+  const hex = hash.subarray(0, 16).toString('hex');
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20, 32)}`;
+}
+
 /**
  * Coordinates 1-click graduation of a high-momentum Community thread into a child Collaboration Space
  * of any allowed peer `SpaceType` (such as `working-group`, `cohort`, `project`, or governance spaces),
@@ -152,6 +163,8 @@ export function ValidateCanonPromotionCrossReferences(params: {
  * creating a duplicate Space/Task.
  */
 export class ThreadGraduationService {
+  private static readonly inFlightGraduations = new Map<string, Promise<ThreadGraduationResult>>();
+  private static readonly inFlightCanonPromotions = new Map<string, Promise<CanonPromotionResult>>();
   /**
    * Validates and plans Space/Task graduation. `currentPromotedToSpaceId` is the root post's existing
    * `PromotedToSpaceID` (null if never graduated) — when already set, the plan is idempotent and
@@ -193,32 +206,31 @@ export class ThreadGraduationService {
       };
     }
 
-    // Deterministic, genuinely-valid UUIDv4s — never a fabricated `graduated-<id>`/`task-<id>` string.
-    // Actually creating the Space (`__mj_BizAppsCollaboration`) and Task (`__mj_BizAppsTasks`) rows that
-    // these IDs are pre-assigned to is owned by the GraphQL resolver layer, which already orchestrates
-    // both sibling schemas and the invite flow; this service only decides WHETHER graduation is allowed
-    // and HANDS BACK the ID plan for the resolver to persist.
+    // Deterministic UUID keyed by `rootPostId` so concurrent retries or partial-failure recovery
+    // never allocate a second Collaboration Space or starter Task ID.
     return {
-      promotedToSpaceId: randomUUID(),
+      promotedToSpaceId: BuildDeterministicGraduationUUID('space', params.request.rootPostId),
       targetSpaceTypeCode: normalizedType,
-      seededTaskId: params.request.seedInitialTaskTitle ? randomUUID() : null,
+      seededTaskId: params.request.seedInitialTaskTitle
+        ? BuildDeterministicGraduationUUID('task', params.request.rootPostId)
+        : null,
       invitedParticipantCount: uniqueParticipantIds.length,
     };
   }
 
   /**
    * Validates and plans promoting a Q&A answer into the forum's Knowledge Canon. Only the question's
-   * author or a forum moderator may promote. `currentAICanonAnswerPostId` is the question's existing
-   * `AICanonAnswerPostID` (null if none) — when it already equals `request.canonAnswerPostId`, the
-   * promotion is idempotent and `alreadyPromoted` is `true`.
+   * author or a forum moderator may promote. `currentAICanonAnswerPostId` and `currentAcceptedAnswerPostId`
+   * are checked TOGETHER so partial states (e.g. AcceptedAnswerPostID differs or IsAcceptedByAuthor
+   * is false) are repaired on retry rather than skipped.
    */
   public ValidateAndBuildCanonPromotion(params: {
     request: CanonPromotionRequest;
     isQuestionAuthorOrModerator: boolean;
     currentAICanonAnswerPostId: string | null;
-    /** Whether the ANSWER post already reflects the promotion (e.g. AIConfidenceScore already set).
-     * `alreadyPromoted` requires BOTH this AND the question side to already match — a retry after a
-     * partial failure (question saved, answer save failed) must still repair the answer side. */
+    currentAcceptedAnswerPostId?: string | null;
+    /** Whether the ANSWER post already reflects the promotion (`AIEpistemicStatus === 'Canon Verified'`
+     * AND `IsAcceptedByAuthor === true`). */
     answerAlreadyReflectsPromotion: boolean;
   }): CanonPromotionResult {
     if (!params.isQuestionAuthorOrModerator) {
@@ -230,15 +242,22 @@ export class ThreadGraduationService {
     if (params.currentAICanonAnswerPostId) {
       AssertValidUUID(params.currentAICanonAnswerPostId, 'currentAICanonAnswerPostId');
     }
+    if (params.currentAcceptedAnswerPostId) {
+      AssertValidUUID(params.currentAcceptedAnswerPostId, 'currentAcceptedAnswerPostId');
+    }
 
-    const questionAlreadyPromoted =
+    const aiMatches =
       params.currentAICanonAnswerPostId !== null &&
       UUIDsEqual(params.currentAICanonAnswerPostId, params.request.canonAnswerPostId);
+    const acceptedMatches =
+      params.currentAcceptedAnswerPostId === undefined ||
+      (params.currentAcceptedAnswerPostId !== null &&
+        UUIDsEqual(params.currentAcceptedAnswerPostId, params.request.canonAnswerPostId));
 
     return {
       questionPostId: params.request.questionPostId,
       canonAnswerPostId: params.request.canonAnswerPostId,
-      alreadyPromoted: questionAlreadyPromoted && params.answerAlreadyReflectsPromotion,
+      alreadyPromoted: aiMatches && acceptedMatches && params.answerAlreadyReflectsPromotion,
     };
   }
 
@@ -260,31 +279,57 @@ export class ThreadGraduationService {
    * `EpistemicAnswerGradingAction`, which likewise never sets `IsVerifiedByModerator`). Throws if
    * any `.Save()` call returns `false`.
    */
-  public async ApplyCanonPromotion(params: { request: CanonPromotionRequest; contextUser: UserInfo }): Promise<CanonPromotionResult> {
+  public ApplyCanonPromotion(params: { request: CanonPromotionRequest; contextUser: UserInfo }): Promise<CanonPromotionResult> {
     AssertValidUUID(params.request.questionPostId, 'questionPostId');
     AssertValidUUID(params.request.canonAnswerPostId, 'canonAnswerPostId');
 
+    const lockKey = params.request.questionPostId.trim().toLowerCase();
+    const prior = ThreadGraduationService.inFlightCanonPromotions.get(lockKey);
+    const next = (prior ? prior.catch(() => undefined) : Promise.resolve()).then(() =>
+      this.executeApplyCanonPromotion(params),
+    );
+    ThreadGraduationService.inFlightCanonPromotions.set(lockKey, next);
+    return next.finally(() => {
+      if (ThreadGraduationService.inFlightCanonPromotions.get(lockKey) === next) {
+        ThreadGraduationService.inFlightCanonPromotions.delete(lockKey);
+      }
+    });
+  }
+
+  private async executeApplyCanonPromotion(params: { request: CanonPromotionRequest; contextUser: UserInfo }): Promise<CanonPromotionResult> {
     const md = new Metadata();
     const question = await md.GetEntityObject<mjBizAppsCommunityForumQuestionPostEntity>(
       COMMUNITY_ENTITY_NAMES.ForumQuestionPosts,
       CompositeKey.FromID(params.request.questionPostId),
       params.contextUser,
     );
+    if (!question) {
+      throw new Error(`Forum Question Post ${params.request.questionPostId} was not found.`);
+    }
     const answer = await md.GetEntityObject<mjBizAppsCommunityForumAnswerPostEntity>(
       COMMUNITY_ENTITY_NAMES.ForumAnswerPosts,
       CompositeKey.FromID(params.request.canonAnswerPostId),
       params.contextUser,
     );
+    if (!answer) {
+      throw new Error(`Forum Answer Post ${params.request.canonAnswerPostId} was not found.`);
+    }
     const questionPost = await md.GetEntityObject<mjBizAppsCommunityForumPostEntity>(
       COMMUNITY_ENTITY_NAMES.ForumPosts,
       CompositeKey.FromID(params.request.questionPostId),
       params.contextUser,
     );
+    if (!questionPost) {
+      throw new Error(`Forum Post ${params.request.questionPostId} was not found.`);
+    }
     const answerPost = await md.GetEntityObject<mjBizAppsCommunityForumPostEntity>(
       COMMUNITY_ENTITY_NAMES.ForumPosts,
       CompositeKey.FromID(params.request.canonAnswerPostId),
       params.contextUser,
     );
+    if (!answerPost) {
+      throw new Error(`Forum Post ${params.request.canonAnswerPostId} was not found.`);
+    }
 
     ValidateCanonPromotionCrossReferences({
       requestedQuestionPostId: params.request.questionPostId,
@@ -297,43 +342,87 @@ export class ThreadGraduationService {
     const isModerator = isAuthor ? false : await this.ResolveForumModeratorCapability(questionPost.ForumID, params.contextUser);
 
     const previouslyAcceptedAnswerPostId = question.AcceptedAnswerPostID;
-    // AIEpistemicStatus is the only field THIS operation ever writes on the answer — AIConfidenceScore
-    // is independently set by EpistemicAnswerGradingAction's ordinary grading pass (with or without a
-    // promotion), so checking it here would false-positive-skip the repair for a graded-but-never-
-    // promoted answer. AIEpistemicStatus === 'Canon Verified' is the precise, unambiguous signal.
-    const answerAlreadyReflectsPromotion = answer.AIEpistemicStatus === 'Canon Verified';
+    const answerAlreadyReflectsPromotion =
+      answer.AIEpistemicStatus === 'Canon Verified' && answer.IsAcceptedByAuthor === true;
 
     const result = this.ValidateAndBuildCanonPromotion({
       request: params.request,
       isQuestionAuthorOrModerator: isAuthor || isModerator,
       currentAICanonAnswerPostId: question.AICanonAnswerPostID,
+      currentAcceptedAnswerPostId: question.AcceptedAnswerPostID,
       answerAlreadyReflectsPromotion,
     });
 
-    const questionAlreadyPromoted =
-      question.AICanonAnswerPostID !== null && UUIDsEqual(question.AICanonAnswerPostID, params.request.canonAnswerPostId);
-
-    if (!questionAlreadyPromoted) {
-      // Promoting a DIFFERENT answer than was previously accepted: clear the old one's
-      // IsAcceptedByAuthor so exactly one answer is ever marked accepted at a time.
-      if (previouslyAcceptedAnswerPostId && !UUIDsEqual(previouslyAcceptedAnswerPostId, params.request.canonAnswerPostId)) {
-        const previousAnswer = await md.GetEntityObject<mjBizAppsCommunityForumAnswerPostEntity>(
-          COMMUNITY_ENTITY_NAMES.ForumAnswerPosts,
-          CompositeKey.FromID(previouslyAcceptedAnswerPostId),
-          params.contextUser,
-        );
-        previousAnswer.IsAcceptedByAuthor = false;
-        await SaveOrThrow(previousAnswer, `Failed to clear IsAcceptedByAuthor on the previously accepted answer ${previouslyAcceptedAnswerPostId}.`);
-      }
-
-      question.AcceptedAnswerPostID = params.request.canonAnswerPostId;
-      question.AICanonAnswerPostID = params.request.canonAnswerPostId;
-      await SaveOrThrow(question, `Failed to save canon promotion onto Forum Question Post ${params.request.questionPostId}.`);
+    if (result.alreadyPromoted) {
+      return result;
     }
 
-    if (!answerAlreadyReflectsPromotion) {
-      answer.AIEpistemicStatus = 'Canon Verified';
-      await SaveOrThrow(answer, `Failed to mark Forum Answer Post ${params.request.canonAnswerPostId} as Canon Verified.`);
+    const questionAlreadyPromoted =
+      question.AICanonAnswerPostID !== null &&
+      UUIDsEqual(question.AICanonAnswerPostID, params.request.canonAnswerPostId) &&
+      question.AcceptedAnswerPostID !== null &&
+      UUIDsEqual(question.AcceptedAnswerPostID, params.request.canonAnswerPostId);
+
+    const txGroup = await this.tryCreateTransactionGroup(md);
+    const revertActions: Array<() => Promise<void>> = [];
+
+    try {
+      if (!questionAlreadyPromoted) {
+        if (previouslyAcceptedAnswerPostId && !UUIDsEqual(previouslyAcceptedAnswerPostId, params.request.canonAnswerPostId)) {
+          const previousAnswer = await md.GetEntityObject<mjBizAppsCommunityForumAnswerPostEntity>(
+            COMMUNITY_ENTITY_NAMES.ForumAnswerPosts,
+            CompositeKey.FromID(previouslyAcceptedAnswerPostId),
+            params.contextUser,
+          );
+          if (previousAnswer?.IsAcceptedByAuthor) {
+            previousAnswer.IsAcceptedByAuthor = false;
+            if (txGroup) previousAnswer.TransactionGroup = txGroup;
+            await SaveOrThrow(previousAnswer, `Failed to clear IsAcceptedByAuthor on the previously accepted answer ${previouslyAcceptedAnswerPostId}.`);
+            if (!txGroup) {
+              revertActions.push(async () => {
+                previousAnswer.IsAcceptedByAuthor = true;
+                await previousAnswer.Save();
+              });
+            }
+          }
+        }
+
+        const prevAccepted = question.AcceptedAnswerPostID;
+        const prevCanon = question.AICanonAnswerPostID;
+        question.AcceptedAnswerPostID = params.request.canonAnswerPostId;
+        question.AICanonAnswerPostID = params.request.canonAnswerPostId;
+        if (txGroup) question.TransactionGroup = txGroup;
+        await SaveOrThrow(question, `Failed to save canon promotion onto Forum Question Post ${params.request.questionPostId}.`);
+        if (!txGroup) {
+          revertActions.push(async () => {
+            question.AcceptedAnswerPostID = prevAccepted;
+            question.AICanonAnswerPostID = prevCanon;
+            await question.Save();
+          });
+        }
+      }
+
+      if (!answerAlreadyReflectsPromotion) {
+        answer.AIEpistemicStatus = 'Canon Verified';
+        answer.IsAcceptedByAuthor = true;
+        if (txGroup) answer.TransactionGroup = txGroup;
+        await SaveOrThrow(answer, `Failed to mark Forum Answer Post ${params.request.canonAnswerPostId} as Canon Verified.`);
+      }
+
+      if (txGroup) {
+        await this.commitTransactionGroup(txGroup, `canon promotion for Question ${params.request.questionPostId}`);
+      }
+    } catch (err) {
+      if (!txGroup) {
+        for (const revert of revertActions.reverse()) {
+          try {
+            await revert();
+          } catch {
+            // Best-effort compensating rollback when provider lacks TransactionGroup
+          }
+        }
+      }
+      throw err;
     }
 
     return result;
@@ -356,6 +445,8 @@ export class ThreadGraduationService {
     forumId: string,
     user: UserInfo,
   ): Promise<Pick<mjBizAppsCommunityForumRoleTypeEntity, 'CanModerateQueue' | 'CanPromoteToSpace'> | null> {
+    AssertValidUUID(forumId, 'forumId');
+    AssertValidUUID(user.ID, 'user.ID');
     const memberResult = await new RunView().RunView<Pick<mjBizAppsCommunityForumMemberEntity, 'ForumRoleTypeID'>>(
       {
         EntityName: COMMUNITY_ENTITY_NAMES.ForumMembers,
@@ -371,6 +462,7 @@ export class ThreadGraduationService {
       return null;
     }
 
+    AssertValidUUID(forumRoleTypeId, 'forumRoleTypeId');
     const roleResult = await new RunView().RunView<Pick<mjBizAppsCommunityForumRoleTypeEntity, 'CanModerateQueue' | 'CanPromoteToSpace'>>(
       {
         EntityName: COMMUNITY_ENTITY_NAMES.ForumRoleTypes,
@@ -406,15 +498,61 @@ export class ThreadGraduationService {
    */
   public async GraduateThreadToSpace(params: {
     request: ThreadGraduationRequest;
-    allowedChildSpaceTypeCodes: ReadonlyArray<string>;
+    allowedChildSpaceTypeCodes?: ReadonlyArray<string>;
     contextUser: UserInfo;
   }): Promise<ThreadGraduationResult> {
+    const lockKey = params.request.rootPostId.trim().toLowerCase();
+    const prior = ThreadGraduationService.inFlightGraduations.get(lockKey);
+    const run = (prior ? prior.catch(() => undefined) : Promise.resolve()).then(() =>
+      this.executeGraduateThreadToSpace(params),
+    );
+    ThreadGraduationService.inFlightGraduations.set(lockKey, run);
+    try {
+      return await run;
+    } finally {
+      if (ThreadGraduationService.inFlightGraduations.get(lockKey) === run) {
+        ThreadGraduationService.inFlightGraduations.delete(lockKey);
+      }
+    }
+  }
+
+  private async tryCreateTransactionGroup(md: Metadata): Promise<TransactionGroupBase | null> {
+    if (typeof md.CreateTransactionGroup !== 'function') {
+      return null;
+    }
+    const provider = Metadata.Provider;
+    if (!provider || typeof provider.CreateTransactionGroup !== 'function') {
+      return null;
+    }
+    try {
+      return await md.CreateTransactionGroup();
+    } catch {
+      return null;
+    }
+  }
+
+  private async commitTransactionGroup(txGroup: TransactionGroupBase, label: string): Promise<void> {
+    const committed = await txGroup.Submit();
+    if (!committed) {
+      throw new Error(`Transactional commit failed for ${label}.`);
+    }
+  }
+
+  private async executeGraduateThreadToSpace(params: {
+    request: ThreadGraduationRequest;
+    allowedChildSpaceTypeCodes?: ReadonlyArray<string>;
+    contextUser: UserInfo;
+  }): Promise<ThreadGraduationResult> {
+    AssertValidUUID(params.request.rootPostId, 'rootPostId');
     const md = new Metadata();
     const rootPost = await md.GetEntityObject<mjBizAppsCommunityForumPostEntity>(
       COMMUNITY_ENTITY_NAMES.ForumPosts,
       CompositeKey.FromID(params.request.rootPostId),
       params.contextUser,
     );
+    if (!rootPost) {
+      throw new Error(`Forum Post ${params.request.rootPostId} was not found.`);
+    }
 
     if (rootPost.ParentPostID !== null) {
       throw new Error(`Forum Post ${params.request.rootPostId} is a reply (ParentPostID is set) — only a root post may be graduated.`);
@@ -425,15 +563,23 @@ export class ThreadGraduationService {
       CompositeKey.FromID(rootPost.ForumID),
       params.contextUser,
     );
+    if (!forum) {
+      throw new Error(`Forum ${rootPost.ForumID} was not found for Forum Post ${params.request.rootPostId}.`);
+    }
 
-    // Server-derived, never caller-supplied: rejects an unauthorized caller before any write.
+    // Server-derived, never caller-supplied: rejects an unauthorized caller or widened child policy before any write.
     const userCanPromoteToSpace = await this.ResolveForumPromoteToSpaceCapability(forum.ID, params.contextUser);
+    const authoritativeAllowedChildSpaceTypeCodes = await this.ResolveAuthoritativeChildSpaceTypeCodes(
+      forum.SpaceID,
+      params.allowedChildSpaceTypeCodes,
+      params.contextUser,
+    );
 
     if (rootPost.PromotedToSpaceID) {
       // Idempotent retry: already graduated — hand back the existing Space, create nothing new.
       return this.ValidateAndBuildGraduationPlan({
         request: params.request,
-        allowedChildSpaceTypeCodes: params.allowedChildSpaceTypeCodes,
+        allowedChildSpaceTypeCodes: authoritativeAllowedChildSpaceTypeCodes,
         userCanPromoteToSpace,
         currentPromotedToSpaceId: rootPost.PromotedToSpaceID,
       });
@@ -441,7 +587,7 @@ export class ThreadGraduationService {
 
     const plan = this.ValidateAndBuildGraduationPlan({
       request: params.request,
-      allowedChildSpaceTypeCodes: params.allowedChildSpaceTypeCodes,
+      allowedChildSpaceTypeCodes: authoritativeAllowedChildSpaceTypeCodes,
       userCanPromoteToSpace,
     });
 
@@ -473,49 +619,124 @@ export class ThreadGraduationService {
       }
     }
 
-    // --- All prerequisites resolved: now perform the writes ---
-    const space = await md.GetEntityObject<CollaborationSpaceEntityView>(
+    // Check whether deterministic Space / Task / Member rows already exist from an interrupted prior run
+    const existingSpaceId = await this.ResolveIdByFilter(
       'MJ_BizApps_Collaboration: Spaces',
+      `ID = '${AssertValidUUID(plan.promotedToSpaceId, 'promotedToSpaceId')}'`,
       params.contextUser,
     );
-    space.ID = plan.promotedToSpaceId;
-    space.SpaceTypeID = spaceTypeId;
-    space.ParentID = forum.SpaceID;
-    space.Name = params.request.targetSpaceName;
-    space.OwnerID = params.contextUser.ID;
-    space.InheritsMembership = false;
-    space.AgentRetrieval = 'Included';
-    space.StartedAt = new Date();
-    await SaveOrThrow(space, `Failed to create the Collaboration Space graduated from thread ${params.request.rootPostId}.`);
+    const existingTaskId =
+      createStarterTask && plan.seededTaskId
+        ? await this.ResolveIdByFilter(
+            'MJ: Tasks',
+            `ID = '${AssertValidUUID(plan.seededTaskId, 'seededTaskId')}'`,
+            params.contextUser,
+          )
+        : null;
+    const existingMemberRes =
+      uniqueParticipantIds.length > 0
+        ? await new RunView().RunView<{ UserID: string }>(
+            {
+              EntityName: 'MJ_BizApps_Collaboration: Space Members',
+              ExtraFilter: `SpaceID = '${plan.promotedToSpaceId}'`,
+              Fields: ['UserID'],
+              ResultType: 'simple',
+              MaxRows: 500,
+            },
+            params.contextUser,
+          )
+        : null;
+    const existingMemberUserIds = new Set(
+      (existingMemberRes?.Success ? existingMemberRes.Results ?? [] : []).map((m) => m.UserID.trim().toLowerCase()),
+    );
 
-    if (createStarterTask && taskTypeId && plan.seededTaskId) {
-      const task = await md.GetEntityObject<MJTaskEntity>('MJ: Tasks', params.contextUser);
-      task.ID = plan.seededTaskId;
-      task.Name = params.request.seedInitialTaskTitle ?? 'Graduated Thread Follow-Up';
-      task.TypeID = taskTypeId;
-      await SaveOrThrow(task, `Failed to seed the starter Task for graduated thread ${params.request.rootPostId}.`);
-    }
+    // --- All prerequisites resolved: commit parent Space first so SpaceMemberEntityServer.ValidateAsync()
+    // sees the committed Space row in DB, then atomically persist Task/Members/RootPost in TransactionGroup
+    // with explicit reverse-order Delete() rollback of any created rows on failure. ---
+    const createdForRollback: Array<{ Delete?: () => Promise<boolean> }> = [];
+    let txGroup: TransactionGroupBase | null = null;
 
-    if (spaceRoleTypeId) {
-      for (const participantUserId of uniqueParticipantIds) {
-        const member = await md.GetEntityObject<CollaborationSpaceMemberEntityView>(
-          'MJ_BizApps_Collaboration: Space Members',
+    try {
+      if (!existingSpaceId) {
+        const space = await md.GetEntityObject<CollaborationSpaceEntityView>(
+          'MJ_BizApps_Collaboration: Spaces',
           params.contextUser,
         );
-        member.SpaceID = plan.promotedToSpaceId;
-        member.UserID = participantUserId;
-        member.SpaceRoleTypeID = spaceRoleTypeId;
-        member.Band = 'Shared';
-        member.Status = 'Invited';
-        await SaveOrThrow(member, `Failed to invite User ${participantUserId} to the graduated Space.`);
+        if (!space) {
+          throw new Error(`Failed to instantiate Collaboration Space entity for thread ${params.request.rootPostId}.`);
+        }
+        space.ID = plan.promotedToSpaceId;
+        space.SpaceTypeID = spaceTypeId;
+        space.ParentID = forum.SpaceID;
+        space.Name = params.request.targetSpaceName;
+        space.OwnerID = params.contextUser.ID;
+        space.InheritsMembership = false;
+        space.AgentRetrieval = 'Included';
+        space.StartedAt = new Date();
+        await SaveOrThrow(space, `Failed to create the Collaboration Space graduated from thread ${params.request.rootPostId}.`);
+        createdForRollback.push(space);
       }
-    }
 
-    rootPost.PromotedToSpaceID = plan.promotedToSpaceId;
-    // Always explicit: the new Task's ID, or null when no Task was requested/created — never left
-    // unset to whatever LinkedTaskID previously held.
-    rootPost.LinkedTaskID = createStarterTask ? plan.seededTaskId : null;
-    await SaveOrThrow(rootPost, `Failed to persist graduation onto root Forum Post ${params.request.rootPostId}.`);
+      txGroup = await this.tryCreateTransactionGroup(md);
+
+      if (createStarterTask && taskTypeId && plan.seededTaskId && !existingTaskId) {
+        const task = await md.GetEntityObject<MJTaskEntity>('MJ: Tasks', params.contextUser);
+        if (!task) {
+          throw new Error(`Failed to instantiate Task entity for thread ${params.request.rootPostId}.`);
+        }
+        task.ID = plan.seededTaskId;
+        task.Name = params.request.seedInitialTaskTitle ?? 'Graduated Thread Follow-Up';
+        task.TypeID = taskTypeId;
+        if (txGroup) task.TransactionGroup = txGroup;
+        await SaveOrThrow(task, `Failed to seed the starter Task for graduated thread ${params.request.rootPostId}.`);
+        if (!txGroup) createdForRollback.push(task);
+      }
+
+      if (spaceRoleTypeId) {
+        for (const participantUserId of uniqueParticipantIds) {
+          if (existingMemberUserIds.has(participantUserId.trim().toLowerCase())) {
+            continue;
+          }
+          const member = await md.GetEntityObject<CollaborationSpaceMemberEntityView>(
+            'MJ_BizApps_Collaboration: Space Members',
+            params.contextUser,
+          );
+          if (!member) {
+            throw new Error(`Failed to instantiate Collaboration Space Member entity for user ${participantUserId}.`);
+          }
+          member.SpaceID = plan.promotedToSpaceId;
+          member.UserID = participantUserId;
+          member.SpaceRoleTypeID = spaceRoleTypeId;
+          member.Band = 'Shared';
+          member.Status = 'Invited';
+          if (txGroup) member.TransactionGroup = txGroup;
+          await SaveOrThrow(member, `Failed to invite User ${participantUserId} to the graduated Space.`);
+          if (!txGroup) createdForRollback.push(member);
+        }
+      }
+
+      rootPost.PromotedToSpaceID = plan.promotedToSpaceId;
+      // Always explicit: the new Task's ID, or null when no Task was requested/created — never left
+      // unset to whatever LinkedTaskID previously held.
+      rootPost.LinkedTaskID = createStarterTask ? plan.seededTaskId : null;
+      if (txGroup) rootPost.TransactionGroup = txGroup;
+      await SaveOrThrow(rootPost, `Failed to persist graduation onto root Forum Post ${params.request.rootPostId}.`);
+
+      if (txGroup) {
+        await this.commitTransactionGroup(txGroup, `thread graduation for rootPostId ${params.request.rootPostId}`);
+      }
+    } catch (err) {
+      for (const created of createdForRollback.reverse()) {
+        if (typeof created.Delete === 'function') {
+          try {
+            await created.Delete();
+          } catch {
+            // Best-effort compensating rollback for any committed entities before failure
+          }
+        }
+      }
+      throw err;
+    }
 
     return plan;
   }
@@ -529,9 +750,76 @@ export class ThreadGraduationService {
     return result?.Success ? result.Results?.[0]?.ID ?? null : null;
   }
 
+  /** Derives the parent Space's SpaceType Configuration.Children.AllowedTypeCodes on the server
+   * so callers cannot widen permitted child SpaceTypes past Collaboration policy. */
+  private async ResolveAuthoritativeChildSpaceTypeCodes(
+    parentSpaceId: string,
+    callerRequestedCodes: ReadonlyArray<string> | undefined,
+    user: UserInfo,
+  ): Promise<string[]> {
+    const validSpaceId = AssertValidUUID(parentSpaceId, 'parentSpaceId');
+    const spaceRes = await new RunView().RunView<{ ID: string; SpaceTypeID: string }>(
+      {
+        EntityName: 'MJ_BizApps_Collaboration: Spaces',
+        ExtraFilter: `ID = '${validSpaceId}'`,
+        Fields: ['ID', 'SpaceTypeID'],
+        ResultType: 'simple',
+        MaxRows: 1,
+      },
+      user,
+    );
+    const parentSpace = spaceRes?.Success ? spaceRes.Results?.[0] : null;
+    if (!parentSpace?.SpaceTypeID) {
+      throw new Error(`Could not resolve parent Collaboration Space ${parentSpaceId} or its SpaceTypeID.`);
+    }
+
+    const validSpaceTypeId = AssertValidUUID(parentSpace.SpaceTypeID, 'parentSpaceTypeId');
+    const spaceTypeRes = await new RunView().RunView<{ ID: string; Code: string; Configuration: string | null }>(
+      {
+        EntityName: 'MJ_BizApps_Collaboration: Space Types',
+        ExtraFilter: `ID = '${validSpaceTypeId}'`,
+        Fields: ['ID', 'Code', 'Configuration'],
+        ResultType: 'simple',
+        MaxRows: 1,
+      },
+      user,
+    );
+    const spaceType = spaceTypeRes?.Success ? spaceTypeRes.Results?.[0] : null;
+    if (!spaceType) {
+      throw new Error(`Could not load parent Collaboration Space Type ${validSpaceTypeId}.`);
+    }
+
+    let authoritativeCodes: string[] = [];
+    if (spaceType.Configuration) {
+      try {
+        const parsed = JSON.parse(spaceType.Configuration) as { Children?: { AllowedTypeCodes?: string[] } };
+        if (Array.isArray(parsed?.Children?.AllowedTypeCodes)) {
+          authoritativeCodes = parsed.Children.AllowedTypeCodes
+            .map((c) => c.trim())
+            .filter((c) => c.length > 0);
+        }
+      } catch {
+        throw new Error(`Parent Collaboration Space Type "${spaceType.Code}" has malformed Configuration JSON.`);
+      }
+    }
+
+    if (callerRequestedCodes && callerRequestedCodes.length > 0) {
+      const normalizedAuth = new Set(authoritativeCodes.map((c) => c.toLowerCase()));
+      const disallowed = callerRequestedCodes.filter((c) => !normalizedAuth.has(c.trim().toLowerCase()));
+      if (disallowed.length > 0) {
+        throw new Error(
+          `Caller-supplied child SpaceType(s) [${disallowed.join(', ')}] exceed parent Space Type "${spaceType.Code}" Children.AllowedTypeCodes policy.`,
+        );
+      }
+      return callerRequestedCodes.map((c) => c.trim());
+    }
+
+    return authoritativeCodes;
+  }
+
   /** The active Space Role Type a newly-invited participant should receive: prefers 'Member' or
-   * 'Contributor' by Name (least-privilege, non-administrative seats), falling back to any other
-   * active role ordered deterministically by Name ASC when neither exists. */
+   * 'Contributor' by Name (least-privilege, non-administrative seats), falling back only to
+   * active non-owner, non-band-promoting roles ordered by Level ASC, Name ASC (never Admin/Owner). */
   private async ResolveLeastPrivilegeSpaceRoleTypeId(user: UserInfo): Promise<string | null> {
     const preferred = await this.ResolveIdByFilter(
       'MJ_BizApps_Collaboration: Space Role Types',
@@ -543,8 +831,8 @@ export class ThreadGraduationService {
     const result = await new RunView().RunView<{ ID: string }>(
       {
         EntityName: 'MJ_BizApps_Collaboration: Space Role Types',
-        ExtraFilter: 'IsActive = 1',
-        OrderBy: 'Name ASC',
+        ExtraFilter: `IsActive = 1 AND IsOwnerRole = 0 AND CanPromoteBand = 0 AND Code NOT IN ('admin', 'owner')`,
+        OrderBy: 'Level ASC, Name ASC',
         Fields: ['ID'],
         ResultType: 'simple',
         MaxRows: 1,

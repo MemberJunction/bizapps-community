@@ -12,6 +12,7 @@
 
 .mjc-community-hub__tabs {
   display: flex;
+  flex-wrap: wrap;
   gap: var(--mj-space-2);
   padding: var(--mj-space-3) var(--mj-space-4);
   border-bottom: 1px solid var(--mj-border-default);
@@ -55,8 +56,66 @@
   gap: var(--mj-space-4);
 }
 
+.mjc-community-hub__toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--mj-space-3);
+}
+
+.mjc-community-hub__split {
+  display: grid;
+  grid-template-columns: minmax(260px, 1fr) minmax(320px, 1.4fr);
+  gap: var(--mj-space-4);
+  align-items: start;
+}
+
+.mjc-community-hub__card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--mj-space-3);
+  padding: var(--mj-space-4);
+  border: 1px solid var(--mj-border-default);
+  border-radius: var(--mj-radius-md);
+  background: var(--mj-bg-surface-card);
+}
+
+.mjc-community-hub__card-title {
+  margin: 0;
+  font-size: var(--mj-text-base);
+  font-weight: var(--mj-font-semibold);
+  color: var(--mj-text-primary);
+}
+
+.mjc-community-hub__card-body {
+  margin: 0;
+  color: var(--mj-text-secondary);
+  font-size: var(--mj-text-sm);
+  line-height: 1.5;
+  white-space: pre-wrap;
+}
+
 .mjc-community-hub__hint {
   color: var(--mj-text-muted);
+  font-size: var(--mj-text-sm);
+}
+
+.mjc-community-hub__error {
+  padding: var(--mj-space-3);
+  border: 1px solid var(--mj-border-default);
+  border-radius: var(--mj-radius-md);
+  background: var(--mj-bg-surface);
+  color: var(--mj-status-error-text);
+  font-size: var(--mj-text-sm);
+}
+
+.mjc-community-hub__status {
+  padding: var(--mj-space-3);
+  border: 1px solid var(--mj-border-subtle);
+  border-radius: var(--mj-radius-md);
+  background: var(--mj-bg-surface);
+  color: var(--mj-text-primary);
   font-size: var(--mj-text-sm);
 }
 
@@ -90,36 +149,81 @@
   background: var(--mj-bg-surface-active);
 }
 
-/* The Quadratic Ideation Wallet's idea selector is a <button> (keyboard-accessible, CR-16) inside
-   a plain <li> wrapper — reset the button's browser defaults so it still fills the row exactly
-   like the other lists' plain <li role="option">. */
 .mjc-community-hub__list-item-wrapper {
   margin: 0;
 }
 
 .mjc-community-hub__list-item-wrapper > .mjc-community-hub__list-item {
   width: 100%;
+  text-align: left;
   font: inherit;
   color: inherit;
-  text-align: left;
-}
-
-.mjc-community-hub__list-item-wrapper > .mjc-community-hub__list-item:focus-visible {
-  outline: var(--mj-ring-width) solid var(--mj-focus-ring-color);
-  outline-offset: 2px;
 }
 
 .mjc-community-hub__list-title {
-  font-size: var(--mj-text-sm);
   color: var(--mj-text-primary);
+  font-weight: var(--mj-font-medium);
 }
 
 .mjc-community-hub__badge {
   padding: var(--mj-space-1) var(--mj-space-2);
   border-radius: var(--mj-radius-sm);
-  background: var(--mj-bg-surface-hover);
+  background: var(--mj-bg-surface);
   color: var(--mj-text-secondary);
   font-size: var(--mj-text-xs);
-  font-weight: var(--mj-font-semibold);
-  white-space: nowrap;
+}
+
+.mjc-community-hub__field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--mj-space-1);
+}
+
+.mjc-community-hub__label {
+  font-size: var(--mj-text-xs);
+  font-weight: var(--mj-font-medium);
+  color: var(--mj-text-secondary);
+}
+
+.mjc-community-hub__input,
+.mjc-community-hub__textarea {
+  padding: var(--mj-space-2) var(--mj-space-3);
+  border: 1px solid var(--mj-border-default);
+  border-radius: var(--mj-radius-sm);
+  background: var(--mj-bg-surface);
+  color: var(--mj-text-primary);
+  font: inherit;
+  font-size: var(--mj-text-sm);
+}
+
+.mjc-community-hub__btn {
+  padding: var(--mj-space-2) var(--mj-space-3);
+  border: 1px solid var(--mj-border-default);
+  border-radius: var(--mj-radius-sm);
+  background: var(--mj-bg-surface);
+  color: var(--mj-text-primary);
+  font: inherit;
+  font-size: var(--mj-text-sm);
+  font-weight: var(--mj-font-medium);
+  cursor: pointer;
+}
+
+.mjc-community-hub__btn--primary {
+  background: var(--mj-brand-primary);
+  color: var(--mj-brand-on-primary);
+  border-color: var(--mj-brand-primary);
+}
+
+.mjc-community-hub__btn-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--mj-space-2);
+}
+
+.mjc-community-hub__iframe {
+  width: 100%;
+  min-height: 280px;
+  border: 1px solid var(--mj-border-default);
+  border-radius: var(--mj-radius-sm);
+  background: var(--mj-bg-surface);
 }

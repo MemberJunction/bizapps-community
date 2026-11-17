@@ -92,6 +92,21 @@ function checkDialect(label, filePath, tableNamePattern) {
     violations.push(`${label}: ${spDeleteUnneededEntityFieldsCount} spDeleteUnneededEntityFields call(s) found (requirement: zero)`);
   }
 
+  if (filePath.endsWith('.pg.sql')) {
+    if (/DECLARE\s+@|sys\.tables/i.test(source)) {
+      violations.push(`${label}: untranslated T-SQL DECLARE @ / sys.tables artifact found in PostgreSQL migration`);
+    }
+    if (/"CASE"\s+"WHEN"/i.test(source)) {
+      violations.push(`${label}: quoted SQL keywords ("CASE" "WHEN") found in PostgreSQL migration`);
+    }
+    if (!/CREATE FUNCTION __mj_BizAppsCommunity\."fnCommunityForumAccess"[\s\S]{0,200}RETURNS TABLE\s*\(/i.test(source)) {
+      violations.push(`${label}: PostgreSQL fnCommunityForumAccess missing RETURNS TABLE (...) column signature`);
+    }
+    if (/INSERT INTO \$\{mjSchema\}\."EntityPermission"[\s\S]*?SELECT[^;]*?'Allow',\s*(?:0|1)\b/i.test(source)) {
+      violations.push(`${label}: EntityPermission INSERT...SELECT passes integer (0/1) to BOOLEAN columns; must be true/false`);
+    }
+  }
+
   return {
     sha256: sha256(source),
     byteLength: Buffer.byteLength(source, 'utf8'),

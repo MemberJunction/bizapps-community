@@ -1,60 +1,67 @@
 import { createServer } from 'node:http';
-import { readFile } from 'node:fs/promises';
-import { createRequire } from 'node:module';
-import { join, extname } from 'node:path';
-import { dirname } from 'node:path';
+import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import * as esbuild from 'esbuild';
 import { BuildCommunityHubHarnessHtml } from './build-harness.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = join(HERE, '..', '..');
-const COMMUNITY_CORE_DIST = join(REPO_ROOT, 'packages', 'Core', 'dist');
+const ENTRY_PATH = join(HERE, 'angular-harness-entry.mjs');
 
-// `@mj-biz-apps/community-core`'s dist output imports `UUIDsEqual`/`IsValidUUID` from
-// `@memberjunction/global` (a real Node package, resolved here via Node's own module resolution
-// so this works regardless of the monorepo's on-disk layout). `UUIDUtils.js` is a standalone leaf
-// file within that package with zero further imports of its own — the ONLY file Core's compiled
-// output actually needs from it — so the harness serves that one real file rather than the whole
-// `@memberjunction/global` package (which also drags in rxjs/lodash/acorn, irrelevant here).
-const require = createRequire(import.meta.url);
-const MJ_GLOBAL_DIST_DIR = dirname(require.resolve('@memberjunction/global'));
-const MJ_GLOBAL_UUID_UTILS = join(MJ_GLOBAL_DIST_DIR, 'util', 'UUIDUtils.js');
+/**
+ * Bundles the real Angular 21 `CommunityHubResource` + 25 generated form registrations in memory
+ * using `esbuild`, failing loudly if the Angular `dist` output cannot be bundled or linked.
+ */
+async function buildAngularBrowserBundle() {
+  const result = await esbuild.build({
+    entryPoints: [ENTRY_PATH],
+    bundle: true,
+    write: false,
+    format: 'esm',
+    platform: 'browser',
+    target: 'es2022',
+    nodePaths: [
+      join(REPO_ROOT, 'packages', 'Angular', 'node_modules'),
+      join(REPO_ROOT, 'node_modules'),
+    ],
+    loader: {
+      '.woff': 'empty',
+      '.woff2': 'empty',
+      '.ttf': 'empty',
+      '.eot': 'empty',
+      '.svg': 'empty',
+      '.png': 'empty',
+    },
+    logLevel: 'silent',
+  });
 
-const CONTENT_TYPES = {
-  '.js': 'text/javascript; charset=utf-8',
-  '.map': 'application/json; charset=utf-8',
-  '.html': 'text/html; charset=utf-8',
-};
+  if (result.errors.length > 0) {
+    throw new Error(`esbuild harness bundle errors: ${result.errors.map((e) => e.text).join('; ')}`);
+  }
 
-/** Starts the harness's static file server and returns { url, close }. */
-export function StartHarnessServer() {
+  const jsFile = result.outputFiles.find((f) => f.path.endsWith('.js')) ?? result.outputFiles[0];
+  if (!jsFile) {
+    throw new Error('esbuild harness build did not produce an output bundle.');
+  }
+  return jsFile.contents;
+}
+
+/** Starts the real Angular 21 harness HTTP server and returns `{ url, close }`. */
+export async function StartHarnessServer() {
   const html = BuildCommunityHubHarnessHtml();
+  const bundleBytes = await buildAngularBrowserBundle();
 
-  const server = createServer(async (req, res) => {
+  const server = createServer((req, res) => {
     try {
-      if (req.url === '/' || req.url === '/index.html') {
+      const urlPath = (req.url ?? '/').split('?')[0];
+      if (urlPath === '/' || urlPath === '/index.html') {
         res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
         res.end(html);
         return;
       }
-      if (req.url === '/memberjunction-global/index.js') {
-        const content = await readFile(MJ_GLOBAL_UUID_UTILS, 'utf8');
-        res.writeHead(200, { 'Content-Type': CONTENT_TYPES['.js'] });
-        res.end(content);
-        return;
-      }
-      if (req.url && req.url.startsWith('/community-core/')) {
-        const relative = req.url.replace('/community-core/', '');
-        const filePath = join(COMMUNITY_CORE_DIST, relative);
-        if (!filePath.startsWith(COMMUNITY_CORE_DIST)) {
-          res.writeHead(403);
-          res.end('Forbidden');
-          return;
-        }
-        const content = await readFile(filePath, 'utf8');
-        const ext = extname(filePath);
-        res.writeHead(200, { 'Content-Type': CONTENT_TYPES[ext] ?? 'text/plain; charset=utf-8' });
-        res.end(content);
+      if (urlPath === '/harness-bundle.js') {
+        res.writeHead(200, { 'Content-Type': 'text/javascript; charset=utf-8' });
+        res.end(bundleBytes);
         return;
       }
       res.writeHead(404);

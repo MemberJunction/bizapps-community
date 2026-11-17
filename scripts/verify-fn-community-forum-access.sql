@@ -28,13 +28,20 @@ IF @AdminForum1CanPost IS NULL
 IF @AdminForum1CanPost <> 1
     THROW 50001, 'fnCommunityForumAccess: seeded admin user has CanPost = 0 on Forum1 (Shared general-discussion) — expected CanPost = 1.', 1;
 
--- --- Assertion 2: a guaranteed non-member gets NO row (or CanPost = 0) on every seeded forum ---
+-- --- Assertion 2: a guaranteed non-member has strict read isolation on Team-band Forum5 and no write/mod/team privileges on Shared Forum1 ---
 IF EXISTS (
     SELECT 1
     FROM [__mj_BizAppsCommunity].[fnCommunityForumAccess](@NonMemberUserID)
-    WHERE [ForumID] IN (@Forum1ID, @Forum5ID) AND [CanPost] = 1
+    WHERE [ForumID] = @Forum5ID
 )
-    THROW 50001, 'fnCommunityForumAccess: a guaranteed non-member UserID got CanPost = 1 on a seeded forum — access isolation is broken.', 1;
+    THROW 50001, 'fnCommunityForumAccess: a guaranteed non-member UserID received a visibility row for Team-band Forum5 — read isolation is broken.', 1;
+
+IF EXISTS (
+    SELECT 1
+    FROM [__mj_BizAppsCommunity].[fnCommunityForumAccess](@NonMemberUserID)
+    WHERE [ForumID] = @Forum1ID AND ([CanPost] = 1 OR [CanModerate] = 1 OR [CanSeeTeam] = 1)
+)
+    THROW 50001, 'fnCommunityForumAccess: a guaranteed non-member UserID got CanPost/CanModerate/CanSeeTeam on Shared Forum1 — access isolation is broken.', 1;
 
 -- --- Assertion 3: the seeded admin user's row count across all seeded forums is non-zero ---
 DECLARE @AdminTotalRows INT;

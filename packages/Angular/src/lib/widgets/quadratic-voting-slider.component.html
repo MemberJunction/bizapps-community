@@ -1,8 +1,10 @@
 <div class="mjc-qv-slider">
   <div class="mjc-qv-slider__row">
     <input
+      id="mjc-qv-slider-input"
       type="range"
       class="mjc-qv-slider__range"
+      aria-label="Allocate quadratic voting points"
       min="0"
       [max]="maxPointsPerIdea ?? budgetPoints"
       [(ngModel)]="pointsAllocated"
