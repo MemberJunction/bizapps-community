@@ -123,14 +123,18 @@ const POST_FEED_2 = '44444444-4444-4444-8444-000000000002';
 const POST_FEED_OTHER_SPACE = '44444444-4444-4444-8444-000000000099';
 const Q_1 = '55555555-5555-4555-8555-000000000001';
 const Q_2 = '55555555-5555-4555-8555-000000000002';
+const Q_OTHER_SPACE = '55555555-5555-4555-8555-000000000099';
 const ANS_1 = '66666666-6666-4666-8666-000000000001';
 const ANS_2 = '66666666-6666-4666-8666-000000000002';
+const ANS_OTHER_SPACE = '66666666-6666-4666-8666-000000000099';
 const IDEA_1 = '77777777-7777-4777-8777-000000000001';
 const IDEA_2 = '77777777-7777-4777-8777-000000000002';
 const IDEA_3 = '77777777-7777-4777-8777-000000000003';
+const IDEA_OTHER_SPACE = '77777777-7777-4777-8777-000000000099';
 const DOC_1 = '88888888-8888-4888-8888-000000000001';
 const FORM_1 = '88888888-8888-4888-8888-000000000002';
 const INTERACTIVE_1 = '88888888-8888-4888-8888-000000000003';
+const DOC_OTHER_SPACE = '88888888-8888-4888-8888-000000000099';
 
 const state = {
   spaces: [
@@ -153,6 +157,7 @@ const state = {
   campaigns: [
     { ID: FORUM_1, AllocationMode: 'Quadratic', DefaultBudgetPoints: 100, MaxPointsPerIdea: null },
     { ID: FORUM_2, AllocationMode: 'Quadratic', DefaultBudgetPoints: 100, MaxPointsPerIdea: 40 },
+    { ID: FORUM_OTHER_SPACE, AllocationMode: 'Point Allocation', DefaultBudgetPoints: 50, MaxPointsPerIdea: 25 },
   ],
   posts: [
     {
@@ -233,6 +238,34 @@ const state = {
       Status: 'Published',
     },
     {
+      ID: DOC_OTHER_SPACE,
+      ForumID: FORUM_OTHER_SPACE,
+      Title: 'Space 2 Secret Playbook',
+      BodyMarkdown: '## Space 2 Secret Playbook\n- Security enclave rotation steps',
+      Status: 'Published',
+    },
+    {
+      ID: Q_OTHER_SPACE,
+      ForumID: FORUM_OTHER_SPACE,
+      Title: 'Space 2 Secret Q&A Entry',
+      BodyMarkdown: 'How does Space 2 isolate hardware security module keys?',
+      Status: 'Published',
+    },
+    {
+      ID: ANS_OTHER_SPACE,
+      ForumID: FORUM_OTHER_SPACE,
+      Title: 'Space 2 Secret Q&A Entry',
+      BodyMarkdown: 'Hardware keys stay pinned per Space enclave partition.',
+      Status: 'Published',
+    },
+    {
+      ID: IDEA_OTHER_SPACE,
+      ForumID: FORUM_OTHER_SPACE,
+      Title: 'Space 2 Secret Roadmap Idea',
+      BodyMarkdown: 'Federated attestation across isolated security guilds.',
+      Status: 'Published',
+    },
+    {
       ID: FORM_1,
       ForumID: FORUM_GENERAL,
       Title: 'Partner Readiness Check-In Form',
@@ -264,21 +297,35 @@ const state = {
       AIConfidenceScore: 0.78,
       IsAcceptedByAuthor: false,
     },
+    {
+      ID: ANS_OTHER_SPACE,
+      QuestionPostID: Q_OTHER_SPACE,
+      Title: 'Space 2 Secret Q&A Entry',
+      AIEpistemicStatus: 'Canon Verified',
+      AIConfidenceScore: 0.99,
+      IsAcceptedByAuthor: true,
+    },
   ],
   ideas: [
     { ID: IDEA_1, TotalPointsAllocated: 0, EffectiveQuadraticVotes: 0 },
     { ID: IDEA_2, TotalPointsAllocated: 0, EffectiveQuadraticVotes: 0 },
     { ID: IDEA_3, TotalPointsAllocated: 0, EffectiveQuadraticVotes: 0 },
+    { ID: IDEA_OTHER_SPACE, TotalPointsAllocated: 0, EffectiveQuadraticVotes: 0 },
   ],
   allocations: [],
-  artifacts: [{ ID: DOC_1 }],
+  artifacts: [{ ID: DOC_1 }, { ID: DOC_OTHER_SPACE }],
   forms: [{ ID: FORM_1 }],
   interactivePosts: [{ ID: INTERACTIVE_1, ExperienceKind: 'Trivia' }],
   questions: [
     { ID: Q_1, AcceptedAnswerPostID: ANS_1, AICanonAnswerPostID: ANS_1 },
     { ID: Q_2, AcceptedAnswerPostID: null, AICanonAnswerPostID: null },
+    { ID: Q_OTHER_SPACE, AcceptedAnswerPostID: ANS_OTHER_SPACE, AICanonAnswerPostID: ANS_OTHER_SPACE },
   ],
 };
+
+const OTHER_SPACE_POST_ID_SET = new Set(
+  [POST_FEED_OTHER_SPACE, Q_OTHER_SPACE, ANS_OTHER_SPACE, IDEA_OTHER_SPACE, DOC_OTHER_SPACE].map((id) => id.toLowerCase()),
+);
 
 function parseInIds(extraFilter, columnName = 'ID') {
   const escaped = columnName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -314,22 +361,48 @@ function queryRowsForView(params) {
     }
     case COMMUNITY_ENTITY_NAMES.PostTypes:
       return state.postTypes;
-    case COMMUNITY_ENTITY_NAMES.ForumAnswerPosts:
-      return state.answers;
+    case COMMUNITY_ENTITY_NAMES.ForumAnswerPosts: {
+      const ids = parseInIds(extraFilter, 'ID');
+      return ids
+        ? state.answers.filter((a) => ids.has(a.ID.toLowerCase()))
+        : state.answers.filter((a) => !OTHER_SPACE_POST_ID_SET.has(a.ID.toLowerCase()));
+    }
     case COMMUNITY_ENTITY_NAMES.ForumIdeaCampaigns: {
       const campaignIds = parseInIds(extraFilter, 'ID');
-      return campaignIds ? state.campaigns.filter((c) => campaignIds.has(c.ID.toLowerCase())) : state.campaigns;
+      return campaignIds
+        ? state.campaigns.filter((c) => campaignIds.has(c.ID.toLowerCase()))
+        : state.campaigns.filter((c) => c.ID !== FORUM_OTHER_SPACE);
     }
-    case COMMUNITY_ENTITY_NAMES.ForumIdeaPosts:
-      return state.ideas;
-    case COMMUNITY_ENTITY_NAMES.ForumArtifactPosts:
-      return state.artifacts;
-    case COMMUNITY_ENTITY_NAMES.ForumFormPosts:
-      return state.forms;
-    case COMMUNITY_ENTITY_NAMES.ForumInteractivePosts:
-      return state.interactivePosts;
-    case COMMUNITY_ENTITY_NAMES.ForumQuestionPosts:
-      return state.questions;
+    case COMMUNITY_ENTITY_NAMES.ForumIdeaPosts: {
+      const ids = parseInIds(extraFilter, 'ID');
+      return ids
+        ? state.ideas.filter((i) => ids.has(i.ID.toLowerCase()))
+        : state.ideas.filter((i) => !OTHER_SPACE_POST_ID_SET.has(i.ID.toLowerCase()));
+    }
+    case COMMUNITY_ENTITY_NAMES.ForumArtifactPosts: {
+      const ids = parseInIds(extraFilter, 'ID');
+      return ids
+        ? state.artifacts.filter((a) => ids.has(a.ID.toLowerCase()))
+        : state.artifacts.filter((a) => !OTHER_SPACE_POST_ID_SET.has(a.ID.toLowerCase()));
+    }
+    case COMMUNITY_ENTITY_NAMES.ForumFormPosts: {
+      const ids = parseInIds(extraFilter, 'ID');
+      return ids
+        ? state.forms.filter((f) => ids.has(f.ID.toLowerCase()))
+        : state.forms.filter((f) => !OTHER_SPACE_POST_ID_SET.has(f.ID.toLowerCase()));
+    }
+    case COMMUNITY_ENTITY_NAMES.ForumInteractivePosts: {
+      const ids = parseInIds(extraFilter, 'ID');
+      return ids
+        ? state.interactivePosts.filter((p) => ids.has(p.ID.toLowerCase()))
+        : state.interactivePosts.filter((p) => !OTHER_SPACE_POST_ID_SET.has(p.ID.toLowerCase()));
+    }
+    case COMMUNITY_ENTITY_NAMES.ForumQuestionPosts: {
+      const ids = parseInIds(extraFilter, 'ID');
+      return ids
+        ? state.questions.filter((q) => ids.has(q.ID.toLowerCase()))
+        : state.questions.filter((q) => !OTHER_SPACE_POST_ID_SET.has(q.ID.toLowerCase()));
+    }
     case COMMUNITY_ENTITY_NAMES.ForumIdeaAllocations: {
       const ideaMatch = typeof extraFilter === 'string' ? extraFilter.match(/IdeaPostID\s*=\s*'([^']+)'/i) : null;
       if (ideaMatch) {
@@ -340,10 +413,12 @@ function queryRowsForView(params) {
     case COMMUNITY_ENTITY_NAMES.ForumPosts: {
       let rows = state.posts;
       const forumIds = parseInIds(extraFilter, 'ForumID');
+      const ids = parseInIds(extraFilter, 'ID');
       if (forumIds) {
         rows = rows.filter((p) => forumIds.has(String(p.ForumID).toLowerCase()));
+      } else if (!ids) {
+        rows = rows.filter((p) => !OTHER_SPACE_POST_ID_SET.has(p.ID.toLowerCase()));
       }
-      const ids = parseInIds(extraFilter, 'ID');
       if (ids) {
         return rows.filter((p) => ids.has(p.ID.toLowerCase()));
       }
@@ -594,11 +669,29 @@ if (harnessMode === 'collaboration') {
               <h1 style="margin:0;font-size:1.15rem;color:var(--mj-text-primary);">Collaboration Space · Customer Success Community</h1>
               <div style="display:flex;gap:8px;margin-top:6px;flex-wrap:wrap;">
                 @for (chip of chips; track chip.key) {
-                  <span class="mjc-collab-chip" style="padding:2px 8px;border-radius:999px;background:var(--mj-badge-info-bg);color:var(--mj-badge-info-text);font-size:0.75rem;font-weight:600;">
+                  <span class="mjc-collab-chip" style="padding:2px 8px;border-radius:999px;background:var(--mj-status-info-bg);color:var(--mj-status-info-text);font-size:0.75rem;font-weight:600;">
                     <i [class]="chip.icon" aria-hidden="true"></i> {{ chip.label }}
                   </span>
                 }
               </div>
+            </div>
+            <div style="display:flex;gap:8px;align-items:center;">
+              <button
+                type="button"
+                id="mjc-collab-switch-space1-btn"
+                (click)="activeSpaceId = space1Id"
+                style="padding:6px 10px;border-radius:6px;border:1px solid var(--mj-border-default);background:var(--mj-bg-surface);color:var(--mj-text-primary);cursor:pointer;font-size:0.8rem;font-weight:600;"
+              >
+                Space 1
+              </button>
+              <button
+                type="button"
+                id="mjc-collab-switch-space2-btn"
+                (click)="activeSpaceId = space2Id"
+                style="padding:6px 10px;border-radius:6px;border:1px solid var(--mj-border-default);background:var(--mj-bg-surface);color:var(--mj-text-primary);cursor:pointer;font-size:0.8rem;font-weight:600;"
+              >
+                Space 2
+              </button>
             </div>
           </div>
           <nav role="tablist" aria-label="Collaboration Space Tabs" style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap;">
@@ -637,6 +730,8 @@ if (harnessMode === 'collaboration') {
     `,
   })
   class CollaborationEmbeddedHarnessComponent {
+    space1Id = SPACE_1;
+    space2Id = SPACE_2;
     activeSpaceId = SPACE_1;
     tabs = resolvedTabs.filter((t) => Boolean(t.component));
     cards = resolvedCards;

@@ -156,6 +156,18 @@
         [attr.inert]="hasActiveOverlay ? '' : null"
         [attr.aria-hidden]="hasActiveOverlay ? 'true' : null"
       >
+        @if (EmbeddedMode && !ShowTabBar && InitialTabKey && activeTabKey !== InitialTabKey) {
+          <div class="mjc-embedded-return-bar">
+            <button
+              type="button"
+              id="mjc-embedded-return-btn"
+              class="mjc-community-hub__btn"
+              (click)="SelectTab(InitialTabKey)"
+            >
+              ← Return to Space View
+            </button>
+          </div>
+        }
         @switch (activeTabKey) {
           @case ('knowledge-stream') {
             <section
@@ -380,6 +392,7 @@
                     type="button"
                     id="mjc-idea-toggle-composer-btn"
                     class="mjc-community-hub__btn mjc-community-hub__btn--primary"
+                    [disabled]="!hasActiveCampaign && !isOfflineDemoMode"
                     (click)="showIdeaComposer = !showIdeaComposer"
                   >
                     {{ showIdeaComposer ? 'Cancel Proposal' : 'Propose Idea' }}
@@ -408,7 +421,9 @@
                 <p class="mjc-community-hub__error" role="alert">{{ ideationErrorMessage }}</p>
               }
 
-              @if (visibleIdeationItems.length === 0) {
+              @if (!hasActiveCampaign && !isOfflineDemoMode) {
+                <p class="mjc-community-hub__hint">No ideation campaigns exist in this Community Space yet.</p>
+              } @else if (visibleIdeationItems.length === 0) {
                 <p class="mjc-community-hub__hint">No ideas proposed yet in {{ activeCampaign.name }}.</p>
               } @else {
                 <div class="mjc-ideation-workspace">

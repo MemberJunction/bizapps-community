@@ -92,8 +92,8 @@ export function BuildCommunityHubHarnessHtml() {
     --mj-status-warning: #8a5a00;
     --mj-status-danger: #a3221f;
     --mj-status-error-text: #a3221f;
-    --mj-badge-info-bg: #e8eefc;
-    --mj-badge-info-text: #163ba8;
+    --mj-status-info-bg: #e8eefc;
+    --mj-status-info-text: #163ba8;
   }
   html, body {
     margin: 0;

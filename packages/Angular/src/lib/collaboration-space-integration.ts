@@ -28,6 +28,7 @@ import {
   type mjBizAppsCommunityForumAnswerPostEntity,
 } from '@mj-biz-apps/community-entities';
 import { CommunityHubResource } from './community-hub-resource.component.ts';
+import { LoadAllPaginatedRows } from './community-hub-ideation.ts';
 import type { CommunityHubTabKey } from './community-hub-preferences.ts';
 
 @Directive()
@@ -232,8 +233,8 @@ export class CommunityPlaybooksSpaceTabComponent extends BaseCommunityHubSpaceTa
       .mjc-collab-overview-card__badge {
         padding: 2px 8px;
         border-radius: 999px;
-        background: var(--mj-badge-info-bg);
-        color: var(--mj-badge-info-text);
+        background: var(--mj-status-info-bg);
+        color: var(--mj-status-info-text);
         font-size: var(--mj-text-xs);
         font-weight: var(--mj-font-semibold);
       }
@@ -264,22 +265,26 @@ export class CommunityPlaybooksSpaceTabComponent extends BaseCommunityHubSpaceTa
 })
 export class CommunityOverviewHighlightsCardComponent extends BaseSpaceOverviewCard implements OnInit, OnChanges {
   private readonly cdr = inject(ChangeDetectorRef);
+  private isInitialized = false;
+  private metricsLoadVersion = 0;
 
   public forumCount = 0;
   public postCount = 0;
   public canonVerifiedCount = 0;
 
   public ngOnInit(): void {
+    this.isInitialized = true;
     void this.loadMetrics();
   }
 
   public ngOnChanges(changes: SimpleChanges): void {
-    if (changes['SpaceId']) {
+    if (this.isInitialized && changes['SpaceId']) {
       void this.loadMetrics();
     }
   }
 
   private async loadMetrics(): Promise<void> {
+    const loadVersion = ++this.metricsLoadVersion;
     const rawSpaceId = this.SpaceId?.trim();
     const provider = Metadata.Provider;
     const user: UserInfo | undefined = provider?.CurrentUser;
@@ -290,17 +295,17 @@ export class CommunityOverviewHighlightsCardComponent extends BaseSpaceOverviewC
     try {
       const safeSpaceId = AssertValidUUID(rawSpaceId, 'SpaceId');
       const rv = new RunView();
-      const forumsRes = await rv.RunView<{ ID: string }>(
-        {
-          EntityName: COMMUNITY_ENTITY_NAMES.Forums,
-          ExtraFilter: `SpaceID = '${safeSpaceId}'`,
-          Fields: ['ID'],
-          ResultType: 'simple',
-          MaxRows: 100,
-        },
+      const forumsRes = await LoadAllPaginatedRows<{ ID: string }>({
+        runView: rv,
+        entityName: COMMUNITY_ENTITY_NAMES.Forums,
+        extraFilter: `SpaceID = '${safeSpaceId}'`,
+        fields: ['ID'],
         user,
-      );
-      const forumRows = forumsRes?.Success ? forumsRes.Results ?? [] : [];
+      });
+      if (loadVersion !== this.metricsLoadVersion) {
+        return;
+      }
+      const forumRows = forumsRes.success ? forumsRes.rows : [];
       this.forumCount = forumRows.length;
 
       if (forumRows.length === 0) {
@@ -311,36 +316,36 @@ export class CommunityOverviewHighlightsCardComponent extends BaseSpaceOverviewC
       }
 
       const forumInList = forumRows.map((f) => `'${AssertValidUUID(f.ID, 'forumId')}'`).join(',');
-      const postsRes = await rv.RunView<{ ID: string }>(
-        {
-          EntityName: COMMUNITY_ENTITY_NAMES.ForumPosts,
-          ExtraFilter: `ForumID IN (${forumInList}) AND Status = 'Published'`,
-          Fields: ['ID'],
-          ResultType: 'simple',
-          MaxRows: 200,
-        },
+      const postsRes = await LoadAllPaginatedRows<{ ID: string }>({
+        runView: rv,
+        entityName: COMMUNITY_ENTITY_NAMES.ForumPosts,
+        extraFilter: `ForumID IN (${forumInList}) AND Status = 'Published'`,
+        fields: ['ID'],
         user,
-      );
-      const postRows = postsRes?.Success ? postsRes.Results ?? [] : [];
+      });
+      if (loadVersion !== this.metricsLoadVersion) {
+        return;
+      }
+      const postRows = postsRes.success ? postsRes.rows : [];
       this.postCount = postRows.length;
 
       if (postRows.length > 0) {
         const postInList = postRows.map((p) => `'${AssertValidUUID(p.ID, 'postId')}'`).join(',');
-        const answersRes = await rv.RunView<{
+        const answersRes = await LoadAllPaginatedRows<{
           ID: string;
           AIEpistemicStatus: mjBizAppsCommunityForumAnswerPostEntity['AIEpistemicStatus'];
           IsAcceptedByAuthor: boolean;
-        }>(
-          {
-            EntityName: COMMUNITY_ENTITY_NAMES.ForumAnswerPosts,
-            ExtraFilter: `ID IN (${postInList})`,
-            Fields: ['ID', 'AIEpistemicStatus', 'IsAcceptedByAuthor'],
-            ResultType: 'simple',
-            MaxRows: 200,
-          },
+        }>({
+          runView: rv,
+          entityName: COMMUNITY_ENTITY_NAMES.ForumAnswerPosts,
+          extraFilter: `ID IN (${postInList})`,
+          fields: ['ID', 'AIEpistemicStatus', 'IsAcceptedByAuthor'],
           user,
-        );
-        const answers = answersRes?.Success ? answersRes.Results ?? [] : [];
+        });
+        if (loadVersion !== this.metricsLoadVersion) {
+          return;
+        }
+        const answers = answersRes.success ? answersRes.rows : [];
         this.canonVerifiedCount = answers.filter(
           (a) => a.IsAcceptedByAuthor || a.AIEpistemicStatus === 'Canon Verified',
         ).length;
@@ -348,9 +353,11 @@ export class CommunityOverviewHighlightsCardComponent extends BaseSpaceOverviewC
         this.canonVerifiedCount = 0;
       }
     } catch {
-      // Leave zeros rather than breaking Collaboration Overview on telemetry failure.
+      // Leave prior values rather than breaking Collaboration Overview on telemetry failure.
     } finally {
-      this.cdr.markForCheck();
+      if (loadVersion === this.metricsLoadVersion) {
+        this.cdr.markForCheck();
+      }
     }
   }
 }
