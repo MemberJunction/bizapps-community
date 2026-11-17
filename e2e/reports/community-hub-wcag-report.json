@@ -1,7 +1,7 @@
 {
   "schemaVersion": "sf-e2e/v1",
-  "evaluatedAtIso": "2026-11-17T03:21:45.260Z",
-  "harnessUrl": "http://127.0.0.1:49387/",
+  "evaluatedAtIso": "2026-11-17T13:04:50.873Z",
+  "harnessUrl": "http://127.0.0.1:63895/",
   "runtimeClassFactoryRegistrationsVerified": 26,
   "tabsExercised": [
     "knowledge-stream",
