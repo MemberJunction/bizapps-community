@@ -20,8 +20,8 @@
     },
     "designTokens": {
       "passed": true,
-      "summary": "Zero raw color literals across 21 .ts/.html/.css file(s)",
-      "checkedCount": 21,
+      "summary": "Zero raw color literals across 28 .ts/.html/.css file(s)",
+      "checkedCount": 28,
       "violationCount": 0,
       "violations": []
     },
@@ -34,7 +34,7 @@
     },
     "browserSmoke": {
       "passed": true,
-      "summary": "Chromium smoke passed across all 4 required tab(s) (evaluated 2026-11-17T13:04:50.873Z) with 0 pageErrors, 0 consoleErrors, 0 WCAG violations",
+      "summary": "Chromium smoke passed across all 4 required tab(s) (evaluated 2026-11-17T13:42:23.367Z) with 0 pageErrors, 0 consoleErrors, 0 WCAG violations",
       "checkedCount": 4,
       "violationCount": 0,
       "violations": []
