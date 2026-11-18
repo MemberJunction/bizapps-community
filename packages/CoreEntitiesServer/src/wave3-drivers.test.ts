@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { beforeEach, describe, it } from 'node:test';
+import './server-entities.test.ts';
 import {
   AMAPostServerDriver,
   AnswerPostServerDriver,

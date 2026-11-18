@@ -15,7 +15,6 @@ import {
   assembleSpaceContributions,
 } from '@mj-biz-apps/collaboration-ng-widgets';
 import { COMMUNITY_ACTION_IDS } from '@mj-biz-apps/community-core';
-import { COMMUNITY_ENTITY_NAMES } from '@mj-biz-apps/community-entities';
 import {
   CommunityHubResource,
   CommunityCollaborationSpaceUIDriver,
@@ -111,367 +110,47 @@ const HARNESS_USER = new UserInfo(undefined, {
   UserRoles: [],
 });
 
-const FORUM_1 = '22222222-2222-4222-8222-000000000001';
-const FORUM_2 = '22222222-2222-4222-8222-000000000002';
-const FORUM_GENERAL = '22222222-2222-4222-8222-000000000003';
-const FORUM_OTHER_SPACE = '22222222-2222-4222-8222-000000000099';
 const SPACE_1 = '33333333-3333-4333-8333-000000000001';
 const SPACE_2 = '33333333-3333-4333-8333-000000000002';
 
-const POST_FEED_1 = '44444444-4444-4444-8444-000000000001';
-const POST_FEED_2 = '44444444-4444-4444-8444-000000000002';
-const POST_FEED_OTHER_SPACE = '44444444-4444-4444-8444-000000000099';
-const Q_1 = '55555555-5555-4555-8555-000000000001';
-const Q_2 = '55555555-5555-4555-8555-000000000002';
-const Q_OTHER_SPACE = '55555555-5555-4555-8555-000000000099';
-const ANS_1 = '66666666-6666-4666-8666-000000000001';
-const ANS_2 = '66666666-6666-4666-8666-000000000002';
-const ANS_OTHER_SPACE = '66666666-6666-4666-8666-000000000099';
-const IDEA_1 = '77777777-7777-4777-8777-000000000001';
-const IDEA_2 = '77777777-7777-4777-8777-000000000002';
-const IDEA_3 = '77777777-7777-4777-8777-000000000003';
-const IDEA_OTHER_SPACE = '77777777-7777-4777-8777-000000000099';
-const DOC_1 = '88888888-8888-4888-8888-000000000001';
-const FORM_1 = '88888888-8888-4888-8888-000000000002';
-const INTERACTIVE_1 = '88888888-8888-4888-8888-000000000003';
-const DOC_OTHER_SPACE = '88888888-8888-4888-8888-000000000099';
+window.__harnessPendingOps = 0;
 
-const state = {
-  spaces: [
-    { ID: SPACE_1, Name: 'Customer Success Community' },
-    { ID: SPACE_2, Name: 'Internal Security Guild' },
-  ],
-  forums: [
-    { ID: FORUM_1, SpaceID: SPACE_1, Name: 'Product Roadmap Q1' },
-    { ID: FORUM_2, SpaceID: SPACE_1, Name: 'Enterprise Scale Q2' },
-    { ID: FORUM_GENERAL, SpaceID: SPACE_1, Name: 'Knowledge & Q&A' },
-    { ID: FORUM_OTHER_SPACE, SpaceID: SPACE_2, Name: 'Isolated Security Forum' },
-  ],
-  postTypes: [
-    { ID: '99999999-9999-4999-8999-000000000001', Code: 'question', Name: 'Question' },
-    { ID: '99999999-9999-4999-8999-000000000002', Code: 'answer', Name: 'Answer' },
-    { ID: '99999999-9999-4999-8999-000000000003', Code: 'idea', Name: 'Idea' },
-    { ID: '99999999-9999-4999-8999-000000000004', Code: 'discussion', Name: 'Discussion' },
-    { ID: '99999999-9999-4999-8999-000000000005', Code: 'collaborative-doc', Name: 'Collaborative Doc' },
-  ],
-  campaigns: [
-    { ID: FORUM_1, AllocationMode: 'Quadratic', DefaultBudgetPoints: 100, MaxPointsPerIdea: null },
-    { ID: FORUM_2, AllocationMode: 'Quadratic', DefaultBudgetPoints: 100, MaxPointsPerIdea: 40 },
-    { ID: FORUM_OTHER_SPACE, AllocationMode: 'Point Allocation', DefaultBudgetPoints: 50, MaxPointsPerIdea: 25 },
-  ],
-  posts: [
-    {
-      ID: POST_FEED_1,
-      ForumID: FORUM_GENERAL,
-      Title: 'Zero-Downtime API Key Rotation Playbook',
-      BodyMarkdown: 'Provision a secondary key, roll worker secrets across regions, then revoke legacy keys cleanly.',
-      Status: 'Published',
-    },
-    {
-      ID: POST_FEED_2,
-      ForumID: FORUM_GENERAL,
-      Title: 'Multi-Region GraphQL Read Replica Architecture',
-      BodyMarkdown: 'Summary of latency benchmarks and failover SLAs from our Q4 architecture review.',
-      Status: 'Published',
-    },
-    {
-      ID: POST_FEED_OTHER_SPACE,
-      ForumID: FORUM_OTHER_SPACE,
-      Title: 'Space 2 Isolated Internal Thread',
-      BodyMarkdown: 'Must only appear inside Space 2, never when embedded inside Space 1.',
-      Status: 'Published',
-    },
-    {
-      ID: Q_1,
-      ForumID: FORUM_GENERAL,
-      Title: 'How do I rotate my API key without downtime?',
-      BodyMarkdown: 'Looking for the recommended dual-key rollover procedure in production tenants.',
-      Status: 'Published',
-    },
-    {
-      ID: Q_2,
-      ForumID: FORUM_GENERAL,
-      Title: 'How do webhook delivery retries handle 429 rate limits?',
-      BodyMarkdown: 'Does the outbound webhook dispatcher honor Retry-After headers?',
-      Status: 'Published',
-    },
-    {
-      ID: ANS_1,
-      ForumID: FORUM_GENERAL,
-      Title: 'How do I rotate my API key without downtime?',
-      BodyMarkdown: 'Create a second active key in Admin -> Credentials, deploy it, wait one lease window, then revoke the old key.',
-      Status: 'Published',
-    },
-    {
-      ID: ANS_2,
-      ForumID: FORUM_GENERAL,
-      Title: 'How do webhook delivery retries handle 429 rate limits?',
-      BodyMarkdown: 'Yes — exponential jitter backoff respects Retry-After up to 15 minutes before dead-letter queueing.',
-      Status: 'Published',
-    },
-    {
-      ID: IDEA_1,
-      ForumID: FORUM_1,
-      Title: 'Add webhook signing secrets rotation API',
-      BodyMarkdown: 'Support dual-active HMAC signing secrets via REST, GraphQL, and CLI.',
-      Status: 'Published',
-    },
-    {
-      ID: IDEA_2,
-      ForumID: FORUM_1,
-      Title: 'Automated tenant schema parity checker CLI',
-      BodyMarkdown: 'First-class CLI check comparing SQL Server and PostgreSQL OpenApp migrations.',
-      Status: 'Published',
-    },
-    {
-      ID: IDEA_3,
-      ForumID: FORUM_2,
-      Title: 'Cross-region read-replica routing policies',
-      BodyMarkdown: 'Allow pinning analytics workloads to read-only replicas with bounded staleness.',
-      Status: 'Published',
-    },
-    {
-      ID: DOC_1,
-      ForumID: FORUM_GENERAL,
-      Title: 'OAuth2 Partner Onboarding Playbook',
-      BodyMarkdown: '## OAuth2 Partner Playbook\n- Configure PKCE callback URLs\n- Enable token rotation alerts',
-      Status: 'Published',
-    },
-    {
-      ID: DOC_OTHER_SPACE,
-      ForumID: FORUM_OTHER_SPACE,
-      Title: 'Space 2 Secret Playbook',
-      BodyMarkdown: '## Space 2 Secret Playbook\n- Security enclave rotation steps',
-      Status: 'Published',
-    },
-    {
-      ID: Q_OTHER_SPACE,
-      ForumID: FORUM_OTHER_SPACE,
-      Title: 'Space 2 Secret Q&A Entry',
-      BodyMarkdown: 'How does Space 2 isolate hardware security module keys?',
-      Status: 'Published',
-    },
-    {
-      ID: ANS_OTHER_SPACE,
-      ForumID: FORUM_OTHER_SPACE,
-      Title: 'Space 2 Secret Q&A Entry',
-      BodyMarkdown: 'Hardware keys stay pinned per Space enclave partition.',
-      Status: 'Published',
-    },
-    {
-      ID: IDEA_OTHER_SPACE,
-      ForumID: FORUM_OTHER_SPACE,
-      Title: 'Space 2 Secret Roadmap Idea',
-      BodyMarkdown: 'Federated attestation across isolated security guilds.',
-      Status: 'Published',
-    },
-    {
-      ID: FORM_1,
-      ForumID: FORUM_GENERAL,
-      Title: 'Partner Readiness Check-In Form',
-      BodyMarkdown: 'Inline member readiness check-in form.',
-      Status: 'Published',
-    },
-    {
-      ID: INTERACTIVE_1,
-      ForumID: FORUM_GENERAL,
-      Title: 'Platform Trivia: Test Your Onboarding Knowledge',
-      BodyMarkdown: 'Interactive knowledge check running inside an isolated sandbox.',
-      Status: 'Published',
-    },
-  ],
-  answers: [
-    {
-      ID: ANS_1,
-      QuestionPostID: Q_1,
-      Title: 'How do I rotate my API key without downtime?',
-      AIEpistemicStatus: 'Canon Verified',
-      AIConfidenceScore: 0.94,
-      IsAcceptedByAuthor: true,
-    },
-    {
-      ID: ANS_2,
-      QuestionPostID: Q_2,
-      Title: 'How do webhook delivery retries handle 429 rate limits?',
-      AIEpistemicStatus: 'Partially Outdated',
-      AIConfidenceScore: 0.78,
-      IsAcceptedByAuthor: false,
-    },
-    {
-      ID: ANS_OTHER_SPACE,
-      QuestionPostID: Q_OTHER_SPACE,
-      Title: 'Space 2 Secret Q&A Entry',
-      AIEpistemicStatus: 'Canon Verified',
-      AIConfidenceScore: 0.99,
-      IsAcceptedByAuthor: true,
-    },
-  ],
-  ideas: [
-    { ID: IDEA_1, TotalPointsAllocated: 0, EffectiveQuadraticVotes: 0 },
-    { ID: IDEA_2, TotalPointsAllocated: 0, EffectiveQuadraticVotes: 0 },
-    { ID: IDEA_3, TotalPointsAllocated: 0, EffectiveQuadraticVotes: 0 },
-    { ID: IDEA_OTHER_SPACE, TotalPointsAllocated: 0, EffectiveQuadraticVotes: 0 },
-  ],
-  allocations: [],
-  artifacts: [{ ID: DOC_1 }, { ID: DOC_OTHER_SPACE }],
-  forms: [{ ID: FORM_1 }],
-  interactivePosts: [{ ID: INTERACTIVE_1, ExperienceKind: 'Trivia' }],
-  questions: [
-    { ID: Q_1, AcceptedAnswerPostID: ANS_1, AICanonAnswerPostID: ANS_1 },
-    { ID: Q_2, AcceptedAnswerPostID: null, AICanonAnswerPostID: null },
-    { ID: Q_OTHER_SPACE, AcceptedAnswerPostID: ANS_OTHER_SPACE, AICanonAnswerPostID: ANS_OTHER_SPACE },
-  ],
-};
-
-const OTHER_SPACE_POST_ID_SET = new Set(
-  [POST_FEED_OTHER_SPACE, Q_OTHER_SPACE, ANS_OTHER_SPACE, IDEA_OTHER_SPACE, DOC_OTHER_SPACE].map((id) => id.toLowerCase()),
-);
-
-function parseInIds(extraFilter, columnName = 'ID') {
-  const escaped = columnName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  const pattern = new RegExp(`(?:^|[^A-Za-z_])${escaped}\\s+IN\\s*\\(([^)]+)\\)`, 'i');
-  const match = typeof extraFilter === 'string' ? extraFilter.match(pattern) : null;
-  if (!match) return null;
-  return new Set(
-    match[1]
-      .split(',')
-      .map((s) => s.trim().replace(/^'+|'+$/g, '').toLowerCase())
-      .filter(Boolean),
-  );
-}
-
-function queryRowsForView(params) {
-  const entityName = params?.EntityName ?? '';
-  const extraFilter = params?.ExtraFilter ?? '';
-
-  switch (entityName) {
-    case 'MJ_BizApps_Community: Forums': {
-      const spaceMatch = typeof extraFilter === 'string' ? extraFilter.match(/SpaceID\s*=\s*'([^']+)'/i) : null;
-      if (spaceMatch) {
-        return state.forums.filter((f) => f.SpaceID.toLowerCase() === spaceMatch[1].toLowerCase());
-      }
-      return state.forums.filter((f) => f.SpaceID === SPACE_1);
+async function postHarnessJson(endpoint, body) {
+  window.__harnessPendingOps += 1;
+  try {
+    const response = await fetch(endpoint, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    const parsed = await response.json();
+    if (!response.ok) {
+      throw new Error(parsed?.ErrorMessage || `Harness request ${endpoint} failed with ${response.status}`);
     }
-    case 'MJ_BizApps_Collaboration: Spaces': {
-      const idMatch = typeof extraFilter === 'string' ? extraFilter.match(/(?:^|[^A-Za-z_])ID\s*=\s*'([^']+)'/i) : null;
-      if (idMatch) {
-        return state.spaces.filter((s) => s.ID.toLowerCase() === idMatch[1].toLowerCase());
-      }
-      return [state.spaces[0]];
-    }
-    case COMMUNITY_ENTITY_NAMES.PostTypes:
-      return state.postTypes;
-    case COMMUNITY_ENTITY_NAMES.ForumAnswerPosts: {
-      const ids = parseInIds(extraFilter, 'ID');
-      return ids
-        ? state.answers.filter((a) => ids.has(a.ID.toLowerCase()))
-        : state.answers.filter((a) => !OTHER_SPACE_POST_ID_SET.has(a.ID.toLowerCase()));
-    }
-    case COMMUNITY_ENTITY_NAMES.ForumIdeaCampaigns: {
-      const campaignIds = parseInIds(extraFilter, 'ID');
-      return campaignIds
-        ? state.campaigns.filter((c) => campaignIds.has(c.ID.toLowerCase()))
-        : state.campaigns.filter((c) => c.ID !== FORUM_OTHER_SPACE);
-    }
-    case COMMUNITY_ENTITY_NAMES.ForumIdeaPosts: {
-      const ids = parseInIds(extraFilter, 'ID');
-      return ids
-        ? state.ideas.filter((i) => ids.has(i.ID.toLowerCase()))
-        : state.ideas.filter((i) => !OTHER_SPACE_POST_ID_SET.has(i.ID.toLowerCase()));
-    }
-    case COMMUNITY_ENTITY_NAMES.ForumArtifactPosts: {
-      const ids = parseInIds(extraFilter, 'ID');
-      return ids
-        ? state.artifacts.filter((a) => ids.has(a.ID.toLowerCase()))
-        : state.artifacts.filter((a) => !OTHER_SPACE_POST_ID_SET.has(a.ID.toLowerCase()));
-    }
-    case COMMUNITY_ENTITY_NAMES.ForumFormPosts: {
-      const ids = parseInIds(extraFilter, 'ID');
-      return ids
-        ? state.forms.filter((f) => ids.has(f.ID.toLowerCase()))
-        : state.forms.filter((f) => !OTHER_SPACE_POST_ID_SET.has(f.ID.toLowerCase()));
-    }
-    case COMMUNITY_ENTITY_NAMES.ForumInteractivePosts: {
-      const ids = parseInIds(extraFilter, 'ID');
-      return ids
-        ? state.interactivePosts.filter((p) => ids.has(p.ID.toLowerCase()))
-        : state.interactivePosts.filter((p) => !OTHER_SPACE_POST_ID_SET.has(p.ID.toLowerCase()));
-    }
-    case COMMUNITY_ENTITY_NAMES.ForumQuestionPosts: {
-      const ids = parseInIds(extraFilter, 'ID');
-      return ids
-        ? state.questions.filter((q) => ids.has(q.ID.toLowerCase()))
-        : state.questions.filter((q) => !OTHER_SPACE_POST_ID_SET.has(q.ID.toLowerCase()));
-    }
-    case COMMUNITY_ENTITY_NAMES.ForumIdeaAllocations: {
-      const ideaMatch = typeof extraFilter === 'string' ? extraFilter.match(/IdeaPostID\s*=\s*'([^']+)'/i) : null;
-      if (ideaMatch) {
-        return state.allocations.filter((a) => a.IdeaPostID.toLowerCase() === ideaMatch[1].toLowerCase());
-      }
-      return state.allocations;
-    }
-    case COMMUNITY_ENTITY_NAMES.ForumPosts: {
-      let rows = state.posts;
-      const forumIds = parseInIds(extraFilter, 'ForumID');
-      const ids = parseInIds(extraFilter, 'ID');
-      if (forumIds) {
-        rows = rows.filter((p) => forumIds.has(String(p.ForumID).toLowerCase()));
-      } else if (!ids) {
-        rows = rows.filter((p) => !OTHER_SPACE_POST_ID_SET.has(p.ID.toLowerCase()));
-      }
-      if (ids) {
-        return rows.filter((p) => ids.has(p.ID.toLowerCase()));
-      }
-      if (extraFilter.includes('RootPostID IS NULL')) {
-        return rows.filter((p) => p.ID === POST_FEED_1 || p.ID === POST_FEED_2 || p.ID === POST_FEED_OTHER_SPACE);
-      }
-      return rows;
-    }
-    default:
-      return [];
+    return parsed;
+  } finally {
+    window.__harnessPendingOps = Math.max(0, window.__harnessPendingOps - 1);
   }
 }
 
 function createEntityWrapper(entityName, existingRow) {
   const record = existingRow ? { ...existingRow } : { ID: crypto.randomUUID() };
   let activeTxGroup = null;
-  let pendingDelete = false;
 
-  const commitWrite = () => {
-    if (pendingDelete) {
-      if (entityName === COMMUNITY_ENTITY_NAMES.ForumIdeaAllocations) {
-        state.allocations = state.allocations.filter((a) => a.ID !== record.ID);
-      }
-      return true;
+  const commitOrThrow = async (op) => {
+    try {
+      const res = await postHarnessJson('/api/harness/tx-submit', {
+        ops: [{ op, entityName, record: { ...record } }],
+      });
+      return Boolean(res?.Success);
+    } catch (err) {
+      entityObj.LatestResult = { CompleteMessage: err instanceof Error ? err.message : String(err) };
+      throw err;
     }
-    if (entityName === COMMUNITY_ENTITY_NAMES.ForumIdeaAllocations) {
-      if (record.PointsAllocated <= 0) {
-        throw new Error('DB CHECK violation: PointsAllocated must be > 0');
-      }
-      const idx = state.allocations.findIndex((a) => a.ID === record.ID || (a.IdeaPostID === record.IdeaPostID && a.UserID === record.UserID));
-      if (idx >= 0) state.allocations[idx] = { ...record };
-      else state.allocations.push({ ...record });
-    } else if (entityName === COMMUNITY_ENTITY_NAMES.ForumIdeaPosts) {
-      const idx = state.ideas.findIndex((i) => i.ID === record.ID);
-      if (idx >= 0) state.ideas[idx] = { ...record };
-      else state.ideas.push({ ...record });
-    } else if (entityName === COMMUNITY_ENTITY_NAMES.ForumPosts) {
-      const idx = state.posts.findIndex((p) => p.ID === record.ID);
-      if (idx >= 0) state.posts[idx] = { ...record };
-      else state.posts.push({ ...record });
-    } else if (entityName === COMMUNITY_ENTITY_NAMES.ForumAnswerPosts) {
-      const idx = state.answers.findIndex((a) => a.ID === record.ID);
-      if (idx >= 0) state.answers[idx] = { ...record };
-      else state.answers.push({ ...record });
-    } else if (entityName === COMMUNITY_ENTITY_NAMES.ForumQuestionPosts) {
-      const idx = state.questions.findIndex((q) => q.ID === record.ID);
-      if (idx >= 0) state.questions[idx] = { ...record };
-      else state.questions.push({ ...record });
-    }
-    return true;
   };
 
   const entityObj = {
+    LatestResult: null,
     NewRecord() {
       record.ID = crypto.randomUUID();
     },
@@ -482,20 +161,18 @@ function createEntityWrapper(entityName, existingRow) {
       activeTxGroup = tg;
     },
     async Save() {
-      pendingDelete = false;
       if (activeTxGroup) {
-        activeTxGroup.AddTransaction(commitWrite);
+        activeTxGroup.AddTransaction({ op: 'save', entityName, record: { ...record } });
         return true;
       }
-      return commitWrite();
+      return commitOrThrow('save');
     },
     async Delete() {
-      pendingDelete = true;
       if (activeTxGroup) {
-        activeTxGroup.AddTransaction(commitWrite);
+        activeTxGroup.AddTransaction({ op: 'delete', entityName, record: { ...record } });
         return true;
       }
-      return commitWrite();
+      return commitOrThrow('delete');
     },
   };
 
@@ -515,8 +192,7 @@ function createEntityWrapper(entityName, existingRow) {
 const mockProvider = {
   CurrentUser: HARNESS_USER,
   async RunView(params) {
-    const results = queryRowsForView(params);
-    return { Success: true, Results: results, TotalRowCount: results.length };
+    return postHarnessJson('/api/harness/run-view', { params });
   },
   async RunViews(paramsArray) {
     return Promise.all(paramsArray.map((p) => this.RunView(p)));
@@ -525,23 +201,24 @@ const mockProvider = {
     let existing = null;
     const keyId = compositeKeyOrUser?.KeyValuePairs?.[0]?.Value ?? compositeKeyOrUser?.ID;
     if (keyId) {
-      const all = queryRowsForView({ EntityName: entityName });
-      existing = all.find((r) => String(r.ID).toLowerCase() === String(keyId).toLowerCase()) ?? null;
+      const res = await postHarnessJson('/api/harness/entity-by-id', { entityName, id: keyId });
+      existing = res?.record ?? null;
       if (!existing) return null;
     }
     return createEntityWrapper(entityName, existing);
   },
+  async ExecuteGQL(query, variables) {
+    return postHarnessJson('/api/harness/graphql', { query, variables });
+  },
   async CreateTransactionGroup() {
     const ops = [];
     return {
-      AddTransaction(fn) {
-        ops.push(fn);
+      AddTransaction(opEntry) {
+        ops.push(opEntry);
       },
       async Submit() {
-        for (const op of ops) {
-          op();
-        }
-        return true;
+        const res = await postHarnessJson('/api/harness/tx-submit', { ops });
+        return Boolean(res?.Success);
       },
     };
   },
@@ -758,5 +435,10 @@ if (harnessMode === 'collaboration') {
   });
 }
 
-await new Promise((resolve) => setTimeout(resolve, 60));
+for (let attempt = 0; attempt < 50; attempt += 1) {
+  await new Promise((resolve) => setTimeout(resolve, 25));
+  if (window.__harnessPendingOps === 0 && attempt >= 3) {
+    break;
+  }
+}
 window.__harnessReady = true;

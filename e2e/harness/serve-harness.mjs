@@ -4,6 +4,7 @@ import { dirname, extname, join, normalize } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import * as esbuild from 'esbuild';
 import { BuildCommunityHubHarnessHtml, ResolveFontAwesomeRoot } from './build-harness.mjs';
+import { createHarnessStore } from './harness-store.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = join(HERE, '..', '..');
@@ -98,6 +99,20 @@ async function buildAngularBrowserBundle() {
   return jsFile.contents;
 }
 
+async function readJsonBody(req) {
+  const chunks = [];
+  for await (const chunk of req) {
+    chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+  }
+  const raw = Buffer.concat(chunks).toString('utf8').trim();
+  return raw ? JSON.parse(raw) : {};
+}
+
+function sendJson(res, statusCode, payload) {
+  res.writeHead(statusCode, { 'Content-Type': 'application/json; charset=utf-8' });
+  res.end(JSON.stringify(payload));
+}
+
 /** Starts the real Angular 21 harness HTTP server and returns `{ url, close, fontAwesomeMode }`. */
 export async function StartHarnessServer() {
   const html = BuildCommunityHubHarnessHtml();
@@ -106,10 +121,44 @@ export async function StartHarnessServer() {
   const fontAwesomeCssBytes = fontAwesomeRoot
     ? readFileSync(join(fontAwesomeRoot, 'css', 'all.min.css'))
     : readFileSync(FONTAWESOME_FALLBACK_CSS);
+  const store = createHarnessStore();
 
-  const server = createServer((req, res) => {
+  const server = createServer(async (req, res) => {
     try {
       const urlPath = (req.url ?? '/').split('?')[0];
+      if (urlPath === '/api/harness/reset' && req.method === 'POST') {
+        store.reset();
+        sendJson(res, 200, { Success: true });
+        return;
+      }
+      if (urlPath === '/api/harness/state' && req.method === 'GET') {
+        sendJson(res, 200, store.getDebugSnapshot());
+        return;
+      }
+      if (urlPath === '/api/harness/run-view' && req.method === 'POST') {
+        const body = await readJsonBody(req);
+        const results = store.runView(body?.params ?? {});
+        sendJson(res, 200, { Success: true, Results: results, TotalRowCount: results.length });
+        return;
+      }
+      if (urlPath === '/api/harness/entity-by-id' && req.method === 'POST') {
+        const body = await readJsonBody(req);
+        const record = store.getEntityById(body?.entityName ?? '', body?.id ?? '');
+        sendJson(res, 200, { record });
+        return;
+      }
+      if (urlPath === '/api/harness/tx-submit' && req.method === 'POST') {
+        const body = await readJsonBody(req);
+        const result = store.commitOperations(Array.isArray(body?.ops) ? body.ops : []);
+        sendJson(res, result.Success ? 200 : 400, result);
+        return;
+      }
+      if (urlPath === '/api/harness/graphql' && req.method === 'POST') {
+        const body = await readJsonBody(req);
+        const data = store.executeGraphQL(body?.query ?? '', body?.variables ?? {});
+        sendJson(res, 200, data);
+        return;
+      }
       if (urlPath === '/' || urlPath === '/index.html') {
         res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
         res.end(html);
