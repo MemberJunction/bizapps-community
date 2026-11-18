@@ -1,5 +1,6 @@
 import { UUIDsEqual } from '@memberjunction/global';
 import { AssertValidUUID } from '@mj-biz-apps/community-core';
+import { CommunityGraphQLExecutor, InvokeToggleCommunityPostReactionMutation } from './community-hub-mutations';
 import type {
   mjBizAppsCommunityForumAnswerPostEntity,
   mjBizAppsCommunityForumInteractivePostEntity,
@@ -1732,11 +1733,14 @@ export interface ForumPostReactionEntityLike {
   LatestResult?: { CompleteMessage?: string | null } | null;
 }
 
+import { CommunityGraphQLExecutor } from './community-hub-mutations';
+
 export interface ToggleReactionParams {
   item: CommunityCommonsItem;
   isOfflineDemoMode: boolean;
   currentUserId: string | null | undefined;
   reactionKind?: mjBizAppsCommunityForumPostReactionEntity['ReactionKind'];
+  executor?: CommunityGraphQLExecutor | null; // Add this
   findExistingReactionId:
     | ((
         postId: string,
@@ -1773,6 +1777,39 @@ export async function ToggleReactionViaProvider(params: ToggleReactionParams): P
       upvoteCount: nextCount,
       errorMessage: null,
     };
+  }
+
+  if (params.executor) {
+    try {
+      const payload = await InvokeToggleCommunityPostReactionMutation(params.executor, {
+        PostID: params.item.sourcePostId,
+        ReactionType: params.reactionKind ?? 'Upvote',
+      });
+      if (payload.Success) {
+        return {
+          success: true,
+          offlineFallback: false,
+          upvotedByMe: !!payload.Reacted,
+          upvoteCount: payload.ReactionScore ?? 0,
+          errorMessage: null,
+        };
+      }
+      return {
+        success: false,
+        offlineFallback: false,
+        upvotedByMe: params.item.upvotedByMe,
+        upvoteCount: params.item.upvoteCount,
+        errorMessage: payload.ErrorMessage ?? 'Failed to toggle reaction.',
+      };
+    } catch (err) {
+      return {
+        success: false,
+        offlineFallback: false,
+        upvotedByMe: params.item.upvotedByMe,
+        upvoteCount: params.item.upvoteCount,
+        errorMessage: err instanceof Error ? err.message : 'Server error while toggling reaction.',
+      };
+    }
   }
 
   const reactionKind: mjBizAppsCommunityForumPostReactionEntity['ReactionKind'] = params.reactionKind ?? 'Upvote';

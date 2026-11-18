@@ -2502,9 +2502,9 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
     void this.OnVoteAllocationChanged(this.selectedIdeaId, points, effectiveVotes);
   }
 
-  public async ProposeIdea(): Promise<void> {
+  public async ProposeIdea(): Promise<boolean> {
     const title = this.newIdeaTitle.trim();
-    if (!title) return;
+    if (!title) return false;
     const summary = this.newIdeaSummary.trim() || 'Community member proposal.';
     const generatedId = crypto.randomUUID();
     const created: CommunityHubIdeaItem = {
@@ -2520,11 +2520,18 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
 
     const provider = Metadata.Provider;
     const user: UserInfo | undefined = provider?.CurrentUser;
+
+    if (provider && !user?.ID) {
+      this.ideationErrorMessage = 'Unable to propose idea: no authenticated user in active session.';
+      this.cdr.markForCheck();
+      return false;
+    }
+
     if (provider && user) {
       if (!this.hasActiveCampaign) {
         this.ideationErrorMessage = 'No ideation campaign is configured for this community space — cannot propose idea.';
         this.cdr.markForCheck();
-        return;
+        return false;
       }
       try {
         await this.ensurePostTypesLoaded(user);
@@ -2539,13 +2546,13 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
         if (!persisted.success || !persisted.postId) {
           this.ideationErrorMessage = persisted.errorMessage ?? 'Failed to save proposed idea.';
           this.cdr.markForCheck();
-          return;
+          return false;
         }
         created.id = persisted.postId;
       } catch (err) {
         this.ideationErrorMessage = err instanceof Error ? err.message : 'Failed to save proposed idea.';
         this.cdr.markForCheck();
-        return;
+        return false;
       }
     }
 
@@ -2558,6 +2565,7 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
     this.showIdeaComposer = false;
     this.ideationErrorMessage = null;
     this.cdr.markForCheck();
+    return true;
   }
 
   public OnIdeaKeydown(event: KeyboardEvent, currentIdeaId: string): void {
