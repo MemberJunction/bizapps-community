@@ -3,6 +3,15 @@ import { describe, it } from 'node:test';
 import { readFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { UserInfo } from '@memberjunction/core';
+import {
+  GRADUATE_COMMUNITY_THREAD_MUTATION,
+  InvokeGraduateCommunityThreadMutation,
+  InvokePromoteCommunityAnswerToCanonMutation,
+  PROMOTE_COMMUNITY_ANSWER_TO_CANON_MUTATION,
+  PromoteAnswerToCanonViaProvider,
+  type CommunityGraphQLExecutor,
+} from './lib/community-hub-mutations.ts';
 import {
   CalculateSlaCapacitySpec,
   ComputeIdeationWalletSummary,
@@ -290,5 +299,149 @@ describe('Slice 2 UX Alignment — Living Co-Authoring & Interactive Mini-Apps W
       assert.ok(livingHtml.includes(selectorId), `Missing Living Co-Authoring selector ${selectorId}`);
     }
     assert.match(livingHtml, /sandbox="allow-scripts"/);
+  });
+});
+
+describe('Slice 2 — Graduation/Canon GraphQL Bridge & Idea PostType Fix', () => {
+  const hubTs = readFileSync(join(LIB_DIR, 'community-hub-resource.component.ts'), 'utf8');
+  const rootPostId = '11111111-1111-4111-8111-111111111111';
+  const questionId = '22222222-2222-4222-8222-222222222222';
+  const answerId = '33333333-3333-4333-8333-333333333333';
+  const spaceId = '44444444-4444-4444-8444-444444444444';
+
+  it('InvokeGraduateCommunityThreadMutation sends typed ExecuteGQL payload and returns promoted Space details', async () => {
+    let capturedQuery = '';
+    let capturedInput: object | null = null;
+    const executor: CommunityGraphQLExecutor = {
+      ExecuteGQL: async (query, variables) => {
+        capturedQuery = query;
+        capturedInput = variables.input;
+        return {
+          GraduateCommunityThread: {
+            Success: true,
+            PromotedToSpaceID: spaceId,
+            TargetSpaceTypeCode: 'working-group',
+            SeededTaskID: null,
+            InvitedParticipantCount: 3,
+          },
+        };
+      },
+    };
+
+    const res = await InvokeGraduateCommunityThreadMutation(executor, {
+      RootPostID: rootPostId,
+      TargetSpaceTypeCode: 'working-group',
+      TargetSpaceName: 'Tax Policy Group',
+      IncludeParticipantUserIDs: ['55555555-5555-4555-8555-555555555555'],
+    });
+
+    assert.equal(capturedQuery, GRADUATE_COMMUNITY_THREAD_MUTATION);
+    assert.deepEqual(capturedInput, {
+      RootPostID: rootPostId,
+      TargetSpaceTypeCode: 'working-group',
+      TargetSpaceName: 'Tax Policy Group',
+      IncludeParticipantUserIDs: ['55555555-5555-4555-8555-555555555555'],
+    });
+    assert.equal(res.Success, true);
+    assert.equal(res.PromotedToSpaceID, spaceId);
+    assert.equal(res.InvitedParticipantCount, 3);
+  });
+
+  it('PromoteAnswerToCanonViaProvider calls server GraphQL mutation atomically when provider exists', async () => {
+    const user = new UserInfo(undefined, { ID: '66666666-6666-4666-8666-666666666666' });
+    let executedQuery = '';
+    const res = await PromoteAnswerToCanonViaProvider({
+      questionPostId: questionId,
+      canonAnswerPostId: answerId,
+      provider: {
+        CurrentUser: user,
+        ExecuteGQL: async (query) => {
+          executedQuery = query;
+          return {
+            PromoteCommunityAnswerToCanon: {
+              Success: true,
+              QuestionPostID: questionId,
+              CanonAnswerPostID: answerId,
+              AlreadyPromoted: false,
+            },
+          };
+        },
+      },
+    });
+
+    assert.equal(executedQuery, PROMOTE_COMMUNITY_ANSWER_TO_CANON_MUTATION);
+    assert.equal(res.success, true);
+    assert.equal(res.offlineFallback, false);
+    assert.equal(res.alreadyPromoted, false);
+  });
+
+  it('PromoteAnswerToCanonViaProvider fails closed when Metadata.Provider exists and GraphQL/auth/mutation fails, and falls back only when !provider', async () => {
+    const user = new UserInfo(undefined, { ID: '66666666-6666-4666-8666-666666666666' });
+
+    // Missing CurrentUser when provider exists -> fail closed
+    const noUserRes = await PromoteAnswerToCanonViaProvider({
+      questionPostId: questionId,
+      canonAnswerPostId: answerId,
+      provider: {
+        CurrentUser: undefined,
+        ExecuteGQL: async () => ({ PromoteCommunityAnswerToCanon: { Success: true } }),
+      },
+    });
+    assert.equal(noUserRes.success, false);
+    assert.equal(noUserRes.offlineFallback, false);
+
+    // Missing ExecuteGQL when provider exists -> fail closed
+    const noGqlRes = await PromoteAnswerToCanonViaProvider({
+      questionPostId: questionId,
+      canonAnswerPostId: answerId,
+      provider: { CurrentUser: user },
+    });
+    assert.equal(noGqlRes.success, false);
+    assert.equal(noGqlRes.offlineFallback, false);
+
+    // Server denies permission -> fail closed
+    const deniedRes = await PromoteAnswerToCanonViaProvider({
+      questionPostId: questionId,
+      canonAnswerPostId: answerId,
+      provider: {
+        CurrentUser: user,
+        ExecuteGQL: async () => ({
+          PromoteCommunityAnswerToCanon: {
+            Success: false,
+            ErrorMessage: 'Only the question author or a forum moderator may promote an answer to Knowledge Canon.',
+          },
+        }),
+      },
+    });
+    assert.equal(deniedRes.success, false);
+    assert.match(deniedRes.errorMessage ?? '', /question author or a forum moderator/i);
+
+    // Standalone offline harness (!Metadata.Provider) -> offline fallback preserved
+    const offlineRes = await PromoteAnswerToCanonViaProvider({
+      questionPostId: questionId,
+      canonAnswerPostId: answerId,
+      provider: null,
+    });
+    assert.equal(offlineRes.success, true);
+    assert.equal(offlineRes.offlineFallback, true);
+  });
+
+  it('InvokePromoteCommunityAnswerToCanonMutation handles empty GraphQL response cleanly', async () => {
+    const executor: CommunityGraphQLExecutor = {
+      ExecuteGQL: async () => null,
+    };
+    const res = await InvokePromoteCommunityAnswerToCanonMutation(executor, {
+      QuestionPostID: questionId,
+      CanonAnswerPostID: answerId,
+    });
+    assert.equal(res.Success, false);
+    assert.match(res.ErrorMessage ?? '', /empty response/i);
+  });
+
+  it('CommunityHubResource uses IDEA_POST_TYPE_CODE ("idea-proposal") and PromoteAnswerToCanonViaProvider without split client saves', () => {
+    assert.match(hubTs, /resolvePostTypeId\(IDEA_POST_TYPE_CODE\)/);
+    assert.doesNotMatch(hubTs, /resolvePostTypeId\(['"]idea['"]\)/);
+    assert.match(hubTs, /PromoteAnswerToCanonViaProvider\(/);
+    assert.doesNotMatch(hubTs, /question\.AICanonAnswerPostID\s*=/);
   });
 });

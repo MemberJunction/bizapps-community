@@ -3,9 +3,12 @@ import { describe, it } from 'node:test';
 import { readFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { UserInfo } from '@memberjunction/core';
 import {
   AddStreamItemReply,
   BuildCommonsStreamItems,
+  BuildDynamicSpaceDirectory,
+  BuildDynamicTopicTags,
   BuildEditorialPorchHighlights,
   COMMUNITY_SPACES_DIRECTORY,
   COMMUNITY_TOPIC_TAGS,
@@ -15,12 +18,16 @@ import {
   FindMatchedCanonQuestion,
   GraduateStreamItem,
   PersistAskSharePost,
+  PersistDetailReply,
   ResolveAuthorizedForumTarget,
   SEEDED_COMMUNITY_SESSIONS,
   STREAM_TYPE_FILTER_OPTIONS,
+  ToggleReactionViaProvider,
   ToggleStreamItemUpvote,
   ValidateAskShareDraft,
+  type CommunityCommonsReply,
 } from './lib/community-hub-commons.ts';
+import * as CommunityHubMutations from './lib/community-hub-mutations';
 import {
   COMMUNITY_HUB_PREFERENCE_KEYS,
   CommunityHubPreferences,
@@ -518,5 +525,460 @@ describe('Slice 1 UX Alignment — Slide-Over Detail Sheet Drawer & + Ask or Sha
     assert.equal(qSavedId, 'saved-question-42');
     assert.equal(successCase.createdItem?.upvoteCount, 0);
     assert.equal(successCase.createdItem?.upvotedByMe, false);
+  });
+});
+
+describe('Slice 3 — Live Thread Reply, Upvote Reaction, Dynamic Directories, Tag Persistence & Graduation', () => {
+  const hubTs = readFileSync(join(LIB_DIR, 'community-hub-resource.component.ts'), 'utf8');
+  const hubHtml = readFileSync(join(LIB_DIR, 'community-hub-resource.component.html'), 'utf8');
+  const streamTs = readFileSync(join(LIB_DIR, 'knowledge-stream.component.ts'), 'utf8');
+
+  const FORUM_ID = '11111111-1111-4111-8111-111111111111';
+  const POST_ID = '22222222-2222-4222-8222-222222222222';
+  const USER_ID = '33333333-3333-4333-8333-333333333333';
+  const SPACE_ID = '44444444-4444-4444-8444-444444444444';
+  const REPLY_PT_ID = '55555555-5555-4555-8555-555555555555';
+  const TAG_1_ID = '66666666-6666-4666-8666-666666666666';
+  const TAG_2_ID = '77777777-7777-4777-8777-777777777777';
+
+  function makeLiveCommonsItem() {
+    return BuildCommonsStreamItems({
+      feedPosts: [
+        {
+          id: POST_ID,
+          forumId: FORUM_ID,
+          title: 'Multi-Region Failover Notes',
+          bodyMarkdown: 'Failover details',
+          status: 'Published',
+          upvoteCount: 3,
+          upvotedByMe: false,
+          tags: ['Multi-Region'],
+        },
+      ],
+      qaCanonItems: [],
+      ideationItems: [],
+      livingDocItems: [],
+    })[0];
+  }
+
+  it('persists detail replies as child ForumPosts (PostType=reply) and reloads from DB; fails closed on error', async () => {
+    const item = makeLiveCommonsItem();
+    const postTypes = new Map<string, string>([['reply', REPLY_PT_ID]]);
+    let capturedFields: Record<string, string | number | null> | null = null;
+    const reloadedReplies: CommunityCommonsReply[] = [
+      {
+        id: '88888888-8888-4888-8888-888888888888',
+        authorName: 'Ada Lovelace',
+        authorRole: 'Member',
+        authorInitials: 'AL',
+        timestampLabel: 'Published',
+        bodyMarkdown: 'Verified in staging cluster.',
+        isAccepted: false,
+        upvotes: 0,
+      },
+    ];
+
+    const ok = await PersistDetailReply({
+      item,
+      replyBody: 'Verified in staging cluster.',
+      authorName: 'Ada Lovelace',
+      isOfflineDemoMode: false,
+      postTypeIdByCode: postTypes,
+      currentUserId: USER_ID,
+      createForumPostEntity: async () => {
+        const entity = {
+          ID: '88888888-8888-4888-8888-888888888888',
+          ForumID: '',
+          PostTypeID: '',
+          RootPostID: null as string | null,
+          ParentPostID: null as string | null,
+          ReplyDepth: 0,
+          AuthorUserID: null as string | null,
+          BodyMarkdown: '',
+          Status: 'Draft' as const,
+          Save: async () => {
+            capturedFields = {
+              ForumID: entity.ForumID,
+              PostTypeID: entity.PostTypeID,
+              RootPostID: entity.RootPostID,
+              ParentPostID: entity.ParentPostID,
+              ReplyDepth: entity.ReplyDepth,
+              AuthorUserID: entity.AuthorUserID,
+              BodyMarkdown: entity.BodyMarkdown,
+              Status: entity.Status,
+            };
+            return true;
+          },
+        };
+        return entity;
+      },
+      reloadThreadReplies: async (rootId) => {
+        assert.equal(rootId, POST_ID);
+        return reloadedReplies;
+      },
+    });
+
+    assert.equal(ok.success, true);
+    assert.equal(ok.offlineFallback, false);
+    assert.equal(ok.replies.length, 1);
+    assert.equal(ok.replyCount, 1);
+    assert.deepEqual(capturedFields, {
+      ForumID: FORUM_ID,
+      PostTypeID: REPLY_PT_ID,
+      RootPostID: POST_ID,
+      ParentPostID: POST_ID,
+      ReplyDepth: 1,
+      AuthorUserID: USER_ID,
+      BodyMarkdown: 'Verified in staging cluster.',
+      Status: 'Published',
+    });
+
+    // Fail-closed when Save() returns false — never adds a fake local reply
+    const failed = await PersistDetailReply({
+      item,
+      replyBody: 'Should fail on server rejection.',
+      authorName: 'Ada Lovelace',
+      isOfflineDemoMode: false,
+      postTypeIdByCode: postTypes,
+      currentUserId: USER_ID,
+      createForumPostEntity: async () => ({
+        ID: '99999999-9999-4999-8999-999999999999',
+        ForumID: '',
+        PostTypeID: '',
+        RootPostID: null,
+        ParentPostID: null,
+        ReplyDepth: 0,
+        AuthorUserID: null,
+        BodyMarkdown: '',
+        Status: 'Draft',
+        LatestResult: { CompleteMessage: 'Thread is locked by moderator.' },
+        Save: async () => false,
+      }),
+      reloadThreadReplies: async () => reloadedReplies,
+    });
+    assert.equal(failed.success, false);
+    assert.equal(failed.errorMessage, 'Thread is locked by moderator.');
+    assert.equal(failed.replies.length, 0);
+
+    // Offline fallback ONLY when isOfflineDemoMode === true
+    const offline = await PersistDetailReply({
+      item,
+      replyBody: 'Offline demo reply.',
+      authorName: 'Demo User',
+      isOfflineDemoMode: true,
+      postTypeIdByCode: new Map(),
+      currentUserId: null,
+      createForumPostEntity: null,
+      reloadThreadReplies: null,
+    });
+    assert.equal(offline.success, true);
+    assert.equal(offline.offlineFallback, true);
+    assert.equal(offline.replies.length, 1);
+  });
+
+  it('toggles ForumPostReaction Upvote persistence in live mode and fails closed on Save/Delete errors', async () => {
+    const item = makeLiveCommonsItem();
+    let createdKind = '';
+    let createdWeight = 0;
+
+    const up = await ToggleReactionViaProvider({
+      item,
+      isOfflineDemoMode: false,
+      currentUserId: USER_ID,
+      findExistingReactionId: async () => null,
+      loadReactionEntityById: async () => null,
+      createReactionEntity: async () => {
+        const entity = {
+          ID: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+          PostID: '',
+          UserID: '',
+          ReactionKind: 'Upvote' as const,
+          Weight: 0,
+          Save: async () => {
+            createdKind = entity.ReactionKind;
+            createdWeight = entity.Weight;
+            return true;
+          },
+          Delete: async () => true,
+        };
+        return entity;
+      },
+      refreshPostReactionScore: async () => 4,
+    });
+
+    assert.equal(up.success, true);
+    assert.equal(up.upvotedByMe, true);
+    assert.equal(up.upvoteCount, 4);
+    assert.equal(createdKind, 'Upvote');
+    assert.equal(createdWeight, 1);
+
+    let deletedCalled = false;
+    const down = await ToggleReactionViaProvider({
+      item: { ...item, upvotedByMe: true, upvoteCount: 4 },
+      isOfflineDemoMode: false,
+      currentUserId: USER_ID,
+      findExistingReactionId: async () => 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+      loadReactionEntityById: async () => ({
+        ID: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+        PostID: POST_ID,
+        UserID: USER_ID,
+        ReactionKind: 'Upvote',
+        Weight: 1,
+        Save: async () => true,
+        Delete: async () => {
+          deletedCalled = true;
+          return true;
+        },
+      }),
+      createReactionEntity: async () => null,
+      refreshPostReactionScore: async () => 3,
+    });
+    assert.equal(deletedCalled, true);
+    assert.equal(down.success, true);
+    assert.equal(down.upvotedByMe, false);
+    assert.equal(down.upvoteCount, 3);
+
+    // Fail-closed when Save() rejects
+    const failedSave = await ToggleReactionViaProvider({
+      item,
+      isOfflineDemoMode: false,
+      currentUserId: USER_ID,
+      findExistingReactionId: async () => null,
+      loadReactionEntityById: async () => null,
+      createReactionEntity: async () => ({
+        ID: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+        PostID: '',
+        UserID: '',
+        ReactionKind: 'Upvote',
+        Weight: 0,
+        LatestResult: { CompleteMessage: 'Self-vote rejected.' },
+        Save: async () => false,
+        Delete: async () => true,
+      }),
+      refreshPostReactionScore: async () => 99,
+    });
+    assert.equal(failedSave.success, false);
+    assert.equal(failedSave.upvotedByMe, false);
+    assert.equal(failedSave.upvoteCount, 3);
+    assert.equal(failedSave.errorMessage, 'Self-vote rejected.');
+  });
+
+  it('builds real Space & Topic directories in live mode without falling back to seeded fixtures on empty DB', () => {
+    const emptyLiveSpaces = BuildDynamicSpaceDirectory({
+      isOfflineDemoMode: false,
+      spaces: [],
+      forums: [],
+    });
+    assert.deepEqual(
+      emptyLiveSpaces.map((s) => s.id),
+      ['all'],
+    );
+    assert.deepEqual(
+      BuildDynamicTopicTags({ isOfflineDemoMode: false, topicTags: [] }),
+      [],
+    );
+
+    const liveSpaces = BuildDynamicSpaceDirectory({
+      isOfflineDemoMode: false,
+      spaces: [
+        { ID: SPACE_ID, Name: 'Platform Engineering', CommunityKind: 'Product Community' },
+      ],
+      forums: [
+        { ID: FORUM_ID, Name: 'Core Runtime Forum', SpaceID: SPACE_ID },
+        { ID: '12121212-1212-4121-8121-121212121212', Name: 'Working Group Forum', SpaceID: null },
+      ],
+    });
+    assert.deepEqual(
+      liveSpaces.map((s) => s.name),
+      ['All Spaces', 'Platform Engineering', 'Working Group Forum'],
+    );
+
+    const liveTopics = BuildDynamicTopicTags({
+      isOfflineDemoMode: false,
+      topicTags: [
+        { ID: TAG_1_ID, SpaceID: SPACE_ID, Name: 'Zero Downtime', PostCount: 2 },
+        { ID: TAG_2_ID, SpaceID: SPACE_ID, Name: 'GraphQL Resolvers', PostCount: 9 },
+        { ID: 'abababab-abab-4bab-8bab-abababababab', SpaceID: SPACE_ID, Name: 'graphql resolvers', PostCount: 1 },
+      ],
+    });
+    assert.deepEqual(liveTopics, ['GraphQL Resolvers', 'Zero Downtime']);
+
+    const demoSpaces = BuildDynamicSpaceDirectory({ isOfflineDemoMode: true });
+    assert.equal(demoSpaces.length, COMMUNITY_SPACES_DIRECTORY.length);
+    const demoTopics = BuildDynamicTopicTags({ isOfflineDemoMode: true });
+    assert.deepEqual(demoTopics, [...COMMUNITY_TOPIC_TAGS]);
+  });
+
+  it('persists ForumPostTag rows from Ask/Share selected topic tags & tag names, rolling back on tag failure', async () => {
+    const topicCatalog = [
+      { ID: TAG_1_ID, SpaceID: SPACE_ID, Slug: 'api-security', Name: 'API Security', PostCount: 5 },
+      { ID: TAG_2_ID, SpaceID: SPACE_ID, Slug: 'multi-region', Name: 'Multi-Region', PostCount: 3 },
+    ];
+    const postTypes = new Map<string, string>([['discussion', REPLY_PT_ID]]);
+    const savedTagRows: Array<{ PostID: string; TopicTagID: string; AssignedByAI: boolean }> = [];
+
+    const ok = await PersistAskSharePost({
+      draft: {
+        entryType: 'Discussion Post',
+        title: 'API Gateway Timeout Tuning',
+        spaceId: SPACE_ID,
+        body: 'Configure per-route deadline propagation across regional meshes.',
+        tagsInput: 'Multi-Region',
+      },
+      isOfflineDemoMode: false,
+      targetForumId: FORUM_ID,
+      allowedForumIDs: [FORUM_ID],
+      authorizedForums: [{ id: FORUM_ID, name: 'Core Runtime', spaceId: SPACE_ID, dbSpaceId: SPACE_ID }],
+      postTypeIdByCode: postTypes,
+      currentUserId: USER_ID,
+      authorName: 'Ada',
+      selectedTopicTagIds: [TAG_1_ID],
+      topicTags: topicCatalog,
+      createForumPostEntity: async () => ({
+        ID: POST_ID,
+        ForumID: '',
+        AuthorUserID: '',
+        PostTypeID: '',
+        Title: '',
+        BodyMarkdown: '',
+        Status: 'Draft',
+        Save: async () => true,
+        Delete: async () => true,
+      }),
+      createPostTagEntity: async () => {
+        const row = {
+          PostID: '',
+          TopicTagID: '',
+          AssignedByAI: true,
+          Save: async () => {
+            savedTagRows.push({
+              PostID: row.PostID,
+              TopicTagID: row.TopicTagID,
+              AssignedByAI: row.AssignedByAI,
+            });
+            return true;
+          },
+        };
+        return row;
+      },
+    });
+
+    assert.equal(ok.success, true);
+    assert.deepEqual(savedTagRows, [
+      { PostID: POST_ID, TopicTagID: TAG_1_ID, AssignedByAI: false },
+      { PostID: POST_ID, TopicTagID: TAG_2_ID, AssignedByAI: false },
+    ]);
+
+    let rolledBack = false;
+    const tagFail = await PersistAskSharePost({
+      draft: {
+        entryType: 'Discussion Post',
+        title: 'Tag Failure Rollback Test',
+        spaceId: SPACE_ID,
+        body: 'Ensures ForumPost is deleted when ForumPostTag save fails.',
+        tagsInput: 'API Security',
+      },
+      isOfflineDemoMode: false,
+      targetForumId: FORUM_ID,
+      allowedForumIDs: [FORUM_ID],
+      authorizedForums: [{ id: FORUM_ID, name: 'Core Runtime', spaceId: SPACE_ID, dbSpaceId: SPACE_ID }],
+      postTypeIdByCode: postTypes,
+      currentUserId: USER_ID,
+      authorName: 'Ada',
+      topicTags: topicCatalog,
+      createForumPostEntity: async () => ({
+        ID: POST_ID,
+        ForumID: '',
+        AuthorUserID: '',
+        PostTypeID: '',
+        Title: '',
+        BodyMarkdown: '',
+        Status: 'Draft',
+        Save: async () => true,
+        Delete: async () => {
+          rolledBack = true;
+          return true;
+        },
+      }),
+      createPostTagEntity: async () => ({
+        PostID: '',
+        TopicTagID: '',
+        AssignedByAI: false,
+        Save: async () => false,
+      }),
+    });
+    assert.equal(tagFail.success, false);
+    assert.equal(rolledBack, true);
+  });
+
+  it('invokes GraduateCommunityThread GraphQL mutation via CommunityHubMutations.GraduateThreadViaProvider and fails closed on errors', async () => {
+    const PROMOTED_SPACE_ID = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
+    const user = new UserInfo(undefined, { ID: USER_ID, Name: 'Ada' });
+    let capturedQuery = '';
+    const liveOk = await CommunityHubMutations.GraduateThreadViaProvider({
+      rootPostId: POST_ID,
+      targetSpaceTypeCode: 'working-group',
+      targetSpaceName: 'Multi-Region Failover — Working Group',
+      seedInitialTaskTitle: 'Document failover runbook',
+      provider: {
+        CurrentUser: user,
+        ExecuteGQL: async (query) => {
+          capturedQuery = query;
+          return {
+            GraduateCommunityThread: {
+              Success: true,
+              PromotedToSpaceID: PROMOTED_SPACE_ID,
+              TargetSpaceTypeCode: 'working-group',
+              SeededTaskID: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd',
+              InvitedParticipantCount: 4,
+            },
+          };
+        },
+      },
+    });
+
+    assert.match(capturedQuery, /mutation GraduateCommunityThread/);
+    assert.equal(liveOk.success, true);
+    assert.equal(liveOk.offlineFallback, false);
+    assert.equal(liveOk.promotedToSpaceId, PROMOTED_SPACE_ID);
+
+    // Fails closed without CurrentUser when provider exists
+    const unauth = await CommunityHubMutations.GraduateThreadViaProvider({
+      rootPostId: POST_ID,
+      targetSpaceName: 'Unauth Group',
+      provider: { CurrentUser: undefined },
+    });
+    assert.equal(unauth.success, false);
+
+    // Offline fallback ONLY when provider is null
+    const offline = await CommunityHubMutations.GraduateThreadViaProvider({
+      rootPostId: 'seed-feed-1',
+      targetSpaceName: 'Offline Group',
+      provider: null,
+    });
+    assert.equal(offline.success, true);
+    assert.equal(offline.offlineFallback, true);
+  });
+
+  it('wires KnowledgeStream inputs/errors cleanly and never applies seeded fallbacks inside live catch blocks', () => {
+    assert.match(streamTs, /@Input\(\)\s+public\s+spaces:\s*ReadonlyArray<CommunitySpaceDirectoryItem>\s*=\s*\[\];/);
+    assert.match(streamTs, /@Input\(\)\s+public\s+topics:\s*ReadonlyArray<string>\s*=\s*\[\];/);
+    assert.doesNotMatch(streamTs, /seed-feed-1/);
+    assert.match(hubTs, /PersistDetailReply\(/);
+    assert.match(hubTs, /ToggleReactionViaProvider\(/);
+    assert.match(hubTs, /CommunityHubMutations.GraduateThreadViaProvider\(/);
+    assert.doesNotMatch(hubTs, /catch\s*\([^)]*\)\s*\{[^}]*applySeededFallback/);
+    assert.match(hubHtml, /id="mjc-detail-promoted-space"/);
+    assert.match(hubHtml, /id="mjc-detail-error-banner"/);
+    assert.match(hubHtml, /id="mjc-hub-load-error"/);
+
+    // Every clickable <div> or <span> in Angular templates must declare an explicit ARIA role attribute
+    for (const templateName of ['community-hub-resource.component.html', 'knowledge-stream.component.html']) {
+      const html = readFileSync(join(LIB_DIR, templateName), 'utf8');
+      const clickableNonButtonMatches = html.match(/<(?:div|span)\b[^>]*\(click\)="[^"]*"[^>]*>/g) ?? [];
+      for (const tag of clickableNonButtonMatches) {
+        assert.match(tag, /\brole="/, `Clickable <div>/<span> in ${templateName} must declare an ARIA role: ${tag}`);
+      }
+    }
   });
 });

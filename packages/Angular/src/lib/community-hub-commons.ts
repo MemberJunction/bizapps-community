@@ -1,7 +1,12 @@
+import { UUIDsEqual } from '@memberjunction/global';
+import { AssertValidUUID } from '@mj-biz-apps/community-core';
+import { CommunityGraphQLExecutor, InvokeToggleCommunityPostReactionMutation } from './community-hub-mutations';
 import type {
   mjBizAppsCommunityForumAnswerPostEntity,
   mjBizAppsCommunityForumInteractivePostEntity,
   mjBizAppsCommunityForumPostEntity,
+  mjBizAppsCommunityForumPostReactionEntity,
+  mjBizAppsCommunityForumPostTagEntity,
   mjBizAppsCommunityForumQuestionPostEntity,
 } from '@mj-biz-apps/community-entities';
 import type { CommunityHubTabKey } from './community-hub-preferences.ts';
@@ -11,7 +16,8 @@ export type CommunitySpaceFilterId =
   | 'architecture-standards'
   | 'product-ideation'
   | 'operations-playbooks'
-  | 'governance-rfcs';
+  | 'governance-rfcs'
+  | (string & {});
 
 export type CommunityStreamTypeFilter =
   | 'all'
@@ -74,9 +80,11 @@ export interface CommunityCommonsItem {
   replyCount: number;
   replies: CommunityCommonsReply[];
   graduatedToDeliverable: boolean;
+  promotedToSpaceId?: string | null;
   deliverableTitle: string | null;
   sourceTab: CommunityHubTabKey;
   sourcePostId: string;
+  forumId?: string | null;
 }
 
 export interface CommunityFeaturedHighlight {
@@ -134,6 +142,30 @@ export interface AuthorizedForumOption {
   id: string;
   name: string;
   spaceId: CommunitySpaceFilterId;
+  dbSpaceId?: string | null;
+}
+
+export interface LiveSpaceDirectoryRow {
+  ID: string;
+  Slug?: string | null;
+  CommunityKind?: string | null;
+  Name?: string | null;
+  Description?: string | null;
+}
+
+export interface LiveForumDirectoryRow {
+  ID: string;
+  Name: string;
+  SpaceID?: string | null;
+  Description?: string | null;
+}
+
+export interface LiveForumTopicTagRow {
+  ID: string;
+  SpaceID?: string | null;
+  Slug?: string | null;
+  Name: string;
+  PostCount?: number | null;
 }
 
 export interface AskSharePostEntityLike {
@@ -151,6 +183,15 @@ export interface AskSharePostEntityLike {
 export interface AskShareQuestionPostEntityLike {
   ID: mjBizAppsCommunityForumQuestionPostEntity['ID'];
   Save(): Promise<boolean>;
+  Delete?(): Promise<boolean>;
+}
+
+export interface AskSharePostTagEntityLike {
+  ID?: mjBizAppsCommunityForumPostTagEntity['ID'];
+  PostID: mjBizAppsCommunityForumPostTagEntity['PostID'];
+  TopicTagID: mjBizAppsCommunityForumPostTagEntity['TopicTagID'];
+  AssignedByAI: mjBizAppsCommunityForumPostTagEntity['AssignedByAI'];
+  Save(): Promise<boolean>;
 }
 
 export interface PersistAskShareParams {
@@ -162,8 +203,11 @@ export interface PersistAskShareParams {
   postTypeIdByCode: ReadonlyMap<string, string>;
   currentUserId: string | null | undefined;
   authorName: string;
+  selectedTopicTagIds?: ReadonlyArray<string>;
+  topicTags?: ReadonlyArray<LiveForumTopicTagRow>;
   createForumPostEntity: (() => Promise<AskSharePostEntityLike | null>) | null;
   createQuestionPostEntity?: (() => Promise<AskShareQuestionPostEntityLike | null>) | null;
+  createPostTagEntity?: (() => Promise<AskSharePostTagEntityLike | null>) | null;
 }
 
 export interface PersistAskShareResult {
@@ -185,6 +229,8 @@ export interface CommonsFilterCriteria {
 export interface CommonsQAInput {
   id: string;
   questionPostId: string | null;
+  forumId?: string | null;
+  spaceId?: CommunitySpaceFilterId | null;
   title: string;
   bodyMarkdown: string;
   epistemicStatus: mjBizAppsCommunityForumAnswerPostEntity['AIEpistemicStatus'];
@@ -194,12 +240,17 @@ export interface CommonsQAInput {
   authorRole?: string | null;
   timestampLabel?: string | null;
   upvoteCount?: number | null;
+  upvotedByMe?: boolean;
+  replyCount?: number | null;
   replies?: ReadonlyArray<CommunityCommonsReply>;
+  tags?: ReadonlyArray<string>;
+  promotedToSpaceId?: string | null;
 }
 
 export interface CommonsIdeaInput {
   id: string;
   campaignId: string;
+  spaceId?: CommunitySpaceFilterId | null;
   title: string;
   summary: string;
   totalPointsAllocated: number;
@@ -207,11 +258,18 @@ export interface CommonsIdeaInput {
   authorName?: string | null;
   authorRole?: string | null;
   timestampLabel?: string | null;
+  upvoteCount?: number | null;
+  upvotedByMe?: boolean;
+  replyCount?: number | null;
   replies?: ReadonlyArray<CommunityCommonsReply>;
+  tags?: ReadonlyArray<string>;
+  promotedToSpaceId?: string | null;
 }
 
 export interface CommonsLivingDocInput {
   id: string;
+  forumId?: string | null;
+  spaceId?: CommunitySpaceFilterId | null;
   title: string;
   bodyMarkdown: string;
   postTypeCode: 'collaborative-doc' | 'collaborative-sheet' | 'collaborative-deck' | 'interactive-experience';
@@ -220,11 +278,16 @@ export interface CommonsLivingDocInput {
   authorRole?: string | null;
   timestampLabel?: string | null;
   upvoteCount?: number | null;
+  upvotedByMe?: boolean;
+  replyCount?: number | null;
   replies?: ReadonlyArray<CommunityCommonsReply>;
+  tags?: ReadonlyArray<string>;
+  promotedToSpaceId?: string | null;
 }
 
 export interface CommonsFeedPostInput {
   id: string;
+  forumId?: string | null;
   title: string;
   bodyMarkdown: string;
   status: mjBizAppsCommunityForumPostEntity['Status'];
@@ -233,7 +296,10 @@ export interface CommonsFeedPostInput {
   timestampLabel?: string | null;
   upvoteCount?: number | null;
   upvotedByMe?: boolean;
+  replyCount?: number | null;
   replies?: ReadonlyArray<CommunityCommonsReply>;
+  tags?: ReadonlyArray<string>;
+  promotedToSpaceId?: string | null;
   spaceId?: CommunitySpaceFilterId | null;
 }
 
@@ -459,160 +525,256 @@ function inferSpaceAndTags(title: string, body: string, defaultSpace: CommunityS
   };
 }
 
+function resolveItemSpaceInfo(params: {
+  explicitSpaceId?: CommunitySpaceFilterId | null;
+  forumId?: string | null;
+  inferredSpaceId: CommunitySpaceFilterId;
+  forumSpaceIdByForumId?: ReadonlyMap<string, string>;
+  spaceNameById?: ReadonlyMap<string, string>;
+}): { spaceId: CommunitySpaceFilterId; spaceLabel: string } {
+  const mappedForumSpace =
+    params.forumId && params.forumSpaceIdByForumId
+      ? params.forumSpaceIdByForumId.get(params.forumId.trim().toLowerCase())
+      : undefined;
+  const resolvedSpaceId =
+    params.explicitSpaceId && params.explicitSpaceId !== 'all'
+      ? params.explicitSpaceId
+      : mappedForumSpace ?? params.inferredSpaceId;
+  const resolvedLabel =
+    params.spaceNameById?.get(resolvedSpaceId.trim().toLowerCase()) ??
+    getSpaceLabel(resolvedSpaceId);
+  return {
+    spaceId: resolvedSpaceId,
+    spaceLabel: resolvedLabel,
+  };
+}
+
 export function BuildCommonsStreamItems(params: {
   feedPosts: ReadonlyArray<CommonsFeedPostInput>;
   qaCanonItems: ReadonlyArray<CommonsQAInput>;
   ideationItems: ReadonlyArray<CommonsIdeaInput>;
   livingDocItems: ReadonlyArray<CommonsLivingDocInput>;
   includeDemoFixtures?: boolean;
+  spaceNameById?: ReadonlyMap<string, string>;
+  forumSpaceIdByForumId?: ReadonlyMap<string, string>;
 }): CommunityCommonsItem[] {
   const items: CommunityCommonsItem[] = [];
   const includeDemo = params.includeDemoFixtures === true;
 
   for (const post of params.feedPosts) {
     const inferred = inferSpaceAndTags(post.title, post.bodyMarkdown, 'operations-playbooks');
-    const resolvedSpaceId = post.spaceId && post.spaceId !== 'all' ? post.spaceId : inferred.spaceId;
+    const resolvedSpace = resolveItemSpaceInfo({
+      explicitSpaceId: post.spaceId,
+      forumId: post.forumId,
+      inferredSpaceId: inferred.spaceId,
+      forumSpaceIdByForumId: params.forumSpaceIdByForumId,
+      spaceNameById: params.spaceNameById,
+    });
     const authorName = post.authorName?.trim() || 'Community Member';
     const authorRole = post.authorRole?.trim() || 'Member';
     const replies = post.replies ? post.replies.map((r) => ({ ...r })) : [];
+    const replyCount =
+      typeof post.replyCount === 'number' && Number.isFinite(post.replyCount)
+        ? Math.max(replies.length, post.replyCount)
+        : replies.length;
     const upvoteCount =
       typeof post.upvoteCount === 'number' && Number.isFinite(post.upvoteCount) ? post.upvoteCount : 0;
+    const promotedToSpaceId = post.promotedToSpaceId?.trim() || null;
+    const graduated = Boolean(promotedToSpaceId);
 
     items.push({
       id: `post-${post.id}`,
       title: post.title,
       excerpt: post.bodyMarkdown.slice(0, 180) + (post.bodyMarkdown.length > 180 ? '...' : ''),
       bodyMarkdown: post.bodyMarkdown,
-      spaceId: resolvedSpaceId,
-      spaceLabel: getSpaceLabel(resolvedSpaceId),
+      spaceId: resolvedSpace.spaceId,
+      spaceLabel: resolvedSpace.spaceLabel,
       streamType: 'post',
       entryTypeLabel: 'Discussion Post',
-      statusBadge: post.status || 'Published',
-      statusTone: 'brand',
-      epistemicStatus: 'Community Thread',
+      statusBadge: graduated ? 'Graduated · Working Group' : post.status || 'Published',
+      statusTone: graduated ? 'success' : 'brand',
+      epistemicStatus: graduated ? 'Graduated Deliverable' : 'Community Thread',
       confidenceScore: null,
       authorName,
       authorRole,
       authorInitials: computeInitials(authorName),
       timestampLabel: post.timestampLabel?.trim() || post.status || 'Published',
-      tags: inferred.tags,
+      tags: post.tags !== undefined ? [...post.tags] : inferred.tags,
       upvoteCount,
       upvotedByMe: Boolean(post.upvotedByMe),
-      replyCount: replies.length,
+      replyCount,
       replies,
-      graduatedToDeliverable: false,
-      deliverableTitle: null,
+      graduatedToDeliverable: graduated,
+      promotedToSpaceId,
+      deliverableTitle: graduated ? `${post.title.slice(0, 64)} — Working Group Deliverable` : null,
       sourceTab: 'knowledge-stream',
       sourcePostId: post.id,
+      forumId: post.forumId ?? null,
     });
   }
 
   for (const qa of params.qaCanonItems) {
     const inferred = inferSpaceAndTags(qa.title, qa.bodyMarkdown, 'architecture-standards');
+    const resolvedSpace = resolveItemSpaceInfo({
+      explicitSpaceId: qa.spaceId,
+      forumId: qa.forumId,
+      inferredSpaceId: inferred.spaceId,
+      forumSpaceIdByForumId: params.forumSpaceIdByForumId,
+      spaceNameById: params.spaceNameById,
+    });
     const isVerified = qa.isAccepted || qa.epistemicStatus === 'Canon Verified';
     const authorName = qa.authorName?.trim() || 'Community Member';
     const authorRole = qa.authorRole?.trim() || 'Member';
     const replies = qa.replies ? qa.replies.map((r) => ({ ...r })) : [];
+    const replyCount =
+      typeof qa.replyCount === 'number' && Number.isFinite(qa.replyCount)
+        ? Math.max(replies.length, qa.replyCount)
+        : replies.length;
     const upvoteCount = typeof qa.upvoteCount === 'number' && Number.isFinite(qa.upvoteCount) ? qa.upvoteCount : 0;
+    const promotedToSpaceId = qa.promotedToSpaceId?.trim() || null;
+    const graduated = Boolean(promotedToSpaceId);
 
     items.push({
       id: `qa-${qa.id}`,
       title: qa.title,
       excerpt: qa.bodyMarkdown.slice(0, 180) + (qa.bodyMarkdown.length > 180 ? '...' : ''),
       bodyMarkdown: qa.bodyMarkdown,
-      spaceId: inferred.spaceId,
-      spaceLabel: getSpaceLabel(inferred.spaceId),
+      spaceId: resolvedSpace.spaceId,
+      spaceLabel: resolvedSpace.spaceLabel,
       streamType: 'verified-qa',
       entryTypeLabel: 'Verified Q&A',
-      statusBadge: qa.epistemicStatus || (isVerified ? 'Canon Verified' : 'Needs Answer'),
-      statusTone: isVerified ? 'success' : 'warning',
-      epistemicStatus: qa.epistemicStatus ?? (isVerified ? 'Canon Verified' : 'Under Review'),
+      statusBadge: graduated
+        ? 'Graduated · Working Group'
+        : qa.epistemicStatus || (isVerified ? 'Canon Verified' : 'Needs Answer'),
+      statusTone: graduated || isVerified ? 'success' : 'warning',
+      epistemicStatus: graduated ? 'Graduated Deliverable' : qa.epistemicStatus ?? (isVerified ? 'Canon Verified' : 'Under Review'),
       confidenceScore: qa.confidenceScore,
       authorName,
       authorRole,
       authorInitials: computeInitials(authorName),
       timestampLabel: qa.timestampLabel?.trim() || (isVerified ? 'Verified Canon' : 'Under Review'),
-      tags: inferred.tags,
+      tags: qa.tags !== undefined ? [...qa.tags] : inferred.tags,
       upvoteCount,
-      upvotedByMe: false,
-      replyCount: replies.length,
+      upvotedByMe: Boolean(qa.upvotedByMe),
+      replyCount,
       replies,
-      graduatedToDeliverable: false,
-      deliverableTitle: null,
+      graduatedToDeliverable: graduated,
+      promotedToSpaceId,
+      deliverableTitle: graduated ? `${qa.title.slice(0, 64)} — Working Group Deliverable` : null,
       sourceTab: 'qa-canon-workbench',
       sourcePostId: qa.id,
+      forumId: qa.forumId ?? null,
     });
   }
 
   for (const idea of params.ideationItems) {
     const inferred = inferSpaceAndTags(idea.title, idea.summary, 'product-ideation');
+    const resolvedSpace = resolveItemSpaceInfo({
+      explicitSpaceId: idea.spaceId,
+      forumId: idea.campaignId,
+      inferredSpaceId: 'product-ideation',
+      forumSpaceIdByForumId: params.forumSpaceIdByForumId,
+      spaceNameById: params.spaceNameById,
+    });
     const authorName = idea.authorName?.trim() || 'Community Member';
     const authorRole = idea.authorRole?.trim() || 'Proposal Author';
     const replies = idea.replies ? idea.replies.map((r) => ({ ...r })) : [];
+    const replyCount =
+      typeof idea.replyCount === 'number' && Number.isFinite(idea.replyCount)
+        ? Math.max(replies.length, idea.replyCount)
+        : replies.length;
+    const promotedToSpaceId = idea.promotedToSpaceId?.trim() || null;
+    const graduated = Boolean(promotedToSpaceId);
 
     items.push({
       id: `idea-${idea.id}`,
       title: idea.title,
       excerpt: idea.summary,
       bodyMarkdown: idea.summary,
-      spaceId: 'product-ideation',
-      spaceLabel: getSpaceLabel('product-ideation'),
+      spaceId: resolvedSpace.spaceId,
+      spaceLabel: resolvedSpace.spaceLabel,
       streamType: 'ideation',
       entryTypeLabel: 'Ideation Proposal',
-      statusBadge: `${idea.effectiveQuadraticVotes} Quadratic Votes`,
-      statusTone: 'brand',
-      epistemicStatus: `${idea.totalPointsAllocated} Voice Credits Allocated`,
+      statusBadge: graduated ? 'Graduated · Working Group' : `${idea.effectiveQuadraticVotes} Quadratic Votes`,
+      statusTone: graduated ? 'success' : 'brand',
+      epistemicStatus: graduated ? 'Graduated Deliverable' : `${idea.totalPointsAllocated} Voice Credits Allocated`,
       confidenceScore: null,
       authorName,
       authorRole,
       authorInitials: computeInitials(authorName),
       timestampLabel: idea.timestampLabel?.trim() || 'Open Campaign',
-      tags: Array.from(new Set([...inferred.tags, 'Ideation'])),
-      upvoteCount: typeof idea.totalPointsAllocated === 'number' ? idea.totalPointsAllocated : 0,
-      upvotedByMe: false,
-      replyCount: replies.length,
+      tags: idea.tags !== undefined ? [...idea.tags] : Array.from(new Set([...inferred.tags, 'Ideation'])),
+      upvoteCount:
+        typeof idea.upvoteCount === 'number' && Number.isFinite(idea.upvoteCount)
+          ? idea.upvoteCount
+          : typeof idea.totalPointsAllocated === 'number'
+            ? idea.totalPointsAllocated
+            : 0,
+      upvotedByMe: Boolean(idea.upvotedByMe),
+      replyCount,
       replies,
-      graduatedToDeliverable: false,
-      deliverableTitle: null,
+      graduatedToDeliverable: graduated,
+      promotedToSpaceId,
+      deliverableTitle: graduated ? `${idea.title.slice(0, 64)} — Working Group Deliverable` : null,
       sourceTab: 'quadratic-ideation-wallet',
       sourcePostId: idea.id,
+      forumId: idea.campaignId || null,
     });
   }
 
   for (const doc of params.livingDocItems) {
     const inferred = inferSpaceAndTags(doc.title, doc.bodyMarkdown, 'operations-playbooks');
+    const resolvedSpace = resolveItemSpaceInfo({
+      explicitSpaceId: doc.spaceId,
+      forumId: doc.forumId,
+      inferredSpaceId: inferred.spaceId,
+      forumSpaceIdByForumId: params.forumSpaceIdByForumId,
+      spaceNameById: params.spaceNameById,
+    });
     const isInteractive = doc.postTypeCode === 'interactive-experience';
     const authorName = doc.authorName?.trim() || 'Community Member';
     const authorRole = doc.authorRole?.trim() || 'Co-Author';
     const replies = doc.replies ? doc.replies.map((r) => ({ ...r })) : [];
+    const replyCount =
+      typeof doc.replyCount === 'number' && Number.isFinite(doc.replyCount)
+        ? Math.max(replies.length, doc.replyCount)
+        : replies.length;
     const upvoteCount = typeof doc.upvoteCount === 'number' && Number.isFinite(doc.upvoteCount) ? doc.upvoteCount : 0;
+    const promotedToSpaceId = doc.promotedToSpaceId?.trim() || null;
+    const graduated = Boolean(promotedToSpaceId);
 
     items.push({
       id: `doc-${doc.id}`,
       title: doc.title,
       excerpt: doc.bodyMarkdown.slice(0, 180) + (doc.bodyMarkdown.length > 180 ? '...' : ''),
       bodyMarkdown: doc.bodyMarkdown,
-      spaceId: inferred.spaceId,
-      spaceLabel: getSpaceLabel(inferred.spaceId),
+      spaceId: resolvedSpace.spaceId,
+      spaceLabel: resolvedSpace.spaceLabel,
       streamType: 'living-guide',
       entryTypeLabel: isInteractive ? 'Interactive Mini-App' : 'Living Guide',
-      statusBadge: isInteractive ? `Sandbox · ${doc.experienceKind ?? 'Interactive'}` : 'Living Playbook',
+      statusBadge: graduated
+        ? 'Graduated · Working Group'
+        : isInteractive
+          ? `Sandbox · ${doc.experienceKind ?? 'Interactive'}`
+          : 'Living Playbook',
       statusTone: 'success',
-      epistemicStatus: 'Co-Authored Standard',
+      epistemicStatus: graduated ? 'Graduated Deliverable' : 'Co-Authored Standard',
       confidenceScore: null,
       authorName,
       authorRole,
       authorInitials: computeInitials(authorName),
       timestampLabel: doc.timestampLabel?.trim() || 'Living revision',
-      tags: Array.from(new Set([...inferred.tags, 'Working Groups'])),
+      tags: doc.tags !== undefined ? [...doc.tags] : Array.from(new Set([...inferred.tags, 'Working Groups'])),
       upvoteCount,
-      upvotedByMe: false,
-      replyCount: replies.length,
+      upvotedByMe: Boolean(doc.upvotedByMe),
+      replyCount,
       replies,
-      graduatedToDeliverable: false,
-      deliverableTitle: null,
+      graduatedToDeliverable: graduated,
+      promotedToSpaceId,
+      deliverableTitle: graduated ? `${doc.title.slice(0, 64)} — Working Group Deliverable` : null,
       sourceTab: 'living-co-authoring',
       sourcePostId: doc.id,
+      forumId: doc.forumId ?? null,
     });
   }
 
@@ -842,12 +1004,14 @@ export function AddStreamItemReply(
 export function GraduateStreamItem(
   items: ReadonlyArray<CommunityCommonsItem>,
   itemId: string,
+  promotedToSpaceId?: string | null,
 ): CommunityCommonsItem[] {
   return items.map((item) => {
     if (item.id !== itemId) return item;
     return {
       ...item,
       graduatedToDeliverable: true,
+      promotedToSpaceId: promotedToSpaceId ?? item.promotedToSpaceId ?? null,
       deliverableTitle: `${item.title.slice(0, 64)} — Working Group Deliverable`,
       statusBadge: 'Graduated · Working Group',
       statusTone: 'success',
@@ -967,6 +1131,49 @@ export function ResolveAuthorizedForumTarget(
   return null;
 }
 
+function resolveMatchedTopicTagsForPost(params: {
+  tagsInput: string;
+  selectedTopicTagIds?: ReadonlyArray<string>;
+  topicTags?: ReadonlyArray<LiveForumTopicTagRow>;
+  forumSpaceId: string | null;
+}): Array<{ id: string; name: string }> {
+  const catalog = params.topicTags ?? [];
+  const scoped = catalog.filter(
+    (t) => !params.forumSpaceId || !t.SpaceID || UUIDsEqual(t.SpaceID, params.forumSpaceId),
+  );
+  const candidates = scoped.length > 0 ? scoped : catalog;
+  const resolved = new Map<string, { id: string; name: string }>();
+
+  for (const selectedId of params.selectedTopicTagIds ?? []) {
+    const trimmed = selectedId.trim();
+    if (!trimmed) continue;
+    const match = candidates.find((t) => UUIDsEqual(t.ID, trimmed));
+    if (match) {
+      resolved.set(match.ID.toLowerCase(), { id: match.ID, name: match.Name });
+    }
+  }
+
+  const parsedTokens = params.tagsInput
+    .split(',')
+    .map((t) => t.trim().replace(/^#+/, '').trim())
+    .filter(Boolean);
+  for (const token of parsedTokens) {
+    const lower = token.toLowerCase();
+    const normalizedSlug = lower.replace(/\s+/g, '-');
+    const match = candidates.find(
+      (t) =>
+        t.Name.trim().toLowerCase() === lower ||
+        (t.Slug?.trim().toLowerCase() ?? '') === lower ||
+        (t.Slug?.trim().toLowerCase() ?? '') === normalizedSlug,
+    );
+    if (match) {
+      resolved.set(match.ID.toLowerCase(), { id: match.ID, name: match.Name });
+    }
+  }
+
+  return Array.from(resolved.values());
+}
+
 export async function PersistAskSharePost(params: PersistAskShareParams): Promise<PersistAskShareResult> {
   const validation = ValidateAskShareDraft(params.draft);
   if (!validation.valid) {
@@ -984,7 +1191,7 @@ export async function PersistAskSharePost(params: PersistAskShareParams): Promis
     (f) => f.id.trim().toLowerCase() === (params.targetForumId ?? '').trim().toLowerCase(),
   );
   const resolvedDraft: AskShareDraft = matchedForum
-    ? { ...params.draft, spaceId: matchedForum.spaceId }
+    ? { ...params.draft, spaceId: matchedForum.dbSpaceId ?? matchedForum.spaceId }
     : params.draft;
 
   if (params.isOfflineDemoMode) {
@@ -1062,8 +1269,16 @@ export async function PersistAskSharePost(params: PersistAskShareParams): Promis
     };
   }
 
+  const matchedTopicTags = resolveMatchedTopicTagsForPost({
+    tagsInput: params.draft.tagsInput,
+    selectedTopicTagIds: params.selectedTopicTagIds,
+    topicTags: params.topicTags,
+    forumSpaceId: matchedForum?.dbSpaceId?.trim() || null,
+  });
+
   let savedPostId: string | null = null;
   let savedPostEntity: AskSharePostEntityLike | null = null;
+  let savedQuestionEntity: AskShareQuestionPostEntityLike | null = null;
   try {
     const post = await params.createForumPostEntity();
     if (!post) {
@@ -1124,8 +1339,46 @@ export async function PersistAskSharePost(params: PersistAskShareParams): Promis
           createdItem: null,
         };
       }
+      savedQuestionEntity = qPost;
+    }
+
+    if (matchedTopicTags.length > 0 && params.createPostTagEntity) {
+      for (const topicTag of matchedTopicTags) {
+        const postTag = await params.createPostTagEntity();
+        if (!postTag) {
+          await savedQuestionEntity?.Delete?.().catch(() => false);
+          await savedPostEntity.Delete?.().catch(() => false);
+          return {
+            success: false,
+            validationErrors: {},
+            errorMessage: `Could not attach topic tag "${topicTag.name}" — rolled back post.`,
+            persistedPostId: null,
+            resolvedForumId: authorizedForumId,
+            createdItem: null,
+          };
+        }
+        postTag.PostID = savedPostId;
+        postTag.TopicTagID = topicTag.id;
+        postTag.AssignedByAI = false;
+        const tagSaved = await postTag.Save();
+        if (!tagSaved) {
+          await savedQuestionEntity?.Delete?.().catch(() => false);
+          await savedPostEntity.Delete?.().catch(() => false);
+          return {
+            success: false,
+            validationErrors: {},
+            errorMessage: `Failed saving topic tag "${topicTag.name}" — rolled back post.`,
+            persistedPostId: null,
+            resolvedForumId: authorizedForumId,
+            createdItem: null,
+          };
+        }
+      }
     }
   } catch (err) {
+    if (savedQuestionEntity) {
+      await savedQuestionEntity.Delete?.().catch(() => false);
+    }
     if (savedPostEntity) {
       await savedPostEntity.Delete?.().catch(() => false);
     }
@@ -1139,17 +1392,33 @@ export async function PersistAskSharePost(params: PersistAskShareParams): Promis
     };
   }
 
+  const combinedTagsInput =
+    matchedTopicTags.length > 0
+      ? Array.from(
+          new Set([
+            ...matchedTopicTags.map((t) => t.name),
+            ...resolvedDraft.tagsInput
+              .split(',')
+              .map((t) => t.trim())
+              .filter(Boolean),
+          ]),
+        ).join(', ')
+      : resolvedDraft.tagsInput;
+
   const createdItem = CreateAskShareStreamItem(
-    resolvedDraft,
+    { ...resolvedDraft, tagsInput: combinedTagsInput },
     params.authorName || 'Community Member',
     'Member',
   );
   if (matchedForum) {
     createdItem.spaceLabel = matchedForum.name;
+    createdItem.spaceId = matchedForum.dbSpaceId ?? matchedForum.spaceId;
   }
   if (savedPostId) {
     createdItem.sourcePostId = savedPostId;
   }
+  createdItem.forumId = authorizedForumId;
+  createdItem.promotedToSpaceId = null;
 
   return {
     success: true,
@@ -1184,4 +1453,470 @@ export function ComputeNextTrapFocusTarget<T>(
     return first;
   }
   return focusables[currentIndex + 1];
+}
+
+/**
+ * Builds the Knowledge Stream left-rail Space directory strictly from database `CommunitySpace` /
+ * `Space` / `Forum` records in live sessions. Returns `COMMUNITY_SPACES_DIRECTORY` ONLY when
+ * `isOfflineDemoMode` is true (`!Metadata.Provider`).
+ */
+export function BuildDynamicSpaceDirectory(params: {
+  isOfflineDemoMode: boolean;
+  spaces?: ReadonlyArray<LiveSpaceDirectoryRow>;
+  forums?: ReadonlyArray<LiveForumDirectoryRow>;
+}): CommunitySpaceDirectoryItem[] {
+  if (params.isOfflineDemoMode) {
+    return COMMUNITY_SPACES_DIRECTORY.map((s) => ({ ...s }));
+  }
+
+  const directory: CommunitySpaceDirectoryItem[] = [
+    {
+      id: 'all',
+      name: 'All Spaces',
+      category: 'Commons',
+      description: 'Every authorized community space and forum in this workspace.',
+    },
+  ];
+
+  const seenIds = new Set<string>(['all']);
+
+  for (const space of params.spaces ?? []) {
+    const id = space.ID?.trim();
+    if (!id) continue;
+    const key = id.toLowerCase();
+    if (seenIds.has(key)) continue;
+    seenIds.add(key);
+    directory.push({
+      id,
+      name: space.Name?.trim() || space.Slug?.trim() || 'Community Space',
+      category: space.CommunityKind?.trim() || 'Community Space',
+      description: space.Description?.trim() || 'Authorized community space.',
+    });
+  }
+
+  for (const forum of params.forums ?? []) {
+    const candidateId = forum.SpaceID?.trim() || forum.ID?.trim();
+    if (!candidateId) continue;
+    const key = candidateId.toLowerCase();
+    if (seenIds.has(key)) continue;
+    seenIds.add(key);
+    directory.push({
+      id: candidateId,
+      name: forum.Name?.trim() || 'Community Forum',
+      category: forum.SpaceID ? 'Community Space' : 'Forum',
+      description: forum.Description?.trim() || 'Authorized community discussion forum.',
+    });
+  }
+
+  return directory;
+}
+
+/**
+ * Builds Knowledge Stream topic filter pills strictly from database `ForumTopicTag` rows in live
+ * sessions. Returns `COMMUNITY_TOPIC_TAGS` ONLY when `isOfflineDemoMode` is true.
+ */
+export function BuildDynamicTopicTags(params: {
+  isOfflineDemoMode: boolean;
+  topicTags?: ReadonlyArray<LiveForumTopicTagRow>;
+}): string[] {
+  if (params.isOfflineDemoMode) {
+    return [...COMMUNITY_TOPIC_TAGS];
+  }
+
+  const seen = new Set<string>();
+  const sorted = [...(params.topicTags ?? [])].sort((a, b) => {
+    const countDiff = (b.PostCount ?? 0) - (a.PostCount ?? 0);
+    if (countDiff !== 0) return countDiff;
+    return a.Name.localeCompare(b.Name);
+  });
+
+  const tags: string[] = [];
+  for (const row of sorted) {
+    const name = row.Name?.trim();
+    if (!name) continue;
+    const key = name.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    tags.push(name);
+  }
+  return tags;
+}
+
+export interface ReplyForumPostEntityLike {
+  ID: mjBizAppsCommunityForumPostEntity['ID'];
+  ForumID: mjBizAppsCommunityForumPostEntity['ForumID'];
+  PostTypeID: mjBizAppsCommunityForumPostEntity['PostTypeID'];
+  RootPostID: mjBizAppsCommunityForumPostEntity['RootPostID'];
+  ParentPostID: mjBizAppsCommunityForumPostEntity['ParentPostID'];
+  ReplyDepth: mjBizAppsCommunityForumPostEntity['ReplyDepth'];
+  AuthorUserID: mjBizAppsCommunityForumPostEntity['AuthorUserID'];
+  BodyMarkdown: mjBizAppsCommunityForumPostEntity['BodyMarkdown'];
+  Status: mjBizAppsCommunityForumPostEntity['Status'];
+  Save(): Promise<boolean>;
+  LatestResult?: { CompleteMessage?: string | null } | null;
+}
+
+export interface PersistDetailReplyParams {
+  item: CommunityCommonsItem;
+  replyBody: string;
+  authorName: string;
+  authorRole?: string;
+  isOfflineDemoMode: boolean;
+  postTypeIdByCode: ReadonlyMap<string, string>;
+  currentUserId: string | null | undefined;
+  createForumPostEntity: (() => Promise<ReplyForumPostEntityLike | null>) | null;
+  reloadThreadReplies: ((rootPostId: string) => Promise<ReadonlyArray<CommunityCommonsReply>>) | null;
+}
+
+export interface PersistDetailReplyResult {
+  success: boolean;
+  offlineFallback: boolean;
+  errorMessage: string | null;
+  statusMessage: string | null;
+  replies: ReadonlyArray<CommunityCommonsReply>;
+  replyCount: number;
+}
+
+/**
+ * Persists a child `ForumPost` reply (`PostType = 'reply'`, `RootPostID`, `ParentPostID`,
+ * `ReplyDepth`, `Status = 'Published'`) in live mode and reloads replies from the database.
+ * Uses local offline fallback ONLY when `isOfflineDemoMode` is true (`!Metadata.Provider`).
+ */
+export async function PersistDetailReply(params: PersistDetailReplyParams): Promise<PersistDetailReplyResult> {
+  const trimmed = params.replyBody.trim();
+  if (!trimmed) {
+    return {
+      success: false,
+      offlineFallback: params.isOfflineDemoMode,
+      errorMessage: 'Please enter a reply before posting.',
+      statusMessage: null,
+      replies: params.item.replies,
+      replyCount: params.item.replyCount,
+    };
+  }
+
+  if (params.isOfflineDemoMode) {
+    const newReply: CommunityCommonsReply = {
+      id: `reply-${crypto.randomUUID()}`,
+      authorName: params.authorName || 'Community Member',
+      authorRole: params.authorRole || 'Enterprise Member · MemberJunction',
+      authorInitials: computeInitials(params.authorName || 'Community Member'),
+      timestampLabel: 'Just now',
+      bodyMarkdown: trimmed,
+      isAccepted: false,
+      upvotes: 1,
+    };
+    const nextReplies = [...params.item.replies, newReply];
+    return {
+      success: true,
+      offlineFallback: true,
+      errorMessage: null,
+      statusMessage: 'Reply added to thread.',
+      replies: nextReplies,
+      replyCount: nextReplies.length,
+    };
+  }
+
+  const replyPostTypeId = params.postTypeIdByCode.get('reply') ?? null;
+  if (!replyPostTypeId) {
+    return {
+      success: false,
+      offlineFallback: false,
+      errorMessage: 'PostType "reply" is not configured — cannot save reply.',
+      statusMessage: null,
+      replies: params.item.replies,
+      replyCount: params.item.replyCount,
+    };
+  }
+
+  if (!params.createForumPostEntity) {
+    return {
+      success: false,
+      offlineFallback: false,
+      errorMessage: 'Metadata provider is unavailable — cannot save reply.',
+      statusMessage: null,
+      replies: params.item.replies,
+      replyCount: params.item.replyCount,
+    };
+  }
+
+  let validRootPostId: string;
+  let validForumId: string;
+  let validUserId: string;
+  try {
+    validRootPostId = AssertValidUUID(params.item.sourcePostId, 'rootPostId');
+    validForumId = AssertValidUUID(params.item.forumId ?? '', 'forumId');
+    validUserId = AssertValidUUID(params.currentUserId ?? '', 'currentUserId');
+  } catch (err) {
+    return {
+      success: false,
+      offlineFallback: false,
+      errorMessage: err instanceof Error ? err.message : 'Invalid thread or user identifier — cannot save reply.',
+      statusMessage: null,
+      replies: params.item.replies,
+      replyCount: params.item.replyCount,
+    };
+  }
+
+  try {
+    const replyEntity = await params.createForumPostEntity();
+    if (!replyEntity) {
+      return {
+        success: false,
+        offlineFallback: false,
+        errorMessage: 'Could not instantiate Forum Post reply entity.',
+        statusMessage: null,
+        replies: params.item.replies,
+        replyCount: params.item.replyCount,
+      };
+    }
+
+    replyEntity.ForumID = validForumId;
+    replyEntity.PostTypeID = replyPostTypeId;
+    replyEntity.RootPostID = validRootPostId;
+    replyEntity.ParentPostID = validRootPostId;
+    replyEntity.ReplyDepth = 1;
+    replyEntity.AuthorUserID = validUserId;
+    replyEntity.BodyMarkdown = trimmed;
+    replyEntity.Status = 'Published';
+
+    const saved = await replyEntity.Save();
+    if (!saved) {
+      return {
+        success: false,
+        offlineFallback: false,
+        errorMessage: replyEntity.LatestResult?.CompleteMessage?.trim() || 'Failed to save reply on server.',
+        statusMessage: null,
+        replies: params.item.replies,
+        replyCount: params.item.replyCount,
+      };
+    }
+
+    const reloaded = params.reloadThreadReplies
+      ? await params.reloadThreadReplies(validRootPostId)
+      : params.item.replies;
+
+    const savedStatus: mjBizAppsCommunityForumPostEntity['Status'] = replyEntity.Status;
+    const statusMessage =
+      savedStatus === ('PendingModeration' as mjBizAppsCommunityForumPostEntity['Status'])
+        ? 'Reply submitted and queued for moderator approval.'
+        : 'Reply saved to thread.';
+
+    return {
+      success: true,
+      offlineFallback: false,
+      errorMessage: null,
+      statusMessage,
+      replies: [...reloaded],
+      replyCount: reloaded.length,
+    };
+  } catch (err) {
+    return {
+      success: false,
+      offlineFallback: false,
+      errorMessage: err instanceof Error ? err.message : 'Server error while saving reply.',
+      statusMessage: null,
+      replies: params.item.replies,
+      replyCount: params.item.replyCount,
+    };
+  }
+}
+
+export interface ForumPostReactionEntityLike {
+  ID: mjBizAppsCommunityForumPostReactionEntity['ID'];
+  PostID: mjBizAppsCommunityForumPostReactionEntity['PostID'];
+  UserID: mjBizAppsCommunityForumPostReactionEntity['UserID'];
+  ReactionKind: mjBizAppsCommunityForumPostReactionEntity['ReactionKind'];
+  Weight: mjBizAppsCommunityForumPostReactionEntity['Weight'];
+  Save(): Promise<boolean>;
+  Delete(): Promise<boolean>;
+  LatestResult?: { CompleteMessage?: string | null } | null;
+}
+
+export interface ToggleReactionParams {
+  item: CommunityCommonsItem;
+  isOfflineDemoMode: boolean;
+  currentUserId: string | null | undefined;
+  reactionKind?: mjBizAppsCommunityForumPostReactionEntity['ReactionKind'];
+  executor?: CommunityGraphQLExecutor | null; // Add this
+  findExistingReactionId:
+    | ((
+        postId: string,
+        userId: string,
+        kind: mjBizAppsCommunityForumPostReactionEntity['ReactionKind'],
+      ) => Promise<string | null>)
+    | null;
+  loadReactionEntityById: ((reactionId: string) => Promise<ForumPostReactionEntityLike | null>) | null;
+  createReactionEntity: (() => Promise<ForumPostReactionEntityLike | null>) | null;
+  refreshPostReactionScore: ((postId: string) => Promise<number | null>) | null;
+}
+
+export interface ToggleReactionResult {
+  success: boolean;
+  offlineFallback: boolean;
+  upvotedByMe: boolean;
+  upvoteCount: number;
+  errorMessage: string | null;
+}
+
+/**
+ * Toggles a persisted `ForumPostReaction` (`ReactionKind = 'Upvote'`) row in live mode and
+ * refreshes the authoritative `ForumPost.ReactionScore` from the server. Falls back to local-only
+ * toggling ONLY when `isOfflineDemoMode` is true (`!Metadata.Provider`).
+ */
+export async function ToggleReactionViaProvider(params: ToggleReactionParams): Promise<ToggleReactionResult> {
+  if (params.isOfflineDemoMode) {
+    const nextUpvoted = !params.item.upvotedByMe;
+    const nextCount = Math.max(0, params.item.upvoteCount + (nextUpvoted ? 1 : -1));
+    return {
+      success: true,
+      offlineFallback: true,
+      upvotedByMe: nextUpvoted,
+      upvoteCount: nextCount,
+      errorMessage: null,
+    };
+  }
+
+  if (params.executor) {
+    try {
+      const payload = await InvokeToggleCommunityPostReactionMutation(params.executor, {
+        PostID: params.item.sourcePostId,
+        ReactionType: params.reactionKind ?? 'Upvote',
+      });
+      if (payload.Success) {
+        return {
+          success: true,
+          offlineFallback: false,
+          upvotedByMe: !!payload.Reacted,
+          upvoteCount: payload.ReactionScore ?? 0,
+          errorMessage: null,
+        };
+      }
+      return {
+        success: false,
+        offlineFallback: false,
+        upvotedByMe: params.item.upvotedByMe,
+        upvoteCount: params.item.upvoteCount,
+        errorMessage: payload.ErrorMessage ?? 'Failed to toggle reaction.',
+      };
+    } catch (err) {
+      return {
+        success: false,
+        offlineFallback: false,
+        upvotedByMe: params.item.upvotedByMe,
+        upvoteCount: params.item.upvoteCount,
+        errorMessage: err instanceof Error ? err.message : 'Server error while toggling reaction.',
+      };
+    }
+  }
+
+  const reactionKind: mjBizAppsCommunityForumPostReactionEntity['ReactionKind'] = params.reactionKind ?? 'Upvote';
+
+  if (
+    !params.findExistingReactionId ||
+    !params.loadReactionEntityById ||
+    !params.createReactionEntity ||
+    !params.refreshPostReactionScore
+  ) {
+    return {
+      success: false,
+      offlineFallback: false,
+      upvotedByMe: params.item.upvotedByMe,
+      upvoteCount: params.item.upvoteCount,
+      errorMessage: 'Reaction persistence provider is unavailable.',
+    };
+  }
+
+  let validPostId: string;
+  let validUserId: string;
+  try {
+    validPostId = AssertValidUUID(params.item.sourcePostId, 'postId');
+    validUserId = AssertValidUUID(params.currentUserId ?? '', 'userId');
+  } catch (err) {
+    return {
+      success: false,
+      offlineFallback: false,
+      upvotedByMe: params.item.upvotedByMe,
+      upvoteCount: params.item.upvoteCount,
+      errorMessage: err instanceof Error ? err.message : 'Invalid post or user identifier for reaction.',
+    };
+  }
+
+  try {
+    const existingId = await params.findExistingReactionId(validPostId, validUserId, reactionKind);
+    let nextUpvoted = false;
+
+    if (existingId) {
+      const validReactionId = AssertValidUUID(existingId, 'reactionId');
+      const existingEntity = await params.loadReactionEntityById(validReactionId);
+      if (!existingEntity) {
+        return {
+          success: false,
+          offlineFallback: false,
+          upvotedByMe: params.item.upvotedByMe,
+          upvoteCount: params.item.upvoteCount,
+          errorMessage: 'Existing reaction record could not be loaded for removal.',
+        };
+      }
+      const deleted = await existingEntity.Delete();
+      if (!deleted) {
+        return {
+          success: false,
+          offlineFallback: false,
+          upvotedByMe: params.item.upvotedByMe,
+          upvoteCount: params.item.upvoteCount,
+          errorMessage: existingEntity.LatestResult?.CompleteMessage?.trim() || 'Failed to remove upvote on server.',
+        };
+      }
+      nextUpvoted = false;
+    } else {
+      const createdEntity = await params.createReactionEntity();
+      if (!createdEntity) {
+        return {
+          success: false,
+          offlineFallback: false,
+          upvotedByMe: params.item.upvotedByMe,
+          upvoteCount: params.item.upvoteCount,
+          errorMessage: 'Could not instantiate reaction entity.',
+        };
+      }
+      createdEntity.PostID = validPostId;
+      createdEntity.UserID = validUserId;
+      createdEntity.ReactionKind = reactionKind;
+      createdEntity.Weight = 1;
+      const saved = await createdEntity.Save();
+      if (!saved) {
+        return {
+          success: false,
+          offlineFallback: false,
+          upvotedByMe: params.item.upvotedByMe,
+          upvoteCount: params.item.upvoteCount,
+          errorMessage: createdEntity.LatestResult?.CompleteMessage?.trim() || 'Failed to save upvote on server.',
+        };
+      }
+      nextUpvoted = true;
+    }
+
+    const refreshedScore = await params.refreshPostReactionScore(validPostId);
+    const nextCount =
+      typeof refreshedScore === 'number' && Number.isFinite(refreshedScore)
+        ? refreshedScore
+        : Math.max(0, params.item.upvoteCount + (nextUpvoted ? 1 : -1));
+
+    return {
+      success: true,
+      offlineFallback: false,
+      upvotedByMe: nextUpvoted,
+      upvoteCount: nextCount,
+      errorMessage: null,
+    };
+  } catch (err) {
+    return {
+      success: false,
+      offlineFallback: false,
+      upvotedByMe: params.item.upvotedByMe,
+      upvoteCount: params.item.upvoteCount,
+      errorMessage: err instanceof Error ? err.message : 'Server error while updating reaction.',
+    };
+  }
 }

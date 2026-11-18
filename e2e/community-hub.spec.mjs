@@ -54,8 +54,15 @@ test('Real Angular 21 Community Hub: 26 ClassFactory registrations, 4 tabs, PDF 
     };
   });
 
+  await page.request.post(new URL('/api/harness/reset', harnessUrl).toString());
   await page.goto(harnessUrl);
   await page.waitForFunction(() => window.__harnessReady === true);
+
+  // Verify dynamic DB Space & Topic Tag directories are rendered in left rail
+  await expect(page.locator('.mjc-commons__left-rail')).toContainText('Customer Success Community');
+  await expect(page.locator('.mjc-commons__left-rail')).toContainText('#API Security');
+  await expect(page.locator('.mjc-commons__left-rail')).toContainText('#Multi-Region');
+  await expect(page.locator('.mjc-commons__left-rail')).toContainText('#Observability');
 
   // --- 0. Runtime ClassFactory registration verification across all standalone + Collaboration classes ---
   const runtimeRegs = await page.evaluate(() => window.__runtimeRegistrations);
@@ -167,7 +174,7 @@ test('Real Angular 21 Community Hub: 26 ClassFactory registrations, 4 tabs, PDF 
   await expect(page.locator('#mjc-detail-sheet-backdrop')).toBeHidden();
   await expect(firstInspectBtn).toBeFocused();
 
-  // Open + Ask or Share Modal, verify fail-closed empty draft validation, then submit Discussion Post
+  // Open + Ask or Share Modal, verify fail-closed empty draft validation, then submit Discussion Post + ForumPostTag rows
   await page.click('#mjc-header-ask-share-btn');
   const askShareDialog = page.locator('#mjc-ask-share-modal-backdrop [role="dialog"]');
   await expect(askShareDialog).toBeVisible();
@@ -180,7 +187,47 @@ test('Real Angular 21 Community Hub: 26 ClassFactory registrations, 4 tabs, PDF 
   await page.fill('#mjc-ask-share-tags-input', 'Multi-Region, Observability');
   await page.click('#mjc-ask-share-submit-btn');
   await expect(page.locator('#mjc-ask-share-modal-backdrop')).toBeHidden();
-  await expect(page.locator('.mjc-commons__stream')).toContainText('Multi-Region Eventual Consistency Benchmarks');
+
+  const createdPostCard = page.locator('.mjc-stream-card', {
+    hasText: 'Multi-Region Eventual Consistency Benchmarks',
+  });
+  await expect(createdPostCard).toBeVisible();
+  await expect(createdPostCard).toContainText('#Multi-Region');
+  await expect(createdPostCard).toContainText('#Observability');
+
+  // Inspect newly created thread in Slide-Over Detail Sheet: post reply, toggle reaction, graduate thread
+  await createdPostCard.locator('.mjc-inspect-btn').click();
+  await expect(detailDialog).toBeVisible();
+
+  await page.fill('#mjc-detail-reply-input', 'Verified failover timing in staging cluster.');
+  await page.click('#mjc-detail-reply-submit-btn');
+  await expect(detailDialog.locator('.mjc-drawer-replies')).toContainText('Replies & Endorsements (1)');
+  await expect(detailDialog.locator('.mjc-drawer-replies')).toContainText('Verified failover timing in staging cluster.');
+
+  // Exercise upvote create -> delete -> create persistence via ForumPostReaction
+  await page.click('#mjc-detail-upvote-btn');
+  await expect(page.locator('#mjc-detail-upvote-btn')).toContainText('Endorse (1)');
+  await page.click('#mjc-detail-upvote-btn');
+  await expect(page.locator('#mjc-detail-upvote-btn')).toContainText('Endorse (0)');
+  await page.click('#mjc-detail-upvote-btn');
+  await expect(page.locator('#mjc-detail-upvote-btn')).toContainText('Endorse (1)');
+
+  // Exercise GraduateCommunityThread GraphQL mutation and verify PromotedToSpaceID indicator
+  await page.click('#mjc-detail-graduate-btn');
+  await expect(page.locator('#mjc-detail-promoted-space')).toBeVisible();
+  await expect(page.locator('#mjc-detail-promoted-space')).toContainText('Graduated Working Group Space:');
+  const promotedSpaceId = (
+    await page.locator('#mjc-detail-promoted-space .mjc-promoted-space-banner__id').textContent()
+  )?.trim();
+  expect(promotedSpaceId).toMatch(/^[0-9a-f-]{36}$/i);
+  await expect(page.locator('#mjc-detail-graduate-btn')).toBeDisabled();
+  await expect(page.locator('#mjc-detail-graduate-btn')).toContainText('Graduated to Working Group');
+  await page.screenshot({ path: join(SCREENSHOTS_DIR, '03-detail-drawer.png'), fullPage: false });
+
+  await page.keyboard.press('Escape');
+  await expect(page.locator('#mjc-detail-sheet-backdrop')).toBeHidden();
+  await expect(createdPostCard).toContainText('Graduated · Working Group');
+  await expect(createdPostCard).toContainText(`Space: ${promotedSpaceId}`);
 
   // Capture Screenshot 2: Knowledge Stream 3-Column Layout
   await page.locator('.mjc-commons').scrollIntoViewIfNeeded();
@@ -278,6 +325,108 @@ test('Real Angular 21 Community Hub: 26 ClassFactory registrations, 4 tabs, PDF 
   const screenshotPath = join(SCREENSHOTS_DIR, 'community-hub.png');
   await page.screenshot({ path: screenshotPath, fullPage: true });
 
+  // --- 6b. Verify Backend DB & GraphQL Mutations, then RELOAD Page and Verify All 6 States Persist ---
+  const stateBeforeReload = await (await page.request.get(new URL('/api/harness/state', harnessUrl).toString())).json();
+  const createdPostRow = stateBeforeReload.posts.find(
+    (p) => p.Title === 'Multi-Region Eventual Consistency Benchmarks',
+  );
+  expect(createdPostRow, 'New ForumPost must be persisted on backend').toBeTruthy();
+  expect(createdPostRow.PromotedToSpaceID).toBeTruthy();
+  expect(
+    stateBeforeReload.postTags.filter((pt) => pt.PostID.toLowerCase() === createdPostRow.ID.toLowerCase()).length,
+  ).toBe(2);
+
+  const replyPostType = stateBeforeReload.postTypes.find((pt) => pt.Code === 'reply');
+  const ideaProposalPostType = stateBeforeReload.postTypes.find((pt) => pt.Code === 'idea-proposal');
+  expect(replyPostType).toBeTruthy();
+  expect(ideaProposalPostType).toBeTruthy();
+
+  const childReplyRow = stateBeforeReload.posts.find(
+    (p) =>
+      p.RootPostID?.toLowerCase() === createdPostRow.ID.toLowerCase() &&
+      p.PostTypeID === replyPostType.ID &&
+      p.BodyMarkdown === 'Verified failover timing in staging cluster.',
+  );
+  expect(childReplyRow, 'Child reply ForumPost (PostType=reply) must be persisted').toBeTruthy();
+  expect(childReplyRow.ReplyDepth).toBe(1);
+  expect(childReplyRow.Status).toBe('Published');
+
+  expect(
+    stateBeforeReload.reactions.some(
+      (r) => r.PostID.toLowerCase() === createdPostRow.ID.toLowerCase() && r.ReactionKind === 'Upvote',
+    ),
+    'ForumPostReaction Upvote must be persisted',
+  ).toBe(true);
+
+  const proposedIdeaRow = stateBeforeReload.posts.find(
+    (p) => p.Title === 'Support passkey step-up auth on admin actions',
+  );
+  expect(proposedIdeaRow, 'Proposed Idea ForumPost must be persisted').toBeTruthy();
+  expect(proposedIdeaRow.PostTypeID).toBe(ideaProposalPostType.ID);
+  expect(
+    stateBeforeReload.ideas.some((i) => i.ID.toLowerCase() === proposedIdeaRow.ID.toLowerCase()),
+    'ForumIdeaPost extension row must be persisted',
+  ).toBe(true);
+
+  const promotedAnswerPostRow = stateBeforeReload.posts.find(
+    (p) => p.Title === 'Re: How do tenant schema migrations stay deterministic?',
+  );
+  expect(promotedAnswerPostRow, 'Promoted answer ForumPost must exist').toBeTruthy();
+  const promotedAnswerSubRow = stateBeforeReload.answers.find(
+    (a) => a.ID.toLowerCase() === promotedAnswerPostRow.ID.toLowerCase(),
+  );
+  expect(promotedAnswerSubRow?.IsAcceptedByAuthor).toBe(true);
+  expect(promotedAnswerSubRow?.AIEpistemicStatus).toBe('Canon Verified');
+  expect(
+    stateBeforeReload.gqlCalls.some((c) => c.query.includes('PromoteCommunityAnswerToCanon')),
+    'PromoteCommunityAnswerToCanon GraphQL mutation must execute',
+  ).toBe(true);
+  expect(
+    stateBeforeReload.gqlCalls.some((c) => c.query.includes('GraduateCommunityThread')),
+    'GraduateCommunityThread GraphQL mutation must execute',
+  ).toBe(true);
+
+  // RELOAD FULL PAGE and verify all 6 mutated states remain rendered cleanly from DB!
+  await page.reload();
+  await page.waitForFunction(() => window.__harnessReady === true);
+
+  const reloadedCard = page.locator('.mjc-stream-card', {
+    hasText: 'Multi-Region Eventual Consistency Benchmarks',
+  });
+  await expect(reloadedCard).toBeVisible();
+  await expect(reloadedCard).toContainText('#Multi-Region');
+  await expect(reloadedCard).toContainText('#Observability');
+  await expect(reloadedCard).toContainText('Graduated · Working Group');
+  await expect(reloadedCard).toContainText(`Space: ${createdPostRow.PromotedToSpaceID}`);
+  await expect(reloadedCard.locator('.mjc-upvote-btn')).toHaveAttribute('aria-pressed', 'true');
+  await expect(reloadedCard.locator('.mjc-upvote-btn')).toContainText('1');
+  await expect(reloadedCard.locator('.mjc-reply-count')).toContainText('(1)');
+
+  await reloadedCard.locator('.mjc-inspect-btn').click();
+  const reloadedDialog = page.locator('#mjc-detail-sheet-backdrop [role="dialog"]');
+  await expect(reloadedDialog).toBeVisible();
+  await expect(reloadedDialog.locator('.mjc-drawer-replies')).toContainText('Replies & Endorsements (1)');
+  await expect(reloadedDialog.locator('.mjc-drawer-replies')).toContainText('Verified failover timing in staging cluster.');
+  await expect(page.locator('#mjc-detail-upvote-btn')).toContainText('Endorse (1)');
+  await expect(page.locator('#mjc-detail-promoted-space')).toContainText(createdPostRow.PromotedToSpaceID);
+  await expect(page.locator('#mjc-detail-graduate-btn')).toBeDisabled();
+  await expect(page.locator('#mjc-detail-graduate-btn')).toContainText('Graduated to Working Group');
+  await page.keyboard.press('Escape');
+  await expect(page.locator('#mjc-detail-sheet-backdrop')).toBeHidden();
+
+  await page.click('#mjc-hub-tab-qa-canon-workbench');
+  const reloadedQaRow = page.locator('#mjc-hub-panel-qa-canon-workbench .mjc-qa-list-item', {
+    hasText: 'Re: How do tenant schema migrations stay deterministic?',
+  });
+  await expect(reloadedQaRow).toBeVisible();
+  await expect(reloadedQaRow).toContainText('Canon Verified');
+
+  await page.click('#mjc-hub-tab-quadratic-ideation-wallet');
+  await expect(page.locator('#mjc-hub-panel-quadratic-ideation-wallet')).toContainText(
+    'Support passkey step-up auth on admin actions',
+  );
+  await page.click('#mjc-hub-tab-knowledge-stream');
+
   // --- 7. WCAG 2.1 AA via axe-core across every tab ---
   /** @type {Record<string, { violationCount: number, criticalOrSerious: number }>} */
   const axeResultsByTab = {};
@@ -373,6 +522,7 @@ test('Real Angular 21 Community Hub: 26 ClassFactory registrations, 4 tabs, PDF 
     digestExportExercised: true,
     digestExportPdfVerified: true,
     qaCanonWorkbenchExercised: true,
+    persistentReloadVerified: true,
     livingCoAuthoringExercised: true,
     inlineFormExercised: true,
     sandboxedMiniAppExercised: true,

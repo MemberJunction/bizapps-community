@@ -11,7 +11,11 @@ import {
   COMMUNITY_ENTITY_NAMES,
   type mjBizAppsCommunityForumIdeaAllocationEntity,
   type mjBizAppsCommunityForumIdeaPostEntity,
+  type mjBizAppsCommunityForumPostEntity,
 } from '@mj-biz-apps/community-entities';
+
+/** Canonical `PostType.Code` from `metadata/post-types/.post-types.json` for proposed ideation items. */
+export const IDEA_POST_TYPE_CODE = 'idea-proposal' as const;
 
 export interface IdeaAllocationAggregateRow {
   ID: string;
@@ -371,4 +375,75 @@ async function executePersistIdeaAllocationAtomic(params: {
   }
 
   return { success: true, rolledBack: false, aggregate };
+}
+
+export interface ProposeIdeaPersistenceResult {
+  success: boolean;
+  postId?: string;
+  errorMessage?: string;
+}
+
+/**
+ * Persists a newly proposed idea (`ForumPost` + `ForumIdeaPost` extension row) using the
+ * authoritative `idea-proposal` PostType, rolling back the base `ForumPost` if creating the
+ * `ForumIdeaPost` subtype fails.
+ */
+export async function PersistProposedIdea(params: {
+  forumId: string;
+  postTypeId: string | null;
+  title: string;
+  summary: string;
+  user: UserInfo;
+}): Promise<ProposeIdeaPersistenceResult> {
+  if (!params.postTypeId) {
+    return {
+      success: false,
+      errorMessage: `PostType "${IDEA_POST_TYPE_CODE}" is not configured — cannot propose idea.`,
+    };
+  }
+
+  const md = new Metadata();
+  const post = await md.GetEntityObject<mjBizAppsCommunityForumPostEntity>(
+    COMMUNITY_ENTITY_NAMES.ForumPosts,
+    params.user,
+  );
+  const ideaPost = await md.GetEntityObject<mjBizAppsCommunityForumIdeaPostEntity>(
+    COMMUNITY_ENTITY_NAMES.ForumIdeaPosts,
+    params.user,
+  );
+  if (!post || !ideaPost) {
+    return { success: false, errorMessage: 'Could not instantiate Idea entities.' };
+  }
+
+  post.ForumID = params.forumId;
+  post.AuthorUserID = params.user.ID;
+  post.PostTypeID = params.postTypeId;
+  post.Title = params.title;
+  post.BodyMarkdown = params.summary;
+  post.Status = 'Published';
+  const postSaved = await post.Save();
+  if (!postSaved) {
+    return {
+      success: false,
+      errorMessage: post.LatestResult?.CompleteMessage || 'Failed to save Forum Post for proposed idea.',
+    };
+  }
+
+  ideaPost.ID = post.ID;
+  ideaPost.IdeaStatus = 'Under Consideration';
+  ideaPost.TotalPointsAllocated = 0;
+  ideaPost.EffectiveQuadraticVotes = 0;
+  ideaPost.UniqueBackerCount = 0;
+  const ideaSaved = await ideaPost.Save();
+  if (!ideaSaved) {
+    await post.Delete().catch(() => false);
+    return {
+      success: false,
+      errorMessage:
+        ideaPost.LatestResult?.CompleteMessage ||
+        'Failed to save Forum Idea Post subtype — rolled back base post.',
+    };
+  }
+
+  return { success: true, postId: post.ID };
 }

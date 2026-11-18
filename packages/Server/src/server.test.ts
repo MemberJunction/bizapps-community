@@ -4,16 +4,18 @@ import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { type CompositeKey, Metadata, RunView, UserInfo } from '@memberjunction/core';
+import { type AppContext } from '@memberjunction/server';
 import {
   BuildDeterministicGraduationUUID,
   CommunityDocumentBlocks,
+  CommunityGraduationResolver,
   CommunityPublicEdgeService,
   DeduplicateUUIDsCaseInsensitive,
   LoadBizAppsCommunityServer,
   SaveOrThrow,
   ThreadGraduationService,
   ValidateCanonPromotionCrossReferences,
-} from './index.ts';
+} from '../dist/index.js';
 
 const ROOT_POST_ID = '23acc7cf-c227-4d33-8bb1-2558d9729711';
 const USER_1 = 'e128dd44-893f-4f2b-829f-6b9bb333d9a3';
@@ -670,5 +672,170 @@ describe('@mj-biz-apps/community-server services and document blocks', () => {
 
     assert.equal(block.blockType, 'community-canon-answer');
     assert.match(block.plainTextFallback, /Canon Verified/);
+  });
+
+  describe('CommunityGraduationResolver GraphQL mutations', () => {
+    it('rejects unauthenticated requests on both GraduateCommunityThread and PromoteCommunityAnswerToCanon', async () => {
+      const resolver = new CommunityGraduationResolver();
+      mock.method(resolver, 'GetUserFromPayload', () => null);
+      const unauthContext: Pick<AppContext, 'userPayload'> = {
+        userPayload: { email: '', userRecord: null, sessionId: '' },
+      };
+
+      const gradRes = await resolver.GraduateCommunityThread(
+        {
+          RootPostID: ROOT_POST_ID,
+          TargetSpaceTypeCode: 'working-group',
+          TargetSpaceName: 'Tax Working Group',
+        },
+        unauthContext,
+      );
+      assert.equal(gradRes.Success, false);
+      assert.match(gradRes.ErrorMessage ?? '', /authenticated user/i);
+
+      const canonRes = await resolver.PromoteCommunityAnswerToCanon(
+        {
+          QuestionPostID: QUESTION_POST_ID,
+          CanonAnswerPostID: ANSWER_POST_ID,
+        },
+        unauthContext,
+      );
+      assert.equal(canonRes.Success, false);
+      assert.match(canonRes.ErrorMessage ?? '', /authenticated user/i);
+      mock.restoreAll();
+    });
+
+    it('GraduateCommunityThread delegates to ThreadGraduationService.GraduateThreadToSpace with contextUser', async () => {
+      const resolver = new CommunityGraduationResolver();
+      const user = new UserInfo(undefined, { ID: USER_1 });
+      mock.method(resolver, 'GetUserFromPayload', () => user);
+
+      let capturedContextUserId: string | null = null;
+      let capturedRootPostId: string | null = null;
+      mock.method(
+        ThreadGraduationService.prototype,
+        'GraduateThreadToSpace',
+        async (params: {
+          request: { rootPostId: string };
+          contextUser: UserInfo;
+        }) => {
+          capturedContextUserId = params.contextUser.ID;
+          capturedRootPostId = params.request.rootPostId;
+          return {
+            promotedToSpaceId: EXISTING_SPACE_ID,
+            targetSpaceTypeCode: 'working-group',
+            seededTaskId: '11111111-1111-4111-8111-111111111111',
+            invitedParticipantCount: 2,
+          };
+        },
+      );
+
+      const res = await resolver.GraduateCommunityThread(
+        {
+          RootPostID: ROOT_POST_ID,
+          TargetSpaceTypeCode: 'working-group',
+          TargetSpaceName: 'Tax Working Group',
+          SeedInitialTaskTitle: 'Draft charter',
+          IncludeParticipantUserIDs: [USER_1, USER_2],
+        },
+        { userPayload: { email: 'u@example.com', userRecord: user, sessionId: 's-1' } },
+      );
+      mock.restoreAll();
+
+      assert.equal(res.Success, true);
+      assert.equal(res.PromotedToSpaceID, EXISTING_SPACE_ID);
+      assert.equal(res.TargetSpaceTypeCode, 'working-group');
+      assert.equal(res.SeededTaskID, '11111111-1111-4111-8111-111111111111');
+      assert.equal(res.InvitedParticipantCount, 2);
+      assert.equal(capturedContextUserId, USER_1);
+      assert.equal(capturedRootPostId, ROOT_POST_ID);
+    });
+
+    it('GraduateCommunityThread returns Success: false when service rejects unauthorized caller', async () => {
+      const resolver = new CommunityGraduationResolver();
+      const user = new UserInfo(undefined, { ID: USER_2 });
+      mock.method(resolver, 'GetUserFromPayload', () => user);
+      mock.method(ThreadGraduationService.prototype, 'GraduateThreadToSpace', async () => {
+        throw new Error('Current member does not hold the CanPromoteToSpace capability in this forum.');
+      });
+
+      const res = await resolver.GraduateCommunityThread(
+        {
+          RootPostID: ROOT_POST_ID,
+          TargetSpaceTypeCode: 'working-group',
+          TargetSpaceName: 'Unauthorized Group',
+        },
+        { userPayload: { email: 'u2@example.com', userRecord: user, sessionId: 's-2' } },
+      );
+      mock.restoreAll();
+
+      assert.equal(res.Success, false);
+      assert.match(res.ErrorMessage ?? '', /CanPromoteToSpace/);
+    });
+
+    it('PromoteCommunityAnswerToCanon delegates to ThreadGraduationService.ApplyCanonPromotion with contextUser', async () => {
+      const resolver = new CommunityGraduationResolver();
+      const user = new UserInfo(undefined, { ID: USER_1 });
+      mock.method(resolver, 'GetUserFromPayload', () => user);
+
+      let capturedQuestionId: string | null = null;
+      let capturedAnswerId: string | null = null;
+      let capturedUserId: string | null = null;
+      mock.method(
+        ThreadGraduationService.prototype,
+        'ApplyCanonPromotion',
+        async (params: {
+          request: { questionPostId: string; canonAnswerPostId: string };
+          contextUser: UserInfo;
+        }) => {
+          capturedQuestionId = params.request.questionPostId;
+          capturedAnswerId = params.request.canonAnswerPostId;
+          capturedUserId = params.contextUser.ID;
+          return {
+            questionPostId: params.request.questionPostId,
+            canonAnswerPostId: params.request.canonAnswerPostId,
+            alreadyPromoted: false,
+          };
+        },
+      );
+
+      const res = await resolver.PromoteCommunityAnswerToCanon(
+        {
+          QuestionPostID: QUESTION_POST_ID,
+          CanonAnswerPostID: ANSWER_POST_ID,
+        },
+        { userPayload: { email: 'u@example.com', userRecord: user, sessionId: 's-1' } },
+      );
+      mock.restoreAll();
+
+      assert.equal(res.Success, true);
+      assert.equal(res.QuestionPostID, QUESTION_POST_ID);
+      assert.equal(res.CanonAnswerPostID, ANSWER_POST_ID);
+      assert.equal(res.AlreadyPromoted, false);
+      assert.equal(capturedQuestionId, QUESTION_POST_ID);
+      assert.equal(capturedAnswerId, ANSWER_POST_ID);
+      assert.equal(capturedUserId, USER_1);
+    });
+
+    it('PromoteCommunityAnswerToCanon returns Success: false when ApplyCanonPromotion denies permission', async () => {
+      const resolver = new CommunityGraduationResolver();
+      const user = new UserInfo(undefined, { ID: USER_2 });
+      mock.method(resolver, 'GetUserFromPayload', () => user);
+      mock.method(ThreadGraduationService.prototype, 'ApplyCanonPromotion', async () => {
+        throw new Error('Only the question author or a forum moderator may promote an answer to Knowledge Canon.');
+      });
+
+      const res = await resolver.PromoteCommunityAnswerToCanon(
+        {
+          QuestionPostID: QUESTION_POST_ID,
+          CanonAnswerPostID: ANSWER_POST_ID,
+        },
+        { userPayload: { email: 'u2@example.com', userRecord: user, sessionId: 's-2' } },
+      );
+      mock.restoreAll();
+
+      assert.equal(res.Success, false);
+      assert.match(res.ErrorMessage ?? '', /question author or a forum moderator/i);
+    });
   });
 });

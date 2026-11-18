@@ -1193,3 +1193,32 @@
   color: var(--mj-brand-on-primary);
   border-color: var(--mj-brand-primary);
 }
+
+.mjc-promoted-space-banner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--mj-space-2);
+  padding: var(--mj-space-3);
+  border: 1px solid color-mix(in srgb, var(--mj-status-success, var(--mj-brand-primary)) 40%, var(--mj-border-default));
+  border-radius: var(--mj-radius-md);
+  background: color-mix(in srgb, var(--mj-status-success, var(--mj-brand-primary)) 10%, var(--mj-bg-surface));
+  font-size: var(--mj-text-xs);
+  color: var(--mj-text-primary);
+}
+
+.mjc-promoted-space-banner__id {
+  font-family: var(--mj-font-mono, monospace);
+  color: var(--mj-text-secondary);
+}
+
+.mjc-community-hub__error {
+  margin: 0;
+  padding: var(--mj-space-3);
+  border: 1px solid var(--mj-status-danger, var(--mj-border-default));
+  border-radius: var(--mj-radius-md);
+  background: color-mix(in srgb, var(--mj-status-danger, var(--mj-brand-primary)) 12%, var(--mj-bg-surface));
+  color: var(--mj-status-danger-text, var(--mj-text-primary));
+  font-size: var(--mj-text-sm);
+}

@@ -1,6 +1,7 @@
 export * from './lib/client-bootstrap.ts';
 export * from './lib/community-hub-commons.ts';
 export * from './lib/community-hub-ideation.ts';
+export * from './lib/community-hub-mutations.ts';
 export * from './lib/community-hub-preferences.ts';
 export * from './lib/community-hub-workbench.ts';
 export * from './lib/community-hub-resource.component.ts';

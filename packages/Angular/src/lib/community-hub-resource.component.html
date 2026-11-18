@@ -113,6 +113,9 @@
         @if (digestExportError) {
           <div class="mjc-hub-header__alert" role="alert">{{ digestExportError }}</div>
         }
+        @if (hubLoadError) {
+          <div id="mjc-hub-load-error" class="mjc-hub-header__alert" role="alert">{{ hubLoadError }}</div>
+        }
 
         <!-- MATCHED QUESTION SPOTLIGHT BANNER -->
         @if (matchedCanonQuestion; as matched) {
@@ -229,14 +232,15 @@
                       <div class="mjc-porch__callout">
                         <div class="mjc-porch__callout-header">
                           <span class="mjc-porch__callout-badge">Peer Review Spotlight</span>
-                          <span class="mjc-porch__callout-meta">Canon Verified</span>
+                          <span class="mjc-porch__callout-meta">{{ qaCanonItems[0]?.epistemicStatus || 'Canon' }}</span>
                         </div>
-                        <h2 class="mjc-porch__callout-title">
-                          {{ qaCanonItems[0]?.title || 'How do I rotate my API key without downtime?' }}
-                        </h2>
-                        <p class="mjc-porch__callout-body">
-                          {{ qaCanonItems[0]?.bodyMarkdown || 'Mint a secondary client secret, deploy the dual-key config to workers, then revoke the legacy secret after one lease interval.' }}
-                        </p>
+                        @if (qaCanonItems[0]; as spotlightQa) {
+                          <h2 class="mjc-porch__callout-title">{{ spotlightQa.title }}</h2>
+                          <p class="mjc-porch__callout-body">{{ spotlightQa.bodyMarkdown }}</p>
+                        } @else {
+                          <h2 class="mjc-porch__callout-title">Q&amp;A Canon Ready</h2>
+                          <p class="mjc-porch__callout-body">Ask a question or promote verified community answers into persistent institutional Canon.</p>
+                        }
                         <div class="mjc-porch__callout-footer">
                           <span>{{ qaCanonItems.length }} Verified Canon Entries</span>
                           <button
@@ -287,6 +291,8 @@
 
               <!-- 3-COLUMN COMMONS WORKSPACE -->
               <mjc-knowledge-stream
+                [spaces]="streamSpaces"
+                [topics]="streamTopics"
                 [items]="commonsItems"
                 [selectedItemId]="detailSheetItemId"
                 [activeSpaceFilter]="activeSpaceFilter"
@@ -296,6 +302,7 @@
                 [allowedForumIDs]="allowedForumIDs"
                 [isSynthesizing]="isSynthesizingFeed"
                 [threadSynthesisResult]="threadSynthesisResult"
+                [actionError]="streamActionError"
                 [activeCampaignName]="activeCampaign.name"
                 [remainingWalletPoints]="remainingWalletPoints"
                 [totalWalletPoints]="activeCampaign.budgetPoints"
@@ -549,6 +556,7 @@
         <div
           id="mjc-detail-sheet-backdrop"
           class="mjc-drawer-backdrop"
+          role="presentation"
           (click)="closeDetailSheet()"
         >
           <div
@@ -634,6 +642,25 @@
                 </button>
               </div>
 
+              @if (activeDetail.promotedToSpaceId; as promotedSpaceId) {
+                <div id="mjc-detail-promoted-space" class="mjc-promoted-space-banner">
+                  <div>
+                    <strong>Graduated Working Group Space: </strong>
+                    <span class="mjc-promoted-space-banner__id">{{ promotedSpaceId }}</span>
+                  </div>
+                  <button
+                    type="button"
+                    class="mjc-community-hub__btn"
+                    (click)="setSpaceFilter(promotedSpaceId); closeDetailSheet()"
+                  >
+                    Filter Stream by Working Group →
+                  </button>
+                </div>
+              }
+
+              @if (detailErrorMessage) {
+                <p id="mjc-detail-error-banner" class="mjc-community-hub__error" role="alert">{{ detailErrorMessage }}</p>
+              }
               @if (detailActionMessage) {
                 <p class="mjc-community-hub__status" role="status">{{ detailActionMessage }}</p>
               }
@@ -687,6 +714,7 @@
         <div
           id="mjc-ask-share-modal-backdrop"
           class="mjc-modal-backdrop"
+          role="presentation"
           (click)="closeAskShareModal()"
         >
           <div
@@ -812,7 +840,22 @@
               </div>
 
               <div class="mjc-community-hub__field">
-                <label for="mjc-ask-share-tags-input" class="mjc-community-hub__label">Tags (comma-separated)</label>
+                <label for="mjc-ask-share-tags-input" class="mjc-community-hub__label">Tags (select or enter comma-separated names)</label>
+                @if (availableAskShareTopicTags.length > 0) {
+                  <div class="mjc-ideation-presets" role="group" aria-label="Forum topic tags">
+                    @for (tag of availableAskShareTopicTags; track tag.ID) {
+                      <button
+                        type="button"
+                        class="mjc-preset-btn"
+                        [class.mjc-preset-btn--active]="isAskShareTopicTagSelected(tag.ID)"
+                        [attr.aria-pressed]="isAskShareTopicTagSelected(tag.ID)"
+                        (click)="toggleAskShareTopicTag(tag.ID)"
+                      >
+                        #{{ tag.Name }}
+                      </button>
+                    }
+                  </div>
+                }
                 <input
                   id="mjc-ask-share-tags-input"
                   name="askShareTags"
