@@ -1,6 +1,18 @@
 import { createHash } from 'node:crypto';
-import { BaseEntity, CompositeKey, Metadata, RunView, type TransactionGroupBase, type UserInfo } from '@memberjunction/core';
+import { BaseEntity, CompositeKey, LogError, Metadata, RunView, type TransactionGroupBase, type UserInfo } from '@memberjunction/core';
 import { UUIDsEqual } from '@memberjunction/global';
+import {
+  Arg,
+  Ctx,
+  Field,
+  InputType,
+  Int,
+  Mutation,
+  ObjectType,
+  Resolver,
+  ResolverBase,
+  type AppContext,
+} from '@memberjunction/server';
 import type { MJTaskEntity } from '@memberjunction/core-entities';
 import { AssertValidUUID, AssertValidUUIDList, CommunityRules, EscapeSqlLiteral, type AnonymousReadMode } from '@mj-biz-apps/community-core';
 import type { ThreadGraduationRequest, ThreadGraduationResult } from '@mj-biz-apps/community-actions';
@@ -855,4 +867,164 @@ export function DeduplicateUUIDsCaseInsensitive(ids: ReadonlyArray<string>): str
     }
   }
   return Array.from(seen.values());
+}
+
+@InputType()
+export class GraduateCommunityThreadInput {
+  @Field()
+  RootPostID: string;
+
+  @Field()
+  TargetSpaceTypeCode: string;
+
+  @Field()
+  TargetSpaceName: string;
+
+  @Field({ nullable: true })
+  SeedInitialTaskTitle?: string;
+
+  @Field(() => [String], { nullable: true })
+  IncludeParticipantUserIDs?: string[];
+
+  @Field(() => [String], { nullable: true })
+  AllowedChildSpaceTypeCodes?: string[];
+}
+
+@ObjectType()
+export class GraduateCommunityThreadPayload {
+  @Field()
+  Success: boolean;
+
+  @Field({ nullable: true })
+  PromotedToSpaceID?: string;
+
+  @Field({ nullable: true })
+  TargetSpaceTypeCode?: string;
+
+  @Field({ nullable: true })
+  SeededTaskID?: string;
+
+  @Field(() => Int, { nullable: true })
+  InvitedParticipantCount?: number;
+
+  @Field({ nullable: true })
+  ErrorMessage?: string;
+}
+
+@InputType()
+export class PromoteCommunityAnswerToCanonInput {
+  @Field()
+  QuestionPostID: string;
+
+  @Field()
+  CanonAnswerPostID: string;
+}
+
+@ObjectType()
+export class PromoteCommunityAnswerToCanonPayload {
+  @Field()
+  Success: boolean;
+
+  @Field({ nullable: true })
+  QuestionPostID?: string;
+
+  @Field({ nullable: true })
+  CanonAnswerPostID?: string;
+
+  @Field({ nullable: true })
+  AlreadyPromoted?: boolean;
+
+  @Field({ nullable: true })
+  ErrorMessage?: string;
+}
+
+/**
+ * Authoritative GraphQL mutation bridge for Community thread-to-space graduation and Q&A Canon
+ * promotion. Enforces authenticated `contextUser` identity and delegates to
+ * {@link ThreadGraduationService}.
+ */
+@Resolver()
+export class CommunityGraduationResolver extends ResolverBase {
+  @Mutation(() => GraduateCommunityThreadPayload)
+  public async GraduateCommunityThread(
+    @Arg('input', () => GraduateCommunityThreadInput) input: GraduateCommunityThreadInput,
+    @Ctx() context: Pick<AppContext, 'userPayload'>,
+  ): Promise<GraduateCommunityThreadPayload> {
+    const contextUser = this.GetUserFromPayload(context?.userPayload);
+    if (!contextUser || !contextUser.ID) {
+      return {
+        Success: false,
+        ErrorMessage: 'Graduating a community thread requires an authenticated user.',
+      };
+    }
+
+    try {
+      const service = new ThreadGraduationService();
+      const result = await service.GraduateThreadToSpace({
+        request: {
+          rootPostId: input.RootPostID,
+          targetSpaceTypeCode: input.TargetSpaceTypeCode,
+          targetSpaceName: input.TargetSpaceName,
+          seedInitialTaskTitle: input.SeedInitialTaskTitle ?? null,
+          includeParticipantUserIds: input.IncludeParticipantUserIDs ?? [],
+        },
+        allowedChildSpaceTypeCodes: input.AllowedChildSpaceTypeCodes,
+        contextUser,
+      });
+
+      return {
+        Success: true,
+        PromotedToSpaceID: result.promotedToSpaceId,
+        TargetSpaceTypeCode: result.targetSpaceTypeCode,
+        SeededTaskID: result.seededTaskId ?? undefined,
+        InvitedParticipantCount: result.invitedParticipantCount,
+      };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      LogError(`GraduateCommunityThread failed: ${message}`);
+      return {
+        Success: false,
+        ErrorMessage: message || 'Failed to graduate community thread.',
+      };
+    }
+  }
+
+  @Mutation(() => PromoteCommunityAnswerToCanonPayload)
+  public async PromoteCommunityAnswerToCanon(
+    @Arg('input', () => PromoteCommunityAnswerToCanonInput) input: PromoteCommunityAnswerToCanonInput,
+    @Ctx() context: Pick<AppContext, 'userPayload'>,
+  ): Promise<PromoteCommunityAnswerToCanonPayload> {
+    const contextUser = this.GetUserFromPayload(context?.userPayload);
+    if (!contextUser || !contextUser.ID) {
+      return {
+        Success: false,
+        ErrorMessage: 'Promoting an answer to Knowledge Canon requires an authenticated user.',
+      };
+    }
+
+    try {
+      const service = new ThreadGraduationService();
+      const result = await service.ApplyCanonPromotion({
+        request: {
+          questionPostId: input.QuestionPostID,
+          canonAnswerPostId: input.CanonAnswerPostID,
+        },
+        contextUser,
+      });
+
+      return {
+        Success: true,
+        QuestionPostID: result.questionPostId,
+        CanonAnswerPostID: result.canonAnswerPostId,
+        AlreadyPromoted: result.alreadyPromoted,
+      };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      LogError(`PromoteCommunityAnswerToCanon failed: ${message}`);
+      return {
+        Success: false,
+        ErrorMessage: message || 'Failed to promote answer to Knowledge Canon.',
+      };
+    }
+  }
 }
