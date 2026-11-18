@@ -65,6 +65,10 @@ export interface ResolvedForumMemberRole {
   roleType: IForumRoleTypeDescriptor | null;
 }
 
+export function isModeratorRole(role: IForumRoleTypeDescriptor | null): boolean {
+  return role?.CanModerate === true;
+}
+
 export function failValidation(result: ValidationResult, fieldName: string, message: string): ValidationResult {
   result.Success = false;
   result.Errors.push(new ValidationErrorInfo(fieldName, message, null, ValidationErrorType.Failure));
