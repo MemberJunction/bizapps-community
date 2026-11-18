@@ -66,7 +66,7 @@ export interface ResolvedForumMemberRole {
 }
 
 export function isModeratorRole(role: IForumRoleTypeDescriptor | null): boolean {
-  return role?.CanModerate === true;
+  return role?.CanModerateQueue === true;
 }
 
 export function failValidation(result: ValidationResult, fieldName: string, message: string): ValidationResult {

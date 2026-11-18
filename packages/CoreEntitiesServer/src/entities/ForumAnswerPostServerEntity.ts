@@ -1,4 +1,4 @@
-import { BaseEntity, type EntityDeleteOptions, type EntitySaveOptions, type ValidationResult } from '@memberjunction/core';
+import { BaseEntity, type EntityDeleteOptions, type EntitySaveOptions, type ValidationResult, type TransactionGroupBase } from '@memberjunction/core';
 import { RegisterClass, UUIDsEqual } from '@memberjunction/global';
 import {
   COMMUNITY_ENTITY_NAMES,
@@ -108,10 +108,10 @@ export class ForumAnswerPostServerEntity extends mjBizAppsCommunityForumAnswerPo
 
     // Check VerifiedByModerator or AIEpistemicStatus
     if (
-      this.IsVerifiedByModerator === true ||
+      (this.IsVerifiedByModerator === true) ||
       (this.IsSaved && Boolean(existingAnswer?.IsVerifiedByModerator) !== Boolean(this.IsVerifiedByModerator)) ||
-      this.AIEpistemicStatus === 'Canon Verified' ||
-      (this.IsSaved && existingAnswer?.AIEpistemicStatus !== 'Canon Verified' && this.AIEpistemicStatus === 'Canon Verified')
+      (this.AIEpistemicStatus as EpistemicStatusValue) === 'Canon Verified' ||
+      (this.IsSaved && (existingAnswer?.AIEpistemicStatus as EpistemicStatusValue) !== 'Canon Verified' && (this.AIEpistemicStatus as EpistemicStatusValue) === 'Canon Verified')
     ) {
       if (!isModerator) {
         return failValidation(result, 'AIEpistemicStatus', 'Only a moderator can verify answers or set epistemic status to Canon Verified.');
@@ -123,7 +123,7 @@ export class ForumAnswerPostServerEntity extends mjBizAppsCommunityForumAnswerPo
 
   public override async Save(options?: EntitySaveOptions): Promise<boolean> {
     // CR-04: Transaction Propagation
-    const txGroup = options?.TransactionGroup ?? null;
+    const txGroup = (options as EntitySaveOptions & { TransactionGroup?: TransactionGroupBase })?.TransactionGroup ?? null;
     if (txGroup) this.TransactionGroup = txGroup;
 
     const saved = await super.Save(options);

@@ -1,4 +1,4 @@
-import { BaseEntity, type EntityDeleteOptions, type EntitySaveOptions, type ValidationResult } from '@memberjunction/core';
+import { BaseEntity, type EntityDeleteOptions, type EntitySaveOptions, type ValidationResult, type TransactionGroupBase } from '@memberjunction/core';
 import { RegisterClass, UUIDsEqual } from '@memberjunction/global';
 import {
   COMMUNITY_ENTITY_NAMES,
@@ -57,6 +57,7 @@ export class ForumPostReactionServerEntity extends mjBizAppsCommunityForumPostRe
   }
 
   // ... rest of implementation
+// ...
   public override async Save(options?: EntitySaveOptions): Promise<boolean> {
     if (this.Weight == null || !Number.isFinite(this.Weight)) {
       this.Weight = 1;
@@ -65,7 +66,7 @@ export class ForumPostReactionServerEntity extends mjBizAppsCommunityForumPostRe
     const saved = await super.Save(options);
     if (!saved) return false;
 
-    await this.recomputeParentReactionScore(this.PostID, options?.TransactionGroup);
+    await this.recomputeParentReactionScore(this.PostID, (options as EntitySaveOptions & { TransactionGroup?: TransactionGroupBase })?.TransactionGroup);
     return true;
   }
 
@@ -75,11 +76,14 @@ export class ForumPostReactionServerEntity extends mjBizAppsCommunityForumPostRe
     const deleted = await super.Delete(options);
     if (!deleted) return false;
 
-    await this.recomputeParentReactionScore(postId, options?.TransactionGroup);
+    await this.recomputeParentReactionScore(postId, (options as EntityDeleteOptions & { TransactionGroup?: TransactionGroupBase })?.TransactionGroup);
     return true;
   }
 
-  private async recomputeParentReactionScore(postId: string, txGroup?: any): Promise<void> {
+  private async recomputeParentReactionScore(postId: string, txGroup?: TransactionGroupBase): Promise<void> {
+// ...
+
+
     const validPostId = validUuidOrNull(postId);
     if (!validPostId) return;
 

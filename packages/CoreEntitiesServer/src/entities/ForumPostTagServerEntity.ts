@@ -1,4 +1,4 @@
-import { BaseEntity, type EntityDeleteOptions, type EntitySaveOptions, type ValidationResult } from '@memberjunction/core';
+import { BaseEntity, type EntityDeleteOptions, type EntitySaveOptions, type ValidationResult, type TransactionGroupBase } from '@memberjunction/core';
 import { RegisterClass, UUIDsEqual } from '@memberjunction/global';
 import {
   COMMUNITY_ENTITY_NAMES,
@@ -91,7 +91,7 @@ export class ForumPostTagServerEntity extends mjBizAppsCommunityForumPostTagEnti
 
   public override async Save(options?: EntitySaveOptions): Promise<boolean> {
     // CR-04: Transaction Propagation
-    const txGroup = options?.TransactionGroup ?? null;
+    const txGroup = (options as EntitySaveOptions & { TransactionGroup?: TransactionGroupBase })?.TransactionGroup ?? null;
     if (txGroup) this.TransactionGroup = txGroup;
 
     const previousTopicTagId = this.IsSaved ? getStringOldValue(this, 'TopicTagID') : null;

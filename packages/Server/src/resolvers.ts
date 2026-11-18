@@ -15,6 +15,7 @@ import {
 } from '@memberjunction/server';
 import type { MJTaskEntity } from '@memberjunction/core-entities';
 import { AssertValidUUID, AssertValidUUIDList, CommunityRules, EscapeSqlLiteral, type AnonymousReadMode } from '@mj-biz-apps/community-core';
+import { ForumPostReactionServerEntity } from '@mj-biz-apps/community-core-entities-server';
 import type { ThreadGraduationRequest, ThreadGraduationResult } from '@mj-biz-apps/community-actions';
 import {
   COMMUNITY_ENTITY_NAMES,
@@ -24,6 +25,8 @@ import {
   type mjBizAppsCommunityForumEntity,
   type mjBizAppsCommunityForumMemberEntity,
   type mjBizAppsCommunityForumPostEntity,
+  type mjBizAppsCommunityForumPostReactionEntity,
+  type mjBizAppsCommunityForumPostReactionEntityType,
   type mjBizAppsCommunityForumQuestionPostEntity,
   type mjBizAppsCommunityForumRoleTypeEntity,
 } from '@mj-biz-apps/community-entities';
@@ -978,7 +981,7 @@ export class CommunityGraduationResolver extends ResolverBase {
         EntityName: COMMUNITY_ENTITY_NAMES.ForumPostReactions,
         ExtraFilter: `PostID = '${validPostId}' AND UserID = '${contextUser.ID}' AND ReactionType = '${EscapeSqlLiteral(input.ReactionType)}'`,
         Fields: ['ID'],
-        ResultType: 'entity',
+        ResultType: 'entity_object',
         MaxRows: 1,
       }, contextUser);
 
@@ -1016,7 +1019,7 @@ export class CommunityGraduationResolver extends ResolverBase {
         if (reaction) {
           reaction.PostID = validPostId;
           reaction.UserID = contextUser.ID;
-          reaction.ReactionType = input.ReactionType;
+          (reaction as ForumPostReactionServerEntity).ReactionKind = input.ReactionType as mjBizAppsCommunityForumPostReactionEntityType['ReactionKind'];
           await reaction.Save();
         }
         

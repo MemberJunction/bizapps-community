@@ -27,7 +27,7 @@ import {
   ValidateAskShareDraft,
   type CommunityCommonsReply,
 } from './lib/community-hub-commons.ts';
-import { GraduateThreadViaProvider } from './lib/community-hub-mutations.ts';
+import * as CommunityHubMutations from './lib/community-hub-mutations';
 import {
   COMMUNITY_HUB_PREFERENCE_KEYS,
   CommunityHubPreferences,
@@ -911,11 +911,11 @@ describe('Slice 3 — Live Thread Reply, Upvote Reaction, Dynamic Directories, T
     assert.equal(rolledBack, true);
   });
 
-  it('invokes GraduateCommunityThread GraphQL mutation via GraduateThreadViaProvider and fails closed on errors', async () => {
+  it('invokes GraduateCommunityThread GraphQL mutation via CommunityHubMutations.GraduateThreadViaProvider and fails closed on errors', async () => {
     const PROMOTED_SPACE_ID = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
     const user = new UserInfo(undefined, { ID: USER_ID, Name: 'Ada' });
     let capturedQuery = '';
-    const liveOk = await GraduateThreadViaProvider({
+    const liveOk = await CommunityHubMutations.GraduateThreadViaProvider({
       rootPostId: POST_ID,
       targetSpaceTypeCode: 'working-group',
       targetSpaceName: 'Multi-Region Failover — Working Group',
@@ -943,7 +943,7 @@ describe('Slice 3 — Live Thread Reply, Upvote Reaction, Dynamic Directories, T
     assert.equal(liveOk.promotedToSpaceId, PROMOTED_SPACE_ID);
 
     // Fails closed without CurrentUser when provider exists
-    const unauth = await GraduateThreadViaProvider({
+    const unauth = await CommunityHubMutations.GraduateThreadViaProvider({
       rootPostId: POST_ID,
       targetSpaceName: 'Unauth Group',
       provider: { CurrentUser: undefined },
@@ -951,7 +951,7 @@ describe('Slice 3 — Live Thread Reply, Upvote Reaction, Dynamic Directories, T
     assert.equal(unauth.success, false);
 
     // Offline fallback ONLY when provider is null
-    const offline = await GraduateThreadViaProvider({
+    const offline = await CommunityHubMutations.GraduateThreadViaProvider({
       rootPostId: 'seed-feed-1',
       targetSpaceName: 'Offline Group',
       provider: null,
@@ -966,7 +966,7 @@ describe('Slice 3 — Live Thread Reply, Upvote Reaction, Dynamic Directories, T
     assert.doesNotMatch(streamTs, /seed-feed-1/);
     assert.match(hubTs, /PersistDetailReply\(/);
     assert.match(hubTs, /ToggleReactionViaProvider\(/);
-    assert.match(hubTs, /GraduateThreadViaProvider\(/);
+    assert.match(hubTs, /CommunityHubMutations.GraduateThreadViaProvider\(/);
     assert.doesNotMatch(hubTs, /catch\s*\([^)]*\)\s*\{[^}]*applySeededFallback/);
     assert.match(hubHtml, /id="mjc-detail-promoted-space"/);
     assert.match(hubHtml, /id="mjc-detail-error-banner"/);

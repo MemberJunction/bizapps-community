@@ -15,6 +15,18 @@ export const GRADUATE_COMMUNITY_THREAD_MUTATION = `
   }
 `;
 
+export const PROMOTE_COMMUNITY_ANSWER_TO_CANON_MUTATION = `
+  mutation PromoteCommunityAnswerToCanon($input: PromoteCommunityAnswerToCanonInput!) {
+    PromoteCommunityAnswerToCanon(input: $input) {
+      Success
+      QuestionPostID
+      CanonAnswerPostID
+      AlreadyPromoted
+      ErrorMessage
+    }
+  }
+`;
+
 export const TOGGLE_COMMUNITY_POST_REACTION_MUTATION = `
   mutation ToggleCommunityPostReaction($input: CommunityReactionToggleInputGQL!) {
     ToggleCommunityPostReaction(input: $input) {
@@ -44,14 +56,80 @@ export interface CommunityReactionToggleMutationPayload {
   ReactionID?: string | null;
 }
 
-// ... existing interfaces ...
+export interface GraduateCommunityThreadMutationInput {
+  RootPostID: string;
+  TargetSpaceTypeCode: string;
+  TargetSpaceName: string;
+  SeedInitialTaskTitle?: string;
+  IncludeParticipantUserIDs?: string[];
+  AllowedChildSpaceTypeCodes?: string[];
+}
+
+export interface GraduateCommunityThreadMutationPayload {
+  Success: boolean;
+  PromotedToSpaceID?: string | null;
+  TargetSpaceTypeCode?: string | null;
+  SeededTaskID?: string | null;
+  InvitedParticipantCount?: number | null;
+  ErrorMessage?: string | null;
+}
+
+export interface PromoteCommunityAnswerToCanonMutationInput {
+  QuestionPostID: string;
+  CanonAnswerPostID: string;
+}
+
+export interface PromoteCommunityAnswerToCanonMutationPayload {
+  Success: boolean;
+  QuestionPostID?: string | null;
+  CanonAnswerPostID?: string | null;
+  AlreadyPromoted?: boolean | null;
+  ErrorMessage?: string | null;
+}
+
+export interface CommunityGraphQLVariables {
+  input: GraduateCommunityThreadMutationInput | PromoteCommunityAnswerToCanonMutationInput | CommunityReactionToggleMutationInput;
+}
+
 export interface CommunityGraphQLResponse {
   GraduateCommunityThread?: GraduateCommunityThreadMutationPayload | null;
   PromoteCommunityAnswerToCanon?: PromoteCommunityAnswerToCanonMutationPayload | null;
   ToggleCommunityPostReaction?: CommunityReactionToggleMutationPayload | null;
 }
 
-// ... existing functions ...
+export interface CommunityGraphQLExecutor {
+  ExecuteGQL(
+    query: string,
+    variables: CommunityGraphQLVariables,
+  ): Promise<CommunityGraphQLResponse | null | undefined>;
+}
+
+export type ProviderWithOptionalGraphQL = Pick<IMetadataProvider, 'CurrentUser'> & Partial<CommunityGraphQLExecutor>;
+
+/**
+ * Resolves a typed GraphQL executor from an active MJ provider (live `GraphQLDataProvider` or a
+ * compatible test provider implementing `ExecuteGQL`). Returns `null` when unavailable.
+ */
+export function ResolveCommunityGraphQLExecutor(
+  provider: ProviderWithOptionalGraphQL | CommunityGraphQLExecutor | null | undefined,
+): CommunityGraphQLExecutor | null {
+  if (!provider) {
+    return null;
+  }
+  if (provider instanceof GraphQLDataProvider) {
+    return {
+      ExecuteGQL: (query, variables) => provider.ExecuteGQL(query, variables),
+    };
+  }
+  if ('ExecuteGQL' in provider && typeof provider.ExecuteGQL === 'function') {
+    const fn = provider.ExecuteGQL.bind(provider);
+    return {
+      ExecuteGQL: (query, variables) => fn(query, variables),
+    };
+  }
+  return null;
+}
+
 /**
  * Invokes the authoritative server `ToggleCommunityPostReaction` GraphQL mutation via `ExecuteGQL`.
  */
@@ -66,6 +144,45 @@ export async function InvokeToggleCommunityPostReactionMutation(
     return {
       Success: false,
       ErrorMessage: 'Server returned an empty response for ToggleCommunityPostReaction.',
+    };
+  }
+  return payload;
+}
+
+/**
+ * Invokes the authoritative server `GraduateCommunityThread` GraphQL mutation via `ExecuteGQL`.
+ */
+export async function InvokeGraduateCommunityThreadMutation(
+  executor: CommunityGraphQLExecutor,
+  input: GraduateCommunityThreadMutationInput,
+): Promise<GraduateCommunityThreadMutationPayload> {
+  AssertValidUUID(input.RootPostID, 'RootPostID');
+  const response = await executor.ExecuteGQL(GRADUATE_COMMUNITY_THREAD_MUTATION, { input });
+  const payload = response?.GraduateCommunityThread;
+  if (!payload) {
+    return {
+      Success: false,
+      ErrorMessage: 'Server returned an empty response for GraduateCommunityThread.',
+    };
+  }
+  return payload;
+}
+
+/**
+ * Invokes the authoritative server `PromoteCommunityAnswerToCanon` GraphQL mutation via `ExecuteGQL`.
+ */
+export async function InvokePromoteCommunityAnswerToCanonMutation(
+  executor: CommunityGraphQLExecutor,
+  input: PromoteCommunityAnswerToCanonMutationInput,
+): Promise<PromoteCommunityAnswerToCanonMutationPayload> {
+  AssertValidUUID(input.QuestionPostID, 'QuestionPostID');
+  AssertValidUUID(input.CanonAnswerPostID, 'CanonAnswerPostID');
+  const response = await executor.ExecuteGQL(PROMOTE_COMMUNITY_ANSWER_TO_CANON_MUTATION, { input });
+  const payload = response?.PromoteCommunityAnswerToCanon;
+  if (!payload) {
+    return {
+      Success: false,
+      ErrorMessage: 'Server returned an empty response for PromoteCommunityAnswerToCanon.',
     };
   }
   return payload;

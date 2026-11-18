@@ -1,4 +1,4 @@
-import { BaseEntity, type EntityDeleteOptions, type EntitySaveOptions, type ValidationResult } from '@memberjunction/core';
+import { BaseEntity, type EntityDeleteOptions, type EntitySaveOptions, type ValidationResult, type TransactionGroupBase } from '@memberjunction/core';
 import { RegisterClass, UUIDsEqual } from '@memberjunction/global';
 import { CommunityRules } from '@mj-biz-apps/community-core';
 import {
@@ -175,6 +175,7 @@ export class ForumIdeaAllocationServerEntity extends mjBizAppsCommunityForumIdea
     return result;
   }
 
+// ...
   public override async Save(options?: EntitySaveOptions): Promise<boolean> {
     if (typeof this.PointsAllocated === 'number' && Number.isFinite(this.PointsAllocated) && this.PointsAllocated > 0) {
       this.QuadraticVotes = computeQuadraticVotes(this.PointsAllocated);
@@ -183,7 +184,7 @@ export class ForumIdeaAllocationServerEntity extends mjBizAppsCommunityForumIdea
     const saved = await super.Save(options);
     if (!saved) return false;
 
-    await this.recomputeParentIdeaTotals(this.IdeaPostID, options?.TransactionGroup);
+    await this.recomputeParentIdeaTotals(this.IdeaPostID, (options as EntitySaveOptions & { TransactionGroup?: TransactionGroupBase })?.TransactionGroup);
     return true;
   }
 
@@ -193,11 +194,14 @@ export class ForumIdeaAllocationServerEntity extends mjBizAppsCommunityForumIdea
     const deleted = await super.Delete(options);
     if (!deleted) return false;
 
-    await this.recomputeParentIdeaTotals(ideaPostId, options?.TransactionGroup);
+    await this.recomputeParentIdeaTotals(ideaPostId, (options as EntityDeleteOptions & { TransactionGroup?: TransactionGroupBase })?.TransactionGroup);
     return true;
   }
 
-  private async recomputeParentIdeaTotals(ideaPostId: string, txGroup?: any): Promise<void> {
+  private async recomputeParentIdeaTotals(ideaPostId: string, txGroup?: TransactionGroupBase): Promise<void> {
+// ...
+
+
     const validIdeaPostId = validUuidOrNull(ideaPostId);
     if (!validIdeaPostId) return;
 

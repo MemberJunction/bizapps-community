@@ -1733,8 +1733,6 @@ export interface ForumPostReactionEntityLike {
   LatestResult?: { CompleteMessage?: string | null } | null;
 }
 
-import { CommunityGraphQLExecutor } from './community-hub-mutations';
-
 export interface ToggleReactionParams {
   item: CommunityCommonsItem;
   isOfflineDemoMode: boolean;
