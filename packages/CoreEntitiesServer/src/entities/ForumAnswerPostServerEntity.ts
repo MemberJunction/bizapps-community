@@ -4,6 +4,7 @@ import {
   COMMUNITY_ENTITY_NAMES,
   type mjBizAppsCommunityCommunityMemberProfileEntity,
   mjBizAppsCommunityForumAnswerPostEntity,
+  type mjBizAppsCommunityForumPostEntity,
 } from '@mj-biz-apps/community-entities';
 import {
   createNewEntity,
@@ -12,6 +13,8 @@ import {
   loadRows,
   loadSingleRow,
   resolveForumRow,
+  resolveForumMemberAndRole,
+  isModeratorRole,
   validUuidOrNull,
 } from './server-entity-helpers.ts';
 
@@ -47,6 +50,8 @@ export class ForumAnswerPostServerEntity extends mjBizAppsCommunityForumAnswerPo
 
   public override async ValidateAsync(): Promise<ValidationResult> {
     const result = await super.ValidateAsync();
+    const contextUser = this.ContextCurrentUser;
+    if (!contextUser) return failValidation(result, 'UserID', 'ContextCurrentUser is required.');
 
     const validQuestionId = validUuidOrNull(this.QuestionPostID);
     if (!validQuestionId) {
@@ -62,41 +67,65 @@ export class ForumAnswerPostServerEntity extends mjBizAppsCommunityForumAnswerPo
       return failValidation(result, 'QuestionPostID', 'An answer post cannot reference itself as QuestionPostID.');
     }
 
-    const [answerPostRes, questionPostRes] = await Promise.all([
-      loadSingleRow<PostForumAuthorRow>(
-        this,
-        COMMUNITY_ENTITY_NAMES.ForumPosts,
-        `ID = '${validAnswerId}'`,
-        ['ID', 'ForumID', 'AuthorUserID'],
-      ),
-      loadSingleRow<PostForumAuthorRow>(
-        this,
-        COMMUNITY_ENTITY_NAMES.ForumPosts,
-        `ID = '${validQuestionId}'`,
-        ['ID', 'ForumID', 'AuthorUserID'],
-      ),
-    ]);
-
-    if (!answerPostRes.success || !answerPostRes.row) {
-      return failValidation(result, 'ID', `Parent ForumPost ${validAnswerId} was not found for this answer.`);
-    }
-
-    if (!questionPostRes.success || !questionPostRes.row) {
+    const questionPost = await loadEntityById<mjBizAppsCommunityForumPostEntity>(
+      COMMUNITY_ENTITY_NAMES.ForumPosts,
+      validQuestionId,
+      contextUser,
+    );
+    if (!questionPost) {
       return failValidation(result, 'QuestionPostID', `Question post ${validQuestionId} was not found.`);
     }
 
-    if (!UUIDsEqual(answerPostRes.row.ForumID, questionPostRes.row.ForumID)) {
-      return failValidation(
-        result,
-        'QuestionPostID',
-        `QuestionPostID (${validQuestionId}) belongs to a different Forum than this answer post.`,
-      );
+    const forum = await resolveForumRow(this, questionPost.ForumID);
+    if (!forum) {
+      return failValidation(result, 'QuestionPostID', `Forum ${questionPost.ForumID} was not found.`);
+    }
+
+    // CR-03: Canon Authorization
+    const existingAnswer = this.IsSaved
+      ? await loadEntityById<mjBizAppsCommunityForumAnswerPostEntity>(
+          COMMUNITY_ENTITY_NAMES.ForumAnswerPosts,
+          validAnswerId,
+          contextUser,
+        )
+      : null;
+
+    const memberRole = await resolveForumMemberAndRole(this, forum.ID, contextUser.ID);
+    const isModerator = isModeratorRole(memberRole.roleType);
+
+    // Check AcceptedByAuthor
+    if (
+      this.IsAcceptedByAuthor === true ||
+      (this.IsSaved && Boolean(existingAnswer?.IsAcceptedByAuthor) !== Boolean(this.IsAcceptedByAuthor))
+    ) {
+      if (
+        !UUIDsEqual(questionPost.AuthorUserID ?? '', contextUser.ID) &&
+        !isModerator
+      ) {
+        return failValidation(result, 'IsAcceptedByAuthor', 'Only question author or moderator can accept/unaccept an answer.');
+      }
+    }
+
+    // Check VerifiedByModerator or AIEpistemicStatus
+    if (
+      this.IsVerifiedByModerator === true ||
+      (this.IsSaved && Boolean(existingAnswer?.IsVerifiedByModerator) !== Boolean(this.IsVerifiedByModerator)) ||
+      this.AIEpistemicStatus === 'Canon Verified' ||
+      (this.IsSaved && existingAnswer?.AIEpistemicStatus !== 'Canon Verified' && this.AIEpistemicStatus === 'Canon Verified')
+    ) {
+      if (!isModerator) {
+        return failValidation(result, 'AIEpistemicStatus', 'Only a moderator can verify answers or set epistemic status to Canon Verified.');
+      }
     }
 
     return result;
   }
 
   public override async Save(options?: EntitySaveOptions): Promise<boolean> {
+    // CR-04: Transaction Propagation
+    const txGroup = options?.TransactionGroup ?? null;
+    if (txGroup) this.TransactionGroup = txGroup;
+
     const saved = await super.Save(options);
     if (!saved) return false;
 

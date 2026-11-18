@@ -90,6 +90,10 @@ export class ForumPostTagServerEntity extends mjBizAppsCommunityForumPostTagEnti
   }
 
   public override async Save(options?: EntitySaveOptions): Promise<boolean> {
+    // CR-04: Transaction Propagation
+    const txGroup = options?.TransactionGroup ?? null;
+    if (txGroup) this.TransactionGroup = txGroup;
+
     const previousTopicTagId = this.IsSaved ? getStringOldValue(this, 'TopicTagID') : null;
 
     const saved = await super.Save(options);
