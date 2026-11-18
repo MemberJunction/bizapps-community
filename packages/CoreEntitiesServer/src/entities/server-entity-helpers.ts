@@ -60,6 +60,7 @@ export interface ForumMemberRow {
 }
 
 export interface ResolvedForumMemberRole {
+  lookupFailed: boolean;
   member: ForumMemberRow | null;
   roleType: IForumRoleTypeDescriptor | null;
 }
@@ -263,7 +264,7 @@ export async function resolveForumMemberAndRole(
   const validForumId = validUuidOrNull(forumId);
   const validUserId = validUuidOrNull(userId);
   if (!validForumId || !validUserId) {
-    return { member: null, roleType: null };
+    return { lookupFailed: false, member: null, roleType: null };
   }
 
   const memberRes = await loadSingleRow<ForumMemberRow>(
@@ -272,12 +273,15 @@ export async function resolveForumMemberAndRole(
     `ForumID = '${validForumId}' AND UserID = '${validUserId}'`,
     ['ID', 'ForumID', 'UserID', 'ForumRoleTypeID', 'Status'],
   );
-  if (!memberRes.success || !memberRes.row) {
-    return { member: null, roleType: null };
+  if (!memberRes.success) {
+    return { lookupFailed: true, member: null, roleType: null };
+  }
+  if (!memberRes.row) {
+    return { lookupFailed: false, member: null, roleType: null };
   }
 
   const roleType = await resolveForumRoleTypeDescriptor(entity, memberRes.row.ForumRoleTypeID);
-  return { member: memberRes.row, roleType };
+  return { lookupFailed: false, member: memberRes.row, roleType };
 }
 
 export function toForumSummary(row: ForumRow): IForumSummary {

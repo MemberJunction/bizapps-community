@@ -1,5 +1,5 @@
 import { BaseEntity, type EntityDeleteOptions, type EntitySaveOptions, type ValidationResult } from '@memberjunction/core';
-import { RegisterClass } from '@memberjunction/global';
+import { RegisterClass, UUIDsEqual } from '@memberjunction/global';
 import {
   COMMUNITY_ENTITY_NAMES,
   type mjBizAppsCommunityForumPostEntity,
@@ -38,6 +38,11 @@ export class ForumPostReactionServerEntity extends mjBizAppsCommunityForumPostRe
 
   public override async ValidateAsync(): Promise<ValidationResult> {
     const result = await super.ValidateAsync();
+    
+    // CR-01: Ownership & UUID Validation
+    if (!this.ContextCurrentUser || !this.ContextCurrentUser.ID) {
+      return failValidation(result, 'UserID', 'An authenticated user is required to react to a post.');
+    }
 
     const validPostId = validUuidOrNull(this.PostID);
     if (!validPostId) {
@@ -45,10 +50,11 @@ export class ForumPostReactionServerEntity extends mjBizAppsCommunityForumPostRe
     }
 
     const validUserId = validUuidOrNull(this.UserID);
-    if (!validUserId) {
-      return failValidation(result, 'UserID', 'UserID must be a valid UUID.');
+    if (!validUserId || !UUIDsEqual(validUserId, this.ContextCurrentUser.ID)) {
+       return failValidation(result, 'UserID', 'UserID must match the authenticated user.');
     }
 
+    // Resolve post and forum for authority
     const postRes = await loadSingleRow<PostForumRow>(
       this,
       COMMUNITY_ENTITY_NAMES.ForumPosts,
@@ -64,7 +70,13 @@ export class ForumPostReactionServerEntity extends mjBizAppsCommunityForumPostRe
       return failValidation(result, 'PostID', `Forum ${postRes.row.ForumID} was not found.`);
     }
 
-    const { member, roleType } = await resolveForumMemberAndRole(this, forum.ID, validUserId);
+    // Resolve authority
+    const { lookupFailed, member, roleType } = await resolveForumMemberAndRole(this, forum.ID, validUserId);
+    if (lookupFailed) {
+      return failValidation(result, 'UserID', 'Failed to resolve forum member.');
+    }
+
+    // ... (rest of the logic)
 
     if (member && (member.Status === 'Removed' || member.Status === 'Muted')) {
       return failValidation(

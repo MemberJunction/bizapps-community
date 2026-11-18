@@ -1,5 +1,5 @@
 import { BaseEntity, type EntityDeleteOptions, type EntitySaveOptions, type ValidationResult } from '@memberjunction/core';
-import { RegisterClass } from '@memberjunction/global';
+import { RegisterClass, UUIDsEqual } from '@memberjunction/global';
 import { CommunityRules } from '@mj-biz-apps/community-core';
 import {
   COMMUNITY_ENTITY_NAMES,
@@ -61,14 +61,18 @@ export class ForumIdeaAllocationServerEntity extends mjBizAppsCommunityForumIdea
   public override async ValidateAsync(): Promise<ValidationResult> {
     const result = await super.ValidateAsync();
 
+    if (!this.ContextCurrentUser?.ID) {
+      return failValidation(result, 'UserID', 'An authenticated user is required to allocate points to an idea.');
+    }
+
     const validIdeaPostId = validUuidOrNull(this.IdeaPostID);
     if (!validIdeaPostId) {
       return failValidation(result, 'IdeaPostID', 'IdeaPostID must be a valid UUID.');
     }
 
     const validUserId = validUuidOrNull(this.UserID);
-    if (!validUserId) {
-      return failValidation(result, 'UserID', 'UserID must be a valid UUID.');
+    if (!validUserId || !UUIDsEqual(validUserId, this.ContextCurrentUser.ID)) {
+      return failValidation(result, 'UserID', 'UserID must be a valid UUID and match the authenticated user.');
     }
 
     if (!Number.isInteger(this.PointsAllocated) || this.PointsAllocated <= 0) {
