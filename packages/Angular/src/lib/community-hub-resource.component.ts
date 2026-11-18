@@ -362,6 +362,11 @@ function buildMiniAppSrcdoc(title: string, kind: string): string {
  * collapsible editorial porch, 3-column Knowledge Stream Commons, Q&A Canon Workbench, Campaign-Scoped
  * Quadratic Ideation Wallet, Living Co-Authoring / Sandboxed Mini-Apps, Slide-Over Detail Sheet
  * drawer, and Ask/Share composer modal.
+ *
+ * Aligns `docs/ux/*.html` prototype navigation items to domain-neutral tabs and rails:
+ * - "Playbooks & Make-Room Tools" -> `living-co-authoring`
+ * - "Committees & Working Groups" / "Committees & Working Groups 1 Vote" -> `knowledge-stream` (`Governance & RFCs`)
+ * - "2027 Priority Board" / "2027 Priority Board 60 pts" -> `quadratic-ideation-wallet`
  */
 @RegisterClass(BaseResourceComponent, 'CommunityHubResource')
 @Component({

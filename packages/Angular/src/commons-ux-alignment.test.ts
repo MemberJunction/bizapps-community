@@ -971,5 +971,14 @@ describe('Slice 3 — Live Thread Reply, Upvote Reaction, Dynamic Directories, T
     assert.match(hubHtml, /id="mjc-detail-promoted-space"/);
     assert.match(hubHtml, /id="mjc-detail-error-banner"/);
     assert.match(hubHtml, /id="mjc-hub-load-error"/);
+
+    // Every clickable <div> or <span> in Angular templates must declare an explicit ARIA role attribute
+    for (const templateName of ['community-hub-resource.component.html', 'knowledge-stream.component.html']) {
+      const html = readFileSync(join(LIB_DIR, templateName), 'utf8');
+      const clickableNonButtonMatches = html.match(/<(?:div|span)\b[^>]*\(click\)="[^"]*"[^>]*>/g) ?? [];
+      for (const tag of clickableNonButtonMatches) {
+        assert.match(tag, /\brole="/, `Clickable <div>/<span> in ${templateName} must declare an ARIA role: ${tag}`);
+      }
+    }
   });
 });
