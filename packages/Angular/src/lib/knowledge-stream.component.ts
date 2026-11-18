@@ -8,8 +8,6 @@ import {
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import {
-  COMMUNITY_SPACES_DIRECTORY,
-  COMMUNITY_TOPIC_TAGS,
   FilterCommonsStream,
   STREAM_TYPE_FILTER_OPTIONS,
   type CommunityCommonsItem,
@@ -42,10 +40,10 @@ export interface KnowledgeStreamWalletSummaryItem {
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class KnowledgeStreamComponent {
-  public readonly spaces: ReadonlyArray<CommunitySpaceDirectoryItem> = COMMUNITY_SPACES_DIRECTORY;
-  public readonly topics: ReadonlyArray<string> = COMMUNITY_TOPIC_TAGS;
   public readonly streamTypeOptions = STREAM_TYPE_FILTER_OPTIONS;
 
+  @Input() public spaces: ReadonlyArray<CommunitySpaceDirectoryItem> = [];
+  @Input() public topics: ReadonlyArray<string> = [];
   @Input() public items: ReadonlyArray<CommunityCommonsItem> = [];
   @Input() public selectedItemId: string | null = null;
   @Input() public activeSpaceFilter: CommunitySpaceFilterId = 'all';
@@ -55,9 +53,10 @@ export class KnowledgeStreamComponent {
   @Input() public allowedForumIDs: string[] = [];
   @Input() public isSynthesizing = false;
   @Input() public threadSynthesisResult: string | null = null;
-  @Input() public activeCampaignName = 'Product Roadmap Q1';
-  @Input() public remainingWalletPoints = 100;
-  @Input() public totalWalletPoints = 100;
+  @Input() public actionError: string | null = null;
+  @Input() public activeCampaignName = '';
+  @Input() public remainingWalletPoints = 0;
+  @Input() public totalWalletPoints = 0;
   @Input() public walletSummaryIdeas: ReadonlyArray<KnowledgeStreamWalletSummaryItem> = [];
   @Input() public sessions: ReadonlyArray<CommunitySessionItem> = [];
 
@@ -117,7 +116,7 @@ export class KnowledgeStreamComponent {
 
   public get synthesizeTargetSourcePostId(): string {
     const target = this.items.find((i) => i.id === this.synthesizeTargetId) ?? this.items[0];
-    return target?.sourcePostId ?? target?.id ?? 'seed-feed-1';
+    return target?.sourcePostId ?? target?.id ?? '';
   }
 
   public countForSpace(spaceId: CommunitySpaceFilterId): number {

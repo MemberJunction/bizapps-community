@@ -34,16 +34,20 @@
         }
       </div>
       <div class="mjc-topic-list" role="group" aria-label="Topic filters">
-        @for (topic of topics; track topic) {
-          <button
-            type="button"
-            class="mjc-topic-pill"
-            [class.mjc-topic-pill--active]="topic === activeTopicFilter"
-            [attr.aria-pressed]="topic === activeTopicFilter"
-            (click)="selectTopic(topic)"
-          >
-            #{{ topic }}
-          </button>
+        @if (topics.length === 0) {
+          <p class="mjc-rail-card__sub">No topic tags configured yet.</p>
+        } @else {
+          @for (topic of topics; track topic) {
+            <button
+              type="button"
+              class="mjc-topic-pill"
+              [class.mjc-topic-pill--active]="topic === activeTopicFilter"
+              [attr.aria-pressed]="topic === activeTopicFilter"
+              (click)="selectTopic(topic)"
+            >
+              #{{ topic }}
+            </button>
+          }
         }
       </div>
     </div>
@@ -66,7 +70,7 @@
         type="button"
         id="mjc-feed-synthesize-btn"
         class="mjc-btn mjc-btn--secondary"
-        [disabled]="isSynthesizing"
+        [disabled]="isSynthesizing || !synthesizeTargetSourcePostId"
         (click)="synthesizeActiveThread()"
       >
         <i class="fa-solid fa-wand-magic-sparkles" aria-hidden="true"></i>
@@ -74,6 +78,9 @@
       </button>
     </div>
 
+    @if (actionError) {
+      <p id="mjc-stream-action-error" class="mjc-community-hub__error" role="alert">{{ actionError }}</p>
+    }
     @if (threadSynthesisResult) {
       <p class="mjc-community-hub__status" role="status">{{ threadSynthesisResult }}</p>
     }
@@ -158,6 +165,11 @@
                   {{ item.statusBadge }}
                 </span>
                 <span class="mjc-space-chip">{{ item.spaceLabel }}</span>
+                @if (item.promotedToSpaceId) {
+                  <span class="mjc-badge mjc-badge--success" title="Promoted Working Group Space ID">
+                    Space: {{ item.promotedToSpaceId }}
+                  </span>
+                }
                 <span class="mjc-entry-type">{{ item.entryTypeLabel }}</span>
               </div>
               <span class="mjc-timestamp">{{ item.timestampLabel }}</span>

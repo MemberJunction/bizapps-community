@@ -29,6 +29,8 @@ import {
   type mjBizAppsCommunityForumAnswerPostEntity,
   type mjBizAppsCommunityForumInteractivePostEntity,
   type mjBizAppsCommunityForumPostEntity,
+  type mjBizAppsCommunityForumPostReactionEntity,
+  type mjBizAppsCommunityForumPostTagEntity,
   type mjBizAppsCommunityForumQuestionPostEntity,
 } from '@mj-biz-apps/community-entities';
 import { AssertValidUUID, AssertValidUUIDList, COMMUNITY_ACTION_IDS, type IdeationAllocationMode } from '@mj-biz-apps/community-core';
@@ -41,10 +43,11 @@ import {
   PersistProposedIdea,
   type IdeaAllocationAggregateRow,
 } from './community-hub-ideation.ts';
-import { PromoteAnswerToCanonViaProvider } from './community-hub-mutations.ts';
+import { GraduateThreadViaProvider, PromoteAnswerToCanonViaProvider } from './community-hub-mutations.ts';
 import {
-  AddStreamItemReply,
   BuildCommonsStreamItems,
+  BuildDynamicSpaceDirectory,
+  BuildDynamicTopicTags,
   BuildEditorialPorchHighlights,
   COMMUNITY_SPACES_DIRECTORY,
   ComputeNextTrapFocusTarget,
@@ -52,17 +55,23 @@ import {
   GraduateStreamItem,
   MapForumNameToSpaceId,
   PersistAskSharePost,
+  PersistDetailReply,
   ResolveAuthorizedForumTarget,
   SEEDED_COMMUNITY_SESSIONS,
-  ToggleStreamItemUpvote,
+  ToggleReactionViaProvider,
   type AskShareEntryType,
   type AskShareValidationErrors,
   type AuthorizedForumOption,
   type CommunityCommonsItem,
+  type CommunityCommonsReply,
   type CommunityFeaturedHighlight,
   type CommunitySessionItem,
+  type CommunitySpaceDirectoryItem,
   type CommunitySpaceFilterId,
   type CommunityStreamTypeFilter,
+  type LiveForumDirectoryRow,
+  type LiveForumTopicTagRow,
+  type LiveSpaceDirectoryRow,
   type MatchedCanonQuestion,
 } from './community-hub-commons.ts';
 import { KnowledgeStreamComponent, type KnowledgeStreamWalletSummaryItem } from './knowledge-stream.component.ts';
@@ -105,6 +114,9 @@ export interface CommunityHubQACanonItem {
   epistemicStatus: mjBizAppsCommunityForumAnswerPostEntity['AIEpistemicStatus'];
   confidenceScore: number | null;
   isAccepted: boolean;
+  reactionScore?: number | null;
+  replyCount?: number | null;
+  promotedToSpaceId?: string | null;
 }
 
 export interface CommunityHubIdeaItem {
@@ -117,23 +129,32 @@ export interface CommunityHubIdeaItem {
   /** The CURRENT user's own prior allocation on this idea (0 if they have not backed it yet). */
   myPointsAllocated: number;
   myEffectiveVotes: number;
+  promotedToSpaceId?: string | null;
 }
 
 export interface CommunityHubLivingDocItem {
   id: string;
+  forumId?: string | null;
   title: string;
   bodyMarkdown: string;
   postTypeCode: 'collaborative-doc' | 'collaborative-sheet' | 'collaborative-deck' | 'interactive-experience';
   experienceKind?: mjBizAppsCommunityForumInteractivePostEntity['ExperienceKind'] | null;
+  reactionScore?: number | null;
+  replyCount?: number | null;
+  promotedToSpaceId?: string | null;
 }
 
 export interface CommunityHubFeedPost {
   id: string;
+  forumId?: string | null;
   title: string;
   bodyMarkdown: string;
   status: mjBizAppsCommunityForumPostEntity['Status'];
   authorName?: string | null;
   authorRole?: string | null;
+  replyCount?: number | null;
+  reactionScore?: number | null;
+  promotedToSpaceId?: string | null;
 }
 
 /** An Ideation Campaign's wallet rules (`ForumIdeaCampaign` IS-A `Forum`), bound onto the
@@ -149,6 +170,8 @@ export interface CommunityHubCampaign {
 interface ForumRow {
   ID: string;
   Name: string;
+  SpaceID?: string | null;
+  Description?: string | null;
 }
 
 interface ForumPostRow {
@@ -158,6 +181,30 @@ interface ForumPostRow {
   BodyMarkdown: string;
   Status: mjBizAppsCommunityForumPostEntity['Status'];
   AuthorUserID?: string | null;
+  ReplyCount?: number | null;
+  ReactionScore?: number | null;
+  PromotedToSpaceID?: string | null;
+}
+
+interface ForumReplyRow {
+  ID: string;
+  RootPostID: string | null;
+  ParentPostID: string | null;
+  AuthorUserID?: string | null;
+  BodyMarkdown: string;
+  Status: mjBizAppsCommunityForumPostEntity['Status'];
+  ReactionScore?: number | null;
+}
+
+interface ForumPostTagRow {
+  ID: string;
+  PostID: string;
+  TopicTagID: string;
+}
+
+interface ForumPostReactionRow {
+  ID: string;
+  PostID: string;
 }
 
 interface AnswerPostRow {
@@ -363,15 +410,21 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
 
   // 3-Column Commons Workspace state
   public commonsItems: CommunityCommonsItem[] = [];
+  public streamSpaces: CommunitySpaceDirectoryItem[] = [];
+  public streamTopics: string[] = [];
+  public loadedTopicTags: LiveForumTopicTagRow[] = [];
   public activeSpaceFilter: CommunitySpaceFilterId = 'all';
   public activeTopicFilter: string | null = null;
   public activeStreamTypeFilter: CommunityStreamTypeFilter = 'all';
-  public sessions: CommunitySessionItem[] = SEEDED_COMMUNITY_SESSIONS.map((s) => ({ ...s }));
+  public sessions: CommunitySessionItem[] = [];
+  public hubLoadError: string | null = null;
+  public streamActionError: string | null = null;
 
   // Slide-Over Detail Sheet Drawer state
   public detailSheetItemId: string | null = null;
   public detailReplyText = '';
   public detailActionMessage: string | null = null;
+  public detailErrorMessage: string | null = null;
 
   // Ask or Share Modal state
   public isAskShareModalOpen = false;
@@ -381,6 +434,7 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
   public askShareForumId = '';
   public askShareBody = '';
   public askShareTags = '';
+  public askShareSelectedTagIds: string[] = [];
   public askShareValidationErrors: AskShareValidationErrors = {};
   public askShareError: string | null = null;
 
@@ -392,8 +446,8 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
   public newAnswerBody = '';
   public qaActionMessage: string | null = null;
 
-  public campaigns: CommunityHubCampaign[] = [DEFAULT_CAMPAIGN];
-  public selectedCampaignId: string | null = DEFAULT_CAMPAIGN.id;
+  public campaigns: CommunityHubCampaign[] = [];
+  public selectedCampaignId: string | null = null;
   public ideationItems: CommunityHubIdeaItem[] = [];
   public allUserAllocations: IdeaAllocationAggregateRow[] = [];
   public selectedIdeaId: string | null = null;
@@ -405,6 +459,11 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
   public newIdeaSummary = '';
   private readonly postTypeIdByCode = new Map<string, string>();
   private readonly userAddedCommonsItems: CommunityCommonsItem[] = [];
+  private readonly forumSpaceIdByForumId = new Map<string, string>();
+  private readonly spaceNameById = new Map<string, string>();
+  private readonly repliesByRootPostId = new Map<string, CommunityCommonsReply[]>();
+  private readonly upvotedPostIds = new Set<string>();
+  private readonly tagNamesByPostId = new Map<string, string[]>();
 
   public livingDocItems: CommunityHubLivingDocItem[] = [];
   public selectedLivingDocId: string | null = null;
@@ -600,11 +659,51 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
 
   private rebuildCommonsItems(): void {
     const built = BuildCommonsStreamItems({
-      feedPosts: this.feedPosts,
-      qaCanonItems: this.qaCanonItems,
-      ideationItems: this.ideationItems,
-      livingDocItems: this.livingDocItems,
+      feedPosts: this.feedPosts.map((p) => {
+        const key = p.id.toLowerCase();
+        return {
+          ...p,
+          upvoteCount: p.reactionScore ?? 0,
+          upvotedByMe: this.upvotedPostIds.has(key),
+          replyCount: p.replyCount ?? 0,
+          replies: this.repliesByRootPostId.get(key),
+          tags: this.isOfflineDemoMode ? undefined : (this.tagNamesByPostId.get(key) ?? []),
+        };
+      }),
+      qaCanonItems: this.qaCanonItems.map((qa) => {
+        const key = qa.id.toLowerCase();
+        return {
+          ...qa,
+          upvoteCount: qa.reactionScore ?? 0,
+          upvotedByMe: this.upvotedPostIds.has(key),
+          replyCount: qa.replyCount ?? 0,
+          replies: this.repliesByRootPostId.get(key),
+          tags: this.isOfflineDemoMode ? undefined : (this.tagNamesByPostId.get(key) ?? []),
+        };
+      }),
+      ideationItems: this.ideationItems.map((idea) => {
+        const key = idea.id.toLowerCase();
+        return {
+          ...idea,
+          upvotedByMe: this.upvotedPostIds.has(key),
+          replies: this.repliesByRootPostId.get(key),
+          tags: this.isOfflineDemoMode ? undefined : (this.tagNamesByPostId.get(key) ?? []),
+        };
+      }),
+      livingDocItems: this.livingDocItems.map((doc) => {
+        const key = doc.id.toLowerCase();
+        return {
+          ...doc,
+          upvoteCount: doc.reactionScore ?? 0,
+          upvotedByMe: this.upvotedPostIds.has(key),
+          replyCount: doc.replyCount ?? 0,
+          replies: this.repliesByRootPostId.get(key),
+          tags: this.isOfflineDemoMode ? undefined : (this.tagNamesByPostId.get(key) ?? []),
+        };
+      }),
       includeDemoFixtures: this.isOfflineDemoMode,
+      spaceNameById: this.isOfflineDemoMode ? undefined : this.spaceNameById,
+      forumSpaceIdByForumId: this.isOfflineDemoMode ? undefined : this.forumSpaceIdByForumId,
     });
     const merged = [...this.userAddedCommonsItems, ...built];
     const seen = new Set<string>();
@@ -628,9 +727,17 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
 
   private resetTransientSpaceState(): void {
     this.userAddedCommonsItems.length = 0;
+    this.forumSpaceIdByForumId.clear();
+    this.spaceNameById.clear();
+    this.repliesByRootPostId.clear();
+    this.upvotedPostIds.clear();
+    this.tagNamesByPostId.clear();
     this.detailSheetItemId = null;
     this.detailReplyText = '';
     this.detailActionMessage = null;
+    this.detailErrorMessage = null;
+    this.streamActionError = null;
+    this.hubLoadError = null;
     this.threadSynthesisResult = null;
     this.qaActionMessage = null;
     this.docActionMessage = null;
@@ -645,45 +752,65 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
     this.resetTransientSpaceState();
 
     const provider = Metadata.Provider;
-    const user: UserInfo | undefined = provider?.CurrentUser;
-    if (!provider || !user) {
+    if (!provider) {
       this.applySeededFallback();
       return;
     }
 
+    const user: UserInfo | undefined = provider.CurrentUser;
     this.isOfflineDemoMode = false;
+    if (!user) {
+      this.clearLiveHubData(
+        'Authenticated user session is required to load Community Hub.',
+        [],
+        [],
+      );
+      return;
+    }
 
     try {
       const rv = new RunView();
       const rawScopeId = this.ScopeSpaceId?.trim() ?? '';
       const scopedSpaceId = rawScopeId ? AssertValidUUID(rawScopeId, 'ScopeSpaceId') : null;
 
-      const [forumsResult, spaceResult, postTypesResult] = await Promise.all([
-        LoadAllPaginatedRows<ForumRow>({
-          runView: rv,
-          entityName: 'MJ_BizApps_Community: Forums',
-          extraFilter: scopedSpaceId ? `SpaceID = '${scopedSpaceId}'` : '1=1',
-          fields: ['ID', 'Name'],
-          user,
-        }),
-        rv.RunView<{ ID: string; Name: string }>(
-          {
-            EntityName: 'MJ_BizApps_Collaboration: Spaces',
-            ...(scopedSpaceId ? { ExtraFilter: `ID = '${scopedSpaceId}'` } : {}),
-            Fields: ['ID', 'Name'],
-            ResultType: 'simple',
-            MaxRows: 1,
-          },
-          user,
-        ),
-        LoadAllPaginatedRows<{ ID: string; Code: string }>({
-          runView: rv,
-          entityName: COMMUNITY_ENTITY_NAMES.PostTypes,
-          extraFilter: '1=1',
-          fields: ['ID', 'Code'],
-          user,
-        }),
-      ]);
+      const [forumsResult, collabSpacesResult, communitySpacesResult, postTypesResult, topicTagsResult] =
+        await Promise.all([
+          LoadAllPaginatedRows<ForumRow>({
+            runView: rv,
+            entityName: COMMUNITY_ENTITY_NAMES.Forums,
+            extraFilter: scopedSpaceId ? `SpaceID = '${scopedSpaceId}'` : '1=1',
+            fields: ['ID', 'Name', 'SpaceID', 'Description'],
+            user,
+          }),
+          LoadAllPaginatedRows<{ ID: string; Name: string }>({
+            runView: rv,
+            entityName: 'MJ_BizApps_Collaboration: Spaces',
+            extraFilter: scopedSpaceId ? `ID = '${scopedSpaceId}'` : '1=1',
+            fields: ['ID', 'Name'],
+            user,
+          }),
+          LoadAllPaginatedRows<{ ID: string; Slug: string; CommunityKind: string }>({
+            runView: rv,
+            entityName: COMMUNITY_ENTITY_NAMES.CommunitySpaces,
+            extraFilter: scopedSpaceId ? `ID = '${scopedSpaceId}'` : '1=1',
+            fields: ['ID', 'Slug', 'CommunityKind'],
+            user,
+          }),
+          LoadAllPaginatedRows<{ ID: string; Code: string }>({
+            runView: rv,
+            entityName: COMMUNITY_ENTITY_NAMES.PostTypes,
+            extraFilter: '1=1',
+            fields: ['ID', 'Code'],
+            user,
+          }),
+          LoadAllPaginatedRows<LiveForumTopicTagRow>({
+            runView: rv,
+            entityName: COMMUNITY_ENTITY_NAMES.ForumTopicTags,
+            extraFilter: scopedSpaceId ? `SpaceID = '${scopedSpaceId}'` : '1=1',
+            fields: ['ID', 'SpaceID', 'Slug', 'Name', 'PostCount'],
+            user,
+          }),
+        ]);
       if (loadVersion !== this.loadHubStateVersion) return;
 
       this.postTypeIdByCode.clear();
@@ -694,29 +821,79 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
       }
 
       const forumRows = forumsResult.success ? forumsResult.rows : [];
+      const collabSpaces = collabSpacesResult.success ? collabSpacesResult.rows : [];
+      const collabNameById = new Map(collabSpaces.map((s) => [s.ID.toLowerCase(), s.Name]));
+      const communitySpaces = communitySpacesResult.success ? communitySpacesResult.rows : [];
+
+      const liveSpaceRows: LiveSpaceDirectoryRow[] =
+        communitySpaces.length > 0
+          ? communitySpaces.map((cs) => ({
+              ID: cs.ID,
+              Slug: cs.Slug,
+              CommunityKind: cs.CommunityKind,
+              Name: collabNameById.get(cs.ID.toLowerCase()) ?? cs.Slug,
+            }))
+          : collabSpaces.map((s) => ({
+              ID: s.ID,
+              Name: s.Name,
+              CommunityKind: 'Community Space',
+            }));
+
+      const liveForumRows: LiveForumDirectoryRow[] = forumRows.map((f) => ({
+        ID: f.ID,
+        Name: f.Name,
+        SpaceID: f.SpaceID ?? null,
+        Description: f.Description ?? null,
+      }));
+
+      this.loadedTopicTags = topicTagsResult.success ? topicTagsResult.rows : [];
+      this.streamSpaces = BuildDynamicSpaceDirectory({
+        isOfflineDemoMode: false,
+        spaces: liveSpaceRows,
+        forums: liveForumRows,
+      });
+      this.streamTopics = BuildDynamicTopicTags({
+        isOfflineDemoMode: false,
+        topicTags: this.loadedTopicTags,
+      });
+
+      this.spaceNameById.clear();
+      for (const spaceItem of this.streamSpaces) {
+        if (spaceItem.id !== 'all') {
+          this.spaceNameById.set(spaceItem.id.toLowerCase(), spaceItem.name);
+        }
+      }
+      this.forumSpaceIdByForumId.clear();
+      for (const f of forumRows) {
+        const mappedSpaceId = f.SpaceID?.trim() || f.ID;
+        this.forumSpaceIdByForumId.set(f.ID.toLowerCase(), mappedSpaceId);
+      }
+
       const forumNameById = new Map(forumRows.map((f) => [f.ID.toLowerCase(), f.Name]));
       this.authorizedForums = forumRows.map((f) => ({
         id: f.ID,
         name: f.Name,
-        spaceId: MapForumNameToSpaceId(f.Name),
+        spaceId: f.SpaceID?.trim() || MapForumNameToSpaceId(f.Name),
+        dbSpaceId: f.SpaceID ?? null,
       }));
       this.allowedForumIDs = this.authorizedForums.map((f) => f.id);
-      this.spaceName = spaceResult?.Success ? spaceResult.Results?.[0]?.Name ?? this.spaceName : this.spaceName;
+      if (scopedSpaceId) {
+        this.spaceName = collabNameById.get(scopedSpaceId.toLowerCase()) ?? this.spaceName;
+      } else if (collabSpaces[0]?.Name) {
+        this.spaceName = collabSpaces[0].Name;
+      }
+
+      if (!forumsResult.success) {
+        this.clearLiveHubData(
+          forumsResult.errorMessage || 'Failed to load Community Forums.',
+          this.streamSpaces,
+          this.streamTopics,
+        );
+        return;
+      }
 
       if (scopedSpaceId && this.allowedForumIDs.length === 0) {
-        this.feedPosts = [];
-        this.selectedFeedPostId = null;
-        this.campaigns = [];
-        this.selectedCampaignId = null;
-        this.qaCanonItems = [];
-        this.selectedQaId = null;
-        this.ideationLoadFailed = false;
-        this.ideationErrorMessage = null;
-        this.ideationItems = [];
-        this.allUserAllocations = [];
-        this.livingDocItems = [];
-        this.rebuildCommonsItems();
-        this.syncSelectionDefaults();
+        this.clearLiveHubData(null, this.streamSpaces, this.streamTopics);
         return;
       }
 
@@ -730,7 +907,18 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
           runView: rv,
           entityName: COMMUNITY_ENTITY_NAMES.ForumPosts,
           extraFilter: `Status = 'Published' AND ForumID IN (${scopedForumInList})`,
-          fields: ['ID', 'ForumID', 'RootPostID', 'Title', 'BodyMarkdown', 'Status', 'AuthorUserID'],
+          fields: [
+            'ID',
+            'ForumID',
+            'RootPostID',
+            'Title',
+            'BodyMarkdown',
+            'Status',
+            'AuthorUserID',
+            'ReplyCount',
+            'ReactionScore',
+            'PromotedToSpaceID',
+          ],
           user,
         });
         if (loadVersion !== this.loadHubStateVersion) return;
@@ -779,7 +967,17 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
               runView: rv,
               entityName: COMMUNITY_ENTITY_NAMES.ForumPosts,
               extraFilter: `RootPostID IS NULL AND Status = 'Published'`,
-              fields: ['ID', 'ForumID', 'Title', 'BodyMarkdown', 'Status', 'AuthorUserID'],
+              fields: [
+                'ID',
+                'ForumID',
+                'Title',
+                'BodyMarkdown',
+                'Status',
+                'AuthorUserID',
+                'ReplyCount',
+                'ReactionScore',
+                'PromotedToSpaceID',
+              ],
               user,
             }),
         LoadAllPaginatedRows<IdeaCampaignRow>({
@@ -792,15 +990,23 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
       ]);
       if (loadVersion !== this.loadHubStateVersion) return;
 
+      if (!feedResult.success) {
+        this.hubLoadError = feedResult.errorMessage || 'Failed to load Community Hub feed posts.';
+      }
+
       this.feedPosts =
         feedResult.success && feedResult.rows.length > 0
           ? feedResult.rows.map((p) => ({
               id: p.ID,
+              forumId: p.ForumID,
               title: p.Title ?? 'Untitled Thread',
               bodyMarkdown: p.BodyMarkdown ?? '',
               status: p.Status,
               authorName: p.AuthorUserID && UUIDsEqual(p.AuthorUserID, user.ID) ? user.Name : 'Community Member',
               authorRole: 'Member',
+              replyCount: p.ReplyCount ?? 0,
+              reactionScore: p.ReactionScore ?? 0,
+              promotedToSpaceId: p.PromotedToSpaceID ?? null,
             }))
           : [];
       this.selectedFeedPostId = this.feedPosts[0]?.id ?? null;
@@ -814,23 +1020,25 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
               budgetPoints: NormalizeCampaignBudget(c.DefaultBudgetPoints, DEFAULT_CAMPAIGN_BUDGET_POINTS),
               maxPointsPerIdea: c.MaxPointsPerIdea,
             }))
-          : scopedSpaceId
-            ? []
-            : [DEFAULT_CAMPAIGN];
+          : [];
       this.campaigns = loadedCampaigns;
       if (!this.campaigns.some((c) => this.selectedCampaignId && UUIDsEqual(c.id, this.selectedCampaignId))) {
-        this.selectedCampaignId = this.campaigns[0]?.id ?? (scopedSpaceId ? null : DEFAULT_CAMPAIGN.id);
+        this.selectedCampaignId = this.campaigns[0]?.id ?? null;
       }
 
       if (answersResult.success && answersResult.rows.length > 0) {
-        let bodyById = new Map<string, Pick<ForumPostRow, 'ID' | 'ForumID' | 'Title' | 'BodyMarkdown'>>(spacePostById);
+        type AnswerMetaRow = Pick<
+          ForumPostRow,
+          'ID' | 'ForumID' | 'Title' | 'BodyMarkdown' | 'ReplyCount' | 'ReactionScore' | 'PromotedToSpaceID'
+        >;
+        let bodyById = new Map<string, AnswerMetaRow>(spacePostById);
         if (!scopedSpaceId) {
           const answerIds = answersResult.rows.map((a) => `'${AssertValidUUID(a.ID, 'answerId')}'`).join(',');
-          const bodyRes = await LoadAllPaginatedRows<Pick<ForumPostRow, 'ID' | 'ForumID' | 'Title' | 'BodyMarkdown'>>({
+          const bodyRes = await LoadAllPaginatedRows<AnswerMetaRow>({
             runView: rv,
             entityName: COMMUNITY_ENTITY_NAMES.ForumPosts,
             extraFilter: `ID IN (${answerIds})`,
-            fields: ['ID', 'ForumID', 'Title', 'BodyMarkdown'],
+            fields: ['ID', 'ForumID', 'Title', 'BodyMarkdown', 'ReplyCount', 'ReactionScore', 'PromotedToSpaceID'],
             user,
           });
           if (loadVersion !== this.loadHubStateVersion) return;
@@ -850,10 +1058,16 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
             epistemicStatus: a.AIEpistemicStatus,
             confidenceScore: a.AIConfidenceScore,
             isAccepted: a.IsAcceptedByAuthor,
+            reactionScore: post?.ReactionScore ?? 0,
+            replyCount: post?.ReplyCount ?? 0,
+            promotedToSpaceId: post?.PromotedToSpaceID ?? null,
           };
         });
       } else {
-        this.qaCanonItems = scopedSpaceId ? [] : SEEDED_QA_CANON_FALLBACK;
+        this.qaCanonItems = [];
+        if (!answersResult.success && !this.hubLoadError) {
+          this.hubLoadError = answersResult.errorMessage || 'Failed to load Q&A Canon items.';
+        }
       }
       this.selectedQaId = this.qaCanonItems[0]?.id ?? null;
 
@@ -877,11 +1091,11 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
                   .filter((p): p is ScopedPostRow => Boolean(p)),
                 errorMessage: null as string | null,
               })
-            : LoadAllPaginatedRows<Pick<ForumPostRow, 'ID' | 'ForumID' | 'Title' | 'BodyMarkdown'>>({
+            : LoadAllPaginatedRows<Pick<ForumPostRow, 'ID' | 'ForumID' | 'Title' | 'BodyMarkdown' | 'PromotedToSpaceID'>>({
                 runView: rv,
                 entityName: COMMUNITY_ENTITY_NAMES.ForumPosts,
                 extraFilter: ideaFilter,
-                fields: ['ID', 'ForumID', 'Title', 'BodyMarkdown'],
+                fields: ['ID', 'ForumID', 'Title', 'BodyMarkdown', 'PromotedToSpaceID'],
                 user,
               }),
           LoadAllPaginatedRows<IdeaAllocationAggregateRow>({
@@ -921,6 +1135,7 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
                 effectiveQuadraticVotes: i.EffectiveQuadraticVotes,
                 myPointsAllocated: mine?.PointsAllocated ?? 0,
                 myEffectiveVotes: mine?.QuadraticVotes ?? 0,
+                promotedToSpaceId: postMeta.PromotedToSpaceID ?? null,
               };
             });
         }
@@ -937,13 +1152,27 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
       );
       if (loadVersion !== this.loadHubStateVersion) return;
       this.livingDocItems = loadedDocs;
+
+      const allRootIds = Array.from(
+        new Set([
+          ...this.feedPosts.map((p) => p.id),
+          ...this.qaCanonItems.map((q) => q.id),
+          ...this.ideationItems.map((i) => i.id),
+          ...this.livingDocItems.map((d) => d.id),
+        ]),
+      );
+      if (allRootIds.length > 0) {
+        await this.loadPostSupplementaryMetadata(rv, user, allRootIds);
+        if (loadVersion !== this.loadHubStateVersion) return;
+      }
+
+      this.sessions = [];
       this.rebuildCommonsItems();
       this.syncSelectionDefaults();
     } catch (err) {
       if (loadVersion !== this.loadHubStateVersion) return;
-      this.ideationLoadFailed = true;
-      this.ideationErrorMessage = err instanceof Error ? err.message : 'Failed to load Community Hub state.';
-      this.applySeededFallback();
+      const errMsg = err instanceof Error ? err.message : 'Failed to load Community Hub state.';
+      this.clearLiveHubData(errMsg, this.streamSpaces, this.streamTopics);
     } finally {
       if (loadVersion === this.loadHubStateVersion) {
         this.cdr.markForCheck();
@@ -951,11 +1180,158 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
     }
   }
 
+  private clearLiveHubData(
+    errorMessage: string | null,
+    spaces: CommunitySpaceDirectoryItem[],
+    topics: string[],
+  ): void {
+    this.isOfflineDemoMode = false;
+    this.feedPosts = [];
+    this.selectedFeedPostId = null;
+    this.qaCanonItems = [];
+    this.selectedQaId = null;
+    this.ideationItems = [];
+    this.allUserAllocations = [];
+    this.campaigns = [];
+    this.selectedCampaignId = null;
+    this.livingDocItems = [];
+    this.sessions = [];
+    this.streamSpaces =
+      spaces.length > 0 ? spaces : BuildDynamicSpaceDirectory({ isOfflineDemoMode: false });
+    this.streamTopics = topics;
+    this.hubLoadError = errorMessage;
+    if (errorMessage) {
+      this.ideationLoadFailed = true;
+      this.ideationErrorMessage = errorMessage;
+    }
+    this.rebuildCommonsItems();
+    this.syncSelectionDefaults();
+    this.cdr.markForCheck();
+  }
+
+  private async loadPostSupplementaryMetadata(
+    rv: RunView,
+    user: UserInfo,
+    rootPostIds: ReadonlyArray<string>,
+  ): Promise<void> {
+    const validIds = rootPostIds.filter((id) => {
+      try {
+        AssertValidUUID(id, 'postId');
+        return true;
+      } catch {
+        return false;
+      }
+    });
+    if (validIds.length === 0) return;
+
+    const validUserId = AssertValidUUID(user.ID, 'user.ID');
+    const idInClause = this.buildUuidInClause(validIds, 'rootPostId');
+    const tagNameById = new Map(this.loadedTopicTags.map((t) => [t.ID.toLowerCase(), t.Name]));
+
+    const [repliesRes, myReactionsRes, postTagsRes] = await Promise.all([
+      LoadAllPaginatedRows<ForumReplyRow>({
+        runView: rv,
+        entityName: COMMUNITY_ENTITY_NAMES.ForumPosts,
+        extraFilter: `RootPostID IN (${idInClause}) AND Status IN ('Published', 'Answered', 'Resolved')`,
+        fields: ['ID', 'RootPostID', 'ParentPostID', 'AuthorUserID', 'BodyMarkdown', 'Status', 'ReactionScore'],
+        user,
+      }),
+      LoadAllPaginatedRows<ForumPostReactionRow>({
+        runView: rv,
+        entityName: COMMUNITY_ENTITY_NAMES.ForumPostReactions,
+        extraFilter: `UserID = '${validUserId}' AND ReactionKind = 'Upvote' AND PostID IN (${idInClause})`,
+        fields: ['ID', 'PostID'],
+        user,
+      }),
+      LoadAllPaginatedRows<ForumPostTagRow>({
+        runView: rv,
+        entityName: COMMUNITY_ENTITY_NAMES.ForumPostTags,
+        extraFilter: `PostID IN (${idInClause})`,
+        fields: ['ID', 'PostID', 'TopicTagID'],
+        user,
+      }),
+    ]);
+
+    this.repliesByRootPostId.clear();
+    if (repliesRes.success) {
+      for (const r of repliesRes.rows) {
+        const rootKey = r.RootPostID?.toLowerCase();
+        if (!rootKey) continue;
+        const replyItem = this.mapForumReplyRow(r, user);
+        const list = this.repliesByRootPostId.get(rootKey) ?? [];
+        list.push(replyItem);
+        this.repliesByRootPostId.set(rootKey, list);
+      }
+    }
+
+    this.upvotedPostIds.clear();
+    if (myReactionsRes.success) {
+      for (const rx of myReactionsRes.rows) {
+        this.upvotedPostIds.add(rx.PostID.toLowerCase());
+      }
+    }
+
+    this.tagNamesByPostId.clear();
+    if (postTagsRes.success) {
+      for (const pt of postTagsRes.rows) {
+        const tagName = tagNameById.get(pt.TopicTagID.toLowerCase());
+        if (!tagName) continue;
+        const postKey = pt.PostID.toLowerCase();
+        const existing = this.tagNamesByPostId.get(postKey) ?? [];
+        if (!existing.includes(tagName)) {
+          existing.push(tagName);
+          this.tagNamesByPostId.set(postKey, existing);
+        }
+      }
+    }
+  }
+
+  private mapForumReplyRow(row: ForumReplyRow, user: UserInfo): CommunityCommonsReply {
+    const isMe = Boolean(row.AuthorUserID && UUIDsEqual(row.AuthorUserID, user.ID));
+    const authorName = isMe ? user.Name || 'Community Member' : 'Community Member';
+    const parts = authorName.trim().split(/\s+/).filter(Boolean);
+    const initials =
+      parts.length === 0
+        ? 'MJ'
+        : parts.length === 1
+          ? parts[0].slice(0, 2).toUpperCase()
+          : `${parts[0][0]}${parts[parts.length - 1][0]}`.toUpperCase();
+    return {
+      id: row.ID,
+      authorName,
+      authorRole: 'Member',
+      authorInitials: initials,
+      timestampLabel: row.Status,
+      bodyMarkdown: row.BodyMarkdown ?? '',
+      isAccepted: row.Status === 'Answered',
+      upvotes: row.ReactionScore ?? 0,
+    };
+  }
+
+  private async loadRepliesForRootPost(rv: RunView, user: UserInfo, rootPostId: string): Promise<CommunityCommonsReply[]> {
+    const validRootId = AssertValidUUID(rootPostId, 'rootPostId');
+    const res = await LoadAllPaginatedRows<ForumReplyRow>({
+      runView: rv,
+      entityName: COMMUNITY_ENTITY_NAMES.ForumPosts,
+      extraFilter: `RootPostID = '${validRootId}' AND Status IN ('Published', 'Answered', 'Resolved')`,
+      fields: ['ID', 'RootPostID', 'ParentPostID', 'AuthorUserID', 'BodyMarkdown', 'Status', 'ReactionScore'],
+      user,
+    });
+    if (!res.success) {
+      throw new Error(res.errorMessage || 'Failed to reload replies from server.');
+    }
+    return res.rows.map((r) => this.mapForumReplyRow(r, user));
+  }
+
   private applySeededFallback(): void {
     this.resetTransientSpaceState();
     this.isOfflineDemoMode = true;
     this.authorizedForums = [];
     this.allowedForumIDs = [];
+    this.loadedTopicTags = [];
+    this.streamSpaces = BuildDynamicSpaceDirectory({ isOfflineDemoMode: true });
+    this.streamTopics = BuildDynamicTopicTags({ isOfflineDemoMode: true });
+    this.sessions = SEEDED_COMMUNITY_SESSIONS.map((s) => ({ ...s }));
     this.campaigns = [{ ...DEFAULT_CAMPAIGN }];
     this.selectedCampaignId = DEFAULT_CAMPAIGN.id;
     this.allUserAllocations = [];
@@ -987,7 +1363,10 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
     rv: RunView,
     user: UserInfo,
     scopedPostInList?: string | null,
-    scopedPostById?: ReadonlyMap<string, Pick<ForumPostRow, 'ID' | 'Title' | 'BodyMarkdown'>>,
+    scopedPostById?: ReadonlyMap<
+      string,
+      Pick<ForumPostRow, 'ID' | 'ForumID' | 'Title' | 'BodyMarkdown' | 'ReplyCount' | 'ReactionScore' | 'PromotedToSpaceID'>
+    >,
   ): Promise<CommunityHubLivingDocItem[]> {
     if (scopedPostInList === null) {
       return [];
@@ -1041,16 +1420,20 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
       return this.isOfflineDemoMode ? SEEDED_LIVING_DOCS_FALLBACK : [];
     }
 
-    let postById: ReadonlyMap<string, Pick<ForumPostRow, 'ID' | 'Title' | 'BodyMarkdown'>>;
+    type DocPostMeta = Pick<
+      ForumPostRow,
+      'ID' | 'ForumID' | 'Title' | 'BodyMarkdown' | 'ReplyCount' | 'ReactionScore' | 'PromotedToSpaceID'
+    >;
+    let postById: ReadonlyMap<string, DocPostMeta>;
     if (scopedPostById) {
       postById = scopedPostById;
     } else {
       const safeIds = AssertValidUUIDList(idsWithType.map((r) => r.id).join(','), 'livingDocIds');
-      const postsResult = await LoadAllPaginatedRows<Pick<ForumPostRow, 'ID' | 'Title' | 'BodyMarkdown'>>({
+      const postsResult = await LoadAllPaginatedRows<DocPostMeta>({
         runView: rv,
         entityName: COMMUNITY_ENTITY_NAMES.ForumPosts,
         extraFilter: `ID IN (${safeIds.map((id) => `'${id}'`).join(',')})`,
-        fields: ['ID', 'Title', 'BodyMarkdown'],
+        fields: ['ID', 'ForumID', 'Title', 'BodyMarkdown', 'ReplyCount', 'ReactionScore', 'PromotedToSpaceID'],
         user,
       });
       postById = new Map((postsResult.success ? postsResult.rows : []).map((r) => [r.ID.toLowerCase(), r]));
@@ -1064,10 +1447,14 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
       const post = postById.get(r.id.toLowerCase());
       return {
         id: r.id,
+        forumId: post?.ForumID ?? null,
         title: post?.Title ?? 'Untitled',
         bodyMarkdown: post?.BodyMarkdown ?? '',
         postTypeCode: r.postTypeCode,
         experienceKind: r.experienceKind ?? null,
+        reactionScore: post?.ReactionScore ?? 0,
+        replyCount: post?.ReplyCount ?? 0,
+        promotedToSpaceId: post?.PromotedToSpaceID ?? null,
       };
     });
   }
@@ -1195,8 +1582,105 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
     this.cdr.markForCheck();
   }
 
-  public upvoteCommonsItem(itemId: string): void {
-    this.commonsItems = ToggleStreamItemUpvote(this.commonsItems, itemId);
+  public async upvoteCommonsItem(itemId: string): Promise<void> {
+    this.streamActionError = null;
+    this.detailErrorMessage = null;
+    const item = this.commonsItems.find((i) => i.id === itemId);
+    if (!item) return;
+
+    const provider = Metadata.Provider;
+    const user: UserInfo | undefined = provider?.CurrentUser;
+    const offlineOnly = !provider;
+
+    const result = await ToggleReactionViaProvider({
+      item,
+      isOfflineDemoMode: offlineOnly,
+      currentUserId: user?.ID ?? null,
+      findExistingReactionId:
+        provider && user
+          ? async (postId, userId, kind) => {
+              const res = await new RunView().RunView<{ ID: string }>(
+                {
+                  EntityName: COMMUNITY_ENTITY_NAMES.ForumPostReactions,
+                  ExtraFilter: `PostID = '${AssertValidUUID(postId, 'postId')}' AND UserID = '${AssertValidUUID(userId, 'userId')}' AND ReactionKind = '${kind}'`,
+                  Fields: ['ID'],
+                  ResultType: 'simple',
+                  MaxRows: 1,
+                },
+                user,
+              );
+              if (!res?.Success) {
+                throw new Error(res?.ErrorMessage || 'Failed to look up reaction state.');
+              }
+              return res.Results?.[0]?.ID ?? null;
+            }
+          : null,
+      loadReactionEntityById:
+        provider && user
+          ? (reactionId) =>
+              new Metadata().GetEntityObject<mjBizAppsCommunityForumPostReactionEntity>(
+                COMMUNITY_ENTITY_NAMES.ForumPostReactions,
+                CompositeKey.FromID(AssertValidUUID(reactionId, 'reactionId')),
+                user,
+              )
+          : null,
+      createReactionEntity:
+        provider && user
+          ? () =>
+              new Metadata().GetEntityObject<mjBizAppsCommunityForumPostReactionEntity>(
+                COMMUNITY_ENTITY_NAMES.ForumPostReactions,
+                user,
+              )
+          : null,
+      refreshPostReactionScore:
+        provider && user
+          ? async (postId) => {
+              const res = await new RunView().RunView<{ ReactionScore: number | null }>(
+                {
+                  EntityName: COMMUNITY_ENTITY_NAMES.ForumPosts,
+                  ExtraFilter: `ID = '${AssertValidUUID(postId, 'postId')}'`,
+                  Fields: ['ReactionScore'],
+                  ResultType: 'simple',
+                  MaxRows: 1,
+                },
+                user,
+              );
+              if (!res?.Success) {
+                return null;
+              }
+              return res.Results?.[0]?.ReactionScore ?? null;
+            }
+          : null,
+    });
+
+    if (!result.success) {
+      const msg = result.errorMessage ?? 'Failed to update reaction on server.';
+      this.streamActionError = msg;
+      if (this.detailSheetItemId === itemId) {
+        this.detailErrorMessage = msg;
+      }
+      this.cdr.markForCheck();
+      return;
+    }
+
+    const postKey = item.sourcePostId.toLowerCase();
+    if (!result.offlineFallback) {
+      if (result.upvotedByMe) {
+        this.upvotedPostIds.add(postKey);
+      } else {
+        this.upvotedPostIds.delete(postKey);
+      }
+    }
+
+    this.commonsItems = this.commonsItems.map((entry) =>
+      entry.id === itemId
+        ? {
+            ...entry,
+            upvotedByMe: result.upvotedByMe,
+            upvoteCount: result.upvoteCount,
+          }
+        : entry,
+    );
     this.cdr.markForCheck();
   }
 
@@ -1233,6 +1717,7 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
     this.detailSheetItemId = itemId;
     this.detailReplyText = '';
     this.detailActionMessage = null;
+    this.detailErrorMessage = null;
     this.cdr.markForCheck();
     this.scheduleOverlayInitialFocus('detail');
   }
@@ -1243,28 +1728,132 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
     this.detailSheetItemId = null;
     this.detailReplyText = '';
     this.detailActionMessage = null;
+    this.detailErrorMessage = null;
     this.cdr.markForCheck();
     this.restoreOverlayTriggerFocus(trigger, '.mjc-inspect-btn');
   }
 
-  public submitDetailReply(): void {
+  public async submitDetailReply(): Promise<void> {
     const item = this.detailSheetItem;
     const text = this.detailReplyText.trim();
     if (!item || !text) return;
-    const authorName = Metadata.Provider?.CurrentUser?.Name || 'Community Member';
-    this.commonsItems = AddStreamItemReply(this.commonsItems, item.id, text, authorName);
+
+    this.detailActionMessage = null;
+    this.detailErrorMessage = null;
+
+    const provider = Metadata.Provider;
+    const user: UserInfo | undefined = provider?.CurrentUser;
+    const offlineOnly = !provider;
+
+    if (!offlineOnly && user) {
+      await this.ensurePostTypesLoaded(user).catch(() => undefined);
+    }
+
+    const rv = new RunView();
+    const outcome = await PersistDetailReply({
+      item,
+      replyBody: text,
+      authorName: user?.Name || 'Community Member',
+      isOfflineDemoMode: offlineOnly,
+      postTypeIdByCode: this.postTypeIdByCode,
+      currentUserId: user?.ID ?? null,
+      createForumPostEntity:
+        provider && user
+          ? () =>
+              new Metadata().GetEntityObject<mjBizAppsCommunityForumPostEntity>(
+                COMMUNITY_ENTITY_NAMES.ForumPosts,
+                user,
+              )
+          : null,
+      reloadThreadReplies:
+        provider && user
+          ? (rootPostId) => this.loadRepliesForRootPost(rv, user, rootPostId)
+          : null,
+    });
+
+    if (!outcome.success) {
+      this.detailErrorMessage = outcome.errorMessage ?? 'Failed to save reply on server.';
+      this.cdr.markForCheck();
+      return;
+    }
+
+    if (!outcome.offlineFallback) {
+      this.repliesByRootPostId.set(item.sourcePostId.toLowerCase(), [...outcome.replies]);
+    }
+
+    this.commonsItems = this.commonsItems.map((entry) =>
+      entry.id === item.id
+        ? {
+            ...entry,
+            replies: [...outcome.replies],
+            replyCount: outcome.replyCount,
+          }
+        : entry,
+    );
     this.detailReplyText = '';
-    this.detailActionMessage = 'Reply added to thread.';
+    this.detailActionMessage = outcome.statusMessage ?? 'Reply saved to thread.';
     this.cdr.markForCheck();
   }
 
-  public graduateDetailItem(itemId: string): void {
-    this.commonsItems = GraduateStreamItem(this.commonsItems, itemId);
-    this.detailActionMessage = 'Thread graduated into an active Working Group deliverable.';
+  public async graduateDetailItem(itemId: string): Promise<void> {
+    const item = this.commonsItems.find((entry) => entry.id === itemId);
+    if (!item || item.graduatedToDeliverable) return;
+
+    this.detailActionMessage = null;
+    this.detailErrorMessage = null;
+
+    const provider = Metadata.Provider;
+    if (!provider) {
+      this.commonsItems = GraduateStreamItem(this.commonsItems, itemId);
+      this.detailActionMessage = 'Thread graduated into an active Working Group deliverable.';
+      this.cdr.markForCheck();
+      return;
+    }
+
+    const result = await GraduateThreadViaProvider({
+      rootPostId: item.sourcePostId,
+      targetSpaceTypeCode: 'working-group',
+      targetSpaceName: `${item.title.slice(0, 80)} — Working Group`,
+      seedInitialTaskTitle: `Operationalize: ${item.title.slice(0, 80)}`,
+      provider,
+    });
+
+    if (!result.success) {
+      this.detailErrorMessage = result.errorMessage ?? 'Failed to graduate thread to Working Group space.';
+      this.cdr.markForCheck();
+      return;
+    }
+
+    this.commonsItems = GraduateStreamItem(this.commonsItems, itemId, result.promotedToSpaceId);
+    this.detailActionMessage = result.promotedToSpaceId
+      ? `Thread graduated into Working Group Space (${result.promotedToSpaceId}).`
+      : 'Thread graduated into an active Working Group deliverable.';
     this.cdr.markForCheck();
   }
 
   // ─── Ask or Share Modal ───────────────────────────────────────────────────
+
+  public get availableAskShareTopicTags(): ReadonlyArray<LiveForumTopicTagRow> {
+    if (this.isOfflineDemoMode) return [];
+    const selectedForum = this.authorizedForums.find((f) => UUIDsEqual(f.id, this.askShareForumId));
+    const targetSpaceId = selectedForum?.dbSpaceId?.trim() || null;
+    if (!targetSpaceId) return this.loadedTopicTags;
+    const scoped = this.loadedTopicTags.filter((t) => !t.SpaceID || UUIDsEqual(t.SpaceID, targetSpaceId));
+    return scoped.length > 0 ? scoped : this.loadedTopicTags;
+  }
+
+  public isAskShareTopicTagSelected(tagId: string): boolean {
+    return this.askShareSelectedTagIds.some((id) => UUIDsEqual(id, tagId));
+  }
+
+  public toggleAskShareTopicTag(tagId: string): void {
+    if (this.isAskShareTopicTagSelected(tagId)) {
+      this.askShareSelectedTagIds = this.askShareSelectedTagIds.filter((id) => !UUIDsEqual(id, tagId));
+    } else {
+      this.askShareSelectedTagIds = [...this.askShareSelectedTagIds, tagId];
+    }
+    this.cdr.markForCheck();
+  }
 
   public openAskShareModal(defaultType: AskShareEntryType = 'Question'): void {
     if (!this.isAskShareModalOpen) {
@@ -1284,7 +1873,9 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
     if (!this.isOfflineDemoMode && this.authorizedForums.length > 0) {
       const preferred =
         (this.activeSpaceFilter !== 'all'
-          ? this.authorizedForums.find((f) => f.spaceId === this.activeSpaceFilter)
+          ? this.authorizedForums.find(
+              (f) => f.spaceId === this.activeSpaceFilter || f.dbSpaceId === this.activeSpaceFilter,
+            )
           : undefined) ?? this.authorizedForums[0];
       this.askShareForumId = preferred.id;
       this.askShareSpaceId = preferred.spaceId;
@@ -1294,6 +1885,7 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
     }
     this.askShareBody = '';
     this.askShareTags = '';
+    this.askShareSelectedTagIds = [];
     this.askShareValidationErrors = {};
     this.askShareError = null;
     this.cdr.markForCheck();
@@ -1306,6 +1898,7 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
     if (matched) {
       this.askShareSpaceId = matched.spaceId;
     }
+    this.askShareSelectedTagIds = [];
     this.askShareError = null;
     this.cdr.markForCheck();
   }
@@ -1431,13 +2024,15 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
         body: this.askShareBody,
         tagsInput: this.askShareTags,
       },
-      isOfflineDemoMode: this.isOfflineDemoMode || !provider || !user,
+      isOfflineDemoMode: !provider,
       targetForumId: this.askShareForumId,
       allowedForumIDs: this.allowedForumIDs,
       authorizedForums: this.authorizedForums,
       postTypeIdByCode: this.postTypeIdByCode,
       currentUserId: user?.ID,
       authorName: user?.Name || 'Community Member',
+      selectedTopicTagIds: this.askShareSelectedTagIds,
+      topicTags: this.loadedTopicTags,
       createForumPostEntity:
         provider && user
           ? () =>
@@ -1454,6 +2049,14 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
                 user,
               )
           : null,
+      createPostTagEntity:
+        provider && user
+          ? () =>
+              new Metadata().GetEntityObject<mjBizAppsCommunityForumPostTagEntity>(
+                COMMUNITY_ENTITY_NAMES.ForumPostTags,
+                user,
+              )
+          : null,
     });
 
     if (!outcome.success || !outcome.createdItem) {
@@ -1464,15 +2067,22 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
     }
 
     const newItem = outcome.createdItem;
+    if (!this.isOfflineDemoMode && newItem.tags.length > 0) {
+      this.tagNamesByPostId.set(newItem.sourcePostId.toLowerCase(), [...newItem.tags]);
+    }
     this.userAddedCommonsItems.unshift(newItem);
     this.feedPosts = [
       {
         id: newItem.sourcePostId,
+        forumId: outcome.resolvedForumId ?? newItem.forumId ?? null,
         title: newItem.title,
         bodyMarkdown: newItem.bodyMarkdown,
         status: 'Published',
         authorName: newItem.authorName,
         authorRole: newItem.authorRole,
+        replyCount: 0,
+        reactionScore: 0,
+        promotedToSpaceId: null,
       },
       ...this.feedPosts,
     ];
@@ -1487,15 +2097,22 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
         epistemicStatus: 'Novel Insight',
         confidenceScore: null,
         isAccepted: false,
+        reactionScore: 0,
+        replyCount: 0,
+        promotedToSpaceId: null,
       };
       this.qaCanonItems = [qaEntry, ...this.qaCanonItems];
       this.selectedQaId = qaEntry.id;
     } else if (this.askShareEntryType === 'Playbook Note') {
       const docEntry: CommunityHubLivingDocItem = {
         id: newItem.sourcePostId,
+        forumId: outcome.resolvedForumId,
         title: newItem.title,
         bodyMarkdown: newItem.bodyMarkdown,
         postTypeCode: 'collaborative-doc',
+        reactionScore: 0,
+        replyCount: 0,
+        promotedToSpaceId: null,
       };
       this.livingDocItems = [docEntry, ...this.livingDocItems];
       this.selectedLivingDocId = docEntry.id;
@@ -1507,6 +2124,7 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
     this.askShareTitle = '';
     this.askShareBody = '';
     this.askShareTags = '';
+    this.askShareSelectedTagIds = [];
     this.askShareValidationErrors = {};
     this.askShareError = null;
     this.closeAskShareModal();
