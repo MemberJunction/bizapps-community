@@ -27,7 +27,6 @@ import type { ResourceData } from '@memberjunction/core-entities';
 import {
   COMMUNITY_ENTITY_NAMES,
   type mjBizAppsCommunityForumAnswerPostEntity,
-  type mjBizAppsCommunityForumIdeaPostEntity,
   type mjBizAppsCommunityForumInteractivePostEntity,
   type mjBizAppsCommunityForumPostEntity,
   type mjBizAppsCommunityForumQuestionPostEntity,
@@ -36,10 +35,13 @@ import { AssertValidUUID, AssertValidUUIDList, COMMUNITY_ACTION_IDS, type Ideati
 import { CommunityHubPreferences, type CommunityHubTabKey } from './community-hub-preferences.ts';
 import {
   ComputeCampaignWalletSpentOnOthers,
+  IDEA_POST_TYPE_CODE,
   LoadAllPaginatedRows,
   PersistIdeaAllocationAtomic,
+  PersistProposedIdea,
   type IdeaAllocationAggregateRow,
 } from './community-hub-ideation.ts';
+import { PromoteAnswerToCanonViaProvider } from './community-hub-mutations.ts';
 import {
   AddStreamItemReply,
   BuildCommonsStreamItems,
@@ -1832,66 +1834,15 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
     const item = this.qaCanonItems.find((q) => q.id === itemId);
     if (!item) return;
 
-    const provider = Metadata.Provider;
-    const user: UserInfo | undefined = provider?.CurrentUser;
-    if (provider && user) {
-      try {
-        const answerId = AssertValidUUID(item.id, 'canonAnswerPostId');
-        const questionId = AssertValidUUID(item.questionPostId ?? '', 'questionPostId');
-        const md = new Metadata();
-        const answer = await md.GetEntityObject<mjBizAppsCommunityForumAnswerPostEntity>(
-          COMMUNITY_ENTITY_NAMES.ForumAnswerPosts,
-          CompositeKey.FromID(answerId),
-          user,
-        );
-        const question = await md.GetEntityObject<mjBizAppsCommunityForumQuestionPostEntity>(
-          COMMUNITY_ENTITY_NAMES.ForumQuestionPosts,
-          CompositeKey.FromID(questionId),
-          user,
-        );
-        if (!answer || !question) {
-          this.qaActionMessage = 'Could not load target Question or Answer record for Canon promotion.';
-          this.cdr.markForCheck();
-          return;
-        }
-
-        const prevAcceptedId = question.AcceptedAnswerPostID;
-        if (prevAcceptedId && !UUIDsEqual(prevAcceptedId, answerId)) {
-          const prevAnswer = await md.GetEntityObject<mjBizAppsCommunityForumAnswerPostEntity>(
-            COMMUNITY_ENTITY_NAMES.ForumAnswerPosts,
-            CompositeKey.FromID(prevAcceptedId),
-            user,
-          );
-          if (prevAnswer && prevAnswer.IsAcceptedByAuthor) {
-            prevAnswer.IsAcceptedByAuthor = false;
-            if (!(await prevAnswer.Save())) {
-              this.qaActionMessage = `Failed to clear previously accepted answer ${prevAcceptedId}.`;
-              this.cdr.markForCheck();
-              return;
-            }
-          }
-        }
-
-        question.AcceptedAnswerPostID = answerId;
-        question.AICanonAnswerPostID = answerId;
-        if (!(await question.Save())) {
-          this.qaActionMessage = `Failed to persist Canon link onto Question ${questionId}.`;
-          this.cdr.markForCheck();
-          return;
-        }
-
-        answer.IsAcceptedByAuthor = true;
-        answer.AIEpistemicStatus = 'Canon Verified';
-        if (!(await answer.Save())) {
-          this.qaActionMessage = `Failed to persist Canon Verified status onto Answer ${answerId}.`;
-          this.cdr.markForCheck();
-          return;
-        }
-      } catch (err) {
-        this.qaActionMessage = err instanceof Error ? err.message : 'Failed to promote answer to Canon.';
-        this.cdr.markForCheck();
-        return;
-      }
+    const outcome = await PromoteAnswerToCanonViaProvider({
+      questionPostId: item.questionPostId,
+      canonAnswerPostId: item.id,
+      provider: Metadata.Provider,
+    });
+    if (!outcome.success) {
+      this.qaActionMessage = outcome.errorMessage ?? 'Failed to promote answer to Canon.';
+      this.cdr.markForCheck();
+      return;
     }
 
     for (const q of this.qaCanonItems) {
@@ -1954,47 +1905,20 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
       }
       try {
         await this.ensurePostTypesLoaded(user);
-        const postTypeId = this.resolvePostTypeId('idea');
-        if (!postTypeId) {
-          this.ideationErrorMessage = 'PostType "idea" is not configured — cannot propose idea.';
-          this.cdr.markForCheck();
-          return;
-        }
-        const md = new Metadata();
-        const post = await md.GetEntityObject<mjBizAppsCommunityForumPostEntity>(COMMUNITY_ENTITY_NAMES.ForumPosts, user);
-        const ideaPost = await md.GetEntityObject<mjBizAppsCommunityForumIdeaPostEntity>(
-          COMMUNITY_ENTITY_NAMES.ForumIdeaPosts,
+        const postTypeId = this.resolvePostTypeId(IDEA_POST_TYPE_CODE);
+        const persisted = await PersistProposedIdea({
+          forumId: this.activeCampaign.id,
+          postTypeId,
+          title,
+          summary,
           user,
-        );
-        if (!post || !ideaPost) {
-          this.ideationErrorMessage = 'Could not instantiate Idea entities.';
+        });
+        if (!persisted.success || !persisted.postId) {
+          this.ideationErrorMessage = persisted.errorMessage ?? 'Failed to save proposed idea.';
           this.cdr.markForCheck();
           return;
         }
-        post.ForumID = this.activeCampaign.id;
-        post.AuthorUserID = user.ID;
-        post.PostTypeID = postTypeId;
-        post.Title = title;
-        post.BodyMarkdown = summary;
-        post.Status = 'Published';
-        const postSaved = await post.Save();
-        if (!postSaved) {
-          this.ideationErrorMessage = 'Failed to save Forum Post for proposed idea.';
-          this.cdr.markForCheck();
-          return;
-        }
-        ideaPost.ID = post.ID;
-        ideaPost.TotalPointsAllocated = 0;
-        ideaPost.EffectiveQuadraticVotes = 0;
-        ideaPost.UniqueBackerCount = 0;
-        const ideaSaved = await ideaPost.Save();
-        if (!ideaSaved) {
-          await post.Delete().catch(() => false);
-          this.ideationErrorMessage = 'Failed to save Forum Idea Post subtype — rolled back base post.';
-          this.cdr.markForCheck();
-          return;
-        }
-        created.id = post.ID;
+        created.id = persisted.postId;
       } catch (err) {
         this.ideationErrorMessage = err instanceof Error ? err.message : 'Failed to save proposed idea.';
         this.cdr.markForCheck();

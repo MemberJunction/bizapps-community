@@ -4,8 +4,10 @@ import { Metadata, RunView, UserInfo } from '@memberjunction/core';
 import {
   ComputeCampaignWalletSpentOnOthers,
   ComputeIdeaAggregateFromAllocations,
+  IDEA_POST_TYPE_CODE,
   LoadAllPaginatedRows,
   PersistIdeaAllocationAtomic,
+  PersistProposedIdea,
 } from './lib/community-hub-ideation.ts';
 
 describe('CommunityHub Ideation Wallet & Fail-Closed Aggregate (CR-21 / CR-22)', () => {
@@ -191,5 +193,96 @@ describe('CommunityHub Ideation Wallet & Fail-Closed Aggregate (CR-21 / CR-22)',
     assert.equal(ideaPostRecord.TotalPointsAllocated, 0);
     assert.equal(ideaPostRecord.EffectiveQuadraticVotes, 0);
     assert.equal(ideaPostRecord.UniqueBackerCount, 0);
+  });
+
+  it('Slice 2: IDEA_POST_TYPE_CODE is "idea-proposal" and PersistProposedIdea creates ForumPost + ForumIdeaPost subtype', async () => {
+    assert.equal(IDEA_POST_TYPE_CODE, 'idea-proposal');
+    const user = new UserInfo(undefined, { ID: '11111111-1111-4111-8111-111111111111' });
+    const forumId = '44444444-4444-4444-8444-444444444444';
+    const postTypeId = 'C8A17200-4E12-4B8F-9A10-100000000006';
+    const createdPostId = '55555555-5555-4555-8555-555555555555';
+
+    const forumPostStub = {
+      ID: '',
+      ForumID: '',
+      AuthorUserID: '',
+      PostTypeID: '',
+      Title: '',
+      BodyMarkdown: '',
+      Status: '',
+      Save: async () => {
+        forumPostStub.ID = createdPostId;
+        return true;
+      },
+      Delete: async () => true,
+    };
+    const ideaPostStub = {
+      ID: '',
+      IdeaStatus: '',
+      TotalPointsAllocated: -1,
+      EffectiveQuadraticVotes: -1,
+      UniqueBackerCount: -1,
+      Save: async () => true,
+    };
+
+    mock.method(Metadata.prototype, 'GetEntityObject', async (entityName: string) => {
+      if (entityName === 'MJ_BizApps_Community: Forum Posts') return forumPostStub;
+      return ideaPostStub;
+    });
+
+    const res = await PersistProposedIdea({
+      forumId,
+      postTypeId,
+      title: 'Federated SSO Audit Log',
+      summary: 'Expose immutable audit logs for community moderators.',
+      user,
+    });
+    mock.restoreAll();
+
+    assert.equal(res.success, true);
+    assert.equal(res.postId, createdPostId);
+    assert.equal(forumPostStub.PostTypeID, postTypeId);
+    assert.equal(forumPostStub.ForumID, forumId);
+    assert.equal(ideaPostStub.ID, createdPostId);
+    assert.equal(ideaPostStub.IdeaStatus, 'Under Consideration');
+    assert.equal(ideaPostStub.TotalPointsAllocated, 0);
+    assert.equal(ideaPostStub.EffectiveQuadraticVotes, 0);
+    assert.equal(ideaPostStub.UniqueBackerCount, 0);
+  });
+
+  it('Slice 2: PersistProposedIdea rolls back ForumPost if ForumIdeaPost subtype Save fails', async () => {
+    const user = new UserInfo(undefined, { ID: '11111111-1111-4111-8111-111111111111' });
+    let rolledBack = false;
+
+    mock.method(Metadata.prototype, 'GetEntityObject', async (entityName: string) => {
+      if (entityName === 'MJ_BizApps_Community: Forum Posts') {
+        return {
+          ID: '66666666-6666-4666-8666-666666666666',
+          Save: async () => true,
+          Delete: async () => {
+            rolledBack = true;
+            return true;
+          },
+        };
+      }
+      return {
+        ID: '',
+        Save: async () => false,
+        LatestResult: { CompleteMessage: 'Subtype constraint failed' },
+      };
+    });
+
+    const res = await PersistProposedIdea({
+      forumId: '44444444-4444-4444-8444-444444444444',
+      postTypeId: 'C8A17200-4E12-4B8F-9A10-100000000006',
+      title: 'Broken Idea',
+      summary: 'Should roll back base post',
+      user,
+    });
+    mock.restoreAll();
+
+    assert.equal(res.success, false);
+    assert.equal(rolledBack, true);
+    assert.match(res.errorMessage ?? '', /Subtype constraint failed/);
   });
 });
