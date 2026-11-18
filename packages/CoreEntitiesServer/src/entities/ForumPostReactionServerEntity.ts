@@ -65,7 +65,7 @@ export class ForumPostReactionServerEntity extends mjBizAppsCommunityForumPostRe
     const saved = await super.Save(options);
     if (!saved) return false;
 
-    await this.recomputeParentReactionScore(this.PostID);
+    await this.recomputeParentReactionScore(this.PostID, options?.TransactionGroup);
     return true;
   }
 
@@ -75,11 +75,11 @@ export class ForumPostReactionServerEntity extends mjBizAppsCommunityForumPostRe
     const deleted = await super.Delete(options);
     if (!deleted) return false;
 
-    await this.recomputeParentReactionScore(postId);
+    await this.recomputeParentReactionScore(postId, options?.TransactionGroup);
     return true;
   }
 
-  private async recomputeParentReactionScore(postId: string): Promise<void> {
+  private async recomputeParentReactionScore(postId: string, txGroup?: any): Promise<void> {
     const validPostId = validUuidOrNull(postId);
     if (!validPostId) return;
 
@@ -102,6 +102,7 @@ export class ForumPostReactionServerEntity extends mjBizAppsCommunityForumPostRe
     if (!post) return;
 
     post.ReactionScore = Math.round(totalScore);
+    if (txGroup) post.TransactionGroup = txGroup;
     await post.Save();
   }
 }

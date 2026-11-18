@@ -755,6 +755,45 @@ export function createHarnessStore() {
       const input = variables?.input ?? {};
       state.gqlCalls.push({ query: String(query), input });
 
+      if (String(query).includes('ToggleCommunityPostReaction')) {
+        const input = variables?.input ?? {};
+        const postId = String(input.PostID ?? '').trim();
+        const userId = state.posts.find((p) => p.ID.toLowerCase() === postId.toLowerCase())?.AuthorUserID ?? C.HARNESS_USER_ID; // Simplified for harness
+        const reactionType = String(input.ReactionType ?? '').trim();
+
+        const idx = state.reactions.findIndex(
+          (r) =>
+            r.PostID.toLowerCase() === postId.toLowerCase() &&
+            r.UserID.toLowerCase() === userId.toLowerCase() &&
+            r.ReactionKind === reactionType,
+        );
+
+        let reacted = false;
+        let reactionId = null;
+
+        if (idx >= 0) {
+          state.reactions.splice(idx, 1);
+          reacted = false;
+        } else {
+          reactionId = randomUUID();
+          state.reactions.push({ ID: reactionId, PostID: postId, UserID: userId, ReactionKind: reactionType });
+          reacted = true;
+        }
+
+        recomputePostRollups(postId);
+
+        return {
+          ToggleCommunityPostReaction: {
+            Success: true,
+            PostID: postId,
+            ReactionType: reactionType,
+            Reacted: reacted,
+            ReactionScore: state.posts.find((p) => p.ID.toLowerCase() === postId.toLowerCase())?.ReactionScore ?? 0,
+            ReactionID: reactionId,
+          },
+        };
+      }
+
       if (String(query).includes('PromoteCommunityAnswerToCanon')) {
         const questionPostId = String(input.QuestionPostID ?? '').trim();
         const canonAnswerPostId = String(input.CanonAnswerPostID ?? '').trim();

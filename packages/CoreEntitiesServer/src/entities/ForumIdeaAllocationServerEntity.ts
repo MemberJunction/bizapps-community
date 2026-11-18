@@ -183,7 +183,7 @@ export class ForumIdeaAllocationServerEntity extends mjBizAppsCommunityForumIdea
     const saved = await super.Save(options);
     if (!saved) return false;
 
-    await this.recomputeParentIdeaTotals(this.IdeaPostID);
+    await this.recomputeParentIdeaTotals(this.IdeaPostID, options?.TransactionGroup);
     return true;
   }
 
@@ -193,11 +193,11 @@ export class ForumIdeaAllocationServerEntity extends mjBizAppsCommunityForumIdea
     const deleted = await super.Delete(options);
     if (!deleted) return false;
 
-    await this.recomputeParentIdeaTotals(ideaPostId);
+    await this.recomputeParentIdeaTotals(ideaPostId, options?.TransactionGroup);
     return true;
   }
 
-  private async recomputeParentIdeaTotals(ideaPostId: string): Promise<void> {
+  private async recomputeParentIdeaTotals(ideaPostId: string, txGroup?: any): Promise<void> {
     const validIdeaPostId = validUuidOrNull(ideaPostId);
     if (!validIdeaPostId) return;
 
@@ -237,6 +237,7 @@ export class ForumIdeaAllocationServerEntity extends mjBizAppsCommunityForumIdea
     ideaPost.TotalPointsAllocated = totalPoints;
     ideaPost.EffectiveQuadraticVotes = Number(totalQuadraticVotes.toFixed(2));
     ideaPost.UniqueBackerCount = uniqueBackers.size;
+    if (txGroup) ideaPost.TransactionGroup = txGroup;
     await ideaPost.Save();
   }
 }

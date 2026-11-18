@@ -462,6 +462,7 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
   public showIdeaComposer = false;
   public newIdeaTitle = '';
   public newIdeaSummary = '';
+  public persistenceErrorMessage: string | null = null;
   private readonly postTypeIdByCode = new Map<string, string>();
   private readonly userAddedCommonsItems: CommunityCommonsItem[] = [];
   private readonly forumSpaceIdByForumId = new Map<string, string>();
@@ -2522,7 +2523,7 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
     const user: UserInfo | undefined = provider?.CurrentUser;
 
     if (provider && !user?.ID) {
-      this.ideationErrorMessage = 'Unable to propose idea: no authenticated user in active session.';
+      this.persistenceErrorMessage = 'Unable to propose idea: no authenticated user in active session.';
       this.cdr.markForCheck();
       return false;
     }

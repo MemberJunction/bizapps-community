@@ -1,0 +1,5 @@
+{
+  "epic": "community-epic-1",
+  "authoritativeServerEnforcement": true,
+  "contracts": ["CR-01", "CR-02", "CR-03", "CR-04", "CR-05", "CR-06", "CR-07", "CR-08"]
+}

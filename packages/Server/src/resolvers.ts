@@ -376,6 +376,9 @@ export class ThreadGraduationService {
       UUIDsEqual(question.AcceptedAnswerPostID, params.request.canonAnswerPostId);
 
     const txGroup = await this.tryCreateTransactionGroup(md);
+    if (!txGroup) {
+      throw new Error('Atomic transaction support is required for Canon promotion.');
+    }
     const revertActions: Array<() => Promise<void>> = [];
 
     try {
@@ -388,52 +391,27 @@ export class ThreadGraduationService {
           );
           if (previousAnswer?.IsAcceptedByAuthor) {
             previousAnswer.IsAcceptedByAuthor = false;
-            if (txGroup) previousAnswer.TransactionGroup = txGroup;
+            previousAnswer.TransactionGroup = txGroup;
             await SaveOrThrow(previousAnswer, `Failed to clear IsAcceptedByAuthor on the previously accepted answer ${previouslyAcceptedAnswerPostId}.`);
-            if (!txGroup) {
-              revertActions.push(async () => {
-                previousAnswer.IsAcceptedByAuthor = true;
-                await previousAnswer.Save();
-              });
-            }
           }
         }
 
-        const prevAccepted = question.AcceptedAnswerPostID;
-        const prevCanon = question.AICanonAnswerPostID;
         question.AcceptedAnswerPostID = params.request.canonAnswerPostId;
         question.AICanonAnswerPostID = params.request.canonAnswerPostId;
-        if (txGroup) question.TransactionGroup = txGroup;
+        question.TransactionGroup = txGroup;
         await SaveOrThrow(question, `Failed to save canon promotion onto Forum Question Post ${params.request.questionPostId}.`);
-        if (!txGroup) {
-          revertActions.push(async () => {
-            question.AcceptedAnswerPostID = prevAccepted;
-            question.AICanonAnswerPostID = prevCanon;
-            await question.Save();
-          });
-        }
       }
 
       if (!answerAlreadyReflectsPromotion) {
         answer.AIEpistemicStatus = 'Canon Verified';
         answer.IsAcceptedByAuthor = true;
-        if (txGroup) answer.TransactionGroup = txGroup;
+        answer.TransactionGroup = txGroup;
         await SaveOrThrow(answer, `Failed to mark Forum Answer Post ${params.request.canonAnswerPostId} as Canon Verified.`);
       }
 
-      if (txGroup) {
-        await this.commitTransactionGroup(txGroup, `canon promotion for Question ${params.request.questionPostId}`);
-      }
+      await this.commitTransactionGroup(txGroup, `canon promotion for Question ${params.request.questionPostId}`);
     } catch (err) {
-      if (!txGroup) {
-        for (const revert of revertActions.reverse()) {
-          try {
-            await revert();
-          } catch {
-            // Best-effort compensating rollback when provider lacks TransactionGroup
-          }
-        }
-      }
+      // TransactionGroup handles atomicity, no manual rollback needed if we use txGroup.Submit() properly
       throw err;
     }
 
