@@ -3,6 +3,7 @@ import { CommonModule } from '@angular/common';
 import { Component, ChangeDetectionStrategy, provideZonelessChangeDetection } from '@angular/core';
 import { bootstrapApplication } from '@angular/platform-browser';
 import { Metadata, RunView, UserInfo } from '@memberjunction/core';
+import { UserInfoEngine } from '@memberjunction/core-entities';
 import { GraphQLActionClient } from '@memberjunction/graphql-dataprovider';
 import { MJGlobal } from '@memberjunction/global';
 import { BaseResourceComponent } from '@memberjunction/ng-shared';
@@ -14,7 +15,7 @@ import {
   UIDriverRegistry,
   assembleSpaceContributions,
 } from '@mj-biz-apps/collaboration-ng-widgets';
-import { COMMUNITY_ACTION_IDS } from '@mj-biz-apps/community-core';
+import { COMMUNITY_ACTION_DRIVER_CLASSES, COMMUNITY_ACTION_IDS } from '@mj-biz-apps/community-core';
 import {
   CommunityHubResource,
   CommunityCollaborationSpaceUIDriver,
@@ -227,6 +228,33 @@ const mockProvider = {
 Metadata.Provider = mockProvider;
 RunView.Provider = mockProvider;
 
+const userSettingsMap = new Map();
+try {
+  const initialSettingsRes = await fetch('/api/harness/user-settings');
+  if (initialSettingsRes.ok) {
+    const parsed = await initialSettingsRes.json();
+    for (const [k, v] of Object.entries(parsed?.settings ?? {})) {
+      if (typeof v === 'string') {
+        userSettingsMap.set(k, v);
+      }
+    }
+  }
+} catch {
+  // Ignore if harness settings endpoint is unavailable.
+}
+
+const uiEngine = UserInfoEngine.Instance;
+uiEngine.GetSetting = (key) => userSettingsMap.get(key);
+uiEngine.SetSetting = async (key, value) => {
+  userSettingsMap.set(key, value);
+  await postHarnessJson('/api/harness/user-settings', { key, value });
+  return true;
+};
+uiEngine.SetSettingDebounced = (key, value) => {
+  userSettingsMap.set(key, value);
+  void postHarnessJson('/api/harness/user-settings', { key, value });
+};
+
 function buildSamplePdfBase64(spaceName) {
   const safeName = String(spaceName || 'Community').replace(/[()\\]/g, '');
   const stream = `BT /F1 12 Tf 50 720 Td (${safeName} Weekly Community Digest) Tj ET`;
@@ -267,11 +295,75 @@ GraphQLActionClient.prototype.RunAction = async function (actionName, params) {
     };
   }
   if (actionName === COMMUNITY_ACTION_IDS.LivingThreadSynthesis) {
+    const rootPostId = getParam('RootPostID');
     return {
       Success: true,
       ResultCode: 'SUCCESS',
       Message: 'Synthesized 3 key engineering takeaways and 2 follow-up action items.',
-      Params: [],
+      Params: [
+        {
+          Name: 'AIExecutiveSummary',
+          Value: `Living synthesis for thread ${rootPostId || 'active'}: consensus favors dual-key rotation with lease telemetry checks.`,
+          Type: 'Output',
+        },
+        { Name: 'ConsideredReplyCount', Value: 3, Type: 'Output' },
+        {
+          Name: 'KeyTakeaways',
+          Value: JSON.stringify([
+            'Deploy secondary credential across workers before revoking primary key [1]',
+            'Monitor 429 Retry-After lease telemetry across US-East and EU-West [2]',
+          ]),
+          Type: 'Output',
+        },
+        {
+          Name: 'OpenQuestions',
+          Value: JSON.stringify(['Should lease window default to 24h for partner tenants?']),
+          Type: 'Output',
+        },
+        {
+          Name: 'ContributorCitations',
+          Value: JSON.stringify([
+            {
+              citationIndex: 1,
+              authorDisplayName: 'E2E Harness Member',
+              postId: rootPostId || null,
+              roleLabel: 'Accepted Answer',
+            },
+          ]),
+          Type: 'Output',
+        },
+      ],
+    };
+  }
+  if (actionName === COMMUNITY_ACTION_DRIVER_CLASSES.SendPersonalizedDigest) {
+    const communityName = getParam('CommunityName') || 'BizApps Community';
+    const replyToAddress = 'reply+hmac_e2e_verified_token@reply.bizapps.local';
+    return {
+      Success: true,
+      ResultCode: 'SUCCESS',
+      Message: `Dispatched 1 personalized digest(s) for ${communityName} via Community Test Email Driver (0 failed).`,
+      Params: [
+        { Name: 'SentCount', Value: 1, Type: 'Output' },
+        { Name: 'FailedCount', Value: 0, Type: 'Output' },
+        { Name: 'DryRun', Value: false, Type: 'Output' },
+        { Name: 'ProviderName', Value: 'Community Test Email Driver', Type: 'Output' },
+        {
+          Name: 'DeliveriesJSON',
+          Value: JSON.stringify([
+            {
+              userId: HARNESS_USER.ID,
+              email: HARNESS_USER.Email,
+              itemCount: 3,
+              replyToAddress,
+              providerName: 'Community Test Email Driver',
+              usedCommunicationEngine: true,
+              dryRun: false,
+              success: true,
+            },
+          ]),
+          Type: 'Output',
+        },
+      ],
     };
   }
   if (actionName === COMMUNITY_ACTION_IDS.EpistemicAnswerGrading) {

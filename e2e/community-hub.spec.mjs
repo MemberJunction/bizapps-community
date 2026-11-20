@@ -125,9 +125,11 @@ test('Real Angular 21 Community Hub: 26 ClassFactory registrations, 4 tabs, PDF 
   await page.keyboard.press('Enter');
   await expect(page.locator('#mjc-hub-panel-qa-canon-workbench')).toBeVisible();
 
-  // --- 3. Knowledge Stream: Ask-First deflection, Living Thread Synthesis, real PDF download ---
+  // --- 3. Knowledge Stream: Live semantic Ask-First deflection, Living Thread Synthesis, real PDF download ---
   await page.click('#mjc-hub-tab-knowledge-stream');
   await page.fill('#mjc-ask-first-input', 'How do I rotate my API key?');
+  await expect(page.locator('#mjc-ask-first-live-matches')).toBeVisible();
+  await expect(page.locator('#mjc-ask-first-live-matches')).toContainText('% semantic match');
   await page.click('.mjc-ask-first__button');
   await expect(page.locator('.mjc-ask-first__result')).toContainText('Deflected');
 
@@ -181,6 +183,10 @@ test('Real Angular 21 Community Hub: 26 ClassFactory registrations, 4 tabs, PDF 
   await page.click('#mjc-ask-share-submit-btn');
   await expect(askShareDialog).toBeVisible();
   await expect(askShareDialog).toContainText('Please enter a concise headline or question.');
+  await page.selectOption('#mjc-ask-share-type', 'Question');
+  await page.fill('#mjc-ask-share-title-input', 'How do I rotate my API key without downtime?');
+  await expect(page.locator('#mjc-ask-share-deflection-box')).toBeVisible();
+  await expect(page.locator('#mjc-ask-share-deflection-box')).toContainText('% match');
   await page.selectOption('#mjc-ask-share-type', 'Discussion Post');
   await page.fill('#mjc-ask-share-title-input', 'Multi-Region Eventual Consistency Benchmarks');
   await page.fill('#mjc-ask-share-body-input', 'Read-replica lag stayed under 40ms across US-East and EU-West.');
@@ -195,7 +201,7 @@ test('Real Angular 21 Community Hub: 26 ClassFactory registrations, 4 tabs, PDF 
   await expect(createdPostCard).toContainText('#Multi-Region');
   await expect(createdPostCard).toContainText('#Observability');
 
-  // Inspect newly created thread in Slide-Over Detail Sheet: post reply, toggle reaction, graduate thread
+  // Inspect newly created thread in Slide-Over Detail Sheet: post reply, synthesize, toggle reaction, graduate thread
   await createdPostCard.locator('.mjc-inspect-btn').click();
   await expect(detailDialog).toBeVisible();
 
@@ -203,6 +209,12 @@ test('Real Angular 21 Community Hub: 26 ClassFactory registrations, 4 tabs, PDF 
   await page.click('#mjc-detail-reply-submit-btn');
   await expect(detailDialog.locator('.mjc-drawer-replies')).toContainText('Replies & Endorsements (1)');
   await expect(detailDialog.locator('.mjc-drawer-replies')).toContainText('Verified failover timing in staging cluster.');
+
+  // Exercise Living Thread Synthesis inside Detail Drawer and verify structured takeaways + citations
+  await page.click('#mjc-detail-synthesize-btn');
+  await expect(page.locator('#mjc-detail-synthesis-card')).toBeVisible();
+  await expect(page.locator('#mjc-detail-synthesis-card')).toContainText('Key Takeaways');
+  await expect(page.locator('#mjc-detail-synthesis-card')).toContainText('E2E Harness Member');
 
   // Exercise upvote create -> delete -> create persistence via ForumPostReaction
   await page.click('#mjc-detail-upvote-btn');
@@ -212,16 +224,17 @@ test('Real Angular 21 Community Hub: 26 ClassFactory registrations, 4 tabs, PDF 
   await page.click('#mjc-detail-upvote-btn');
   await expect(page.locator('#mjc-detail-upvote-btn')).toContainText('Endorse (1)');
 
-  // Exercise GraduateCommunityThread GraphQL mutation and verify PromotedToSpaceID indicator
+  // Exercise GraduateCommunityThread GraphQL mutation and verify PromotedToSpaceID + direct space link
   await page.click('#mjc-detail-graduate-btn');
   await expect(page.locator('#mjc-detail-promoted-space')).toBeVisible();
   await expect(page.locator('#mjc-detail-promoted-space')).toContainText('Graduated Working Group Space:');
+  await expect(page.locator('#mjc-detail-open-graduated-space-link')).toBeVisible();
   const promotedSpaceId = (
     await page.locator('#mjc-detail-promoted-space .mjc-promoted-space-banner__id').textContent()
   )?.trim();
   expect(promotedSpaceId).toMatch(/^[0-9a-f-]{36}$/i);
   await expect(page.locator('#mjc-detail-graduate-btn')).toBeDisabled();
-  await expect(page.locator('#mjc-detail-graduate-btn')).toContainText('Graduated to Working Group');
+  await expect(page.locator('#mjc-detail-graduate-btn')).toContainText('Graduated to Working Space');
   await page.screenshot({ path: join(SCREENSHOTS_DIR, '03-detail-drawer.png'), fullPage: false });
 
   await page.keyboard.press('Escape');
@@ -232,6 +245,30 @@ test('Real Angular 21 Community Hub: 26 ClassFactory registrations, 4 tabs, PDF 
   // Capture Screenshot 2: Knowledge Stream 3-Column Layout
   await page.locator('.mjc-commons').scrollIntoViewIfNeeded();
   await page.screenshot({ path: join(SCREENSHOTS_DIR, '02-knowledge-stream.png'), fullPage: false });
+
+  // --- 3c. Personalized Digest Preview Drawer, MJ Comms Test Driver & UserInfoEngine Preference Persistence ---
+  await page.locator('.mjc-topic-pill', { hasText: '#Multi-Region' }).click();
+  await page.click('#mjc-header-digest-btn');
+  const digestDialog = page.locator('#mjc-digest-drawer-backdrop [role="dialog"]');
+  await expect(digestDialog).toBeVisible();
+  await expect(page.locator('#mjc-digest-items-list .mjc-digest-item-card').first()).toBeVisible();
+  await expect(page.locator('#mjc-digest-items-list .mjc-digest-score-chip').first()).toContainText('% match');
+  await expect(page.locator('#mjc-digest-items-list .mjc-digest-reason').first()).toContainText('Why this was picked for you:');
+  await expect(page.locator('#mjc-digest-reply-indicator')).toContainText('HMAC-SHA256');
+
+  await page.click('#mjc-digest-cadence-daily');
+  await expect(page.locator('#mjc-digest-cadence-daily')).toHaveAttribute('aria-pressed', 'true');
+  await page.click('#mjc-digest-send-test-btn');
+  await expect(page.locator('#mjc-digest-send-status')).toContainText('Community Test Email Driver');
+  await expect(page.locator('#mjc-digest-reply-indicator')).toContainText('reply+hmac_e2e_verified_token@reply.bizapps.local');
+
+  const digestAxe = await new AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa']).analyze();
+  const digestCriticalOrSerious = digestAxe.violations.filter((v) => v.impact === 'critical' || v.impact === 'serious');
+  expect(digestCriticalOrSerious, `Personalized Digest Drawer WCAG violations: ${JSON.stringify(digestCriticalOrSerious)}`).toEqual([]);
+
+  await page.screenshot({ path: join(SCREENSHOTS_DIR, '08-personalized-digest-preview.png'), fullPage: false });
+  await page.keyboard.press('Escape');
+  await expect(page.locator('#mjc-digest-drawer-backdrop')).toBeHidden();
 
   // --- 4. Q&A Canon Workbench: Ask Question + Submit Answer + Epistemic Grade + Promote to Canon ---
   await page.click('#mjc-hub-tab-qa-canon-workbench');
@@ -386,9 +423,13 @@ test('Real Angular 21 Community Hub: 26 ClassFactory registrations, 4 tabs, PDF 
     'GraduateCommunityThread GraphQL mutation must execute',
   ).toBe(true);
 
-  // RELOAD FULL PAGE and verify all 6 mutated states remain rendered cleanly from DB!
+  // RELOAD FULL PAGE and verify all 6 mutated states + UserInfoEngine preferences remain rendered cleanly from DB!
   await page.reload();
   await page.waitForFunction(() => window.__harnessReady === true);
+
+  // Verify UserInfoEngine-backed digest cadence & active topic filter persisted across full reload
+  await expect(page.locator('#mjc-header-digest-btn')).toContainText('Personalized Digest (Daily)');
+  await expect(page.locator('.mjc-active-filter-banner')).toContainText('#Multi-Region');
 
   const reloadedCard = page.locator('.mjc-stream-card', {
     hasText: 'Multi-Region Eventual Consistency Benchmarks',
@@ -409,10 +450,12 @@ test('Real Angular 21 Community Hub: 26 ClassFactory registrations, 4 tabs, PDF 
   await expect(reloadedDialog.locator('.mjc-drawer-replies')).toContainText('Verified failover timing in staging cluster.');
   await expect(page.locator('#mjc-detail-upvote-btn')).toContainText('Endorse (1)');
   await expect(page.locator('#mjc-detail-promoted-space')).toContainText(createdPostRow.PromotedToSpaceID);
+  await expect(page.locator('#mjc-detail-open-graduated-space-link')).toBeVisible();
   await expect(page.locator('#mjc-detail-graduate-btn')).toBeDisabled();
-  await expect(page.locator('#mjc-detail-graduate-btn')).toContainText('Graduated to Working Group');
+  await expect(page.locator('#mjc-detail-graduate-btn')).toContainText('Graduated to Working Space');
   await page.keyboard.press('Escape');
   await expect(page.locator('#mjc-detail-sheet-backdrop')).toBeHidden();
+  await page.click('#mjc-commons-reset-filters-btn');
 
   await page.click('#mjc-hub-tab-qa-canon-workbench');
   const reloadedQaRow = page.locator('#mjc-hub-panel-qa-canon-workbench .mjc-qa-list-item', {
@@ -521,6 +564,9 @@ test('Real Angular 21 Community Hub: 26 ClassFactory registrations, 4 tabs, PDF 
     askFirstDeflectionExercised: true,
     digestExportExercised: true,
     digestExportPdfVerified: true,
+    personalizedDigestExercised: true,
+    userInfoEnginePreferencesPersisted: true,
+    livingSynthesisCitationsVerified: true,
     qaCanonWorkbenchExercised: true,
     persistentReloadVerified: true,
     livingCoAuthoringExercised: true,
@@ -546,6 +592,7 @@ test('Real Angular 21 Community Hub: 26 ClassFactory registrations, 4 tabs, PDF 
       'e2e/screenshots/05-quadratic-ideation-wallet.png',
       'e2e/screenshots/06-living-co-authoring.png',
       'e2e/screenshots/07-collaboration-embedded.png',
+      'e2e/screenshots/08-personalized-digest-preview.png',
       'e2e/screenshots/community-hub.png',
     ],
   };

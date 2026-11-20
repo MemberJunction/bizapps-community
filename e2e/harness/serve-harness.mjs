@@ -135,6 +135,18 @@ export async function StartHarnessServer() {
         sendJson(res, 200, store.getDebugSnapshot());
         return;
       }
+      if (urlPath === '/api/harness/user-settings' && req.method === 'GET') {
+        sendJson(res, 200, { settings: store.getUserSettings() });
+        return;
+      }
+      if (urlPath === '/api/harness/user-settings' && req.method === 'POST') {
+        const body = await readJsonBody(req);
+        if (typeof body?.key === 'string' && typeof body?.value === 'string') {
+          store.setUserSetting(body.key, body.value);
+        }
+        sendJson(res, 200, { Success: true, settings: store.getUserSettings() });
+        return;
+      }
       if (urlPath === '/api/harness/run-view' && req.method === 'POST') {
         const body = await readJsonBody(req);
         const results = store.runView(body?.params ?? {});

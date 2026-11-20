@@ -383,6 +383,7 @@ function buildInitialState() {
       { ID: C.Q_2, AcceptedAnswerPostID: null, AICanonAnswerPostID: null },
       { ID: C.Q_OTHER_SPACE, AcceptedAnswerPostID: C.ANS_OTHER_SPACE, AICanonAnswerPostID: C.ANS_OTHER_SPACE },
     ],
+    userSettings: {},
     gqlCalls: [],
   };
 }
@@ -557,8 +558,17 @@ export function createHarnessStore() {
         ideas: state.ideas,
         allocations: state.allocations,
         questions: state.questions,
+        userSettings: state.userSettings,
         gqlCalls: state.gqlCalls,
       };
+    },
+
+    getUserSettings() {
+      return { ...state.userSettings };
+    },
+
+    setUserSetting(key, value) {
+      state.userSettings[key] = value;
     },
 
     runView(params) {
