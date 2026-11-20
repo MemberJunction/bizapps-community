@@ -1,12 +1,17 @@
 import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 import {
   appendFileSync,
+  closeSync,
   existsSync,
+  fsyncSync,
   mkdirSync,
+  openSync,
+  readdirSync,
   readFileSync,
   renameSync,
+  statSync,
   unlinkSync,
-  writeFileSync,
+  writeSync,
 } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -22,6 +27,9 @@ const COMPACT_HMAC_TAG_BYTES = 24; // 192-bit truncated HMAC-SHA256 tag -> 32 ba
 const DEFAULT_TOKEN_STORE_FILENAME = 'mj-community-digest-reply-tokens-v1.json';
 const SNAPSHOT_SYNC_ENTRY_LIMIT = 200;
 const SNAPSHOT_CHECKPOINT_INTERVAL = 5_000;
+const DEFAULT_LOCK_TIMEOUT_MS = 15_000;
+const DEFAULT_STALE_LOCK_MS = 30_000;
+const SLEEP_BUFFER = new Int32Array(new SharedArrayBuffer(4));
 export const RFC_5321_MAX_LOCAL_PART_OCTETS = 64;
 export const RFC_5321_MAX_ADDRESS_OCTETS = 254;
 
@@ -53,6 +61,13 @@ export interface StoredCompactReplyTokenEntry {
   exp: number;
 }
 
+export interface DigestReplyCheckpointHooks {
+  /** Optional deterministic hook invoked inside the exclusive lock immediately after reading the snapshot & rotated WAL. */
+  onAfterWalRead?: () => Promise<void> | void;
+  /** Optional deterministic hook invoked inside the exclusive lock after renaming the merged snapshot and before unlinking the rotated `.ckpt` file. */
+  onBeforeWalUnlink?: () => Promise<void> | void;
+}
+
 /**
  * Pluggable durable token store interface for compact RFC 5321 digest reply handles.
  * Enables cross-process sharing and restart survival without exceeding 64-octet email local-parts.
@@ -60,6 +75,7 @@ export interface StoredCompactReplyTokenEntry {
 export interface IDigestReplyTokenStore {
   get(tokenId: string): StoredCompactReplyTokenEntry | undefined;
   set(tokenId: string, entry: StoredCompactReplyTokenEntry, nowEpoch: number): void;
+  delete?(tokenId: string, nowEpoch?: number): boolean;
   clear(options?: { memoryOnly?: boolean }): void;
   size(): number;
 }
@@ -227,16 +243,204 @@ interface SnapshotFileShape {
   entries: StoredCompactReplyTokenEntry[];
 }
 
+interface LockMetadataShape {
+  pid?: number;
+  acquiredAt?: number;
+}
+
+interface WalDeleteRecord {
+  op: 'delete';
+  tokenId: string;
+}
+
+interface WalSetRecord extends StoredCompactReplyTokenEntry {
+  op?: 'set';
+}
+
+type ParsedWalRecord =
+  | { op: 'set'; entry: StoredCompactReplyTokenEntry }
+  | { op: 'delete'; tokenId: string };
+
+type PendingSnapshotMutation =
+  | { op: 'set'; entry: StoredCompactReplyTokenEntry }
+  | { op: 'delete'; tokenId: string };
+
+export interface CrossProcessLockOptions {
+  timeoutMs?: number;
+  staleLockMs?: number;
+}
+
+function sleepSyncMs(ms: number): void {
+  if (ms <= 0) return;
+  Atomics.wait(SLEEP_BUFFER, 0, 0, ms);
+}
+
+function sleepAsyncMs(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function isProcessAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (err) {
+    const code = (err as { code?: string } | null)?.code;
+    return code !== 'ESRCH';
+  }
+}
+
+function isLockStale(lockPath: string, staleLockMs: number): boolean {
+  try {
+    const stat = statSync(lockPath);
+    let meta: LockMetadataShape = {};
+    try {
+      const raw = readFileSync(lockPath, 'utf8').trim();
+      if (raw) {
+        meta = JSON.parse(raw) as LockMetadataShape;
+      }
+    } catch {
+      // Lock file may still be mid-write or corrupted; fall back to mtime.
+    }
+    const acquiredAt = typeof meta.acquiredAt === 'number' ? meta.acquiredAt : stat.mtimeMs;
+    const ageMs = Date.now() - acquiredAt;
+    if (ageMs >= staleLockMs) {
+      return true;
+    }
+    if (typeof meta.pid === 'number' && meta.pid > 0 && ageMs >= 100 && !isProcessAlive(meta.pid)) {
+      return true;
+    }
+    return false;
+  } catch {
+    return false;
+  }
+}
+
+function tryAcquireCrossProcessLock(lockPath: string, staleLockMs: number): boolean {
+  let fd: number | null = null;
+  try {
+    fd = openSync(lockPath, 'wx');
+    const metadata: LockMetadataShape = { pid: process.pid, acquiredAt: Date.now() };
+    writeSync(fd, JSON.stringify(metadata), 0, 'utf8');
+    closeSync(fd);
+    fd = null;
+    return true;
+  } catch (err) {
+    if (fd !== null) {
+      try {
+        closeSync(fd);
+      } catch {
+        // Ignore close error on cleanup.
+      }
+      fd = null;
+    }
+    const code = (err as { code?: string } | null)?.code;
+    if (code === 'ENOENT') {
+      mkdirSync(path.dirname(lockPath), { recursive: true });
+      return false;
+    }
+    if (code !== 'EEXIST') {
+      throw err;
+    }
+    if (isLockStale(lockPath, staleLockMs)) {
+      try {
+        unlinkSync(lockPath);
+      } catch {
+        // Ignore if another contender already unlinked the stale lock.
+      }
+    }
+    return false;
+  }
+}
+
+function releaseCrossProcessLock(lockPath: string): void {
+  try {
+    unlinkSync(lockPath);
+  } catch {
+    // Ignore if already removed.
+  }
+}
+
+/**
+ * Executes `fn` while holding an exclusive cross-process file lock (`<targetPath>.lock` via
+ * `openSync(..., 'wx')`) with PID/timestamp stale-lock recovery and bounded spin/retry.
+ */
+export function withCrossProcessLock<T>(
+  targetPath: string,
+  fn: () => T,
+  options?: CrossProcessLockOptions,
+): T {
+  const lockPath = `${targetPath}.lock`;
+  const timeoutMs = options?.timeoutMs ?? DEFAULT_LOCK_TIMEOUT_MS;
+  const staleLockMs = options?.staleLockMs ?? DEFAULT_STALE_LOCK_MS;
+  mkdirSync(path.dirname(targetPath), { recursive: true });
+
+  const deadline = Date.now() + timeoutMs;
+  let attempt = 0;
+  while (!tryAcquireCrossProcessLock(lockPath, staleLockMs)) {
+    if (Date.now() >= deadline) {
+      throw new Error(`Timed out after ${timeoutMs}ms waiting for cross-process lock: ${lockPath}`);
+    }
+    attempt += 1;
+    sleepSyncMs(Math.min(25, 1 + attempt));
+  }
+
+  try {
+    return fn();
+  } finally {
+    releaseCrossProcessLock(lockPath);
+  }
+}
+
+/**
+ * Async variant of {@link withCrossProcessLock} for checkpointing with async deterministic hooks.
+ */
+export async function withCrossProcessLockAsync<T>(
+  targetPath: string,
+  fn: () => Promise<T>,
+  options?: CrossProcessLockOptions,
+): Promise<T> {
+  const lockPath = `${targetPath}.lock`;
+  const timeoutMs = options?.timeoutMs ?? DEFAULT_LOCK_TIMEOUT_MS;
+  const staleLockMs = options?.staleLockMs ?? DEFAULT_STALE_LOCK_MS;
+  mkdirSync(path.dirname(targetPath), { recursive: true });
+
+  const deadline = Date.now() + timeoutMs;
+  let attempt = 0;
+  while (!tryAcquireCrossProcessLock(lockPath, staleLockMs)) {
+    if (Date.now() >= deadline) {
+      throw new Error(`Timed out after ${timeoutMs}ms waiting for cross-process lock: ${lockPath}`);
+    }
+    attempt += 1;
+    await sleepAsyncMs(Math.min(25, 1 + attempt));
+  }
+
+  try {
+    return await fn();
+  } finally {
+    releaseCrossProcessLock(lockPath);
+  }
+}
+
+function resolveCheckpointInterval(): number {
+  const configured = Number(process.env.COMMUNITY_DIGEST_CHECKPOINT_INTERVAL);
+  if (Number.isFinite(configured) && configured >= 1) {
+    return Math.floor(configured);
+  }
+  return SNAPSHOT_CHECKPOINT_INTERVAL;
+}
+
 /**
  * Shared cross-process durable file-backed token store with an in-memory cache.
- * Synchronizes via atomic JSON snapshot + append-only WAL (`<storePath>.wal`) so tokens issued
- * in one worker process or before restart verify cleanly in any worker sharing the store path.
- * Capacity pruning removes ONLY expired entries and never evicts unexpired tokens.
+ * Synchronizes via atomic JSON snapshot + append-only WAL (`<storePath>.wal`) guarded by
+ * {@link withCrossProcessLock} so concurrent writer/checkpointer workers never clobber snapshots
+ * or unlink unmerged WAL records. Capacity pruning removes ONLY expired entries and never evicts
+ * unexpired tokens.
  */
 export class FileBackedDigestReplyTokenStore implements IDigestReplyTokenStore {
   private readonly memoryMap = new Map<string, StoredCompactReplyTokenEntry>();
   private loadedPath: string | null = null;
   private writesSinceCheckpoint = 0;
+  private knownOnDiskCount = 0;
 
   private ensureCurrentPath(): string {
     const targetPath = ResolveDigestReplyTokenStorePath();
@@ -244,12 +448,31 @@ export class FileBackedDigestReplyTokenStore implements IDigestReplyTokenStore {
       this.memoryMap.clear();
       this.loadedPath = targetPath;
       this.writesSinceCheckpoint = 0;
+      this.knownOnDiskCount = 0;
     }
     return targetPath;
   }
 
   private walPathFor(storePath: string): string {
     return `${storePath}.wal`;
+  }
+
+  private ckptPathFor(storePath: string): string {
+    return `${storePath}.wal.ckpt`;
+  }
+
+  private listCkptPaths(storePath: string): string[] {
+    const dir = path.dirname(storePath);
+    if (!existsSync(dir)) return [];
+    const ckptPrefix = `${path.basename(storePath)}.wal.ckpt`;
+    try {
+      return readdirSync(dir)
+        .filter((name) => name === ckptPrefix || name.startsWith(`${ckptPrefix}.`))
+        .sort()
+        .map((name) => path.join(dir, name));
+    } catch {
+      return [];
+    }
   }
 
   private readEntriesFromSnapshot(storePath: string): StoredCompactReplyTokenEntry[] {
@@ -269,22 +492,29 @@ export class FileBackedDigestReplyTokenStore implements IDigestReplyTokenStore {
     }
   }
 
-  private readEntriesFromWal(walPath: string): StoredCompactReplyTokenEntry[] {
-    if (!existsSync(walPath)) return [];
+  private readRecordsFromWal(walFilePath: string): ParsedWalRecord[] {
+    if (!existsSync(walFilePath)) return [];
     try {
-      const raw = readFileSync(walPath, 'utf8');
+      const raw = readFileSync(walFilePath, 'utf8');
       if (!raw) return [];
-      const out: StoredCompactReplyTokenEntry[] = [];
+      const out: ParsedWalRecord[] = [];
       for (const line of raw.split('\n')) {
         const trimmed = line.trim();
         if (!trimmed) continue;
         try {
-          const parsed = JSON.parse(trimmed) as StoredCompactReplyTokenEntry;
-          if (parsed && typeof parsed.tokenId === 'string' && typeof parsed.payloadB64 === 'string') {
-            out.push(parsed);
+          const parsed = JSON.parse(trimmed) as WalSetRecord | WalDeleteRecord;
+          if (parsed && parsed.op === 'delete' && typeof parsed.tokenId === 'string') {
+            out.push({ op: 'delete', tokenId: parsed.tokenId });
+          } else if (
+            parsed &&
+            typeof parsed.tokenId === 'string' &&
+            'payloadB64' in parsed &&
+            typeof parsed.payloadB64 === 'string'
+          ) {
+            out.push({ op: 'set', entry: parsed });
           }
         } catch {
-          // Skip incomplete trailing line if a concurrent writer was mid-append.
+          // Skip incomplete trailing line if a concurrent writer crashed mid-append.
         }
       }
       return out;
@@ -293,15 +523,31 @@ export class FileBackedDigestReplyTokenStore implements IDigestReplyTokenStore {
     }
   }
 
+  private applyWalRecords(
+    targetMap: Map<string, StoredCompactReplyTokenEntry>,
+    records: ReadonlyArray<ParsedWalRecord>,
+    minExpEpoch?: number,
+  ): void {
+    for (const rec of records) {
+      if (rec.op === 'delete') {
+        targetMap.delete(rec.tokenId);
+      } else if (minExpEpoch === undefined || rec.entry.exp >= minExpEpoch) {
+        targetMap.set(rec.entry.tokenId, rec.entry);
+      }
+    }
+  }
+
   private hydrateFromDisk(storePath: string): void {
+    this.memoryMap.clear();
     const snapshotEntries = this.readEntriesFromSnapshot(storePath);
     for (const entry of snapshotEntries) {
       this.memoryMap.set(entry.tokenId, entry);
     }
-    const walEntries = this.readEntriesFromWal(this.walPathFor(storePath));
-    for (const entry of walEntries) {
-      this.memoryMap.set(entry.tokenId, entry);
+    for (const ckptPath of this.listCkptPaths(storePath)) {
+      this.applyWalRecords(this.memoryMap, this.readRecordsFromWal(ckptPath));
     }
+    this.applyWalRecords(this.memoryMap, this.readRecordsFromWal(this.walPathFor(storePath)));
+    this.knownOnDiskCount = this.memoryMap.size;
   }
 
   private pruneExpiredInMemory(nowEpoch: number): void {
@@ -316,37 +562,121 @@ export class FileBackedDigestReplyTokenStore implements IDigestReplyTokenStore {
     }
   }
 
-  private writeSnapshotAtomically(storePath: string, nowEpoch: number): void {
+  private rotateWalInsideLock(storePath: string): string[] {
     const dir = path.dirname(storePath);
     mkdirSync(dir, { recursive: true });
+    const walPath = this.walPathFor(storePath);
+    const ckptPaths = this.listCkptPaths(storePath);
+    if (existsSync(walPath)) {
+      const baseCkpt = this.ckptPathFor(storePath);
+      const rotatedPath = existsSync(baseCkpt)
+        ? `${baseCkpt}.${process.pid}.${randomBytes(4).toString('hex')}`
+        : baseCkpt;
+      renameSync(walPath, rotatedPath);
+      ckptPaths.push(rotatedPath);
+    }
+    return ckptPaths;
+  }
 
+  private buildMergedSnapshot(
+    storePath: string,
+    ckptPaths: ReadonlyArray<string>,
+    nowEpoch: number,
+    pendingMutation?: PendingSnapshotMutation,
+  ): Map<string, StoredCompactReplyTokenEntry> {
     const merged = new Map<string, StoredCompactReplyTokenEntry>();
     for (const entry of this.readEntriesFromSnapshot(storePath)) {
       if (entry.exp >= nowEpoch) merged.set(entry.tokenId, entry);
     }
-    for (const entry of this.readEntriesFromWal(this.walPathFor(storePath))) {
-      if (entry.exp >= nowEpoch) merged.set(entry.tokenId, entry);
+    for (const ckptPath of ckptPaths) {
+      this.applyWalRecords(merged, this.readRecordsFromWal(ckptPath), nowEpoch);
     }
-    for (const [key, entry] of this.memoryMap.entries()) {
-      if (entry.exp >= nowEpoch) merged.set(key, entry);
+    if (pendingMutation) {
+      if (pendingMutation.op === 'delete') {
+        merged.delete(pendingMutation.tokenId);
+      } else if (pendingMutation.entry.exp >= nowEpoch) {
+        merged.set(pendingMutation.entry.tokenId, pendingMutation.entry);
+      }
     }
+    return merged;
+  }
 
+  private writeFsyncedSnapshotAndRename(
+    storePath: string,
+    merged: Map<string, StoredCompactReplyTokenEntry>,
+  ): void {
     const payload: SnapshotFileShape = {
       version: 1,
       entries: Array.from(merged.values()),
     };
     const tmpPath = `${storePath}.${process.pid}.${randomBytes(4).toString('hex')}.tmp`;
-    writeFileSync(tmpPath, JSON.stringify(payload), 'utf8');
+    const fd = openSync(tmpPath, 'w');
+    try {
+      writeSync(fd, JSON.stringify(payload), 0, 'utf8');
+      fsyncSync(fd);
+    } finally {
+      closeSync(fd);
+    }
     renameSync(tmpPath, storePath);
+    this.knownOnDiskCount = merged.size;
+  }
 
-    const walPath = this.walPathFor(storePath);
-    if (existsSync(walPath)) {
-      try {
-        unlinkSync(walPath);
-      } catch {
-        // Ignore if already removed by another process.
+  private unlinkCkptFiles(ckptPaths: ReadonlyArray<string>): void {
+    for (const ckptPath of ckptPaths) {
+      if (existsSync(ckptPath)) {
+        try {
+          unlinkSync(ckptPath);
+        } catch {
+          // Ignore if already removed.
+        }
       }
     }
+  }
+
+  private writeSnapshotAtomicallyLocked(
+    storePath: string,
+    nowEpoch: number,
+    pendingMutation?: PendingSnapshotMutation,
+  ): void {
+    const ckptPaths = this.rotateWalInsideLock(storePath);
+    const merged = this.buildMergedSnapshot(storePath, ckptPaths, nowEpoch, pendingMutation);
+    this.writeFsyncedSnapshotAndRename(storePath, merged);
+    this.unlinkCkptFiles(ckptPaths);
+  }
+
+  /**
+   * Forces a cross-process locked checkpoint of the on-disk snapshot + WAL.
+   */
+  public checkpoint(nowEpoch = Math.floor(Date.now() / 1000)): void {
+    const storePath = this.ensureCurrentPath();
+    withCrossProcessLock(storePath, () => {
+      this.writeSnapshotAtomicallyLocked(storePath, nowEpoch);
+      this.writesSinceCheckpoint = 0;
+    });
+  }
+
+  /**
+   * Executes a cross-process locked checkpoint with optional deterministic async test hooks
+   * (`onAfterWalRead`, `onBeforeWalUnlink`) to exercise concurrent writer contention safely.
+   */
+  public async checkpointWithHook(
+    nowEpoch = Math.floor(Date.now() / 1000),
+    hooks?: DigestReplyCheckpointHooks,
+  ): Promise<void> {
+    const storePath = this.ensureCurrentPath();
+    await withCrossProcessLockAsync(storePath, async () => {
+      const ckptPaths = this.rotateWalInsideLock(storePath);
+      const merged = this.buildMergedSnapshot(storePath, ckptPaths, nowEpoch);
+      if (hooks?.onAfterWalRead) {
+        await hooks.onAfterWalRead();
+      }
+      this.writeFsyncedSnapshotAndRename(storePath, merged);
+      if (hooks?.onBeforeWalUnlink) {
+        await hooks.onBeforeWalUnlink();
+      }
+      this.unlinkCkptFiles(ckptPaths);
+      this.writesSinceCheckpoint = 0;
+    });
   }
 
   public get(tokenId: string): StoredCompactReplyTokenEntry | undefined {
@@ -355,53 +685,102 @@ export class FileBackedDigestReplyTokenStore implements IDigestReplyTokenStore {
     if (cached) {
       return cached;
     }
-    this.hydrateFromDisk(storePath);
-    return this.memoryMap.get(tokenId);
+    return withCrossProcessLock(storePath, () => {
+      this.hydrateFromDisk(storePath);
+      return this.memoryMap.get(tokenId);
+    });
   }
 
   public set(tokenId: string, entry: StoredCompactReplyTokenEntry, nowEpoch: number): void {
     const storePath = this.ensureCurrentPath();
-    this.pruneExpiredInMemory(nowEpoch);
-    this.memoryMap.set(tokenId, entry);
+    withCrossProcessLock(storePath, () => {
+      this.pruneExpiredInMemory(nowEpoch);
+      this.memoryMap.set(tokenId, entry);
 
-    const dir = path.dirname(storePath);
-    mkdirSync(dir, { recursive: true });
+      const dir = path.dirname(storePath);
+      mkdirSync(dir, { recursive: true });
 
-    this.writesSinceCheckpoint += 1;
-    if (this.memoryMap.size <= SNAPSHOT_SYNC_ENTRY_LIMIT && !existsSync(this.walPathFor(storePath))) {
-      this.writeSnapshotAtomically(storePath, nowEpoch);
-      return;
-    }
+      const walPath = this.walPathFor(storePath);
+      const hasWalOrCkpt = existsSync(walPath) || this.listCkptPaths(storePath).length > 0;
+      if (this.knownOnDiskCount === 0 && !hasWalOrCkpt && existsSync(storePath)) {
+        // Hydrate once when attaching to an existing snapshot so we know whether >200 entries exist.
+        this.hydrateFromDisk(storePath);
+        this.memoryMap.set(tokenId, entry);
+      }
 
-    appendFileSync(this.walPathFor(storePath), `${JSON.stringify(entry)}\n`, 'utf8');
-    if (this.writesSinceCheckpoint >= SNAPSHOT_CHECKPOINT_INTERVAL) {
-      this.writesSinceCheckpoint = 0;
-      this.writeSnapshotAtomically(storePath, nowEpoch);
-    }
+      this.writesSinceCheckpoint += 1;
+      if (
+        this.memoryMap.size <= SNAPSHOT_SYNC_ENTRY_LIMIT &&
+        this.knownOnDiskCount < SNAPSHOT_SYNC_ENTRY_LIMIT &&
+        !hasWalOrCkpt
+      ) {
+        this.writeSnapshotAtomicallyLocked(storePath, nowEpoch, { op: 'set', entry });
+        return;
+      }
+
+      appendFileSync(walPath, `${JSON.stringify(entry)}\n`, 'utf8');
+      this.knownOnDiskCount += 1;
+      if (this.writesSinceCheckpoint >= resolveCheckpointInterval()) {
+        this.writesSinceCheckpoint = 0;
+        this.writeSnapshotAtomicallyLocked(storePath, nowEpoch);
+      }
+    });
+  }
+
+  public delete(tokenId: string, nowEpoch = Math.floor(Date.now() / 1000)): boolean {
+    const storePath = this.ensureCurrentPath();
+    return withCrossProcessLock(storePath, () => {
+      this.hydrateFromDisk(storePath);
+      const existed = this.memoryMap.delete(tokenId);
+      const walPath = this.walPathFor(storePath);
+      const hasWalOrCkpt = existsSync(walPath) || this.listCkptPaths(storePath).length > 0;
+
+      if (!existed && !existsSync(storePath) && !hasWalOrCkpt) {
+        return false;
+      }
+
+      if (hasWalOrCkpt || this.knownOnDiskCount > SNAPSHOT_SYNC_ENTRY_LIMIT) {
+        mkdirSync(path.dirname(storePath), { recursive: true });
+        const tombstone: WalDeleteRecord = { op: 'delete', tokenId };
+        appendFileSync(walPath, `${JSON.stringify(tombstone)}\n`, 'utf8');
+        if (existed && this.knownOnDiskCount > 0) {
+          this.knownOnDiskCount -= 1;
+        }
+      } else {
+        this.writeSnapshotAtomicallyLocked(storePath, nowEpoch, { op: 'delete', tokenId });
+      }
+      return existed;
+    });
   }
 
   public clear(options?: { memoryOnly?: boolean }): void {
     const storePath = this.ensureCurrentPath();
     this.memoryMap.clear();
     this.writesSinceCheckpoint = 0;
+    this.knownOnDiskCount = 0;
     if (options?.memoryOnly) {
       return;
     }
-    for (const target of [storePath, this.walPathFor(storePath)]) {
-      if (existsSync(target)) {
-        try {
-          unlinkSync(target);
-        } catch {
-          // Ignore concurrent unlink.
+    withCrossProcessLock(storePath, () => {
+      const targets = [storePath, this.walPathFor(storePath), ...this.listCkptPaths(storePath)];
+      for (const target of targets) {
+        if (existsSync(target)) {
+          try {
+            unlinkSync(target);
+          } catch {
+            // Ignore concurrent unlink.
+          }
         }
       }
-    }
+    });
   }
 
   public size(): number {
     const storePath = this.ensureCurrentPath();
-    this.hydrateFromDisk(storePath);
-    return this.memoryMap.size;
+    return withCrossProcessLock(storePath, () => {
+      this.hydrateFromDisk(storePath);
+      return this.memoryMap.size;
+    });
   }
 }
 

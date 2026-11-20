@@ -1,7 +1,7 @@
 import { describe, it, mock } from 'node:test';
 import assert from 'node:assert/strict';
-import { spawnSync } from 'node:child_process';
-import { existsSync, readFileSync, rmSync } from 'node:fs';
+import { spawn, spawnSync } from 'node:child_process';
+import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path, { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -21,6 +21,7 @@ import {
   BuildReplyToEmailAddress,
   ClearCompactReplyTokenRegistry,
   ClearDigestReplyTokenRegistry,
+  FileBackedDigestReplyTokenStore,
   GetDigestReplyTokenStore,
   MAX_REGISTRY_ENTRIES,
   ParseAndVerifyInboundEmailReply,
@@ -30,6 +31,7 @@ import {
   SignDigestReplyToken,
   StripQuotedEmailReply,
   VerifyDigestReplyToken,
+  withCrossProcessLock,
 } from './custom/digest-reply-loop.ts';
 
 const SPACE_1_ID = '99999999-9999-4999-8999-999999999999';
@@ -1161,7 +1163,303 @@ describe('MJ CommunicationEngine + CommunityTestCommunicationProvider + Personal
       assert.equal(stillValidAfterBurst.token.valid, true);
     } finally {
       ClearCompactReplyTokenRegistry();
-      for (const f of [testStorePath, `${testStorePath}.wal`]) {
+      for (const f of [testStorePath, `${testStorePath}.wal`, `${testStorePath}.wal.ckpt`, `${testStorePath}.lock`]) {
+        if (existsSync(f)) rmSync(f, { force: true });
+      }
+      if (prevStorePath === undefined) delete process.env.COMMUNITY_DIGEST_TOKEN_STORE_PATH;
+      else process.env.COMMUNITY_DIGEST_TOKEN_STORE_PATH = prevStorePath;
+      if (prevSecret === undefined) delete process.env.COMMUNITY_DIGEST_REPLY_SECRET;
+      else process.env.COMMUNITY_DIGEST_REPLY_SECRET = prevSecret;
+    }
+  });
+
+  it('prevents lost writes across concurrent child writer processes spanning 200-entry snapshot & checkpoint boundaries (CR-10)', async () => {
+    const prevStorePath = process.env.COMMUNITY_DIGEST_TOKEN_STORE_PATH;
+    const prevSecret = process.env.COMMUNITY_DIGEST_REPLY_SECRET;
+    const testStorePath = path.join(os.tmpdir(), `mj-digest-cr10-concurrent-${process.pid}-${Date.now()}.json`);
+    const outFileA = path.join(os.tmpdir(), `mj-digest-cr10-writer-a-${process.pid}-${Date.now()}.json`);
+    const outFileB = path.join(os.tmpdir(), `mj-digest-cr10-writer-b-${process.pid}-${Date.now()}.json`);
+    const tokensListFile = path.join(os.tmpdir(), `mj-digest-cr10-all-tokens-${process.pid}-${Date.now()}.json`);
+    const here = dirname(fileURLToPath(import.meta.url));
+    const loopModulePath = join(here, 'custom', 'digest-reply-loop.ts');
+
+    process.env.COMMUNITY_DIGEST_TOKEN_STORE_PATH = testStorePath;
+    process.env.COMMUNITY_DIGEST_REPLY_SECRET = TEST_SIGNING_SECRET;
+
+    const spawnAsyncWriter = (
+      workerName: string,
+      count: number,
+      outFile: string,
+    ): Promise<{ code: number | null; stdout: string; stderr: string }> =>
+      new Promise((resolve) => {
+        const script = `
+          import { writeFileSync } from 'node:fs';
+          import { BuildReplyToEmailAddress, SignDigestReplyToken } from ${JSON.stringify(loopModulePath)};
+          const addresses = [];
+          const count = Number(process.env.WRITER_COUNT);
+          for (let i = 0; i < count; i += 1) {
+            const token = SignDigestReplyToken({
+              memberUserId: ${JSON.stringify(MEMBER_A_ID)},
+              forumId: ${JSON.stringify(FORUM_TAX_ID)},
+              rootPostId: ${JSON.stringify(POST_TAX_ID)},
+              recipientEmail: 'alice@example.org',
+              ttlSeconds: 3600,
+            });
+            addresses.push(BuildReplyToEmailAddress(token, 'reply.bizapps.local'));
+          }
+          writeFileSync(process.env.WRITER_OUT_FILE, JSON.stringify({ worker: process.env.WRITER_NAME, addresses }), 'utf8');
+        `;
+        const child = spawn(
+          process.execPath,
+          ['--experimental-strip-types', '--input-type=module', '-e', script],
+          {
+            env: {
+              ...process.env,
+              COMMUNITY_DIGEST_TOKEN_STORE_PATH: testStorePath,
+              COMMUNITY_DIGEST_REPLY_SECRET: TEST_SIGNING_SECRET,
+              COMMUNITY_DIGEST_CHECKPOINT_INTERVAL: '150',
+              WRITER_NAME: workerName,
+              WRITER_COUNT: String(count),
+              WRITER_OUT_FILE: outFile,
+            },
+            stdio: ['ignore', 'pipe', 'pipe'],
+          },
+        );
+        let stdout = '';
+        let stderr = '';
+        child.stdout.on('data', (chunk) => {
+          stdout += String(chunk);
+        });
+        child.stderr.on('data', (chunk) => {
+          stderr += String(chunk);
+        });
+        child.on('close', (code) => resolve({ code, stdout, stderr }));
+      });
+
+    try {
+      ClearCompactReplyTokenRegistry();
+
+      // Launch 2 independent writer processes concurrently, each writing 260 tokens (520 total),
+      // crossing BOTH the 200-entry snapshot->WAL transition and multiple 150-entry checkpoint boundaries.
+      const [resA, resB] = await Promise.all([
+        spawnAsyncWriter('writer-A', 260, outFileA),
+        spawnAsyncWriter('writer-B', 260, outFileB),
+      ]);
+      assert.equal(resA.code, 0, `Writer A failed: ${resA.stderr || resA.stdout}`);
+      assert.equal(resB.code, 0, `Writer B failed: ${resB.stderr || resB.stdout}`);
+
+      const parsedA = JSON.parse(readFileSync(outFileA, 'utf8')) as { addresses: string[] };
+      const parsedB = JSON.parse(readFileSync(outFileB, 'utf8')) as { addresses: string[] };
+      assert.equal(parsedA.addresses.length, 260);
+      assert.equal(parsedB.addresses.length, 260);
+
+      const allAddresses = [...parsedA.addresses, ...parsedB.addresses];
+      writeFileSync(tokensListFile, JSON.stringify(allAddresses), 'utf8');
+
+      // Spawn a fresh third reader process and verify 100% of acknowledged tokens with 0 UNKNOWN_TOKEN_HANDLE errors.
+      const readerScript = `
+        import assert from 'node:assert/strict';
+        import { readFileSync } from 'node:fs';
+        import { ParseAndVerifyInboundEmailReply } from ${JSON.stringify(loopModulePath)};
+        const addresses = JSON.parse(readFileSync(process.env.TOKENS_LIST_FILE, 'utf8'));
+        let verifiedCount = 0;
+        for (const addr of addresses) {
+          const res = ParseAndVerifyInboundEmailReply({
+            replyToAddressOrToken: addr,
+            rawBodyText: 'Concurrent reader verification',
+            senderEmail: 'alice@example.org',
+          });
+          assert.equal(res.token.valid, true, 'Expected valid token for ' + addr + ', got ' + JSON.stringify(res.token));
+          verifiedCount += 1;
+        }
+        assert.equal(verifiedCount, 520);
+      `;
+      const reader = spawnSync(
+        process.execPath,
+        ['--experimental-strip-types', '--input-type=module', '-e', readerScript],
+        {
+          env: {
+            ...process.env,
+            COMMUNITY_DIGEST_TOKEN_STORE_PATH: testStorePath,
+            COMMUNITY_DIGEST_REPLY_SECRET: TEST_SIGNING_SECRET,
+            TOKENS_LIST_FILE: tokensListFile,
+          },
+          encoding: 'utf8',
+        },
+      );
+      assert.equal(reader.status, 0, `Reader failed: ${reader.stderr || reader.stdout}`);
+    } finally {
+      ClearCompactReplyTokenRegistry();
+      for (const f of [
+        testStorePath,
+        `${testStorePath}.wal`,
+        `${testStorePath}.wal.ckpt`,
+        `${testStorePath}.lock`,
+        outFileA,
+        outFileB,
+        tokensListFile,
+      ]) {
+        if (existsSync(f)) rmSync(f, { force: true });
+      }
+      if (prevStorePath === undefined) delete process.env.COMMUNITY_DIGEST_TOKEN_STORE_PATH;
+      else process.env.COMMUNITY_DIGEST_TOKEN_STORE_PATH = prevStorePath;
+      if (prevSecret === undefined) delete process.env.COMMUNITY_DIGEST_REPLY_SECRET;
+      else process.env.COMMUNITY_DIGEST_REPLY_SECRET = prevSecret;
+    }
+  });
+
+  it('deterministically pauses checkpoint before WAL unlink while a second worker appends, then verifies all tokens in a fresh reader process (CR-10)', async () => {
+    const prevStorePath = process.env.COMMUNITY_DIGEST_TOKEN_STORE_PATH;
+    const prevSecret = process.env.COMMUNITY_DIGEST_REPLY_SECRET;
+    const testStorePath = path.join(os.tmpdir(), `mj-digest-cr10-hook-${process.pid}-${Date.now()}.json`);
+    const tokensListFile = path.join(os.tmpdir(), `mj-digest-cr10-hook-tokens-${process.pid}-${Date.now()}.json`);
+    const workerOutFile = path.join(os.tmpdir(), `mj-digest-cr10-hook-worker-${process.pid}-${Date.now()}.json`);
+    const here = dirname(fileURLToPath(import.meta.url));
+    const loopModulePath = join(here, 'custom', 'digest-reply-loop.ts');
+
+    process.env.COMMUNITY_DIGEST_TOKEN_STORE_PATH = testStorePath;
+    process.env.COMMUNITY_DIGEST_REPLY_SECRET = TEST_SIGNING_SECRET;
+
+    try {
+      ClearCompactReplyTokenRegistry();
+      const store = GetDigestReplyTokenStore();
+      assert.ok(store instanceof FileBackedDigestReplyTokenStore);
+
+      // Populate 210 tokens so the store crosses the 200-entry snapshot boundary into active WAL appends.
+      const preCheckpointAddresses: string[] = [];
+      for (let i = 0; i < 210; i += 1) {
+        const token = SignDigestReplyToken({
+          memberUserId: MEMBER_A_ID,
+          forumId: FORUM_TAX_ID,
+          rootPostId: POST_TAX_ID,
+          recipientEmail: 'alice@example.org',
+          ttlSeconds: 3600,
+        });
+        preCheckpointAddresses.push(BuildReplyToEmailAddress(token, 'reply.bizapps.local'));
+      }
+      assert.equal(existsSync(`${testStorePath}.wal`), true, 'Expected active WAL after >200 tokens');
+
+      let concurrentWorkerPromise: Promise<{ code: number | null; stdout: string; stderr: string }> | null = null;
+      let hookInvoked = false;
+
+      await store.checkpointWithHook(Math.floor(Date.now() / 1000), {
+        onBeforeWalUnlink: async () => {
+          hookInvoked = true;
+          // While checkpoint is paused after reading WAL & renaming snapshot (before unlinking .ckpt),
+          // launch a second independent node worker attempting to sign & append a new token.
+          concurrentWorkerPromise = new Promise((resolve) => {
+            const script = `
+              import { writeFileSync } from 'node:fs';
+              import { BuildReplyToEmailAddress, SignDigestReplyToken } from ${JSON.stringify(loopModulePath)};
+              const token = SignDigestReplyToken({
+                memberUserId: ${JSON.stringify(MEMBER_A_ID)},
+                forumId: ${JSON.stringify(FORUM_TAX_ID)},
+                rootPostId: ${JSON.stringify(POST_TAX_ID)},
+                recipientEmail: 'alice@example.org',
+                ttlSeconds: 3600,
+              });
+              const addr = BuildReplyToEmailAddress(token, 'reply.bizapps.local');
+              writeFileSync(process.env.WORKER_OUT_FILE, JSON.stringify({ addr }), 'utf8');
+            `;
+            const child = spawn(
+              process.execPath,
+              ['--experimental-strip-types', '--input-type=module', '-e', script],
+              {
+                env: {
+                  ...process.env,
+                  COMMUNITY_DIGEST_TOKEN_STORE_PATH: testStorePath,
+                  COMMUNITY_DIGEST_REPLY_SECRET: TEST_SIGNING_SECRET,
+                  WORKER_OUT_FILE: workerOutFile,
+                },
+                stdio: ['ignore', 'pipe', 'pipe'],
+              },
+            );
+            let stdout = '';
+            let stderr = '';
+            child.stdout.on('data', (chunk) => {
+              stdout += String(chunk);
+            });
+            child.stderr.on('data', (chunk) => {
+              stderr += String(chunk);
+            });
+            child.on('close', (code) => resolve({ code, stdout, stderr }));
+          });
+
+          // Hold the pause for 150ms while worker B attempts to acquire the lock and append.
+          await new Promise((resolve) => setTimeout(resolve, 150));
+        },
+      });
+
+      assert.equal(hookInvoked, true);
+      assert.ok(concurrentWorkerPromise, 'Expected concurrent worker to be launched during checkpoint pause');
+      const workerResult = await concurrentWorkerPromise;
+      assert.equal(workerResult.code, 0, `Concurrent worker failed: ${workerResult.stderr || workerResult.stdout}`);
+
+      const { addr: concurrentAddr } = JSON.parse(readFileSync(workerOutFile, 'utf8')) as { addr: string };
+      const allExpected = [...preCheckpointAddresses, concurrentAddr];
+      writeFileSync(tokensListFile, JSON.stringify(allExpected), 'utf8');
+
+      // Verify all 211 tokens (210 pre-checkpoint + 1 concurrent worker append) in a fresh third reader process.
+      const readerScript = `
+        import assert from 'node:assert/strict';
+        import { readFileSync } from 'node:fs';
+        import { ParseAndVerifyInboundEmailReply } from ${JSON.stringify(loopModulePath)};
+        const addresses = JSON.parse(readFileSync(process.env.TOKENS_LIST_FILE, 'utf8'));
+        for (const addr of addresses) {
+          const res = ParseAndVerifyInboundEmailReply({
+            replyToAddressOrToken: addr,
+            rawBodyText: 'Fresh third-process reader check',
+            senderEmail: 'alice@example.org',
+          });
+          assert.equal(res.token.valid, true, 'Lost or invalid token ' + addr + ': ' + JSON.stringify(res.token));
+        }
+        assert.equal(addresses.length, 211);
+      `;
+      const reader = spawnSync(
+        process.execPath,
+        ['--experimental-strip-types', '--input-type=module', '-e', readerScript],
+        {
+          env: {
+            ...process.env,
+            COMMUNITY_DIGEST_TOKEN_STORE_PATH: testStorePath,
+            COMMUNITY_DIGEST_REPLY_SECRET: TEST_SIGNING_SECRET,
+            TOKENS_LIST_FILE: tokensListFile,
+          },
+          encoding: 'utf8',
+        },
+      );
+      assert.equal(reader.status, 0, `Third-process reader failed: ${reader.stderr || reader.stdout}`);
+
+      // Verify delete() and stale-lock recovery under withCrossProcessLock
+      const [concurrentHandle] = concurrentAddr.split('@')[0].replace(/^reply\+/, '').split('.');
+      assert.equal(store.delete(concurrentHandle), true);
+      ClearCompactReplyTokenRegistry({ memoryOnly: true });
+      const deletedVerify = ParseAndVerifyInboundEmailReply({
+        replyToAddressOrToken: concurrentAddr,
+        rawBodyText: 'Should be unknown after delete',
+        senderEmail: 'alice@example.org',
+      });
+      assert.equal(deletedVerify.token.valid, false);
+      if (!deletedVerify.token.valid) {
+        assert.equal(deletedVerify.token.errorCode, 'UNKNOWN_TOKEN_HANDLE');
+      }
+
+      // Simulate stale lock owned by a non-existent PID (>100ms old) and verify automatic recovery
+      const staleLockPath = `${testStorePath}.stale.test.lock`;
+      writeFileSync(staleLockPath.replace(/\.lock$/, '') + '.lock', JSON.stringify({ pid: 999999, acquiredAt: Date.now() - 500 }), 'utf8');
+      const lockResult = withCrossProcessLock(staleLockPath.replace(/\.lock$/, ''), () => 'recovered');
+      assert.equal(lockResult, 'recovered');
+      if (existsSync(staleLockPath)) rmSync(staleLockPath, { force: true });
+    } finally {
+      ClearCompactReplyTokenRegistry();
+      for (const f of [
+        testStorePath,
+        `${testStorePath}.wal`,
+        `${testStorePath}.wal.ckpt`,
+        `${testStorePath}.lock`,
+        tokensListFile,
+        workerOutFile,
+      ]) {
         if (existsSync(f)) rmSync(f, { force: true });
       }
       if (prevStorePath === undefined) delete process.env.COMMUNITY_DIGEST_TOKEN_STORE_PATH;
