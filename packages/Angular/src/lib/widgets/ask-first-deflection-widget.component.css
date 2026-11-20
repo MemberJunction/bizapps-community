@@ -66,3 +66,50 @@
 .mjc-ask-first__result--deflected {
   color: var(--mj-status-success-text);
 }
+
+.mjc-ask-first__live-matches {
+  display: flex;
+  flex-direction: column;
+  gap: var(--mj-space-1);
+}
+
+.mjc-ask-first__live-match-btn {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 100%;
+  padding: var(--mj-space-2);
+  border: 1px solid var(--mj-border-default);
+  border-radius: var(--mj-radius-sm);
+  background: var(--mj-bg-surface);
+  color: var(--mj-text-primary);
+  font: inherit;
+  font-size: var(--mj-text-xs);
+  text-align: left;
+  cursor: pointer;
+}
+
+.mjc-ask-first__live-match-btn:hover {
+  border-color: var(--mj-brand-primary);
+}
+
+.mjc-ask-first__live-match-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--mj-space-2);
+  color: var(--mj-text-secondary);
+}
+
+.mjc-ask-first__match-chip {
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--mj-status-info-bg);
+  color: var(--mj-status-info-text);
+  font-weight: var(--mj-font-semibold);
+}
+
+.mjc-ask-first__live-match-title {
+  font-weight: var(--mj-font-semibold);
+  color: var(--mj-text-primary);
+}

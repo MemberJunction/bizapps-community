@@ -6,13 +6,34 @@
       class="mjc-ask-first__input"
       type="text"
       placeholder="What's your question?"
-      [(ngModel)]="queryText"
+      [ngModel]="queryText"
+      (ngModelChange)="onQueryChange($event)"
       (keyup.enter)="Search()"
     />
     <button type="button" class="mjc-ask-first__button" [disabled]="isSearching" (click)="Search()">
       {{ isSearching ? 'Searching…' : 'Search' }}
     </button>
   </div>
+
+  @if (liveMatches.length > 0) {
+    <div id="mjc-ask-first-live-matches" class="mjc-ask-first__live-matches" role="region" aria-label="Semantic Ask-First suggestions">
+      @for (match of liveMatches; track match.id) {
+        <button
+          type="button"
+          class="mjc-ask-first__live-match-btn"
+          (click)="openLiveMatch(match.id)"
+        >
+          <span class="mjc-ask-first__live-match-meta">
+            <span class="mjc-ask-first__match-chip">{{ match.matchPct }}% semantic match</span>
+            @if (match.epistemicStatus) {
+              <span>{{ match.epistemicStatus }}</span>
+            }
+          </span>
+          <span class="mjc-ask-first__live-match-title">{{ match.title }}</span>
+        </button>
+      }
+    </div>
+  }
 
   @if (resultMessage) {
     <p class="mjc-ask-first__result" [class.mjc-ask-first__result--deflected]="deflected">

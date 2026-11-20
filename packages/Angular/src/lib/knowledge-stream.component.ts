@@ -16,7 +16,7 @@ import {
   type CommunitySpaceFilterId,
   type CommunityStreamTypeFilter,
 } from './community-hub-commons.ts';
-import type { CommunityHubTabKey } from './community-hub-preferences.ts';
+import type { CommunityHubDigestCadence, CommunityHubTabKey } from './community-hub-preferences.ts';
 import { AskFirstDeflectionWidgetComponent } from './widgets/ask-first-deflection-widget.component.ts';
 
 export interface KnowledgeStreamWalletSummaryItem {
@@ -59,6 +59,9 @@ export class KnowledgeStreamComponent {
   @Input() public totalWalletPoints = 0;
   @Input() public walletSummaryIdeas: ReadonlyArray<KnowledgeStreamWalletSummaryItem> = [];
   @Input() public sessions: ReadonlyArray<CommunitySessionItem> = [];
+  @Input() public digestCadence: CommunityHubDigestCadence = 'weekly';
+  @Input() public topDigestMatchTitle: string | null = null;
+  @Input() public topDigestMatchScorePct = 0;
 
   @Output() public readonly spaceFilterChange = new EventEmitter<CommunitySpaceFilterId>();
   @Output() public readonly topicFilterChange = new EventEmitter<string | null>();
@@ -70,6 +73,7 @@ export class KnowledgeStreamComponent {
   @Output() public readonly askShareRequested = new EventEmitter<void>();
   @Output() public readonly navigateToTab = new EventEmitter<CommunityHubTabKey>();
   @Output() public readonly sessionRsvpToggled = new EventEmitter<string>();
+  @Output() public readonly digestPreviewRequested = new EventEmitter<void>();
 
   public canonLookupQuery = '';
 
@@ -164,5 +168,9 @@ export class KnowledgeStreamComponent {
 
   public toggleRsvp(sessionId: string): void {
     this.sessionRsvpToggled.emit(sessionId);
+  }
+
+  public openDigestPreview(): void {
+    this.digestPreviewRequested.emit();
   }
 }

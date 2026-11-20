@@ -522,5 +522,323 @@
         }
       ]
     }
+  },
+  {
+    "fields": {
+      "Name": "Send Personalized Community Digest",
+      "Description": "Ranks recent community threads for each authorized recipient using CommunityEmbeddingPersonalizationService, enforces Collaboration Space, Forum, and Team-band permissions, issues compact RFC 5321 <= 64-octet HMAC-SHA256 Reply-To tokens, and dispatches via MemberJunction CommunicationEngine.",
+      "Type": "Custom",
+      "DriverClass": "Community.SendPersonalizedDigest",
+      "IconClass": "fa-solid fa-paper-plane",
+      "UserPrompt": "Send a personalized community digest.",
+      "CodeApprovalStatus": "Approved",
+      "Status": "Active"
+    },
+    "primaryKey": {
+      "ID": "8F4A2C10-5B9E-4D7A-9C31-6E8B2D4F1A90"
+    },
+    "relatedEntities": {
+      "MJ: Action Params": [
+        {
+          "fields": {
+            "ActionID": "@parent:ID",
+            "Name": "SpaceID",
+            "Type": "Input",
+            "ValueType": "Scalar",
+            "IsArray": false,
+            "IsRequired": false,
+            "Description": "Optional Collaboration Space UUID to scope candidate forums."
+          },
+          "primaryKey": { "ID": "10A1B2C3-D4E5-4F60-8172-8394A5B6C7D8" }
+        },
+        {
+          "fields": {
+            "ActionID": "@parent:ID",
+            "Name": "AllowedForumIDs",
+            "Type": "Input",
+            "ValueType": "Scalar",
+            "IsArray": false,
+            "IsRequired": false,
+            "Description": "Comma-separated list of Forum UUIDs eligible for digest ranking."
+          },
+          "primaryKey": { "ID": "20B2C3D4-E5F6-4071-9283-94A5B6C7D8E9" }
+        },
+        {
+          "fields": {
+            "ActionID": "@parent:ID",
+            "Name": "RecipientUserIDs",
+            "Type": "Input",
+            "ValueType": "Scalar",
+            "IsArray": false,
+            "IsRequired": false,
+            "Description": "Comma-separated list of User UUIDs to receive personalized digests (defaults to ContextUser)."
+          },
+          "primaryKey": { "ID": "30C3D4E5-F607-4182-A394-A5B6C7D8E9F0" }
+        },
+        {
+          "fields": {
+            "ActionID": "@parent:ID",
+            "Name": "UseTestDriver",
+            "Type": "Input",
+            "ValueType": "Scalar",
+            "IsArray": false,
+            "IsRequired": false,
+            "Description": "Whether to use the Community Test Email Driver when CommunicationEngine is unconfigured."
+          },
+          "primaryKey": { "ID": "40D4E5F6-0718-4293-B4A5-B6C7D8E9F0A1" }
+        },
+        {
+          "fields": {
+            "ActionID": "@parent:ID",
+            "Name": "DryRun",
+            "Type": "Input",
+            "ValueType": "Scalar",
+            "IsArray": false,
+            "IsRequired": false,
+            "Description": "When true, records DryRun=true on dispatched messages without external delivery."
+          },
+          "primaryKey": { "ID": "50E5F607-1829-43A4-85B6-C7D8E9F0A1B2" }
+        },
+        {
+          "fields": {
+            "ActionID": "@parent:ID",
+            "Name": "ProviderName",
+            "Type": "Input",
+            "ValueType": "Scalar",
+            "IsArray": false,
+            "IsRequired": false,
+            "Description": "Communication provider name override (e.g., Community Test Email Driver or SendGrid)."
+          },
+          "primaryKey": { "ID": "60F60718-293A-44B5-96C7-D8E9F0A1B2C3" }
+        },
+        {
+          "fields": {
+            "ActionID": "@parent:ID",
+            "Name": "CommunityName",
+            "Type": "Input",
+            "ValueType": "Scalar",
+            "IsArray": false,
+            "IsRequired": false,
+            "Description": "Display name of the community used in the digest subject and header."
+          },
+          "primaryKey": { "ID": "70071829-3A4B-45C6-A7D8-E9F0A1B2C3D4" }
+        },
+        {
+          "fields": {
+            "ActionID": "@parent:ID",
+            "Name": "MaxItemsPerDigest",
+            "Type": "Input",
+            "ValueType": "Scalar",
+            "IsArray": false,
+            "IsRequired": false,
+            "Description": "Maximum number of ranked threads to include per recipient digest (default 5, max 25)."
+          },
+          "primaryKey": { "ID": "8018293A-4B5C-46D7-B8E9-F0A1B2C3D4E5" }
+        },
+        {
+          "fields": {
+            "ActionID": "@parent:ID",
+            "Name": "SentCount",
+            "Type": "Output",
+            "ValueType": "Scalar",
+            "IsArray": false,
+            "IsRequired": false,
+            "Description": "Number of personalized digests dispatched successfully."
+          },
+          "primaryKey": { "ID": "90293A4B-5C6D-47E8-89F0-A1B2C3D4E5F6" }
+        },
+        {
+          "fields": {
+            "ActionID": "@parent:ID",
+            "Name": "FailedCount",
+            "Type": "Output",
+            "ValueType": "Scalar",
+            "IsArray": false,
+            "IsRequired": false,
+            "Description": "Number of recipient deliveries that failed or were denied by permissions."
+          },
+          "primaryKey": { "ID": "A03A4B5C-6D7E-48F9-9A01-B2C3D4E5F607" }
+        },
+        {
+          "fields": {
+            "ActionID": "@parent:ID",
+            "Name": "ProviderNameUsed",
+            "Type": "Output",
+            "ValueType": "Scalar",
+            "IsArray": false,
+            "IsRequired": false,
+            "Description": "Name of the communication provider used for dispatch."
+          },
+          "primaryKey": { "ID": "B04B5C6D-7E8F-490A-AB12-C3D4E5F60718" }
+        },
+        {
+          "fields": {
+            "ActionID": "@parent:ID",
+            "Name": "DeliveriesJSON",
+            "Type": "Output",
+            "ValueType": "Scalar",
+            "IsArray": false,
+            "IsRequired": false,
+            "Description": "JSON array of per-recipient delivery summaries including issued Reply-To addresses."
+          },
+          "primaryKey": { "ID": "C05C6D7E-8F90-4A1B-BC23-D4E5F6071829" }
+        }
+      ],
+      "MJ: Action Result Codes": [
+        {
+          "fields": { "ActionID": "@parent:ID", "ResultCode": "SUCCESS", "IsSuccess": true, "Description": "At least one personalized digest was dispatched." },
+          "primaryKey": { "ID": "D06D7E8F-90A1-4B2C-8D34-E5F60718293A" }
+        },
+        {
+          "fields": { "ActionID": "@parent:ID", "ResultCode": "NO_RECIPIENTS", "IsSuccess": false, "Description": "No eligible digest recipients with email addresses were resolved." },
+          "primaryKey": { "ID": "E07E8F90-A1B2-4C3D-9E45-F60718293A4B" }
+        },
+        {
+          "fields": { "ActionID": "@parent:ID", "ResultCode": "DELIVERY_FAILED", "IsSuccess": false, "Description": "All recipient digest deliveries failed or were denied by permissions." },
+          "primaryKey": { "ID": "F08F90A1-B2C3-4D4E-AF56-0718293A4B5C" }
+        },
+        {
+          "fields": { "ActionID": "@parent:ID", "ResultCode": "ERROR", "IsSuccess": false, "Description": "No context user or unexpected dispatch error." },
+          "primaryKey": { "ID": "0190A1B2-C3D4-4E5F-8067-18293A4B5C6D" }
+        }
+      ]
+    }
+  },
+  {
+    "fields": {
+      "Name": "Process Inbound Community Digest Reply",
+      "Description": "Cryptographically verifies compact HMAC-SHA256 Reply-To tokens, strips quoted email history and signature chrome, enforces Space/Forum/Role reply permissions, and persists inbound replies as child Forum Posts.",
+      "Type": "Custom",
+      "DriverClass": "Community.ProcessInboundDigestReply",
+      "IconClass": "fa-solid fa-reply",
+      "UserPrompt": "Process an inbound email reply to a community digest thread.",
+      "CodeApprovalStatus": "Approved",
+      "Status": "Active"
+    },
+    "primaryKey": {
+      "ID": "9A5B3D21-6C0F-4E8B-8D42-7F9C3E5A2B01"
+    },
+    "relatedEntities": {
+      "MJ: Action Params": [
+        {
+          "fields": {
+            "ActionID": "@parent:ID",
+            "Name": "ReplyToAddress",
+            "Type": "Input",
+            "ValueType": "Scalar",
+            "IsArray": false,
+            "IsRequired": false,
+            "Description": "Inbound Reply-To email address containing the signed compact reply token."
+          },
+          "primaryKey": { "ID": "11A1B2C3-D4E5-4F61-8172-8394A5B6C7E0" }
+        },
+        {
+          "fields": {
+            "ActionID": "@parent:ID",
+            "Name": "ReplyToken",
+            "Type": "Input",
+            "ValueType": "Scalar",
+            "IsArray": false,
+            "IsRequired": false,
+            "Description": "Raw compact reply token if supplied outside a full email address."
+          },
+          "primaryKey": { "ID": "21B2C3D4-E5F6-4072-9283-94A5B6C7D8E1" }
+        },
+        {
+          "fields": {
+            "ActionID": "@parent:ID",
+            "Name": "RawBodyText",
+            "Type": "Input",
+            "ValueType": "Scalar",
+            "IsArray": false,
+            "IsRequired": true,
+            "Description": "Raw inbound email body text before stripping quoted history and signatures."
+          },
+          "primaryKey": { "ID": "31C3D4E5-F607-4183-A394-A5B6C7D8E9E2" }
+        },
+        {
+          "fields": {
+            "ActionID": "@parent:ID",
+            "Name": "SenderEmail",
+            "Type": "Input",
+            "ValueType": "Scalar",
+            "IsArray": false,
+            "IsRequired": false,
+            "Description": "Sender email address verified against the token recipient binding."
+          },
+          "primaryKey": { "ID": "41D4E5F6-0718-4294-B4A5-B6C7D8E9F0E3" }
+        },
+        {
+          "fields": {
+            "ActionID": "@parent:ID",
+            "Name": "PostID",
+            "Type": "Output",
+            "ValueType": "Scalar",
+            "IsArray": false,
+            "IsRequired": false,
+            "Description": "UUID of the newly persisted child reply Forum Post."
+          },
+          "primaryKey": { "ID": "51E5F607-1829-43A5-85B6-C7D8E9F0A1E4" }
+        },
+        {
+          "fields": {
+            "ActionID": "@parent:ID",
+            "Name": "ForumID",
+            "Type": "Output",
+            "ValueType": "Scalar",
+            "IsArray": false,
+            "IsRequired": false,
+            "Description": "UUID of the target Forum."
+          },
+          "primaryKey": { "ID": "61F60718-293A-44B6-96C7-D8E9F0A1B2E5" }
+        },
+        {
+          "fields": {
+            "ActionID": "@parent:ID",
+            "Name": "RootPostID",
+            "Type": "Output",
+            "ValueType": "Scalar",
+            "IsArray": false,
+            "IsRequired": false,
+            "Description": "UUID of the root thread Forum Post."
+          },
+          "primaryKey": { "ID": "71071829-3A4B-45C7-A7D8-E9F0A1B2C3E6" }
+        },
+        {
+          "fields": {
+            "ActionID": "@parent:ID",
+            "Name": "CleanedBodyMarkdown",
+            "Type": "Output",
+            "ValueType": "Scalar",
+            "IsArray": false,
+            "IsRequired": false,
+            "Description": "Reply body markdown after stripping quoted history and email signatures."
+          },
+          "primaryKey": { "ID": "8118293A-4B5C-46D8-B8E9-F0A1B2C3D4E7" }
+        }
+      ],
+      "MJ: Action Result Codes": [
+        {
+          "fields": { "ActionID": "@parent:ID", "ResultCode": "SUCCESS", "IsSuccess": true, "Description": "The inbound reply was verified and persisted." },
+          "primaryKey": { "ID": "91293A4B-5C6D-47E9-89F0-A1B2C3D4E5E8" }
+        },
+        {
+          "fields": { "ActionID": "@parent:ID", "ResultCode": "INVALID_SIGNATURE", "IsSuccess": false, "Description": "HMAC-SHA256 token signature verification failed." },
+          "primaryKey": { "ID": "A13A4B5C-6D7E-48FA-9A01-B2C3D4E5F6E9" }
+        },
+        {
+          "fields": { "ActionID": "@parent:ID", "ResultCode": "UNKNOWN_TOKEN_HANDLE", "IsSuccess": false, "Description": "Reply token handle was not found in the durable token store." },
+          "primaryKey": { "ID": "B14B5C6D-7E8F-490B-AB12-C3D4E5F607EA" }
+        },
+        {
+          "fields": { "ActionID": "@parent:ID", "ResultCode": "ACCESS_REVOKED", "IsSuccess": false, "Description": "Member lacks active Space/Forum/Role permission to reply." },
+          "primaryKey": { "ID": "C15C6D7E-8F90-4A1C-BC23-D4E5F60718EB" }
+        },
+        {
+          "fields": { "ActionID": "@parent:ID", "ResultCode": "ERROR", "IsSuccess": false, "Description": "No context user." },
+          "primaryKey": { "ID": "D16D7E8F-90A1-4B2D-8D34-E5F6071829EC" }
+        }
+      ]
+    }
   }
 ]

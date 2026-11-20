@@ -90,6 +90,16 @@
 
             <button
               type="button"
+              id="mjc-header-digest-btn"
+              class="mjc-community-hub__btn"
+              (click)="openDigestDrawer()"
+            >
+              <i class="fa-solid fa-envelope-open-text" aria-hidden="true"></i>
+              <span>Personalized Digest ({{ digestCadence | titlecase }})</span>
+            </button>
+
+            <button
+              type="button"
               id="mjc-header-export-pdf-btn"
               class="mjc-community-hub__btn mjc-digest-export__button"
               [disabled]="isExportingDigest"
@@ -170,6 +180,51 @@
               ← Return to Space View
             </button>
           </div>
+        }
+        @if (activeSection === 'spaces' && embeddedCollaborationMode && activeGraduatedSpaceId) {
+          <section
+            id="mjc-graduated-working-space-view"
+            class="mjc-working-space-shell"
+            [attr.data-space-id]="activeGraduatedSpaceId"
+            aria-label="Graduated Collaboration Working Space"
+          >
+            <div class="mjc-working-space-shell__header">
+              <div class="mjc-working-space-shell__title-group">
+                <button
+                  type="button"
+                  id="mjc-working-space-back-btn"
+                  class="mjc-community-hub__btn"
+                  (click)="closeGraduatedWorkingSpace()"
+                >
+                  ← Return to Community Hub
+                </button>
+                <div>
+                  <span class="mjc-community-hub__badge">Collaboration Working Space</span>
+                  <h2 id="mjc-working-space-title" class="mjc-working-space-shell__title">
+                    {{ graduatedSpaceRecord?.Name || 'Working Group Collaboration Space' }}
+                  </h2>
+                  <p class="mjc-working-space-shell__meta">
+                    Space ID: <code>{{ activeGraduatedSpaceId }}</code>
+                  </p>
+                </div>
+              </div>
+              <div class="mjc-community-hub__btn-row">
+                <button
+                  type="button"
+                  id="mjc-working-space-open-record-btn"
+                  class="mjc-community-hub__btn mjc-community-hub__btn--primary"
+                  (click)="openCollaborationSpaceRecord(activeGraduatedSpaceId)"
+                >
+                  Open Collaboration Space Record →
+                </button>
+              </div>
+            </div>
+            @if (isLoadingGraduatedSpace) {
+              <p class="mjc-community-hub__hint">Loading Collaboration Working Space details…</p>
+            } @else if (graduatedSpaceRecord?.Description) {
+              <p class="mjc-working-space-shell__desc">{{ graduatedSpaceRecord?.Description }}</p>
+            }
+          </section>
         }
         @switch (activeTabKey) {
           @case ('knowledge-stream') {
@@ -308,6 +363,9 @@
                 [totalWalletPoints]="activeCampaign.budgetPoints"
                 [walletSummaryIdeas]="walletSummaryIdeas"
                 [sessions]="sessions"
+                [digestCadence]="digestCadence"
+                [topDigestMatchTitle]="topDigestMatchTitle"
+                [topDigestMatchScorePct]="topDigestMatchScorePct"
                 (spaceFilterChange)="setSpaceFilter($event)"
                 (topicFilterChange)="setTopicFilter($event)"
                 (streamTypeFilterChange)="setStreamTypeFilter($event)"
@@ -318,6 +376,7 @@
                 (askShareRequested)="openAskShareModal()"
                 (navigateToTab)="SelectTab($event)"
                 (sessionRsvpToggled)="toggleSessionRsvp($event)"
+                (digestPreviewRequested)="openDigestDrawer()"
               ></mjc-knowledge-stream>
             </section>
           }
@@ -609,7 +668,7 @@
                     [disabled]="activeDetail.graduatedToDeliverable"
                     (click)="graduateDetailItem(activeDetail.id)"
                   >
-                    {{ activeDetail.graduatedToDeliverable ? 'Graduated to Working Group' : 'Graduate to Deliverable' }}
+                    {{ activeDetail.graduatedToDeliverable ? 'Graduated to Working Space' : '1-Click Graduate to Working Space' }}
                   </button>
                 </div>
               </div>
@@ -648,13 +707,23 @@
                     <strong>Graduated Working Group Space: </strong>
                     <span class="mjc-promoted-space-banner__id">{{ promotedSpaceId }}</span>
                   </div>
-                  <button
-                    type="button"
-                    class="mjc-community-hub__btn"
-                    (click)="setSpaceFilter(promotedSpaceId); closeDetailSheet()"
-                  >
-                    Filter Stream by Working Group →
-                  </button>
+                  <div class="mjc-community-hub__btn-row">
+                    <a
+                      id="mjc-detail-open-graduated-space-link"
+                      class="mjc-community-hub__btn mjc-community-hub__btn--primary"
+                      [href]="'#/collaboration/space/' + promotedSpaceId"
+                      (click)="openGraduatedSpace($event, promotedSpaceId)"
+                    >
+                      Open Working Space →
+                    </a>
+                    <button
+                      type="button"
+                      class="mjc-community-hub__btn"
+                      (click)="setSpaceFilter(promotedSpaceId); closeDetailSheet()"
+                    >
+                      Filter Stream by Working Group →
+                    </button>
+                  </div>
                 </div>
               }
 
@@ -666,6 +735,49 @@
               }
               @if (threadSynthesisResult) {
                 <p class="mjc-community-hub__status" role="status">{{ threadSynthesisResult }}</p>
+              }
+              @if (structuredThreadSynthesis; as synth) {
+                @if (synth.rootPostId === activeDetail.sourcePostId) {
+                  <section id="mjc-detail-synthesis-card" class="mjc-synthesis-card" aria-label="Living Thread Synthesis">
+                    <div class="mjc-synthesis-card__header">
+                      <h3 class="mjc-synthesis-card__title">
+                        <i class="fa-solid fa-wand-magic-sparkles" aria-hidden="true"></i>
+                        Living Thread Synthesis
+                      </h3>
+                      <span class="mjc-community-hub__badge">{{ synth.consideredReplyCount }} replies synthesized</span>
+                    </div>
+                    <p class="mjc-community-hub__card-body">{{ synth.executiveSummary }}</p>
+                    @if (synth.keyTakeaways.length > 0) {
+                      <div>
+                        <strong class="mjc-community-hub__label">Key Takeaways</strong>
+                        <ul class="mjc-synthesis-card__list">
+                          @for (takeaway of synth.keyTakeaways; track takeaway) {
+                            <li>{{ takeaway }}</li>
+                          }
+                        </ul>
+                      </div>
+                    }
+                    @if (synth.openQuestions.length > 0) {
+                      <div>
+                        <strong class="mjc-community-hub__label">Open Questions</strong>
+                        <ul class="mjc-synthesis-card__list">
+                          @for (question of synth.openQuestions; track question) {
+                            <li>{{ question }}</li>
+                          }
+                        </ul>
+                      </div>
+                    }
+                    @if (synth.contributorCitations.length > 0) {
+                      <div class="mjc-synthesis-card__citations">
+                        @for (cit of synth.contributorCitations; track cit.citationIndex) {
+                          <span class="mjc-citation-pill">
+                            [{{ cit.citationIndex }}] {{ cit.authorDisplayName }} · {{ cit.roleLabel }}
+                          </span>
+                        }
+                      </div>
+                    }
+                  </section>
+                }
               }
 
               <div class="mjc-drawer-replies">
@@ -801,7 +913,8 @@
                   type="text"
                   class="mjc-community-hub__input"
                   placeholder="e.g., How do multi-region GraphQL replicas handle failover?"
-                  [(ngModel)]="askShareTitle"
+                  [ngModel]="askShareTitle"
+                  (ngModelChange)="onAskShareTitleChange($event)"
                 />
                 @if (askShareValidationErrors.title) {
                   <span class="mjc-field-error" role="alert">{{ askShareValidationErrors.title }}</span>
@@ -809,16 +922,21 @@
               </div>
 
               @if (askShareDeflectionMatches.length > 0) {
-                <div class="mjc-deflection-box">
-                  <div class="mjc-deflection-box__title">Matching Verified Answers Found in Canon:</div>
+                <div id="mjc-ask-share-deflection-box" class="mjc-deflection-box">
+                  <div class="mjc-deflection-box__title">
+                    Matching Verified Answers Found in Canon (Ask-First Semantic Deflection):
+                  </div>
                   @for (match of askShareDeflectionMatches; track match.id) {
                     <button
                       type="button"
                       class="mjc-deflection-box__item"
-                      (click)="inspectAskShareDeflection(match.id)"
+                      (click)="inspectAskShareDeflection(match.sourcePostId)"
                     >
                       <span>{{ match.title }}</span>
-                      <span>View Canon →</span>
+                      <span class="mjc-deflection-box__meta">
+                        <span class="mjc-deflection-box__chip">{{ match.matchPct }}% match</span>
+                        <span>View Canon →</span>
+                      </span>
                     </button>
                   }
                 </div>
@@ -879,6 +997,183 @@
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      }
+
+      <!-- PERSONALIZED DIGEST PREVIEW DRAWER -->
+      @if (isDigestDrawerOpen) {
+        <div
+          id="mjc-digest-drawer-backdrop"
+          class="mjc-drawer-backdrop"
+          role="presentation"
+          (click)="closeDigestDrawer()"
+        >
+          <div
+            #digestDrawerDialog
+            class="mjc-drawer-panel"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="mjc-digest-drawer-title"
+            tabindex="-1"
+            (keydown)="onOverlayKeydown($event, 'digest')"
+            (click)="$event.stopPropagation()"
+          >
+            <div class="mjc-drawer-header">
+              <div class="mjc-drawer-header__badges">
+                <span class="mjc-community-hub__badge">Embedding-Personalized Digest</span>
+                @if (digestProfileSummary; as prof) {
+                  <span class="mjc-community-hub__badge">{{ prof.providerName }}</span>
+                }
+              </div>
+              <button
+                type="button"
+                id="mjc-digest-drawer-close-btn"
+                class="mjc-drawer-close"
+                aria-label="Close personalized digest preview"
+                (click)="closeDigestDrawer()"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div class="mjc-drawer-body">
+              <div>
+                <h2 id="mjc-digest-drawer-title" class="mjc-drawer-title">Your Personalized Community Digest</h2>
+                <p class="mjc-drawer-meta">
+                  Ranked by semantic vector similarity to your topic interests, recency decay, and epistemic verification.
+                </p>
+              </div>
+
+              <!-- Cadence Preference (persisted via UserInfoEngine.Instance) + Send Test Digest -->
+              <section class="mjc-digest-section" aria-label="Digest cadence and test dispatch">
+                <div class="mjc-digest-section__row">
+                  <span class="mjc-digest-section__label">Digest Cadence (UserInfoEngine)</span>
+                  <div class="mjc-ideation-presets" role="group" aria-label="Digest cadence preference">
+                    <button
+                      type="button"
+                      id="mjc-digest-cadence-daily"
+                      class="mjc-preset-btn"
+                      [class.mjc-preset-btn--active]="digestCadence === 'daily'"
+                      [attr.aria-pressed]="digestCadence === 'daily'"
+                      (click)="setDigestCadence('daily')"
+                    >
+                      Daily
+                    </button>
+                    <button
+                      type="button"
+                      id="mjc-digest-cadence-weekly"
+                      class="mjc-preset-btn"
+                      [class.mjc-preset-btn--active]="digestCadence === 'weekly'"
+                      [attr.aria-pressed]="digestCadence === 'weekly'"
+                      (click)="setDigestCadence('weekly')"
+                    >
+                      Weekly
+                    </button>
+                    <button
+                      type="button"
+                      id="mjc-digest-cadence-off"
+                      class="mjc-preset-btn"
+                      [class.mjc-preset-btn--active]="digestCadence === 'off'"
+                      [attr.aria-pressed]="digestCadence === 'off'"
+                      (click)="setDigestCadence('off')"
+                    >
+                      Off
+                    </button>
+                  </div>
+                </div>
+
+                @if (digestProfileSummary && digestProfileSummary.topTopicTags.length > 0) {
+                  <div class="mjc-drawer-tags">
+                    <span class="mjc-drawer-meta">Profile interests:</span>
+                    @for (tag of digestProfileSummary.topTopicTags; track tag) {
+                      <span class="mjc-community-hub__badge">#{{ tag }}</span>
+                    }
+                  </div>
+                }
+
+                <div class="mjc-digest-section__row">
+                  <button
+                    type="button"
+                    id="mjc-digest-send-test-btn"
+                    class="mjc-community-hub__btn mjc-community-hub__btn--primary"
+                    [disabled]="isSendingTestDigest"
+                    (click)="sendTestDigest()"
+                  >
+                    <i class="fa-solid fa-paper-plane" aria-hidden="true"></i>
+                    <span>{{ isSendingTestDigest ? 'Sending Test Digest…' : 'Send Test Digest (MJ Comms)' }}</span>
+                  </button>
+                  <button
+                    type="button"
+                    class="mjc-community-hub__btn"
+                    [disabled]="isExportingDigest"
+                    (click)="exportDigestPdf()"
+                  >
+                    <i class="fa-solid fa-file-pdf" aria-hidden="true"></i>
+                    <span>Export PDF</span>
+                  </button>
+                </div>
+              </section>
+
+              <!-- Reply-by-Email HMAC Indicator -->
+              <div id="mjc-digest-reply-indicator" class="mjc-digest-reply-banner" role="status">
+                <div>
+                  <strong>Zero-Login Reply-by-Email Enabled</strong> · Every digest thread carries an HMAC-SHA256 signed
+                  <code>Reply-To</code> token verified by <code>Community.ProcessInboundDigestReply</code>.
+                </div>
+                <span class="mjc-digest-reply-banner__token">
+                  Reply-To: {{ sendTestDigestResult?.topReplyToAddress || digestPreviewItems[0]?.replyByEmailHint || 'reply+hmac_signed@reply.bizapps.local' }}
+                </span>
+              </div>
+
+              @if (sendTestDigestError) {
+                <p id="mjc-digest-send-error" class="mjc-community-hub__error" role="alert">{{ sendTestDigestError }}</p>
+              }
+              @if (sendTestDigestResult; as dispatch) {
+                <p id="mjc-digest-send-status" class="mjc-community-hub__status" role="status">
+                  {{ dispatch.message }} · Provider: {{ dispatch.providerName }} ({{ dispatch.sentCount }} sent)
+                </p>
+              }
+
+              <!-- Embedding-Ranked Digest Items -->
+              @if (isLoadingDigestPreview) {
+                <p class="mjc-community-hub__hint">Ranking community threads against your interest vector…</p>
+              } @else if (digestPreviewItems.length === 0) {
+                <p class="mjc-community-hub__hint">No active community threads are available for digest ranking yet.</p>
+              } @else {
+                <div id="mjc-digest-items-list" class="mjc-digest-items">
+                  @for (digestItem of digestPreviewItems; track digestItem.postId; let idx = $index) {
+                    <article class="mjc-digest-item-card">
+                      <div class="mjc-digest-item-card__top">
+                        <div class="mjc-drawer-header__badges">
+                          <span class="mjc-digest-score-chip">#{{ idx + 1 }} · {{ digestItem.matchScorePct }}% match</span>
+                          <span class="mjc-community-hub__badge">{{ digestItem.spaceLabel }}</span>
+                          @if (digestItem.epistemicStatus) {
+                            <span class="mjc-community-hub__badge">{{ digestItem.epistemicStatus }}</span>
+                          }
+                        </div>
+                      </div>
+                      <h3 class="mjc-digest-item-card__title">{{ digestItem.title }}</h3>
+                      <p class="mjc-digest-item-card__excerpt">{{ digestItem.excerpt }}</p>
+                      <div class="mjc-digest-reason">
+                        <strong>Why this was picked for you: </strong>
+                        <span>{{ digestItem.reason }}</span>
+                      </div>
+                      <div class="mjc-digest-item-card__footer">
+                        <span class="mjc-digest-reply-banner__token">{{ digestItem.replyByEmailHint }}</span>
+                        <button
+                          type="button"
+                          class="mjc-community-hub__btn"
+                          (click)="openDigestItemInDetail(digestItem.sourceItemId)"
+                        >
+                          Inspect Thread →
+                        </button>
+                      </div>
+                    </article>
+                  }
+                </div>
+              }
+            </div>
           </div>
         </div>
       }

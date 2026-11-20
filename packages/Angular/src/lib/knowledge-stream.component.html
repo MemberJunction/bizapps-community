@@ -257,8 +257,40 @@
         </div>
       }
       <div class="mjc-ask-first-embed">
-        <mjc-ask-first-deflection-widget [allowedForumIDs]="allowedForumIDs"></mjc-ask-first-deflection-widget>
+        <mjc-ask-first-deflection-widget
+          [allowedForumIDs]="allowedForumIDs"
+          [candidateItems]="items"
+          (matchSelected)="inspectItem($event)"
+        ></mjc-ask-first-deflection-widget>
       </div>
+    </div>
+
+    <!-- Personalized Digest Brief Card -->
+    <div id="mjc-rail-digest-card" class="mjc-rail-card">
+      <div class="mjc-rail-card__header">
+        <span class="mjc-rail-card__heading">Personalized Digest</span>
+        <span class="mjc-badge mjc-badge--brand">{{ digestCadence | titlecase }}</span>
+      </div>
+      <p class="mjc-rail-card__sub">
+        Embedding-ranked brief with HMAC-SHA256 Reply-by-Email tokens.
+      </p>
+      @if (topDigestMatchTitle) {
+        <div class="mjc-wallet-preview-item">
+          <span class="mjc-wallet-preview-item__title">{{ topDigestMatchTitle }}</span>
+          @if (topDigestMatchScorePct > 0) {
+            <span class="mjc-wallet-preview-item__pts">{{ topDigestMatchScorePct }}% match</span>
+          }
+        </div>
+      }
+      <button
+        type="button"
+        id="mjc-rail-open-digest-btn"
+        class="mjc-btn mjc-btn--secondary mjc-btn--full"
+        (click)="openDigestPreview()"
+      >
+        <i class="fa-solid fa-envelope-open-text" aria-hidden="true"></i>
+        <span>Preview Personalized Digest →</span>
+      </button>
     </div>
 
     <!-- Campaign Priority Wallet Summary Card -->

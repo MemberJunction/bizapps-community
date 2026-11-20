@@ -4,7 +4,6 @@ import {
   COMMUNITY_ENTITY_NAMES,
   type mjBizAppsCommunityCommunityMemberProfileEntity,
   mjBizAppsCommunityForumAnswerPostEntity,
-  type mjBizAppsCommunityForumPostEntity,
 } from '@mj-biz-apps/community-entities';
 import {
   createNewEntity,
@@ -67,14 +66,38 @@ export class ForumAnswerPostServerEntity extends mjBizAppsCommunityForumAnswerPo
       return failValidation(result, 'QuestionPostID', 'An answer post cannot reference itself as QuestionPostID.');
     }
 
-    const questionPost = await loadEntityById<mjBizAppsCommunityForumPostEntity>(
-      COMMUNITY_ENTITY_NAMES.ForumPosts,
-      validQuestionId,
-      contextUser,
-    );
-    if (!questionPost) {
+    const [answerPostRes, questionPostRes] = await Promise.all([
+      loadSingleRow<PostForumAuthorRow>(
+        this,
+        COMMUNITY_ENTITY_NAMES.ForumPosts,
+        `ID = '${validAnswerId}'`,
+        ['ID', 'ForumID', 'AuthorUserID'],
+      ),
+      loadSingleRow<PostForumAuthorRow>(
+        this,
+        COMMUNITY_ENTITY_NAMES.ForumPosts,
+        `ID = '${validQuestionId}'`,
+        ['ID', 'ForumID', 'AuthorUserID'],
+      ),
+    ]);
+
+    if (!answerPostRes.success || !answerPostRes.row) {
+      return failValidation(result, 'ID', `Parent ForumPost ${validAnswerId} was not found for this answer.`);
+    }
+
+    if (!questionPostRes.success || !questionPostRes.row) {
       return failValidation(result, 'QuestionPostID', `Question post ${validQuestionId} was not found.`);
     }
+
+    if (!UUIDsEqual(answerPostRes.row.ForumID, questionPostRes.row.ForumID)) {
+      return failValidation(
+        result,
+        'QuestionPostID',
+        `QuestionPostID (${validQuestionId}) belongs to a different Forum than this answer post.`,
+      );
+    }
+
+    const questionPost = questionPostRes.row;
 
     const forum = await resolveForumRow(this, questionPost.ForumID);
     if (!forum) {

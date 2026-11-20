@@ -2,7 +2,7 @@ import { Component, ChangeDetectionStrategy, ChangeDetectorRef, Input, inject } 
 import { CommonModule } from '@angular/common';
 import { Metadata } from '@memberjunction/core';
 import { GraphQLActionClient, GraphQLDataProvider } from '@memberjunction/graphql-dataprovider';
-import { COMMUNITY_ACTION_IDS } from '@mj-biz-apps/community-core';
+import { GetActionOutputValue, ResolveCommunityActionIDWithRunView } from '../community-hub-wedge.ts';
 
 /**
  * Exports the member's Community Digest as a real server-side PDF by invoking
@@ -37,7 +37,12 @@ export class DigestExportButtonComponent {
     try {
       const provider = Metadata.Provider as GraphQLDataProvider;
       const actionClient = new GraphQLActionClient(provider);
-      const result = await actionClient.RunAction(COMMUNITY_ACTION_IDS.ExportDigestPDF, [
+      const actionId = await ResolveCommunityActionIDWithRunView('ExportDigestPDF');
+      if (!actionId) {
+        this.errorMessage = 'Community.ExportDigestPDF action is missing or disabled in MJ: Actions.';
+        return;
+      }
+      const result = await actionClient.RunAction(actionId, [
         { Name: 'SpaceName', Value: this.spaceName, Type: 'Input' },
         { Name: 'AllowedForumIDs', Value: this.allowedForumIDs.join(','), Type: 'Input' },
       ]);
@@ -47,8 +52,8 @@ export class DigestExportButtonComponent {
         return;
       }
 
-      const pdfBase64Param = result.Params?.find((p) => p.Name === 'PDFBase64');
-      const pdfBase64 = typeof pdfBase64Param?.Value === 'string' ? pdfBase64Param.Value : null;
+      const rawPdf = GetActionOutputValue(result, 'PDFBase64');
+      const pdfBase64 = typeof rawPdf === 'string' ? rawPdf : null;
       if (pdfBase64) {
         this.downloadPdf(pdfBase64, `${this.spaceName}-community-digest.pdf`);
       } else {

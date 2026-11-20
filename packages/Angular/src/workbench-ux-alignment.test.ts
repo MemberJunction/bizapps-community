@@ -51,7 +51,7 @@ describe('Slice 1 Polish — Active Campaign Budget Initialization & ExportDiges
   });
 
   it('retains Community.ExportDigestPDF action wiring and active tab hover specificity fix', () => {
-    assert.match(hubTs, /RunAction\(COMMUNITY_ACTION_IDS\.ExportDigestPDF/);
+    assert.match(hubTs, /ResolveCommunityActionIDWithRunView\('ExportDigestPDF'\)/);
     assert.ok(hubHtml.includes('exportDigestPdf()'));
     assert.match(hubCss, /\.mjc-community-hub__tab--active,\s*\n\.mjc-community-hub__tab--active:hover/);
   });

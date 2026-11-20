@@ -33,8 +33,30 @@ import {
   type mjBizAppsCommunityForumPostTagEntity,
   type mjBizAppsCommunityForumQuestionPostEntity,
 } from '@mj-biz-apps/community-entities';
-import { AssertValidUUID, AssertValidUUIDList, COMMUNITY_ACTION_IDS, type IdeationAllocationMode } from '@mj-biz-apps/community-core';
-import { CommunityHubPreferences, type CommunityHubTabKey } from './community-hub-preferences.ts';
+import {
+  AssertValidUUID,
+  AssertValidUUIDList,
+  type IdeationAllocationMode,
+} from '@mj-biz-apps/community-core';
+import {
+  CommunityHubPreferences,
+  type CommunityHubDigestCadence,
+  type CommunityHubTabKey,
+} from './community-hub-preferences.ts';
+import {
+  BuildClientLivingSynthesis,
+  BuildPersonalizedDigestPreview,
+  ComputeLiveAskFirstMatches,
+  GetActionOutputValue,
+  ParseLivingSynthesisPayload,
+  ParseSendDigestActionResult,
+  ResolveCommunityActionIDWithRunView,
+  type AskFirstLiveMatch,
+  type LivingThreadSynthesisView,
+  type PersonalizedDigestPreviewItem,
+  type PersonalizedDigestProfileSummary,
+  type SendDigestSummaryView,
+} from './community-hub-wedge.ts';
 import {
   ComputeCampaignWalletSpentOnOthers,
   IDEA_POST_TYPE_CODE,
@@ -392,11 +414,17 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
   @Input() public EmbeddedMode = false;
   @Input() public ShowTabBar = true;
   @Output() public readonly embeddedTabRequested = new EventEmitter<CommunityHubTabKey>();
+  @Output() public readonly graduatedSpaceOpened = new EventEmitter<{ spaceId: string }>();
 
   public readonly tabs = COMMUNITY_HUB_TABS;
   public readonly spaceDirectory = COMMUNITY_SPACES_DIRECTORY.filter((s) => s.id !== 'all');
   public activeTabKey: CommunityHubTabKey = COMMUNITY_HUB_TABS[0].key;
   public focusedTabKey: CommunityHubTabKey = COMMUNITY_HUB_TABS[0].key;
+  public activeSection: 'hub' | 'spaces' = 'hub';
+  public embeddedCollaborationMode = false;
+  public activeGraduatedSpaceId: string | null = null;
+  public graduatedSpaceRecord: { ID: string; Name: string; Description: string | null } | null = null;
+  public isLoadingGraduatedSpace = false;
 
   public spaceName = 'MemberJunction Community';
   public isOfflineDemoMode = false;
@@ -405,13 +433,25 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
   public feedPosts: CommunityHubFeedPost[] = [];
   public selectedFeedPostId: string | null = null;
   public threadSynthesisResult: string | null = null;
+  public structuredThreadSynthesis: LivingThreadSynthesisView | null = null;
   public isSynthesizingFeed = false;
 
-  // Sticky Header Search, Digest Export & Editorial Porch state
+  // Sticky Header Search, Digest Export, Personalized Digest Preview & Editorial Porch state
   public headerSearchQuery = '';
   public porchCollapsed = false;
   public isExportingDigest = false;
   public digestExportError: string | null = null;
+  public isDigestDrawerOpen = false;
+  public digestCadence: CommunityHubDigestCadence = 'weekly';
+  public digestProfileSummary: PersonalizedDigestProfileSummary | null = null;
+  public digestPreviewItems: PersonalizedDigestPreviewItem[] = [];
+  public isLoadingDigestPreview = false;
+  public isSendingTestDigest = false;
+  public sendTestDigestResult: SendDigestSummaryView | null = null;
+  public sendTestDigestError: string | null = null;
+  public liveAskShareDeflections: AskFirstLiveMatch[] = [];
+  private askShareDeflectionNonce = 0;
+  private digestPreviewNonce = 0;
 
   // 3-Column Commons Workspace state
   public commonsItems: CommunityCommonsItem[] = [];
@@ -419,6 +459,7 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
   public streamTopics: string[] = [];
   public loadedTopicTags: LiveForumTopicTagRow[] = [];
   public activeSpaceFilter: CommunitySpaceFilterId = 'all';
+  private previousSpaceFilterBeforeWorkingSpace: CommunitySpaceFilterId | null = null;
   public activeTopicFilter: string | null = null;
   public activeStreamTypeFilter: CommunityStreamTypeFilter = 'all';
   public sessions: CommunitySessionItem[] = [];
@@ -558,10 +599,21 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
   }
 
   public get hasActiveOverlay(): boolean {
-    return Boolean(this.detailSheetItem || this.isAskShareModalOpen);
+    return Boolean(this.detailSheetItem || this.isAskShareModalOpen || this.isDigestDrawerOpen);
   }
 
-  public get askShareDeflectionMatches(): ReadonlyArray<CommunityHubQACanonItem> {
+  public get topDigestMatchTitle(): string | null {
+    return this.digestPreviewItems[0]?.title ?? null;
+  }
+
+  public get topDigestMatchScorePct(): number {
+    return this.digestPreviewItems[0]?.matchScorePct ?? 0;
+  }
+
+  public get askShareDeflectionMatches(): ReadonlyArray<AskFirstLiveMatch> {
+    if (this.liveAskShareDeflections.length > 0) {
+      return this.liveAskShareDeflections;
+    }
     const q = this.askShareTitle.trim().toLowerCase();
     if (q.length < 4) return [];
     const words = q.split(/\s+/).filter((w) => w.length > 3);
@@ -571,7 +623,16 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
         const hay = `${item.title} ${item.bodyMarkdown}`.toLowerCase();
         return words.some((w) => hay.includes(w));
       })
-      .slice(0, 2);
+      .slice(0, 2)
+      .map((item) => ({
+        id: item.id,
+        sourcePostId: item.id,
+        title: item.title,
+        answerSnippet: item.bodyMarkdown.slice(0, 140),
+        epistemicStatus: item.epistemicStatus,
+        matchPct: Math.round((item.confidenceScore ?? 0.78) * 100),
+        isSemanticMatch: false,
+      }));
   }
 
   public get selectedFeedPost(): CommunityHubFeedPost | null {
@@ -618,9 +679,11 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
   @ViewChildren('ideaButton') private ideaButtons!: QueryList<ElementRef<HTMLButtonElement>>;
   @ViewChild('detailSheetDialog') private detailSheetDialog?: ElementRef<HTMLElement>;
   @ViewChild('askShareDialog') private askShareDialog?: ElementRef<HTMLElement>;
+  @ViewChild('digestDrawerDialog') private digestDrawerDialog?: ElementRef<HTMLElement>;
 
   private lastDetailTrigger: HTMLElement | null = null;
   private lastAskShareTrigger: HTMLElement | null = null;
+  private lastDigestTrigger: HTMLElement | null = null;
 
   private readonly preferences = new CommunityHubPreferences();
   private readonly cdr = inject(ChangeDetectorRef);
@@ -661,6 +724,14 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
       this.focusedTabKey = saved;
     }
     this.porchCollapsed = this.preferences.GetPorchCollapsed();
+    const savedCadence = this.preferences.GetDigestCadence();
+    if (savedCadence) {
+      this.digestCadence = savedCadence;
+    }
+    const savedTopic = this.preferences.GetActiveTopicFilter();
+    if (savedTopic) {
+      this.activeTopicFilter = savedTopic;
+    }
   }
 
   private rebuildCommonsItems(): void {
@@ -723,6 +794,7 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
       }
       return true;
     });
+    void this.refreshDigestPreview();
   }
 
   private buildUuidInClause(ids: ReadonlyArray<string>, label: string): string {
@@ -745,12 +817,15 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
     this.streamActionError = null;
     this.hubLoadError = null;
     this.threadSynthesisResult = null;
+    this.structuredThreadSynthesis = null;
     this.qaActionMessage = null;
     this.docActionMessage = null;
     this.formSubmittedMessage = null;
     this.ideationErrorMessage = null;
     this.showQuestionComposer = false;
     this.showIdeaComposer = false;
+    this.sendTestDigestResult = null;
+    this.sendTestDigestError = null;
   }
 
   private async loadHubState(): Promise<void> {
@@ -1523,7 +1598,12 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
         return;
       }
       const actionClient = new GraphQLActionClient(provider);
-      const result = await actionClient.RunAction(COMMUNITY_ACTION_IDS.ExportDigestPDF, [
+      const exportActionId = await ResolveCommunityActionIDWithRunView('ExportDigestPDF');
+      if (!exportActionId) {
+        this.digestExportError = 'Community.ExportDigestPDF action is missing or disabled in MJ: Actions.';
+        return;
+      }
+      const result = await actionClient.RunAction(exportActionId, [
         { Name: 'SpaceName', Value: effectiveSpaceName, Type: 'Input' },
         { Name: 'AllowedForumIDs', Value: this.allowedForumIDs.join(','), Type: 'Input' },
       ]);
@@ -1533,8 +1613,8 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
         return;
       }
 
-      const pdfBase64Param = result.Params?.find((p) => p.Name === 'PDFBase64');
-      const pdfBase64 = typeof pdfBase64Param?.Value === 'string' ? pdfBase64Param.Value : null;
+      const rawPdf = GetActionOutputValue(result, 'PDFBase64');
+      const pdfBase64 = typeof rawPdf === 'string' ? rawPdf : null;
       if (pdfBase64) {
         this.downloadPdfBytes(pdfBase64, `${effectiveSpaceName}-community-digest.pdf`);
       } else {
@@ -1572,6 +1652,7 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
 
   public setTopicFilter(topic: string | null): void {
     this.activeTopicFilter = topic;
+    void this.preferences.SetActiveTopicFilter(topic);
     this.cdr.markForCheck();
   }
 
@@ -1585,7 +1666,142 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
     this.activeTopicFilter = null;
     this.activeStreamTypeFilter = 'all';
     this.headerSearchQuery = '';
+    void this.preferences.SetActiveTopicFilter(null);
     this.cdr.markForCheck();
+  }
+
+  // ─── Personalized Digest Preview Drawer & MJ Comms Dispatch ───────────────
+
+  public async refreshDigestPreview(): Promise<void> {
+    const nonce = ++this.digestPreviewNonce;
+    this.isLoadingDigestPreview = true;
+    this.cdr.markForCheck();
+
+    const provider = Metadata.Provider;
+    const user = provider?.CurrentUser;
+    const explicitTags = this.activeTopicFilter ? [this.activeTopicFilter] : [];
+
+    try {
+      const preview = await BuildPersonalizedDigestPreview({
+        userId: user?.ID ?? 'demo-member',
+        userName: user?.Name ?? 'Community Member',
+        commonsItems: this.commonsItems,
+        explicitTopicTags: explicitTags,
+        maxItems: 5,
+      });
+      if (nonce !== this.digestPreviewNonce) {
+        return;
+      }
+      this.digestProfileSummary = preview.profile;
+      this.digestPreviewItems = preview.items;
+    } finally {
+      if (nonce === this.digestPreviewNonce) {
+        this.isLoadingDigestPreview = false;
+        this.cdr.markForCheck();
+      }
+    }
+  }
+
+  public openDigestDrawer(): void {
+    if (!this.isDigestDrawerOpen) {
+      const active = this.doc?.activeElement;
+      if (
+        active instanceof HTMLElement &&
+        active !== this.doc?.body &&
+        active !== this.doc?.documentElement &&
+        !active.closest('[role="dialog"]')
+      ) {
+        this.lastDigestTrigger = active;
+      }
+    }
+    this.isDigestDrawerOpen = true;
+    this.sendTestDigestError = null;
+    this.cdr.markForCheck();
+    void this.refreshDigestPreview();
+    this.scheduleOverlayInitialFocus('digest');
+  }
+
+  public closeDigestDrawer(): void {
+    const trigger = this.lastDigestTrigger;
+    this.lastDigestTrigger = null;
+    this.isDigestDrawerOpen = false;
+    this.cdr.markForCheck();
+    this.restoreOverlayTriggerFocus(trigger, '#mjc-header-digest-btn');
+  }
+
+  public setDigestCadence(cadence: CommunityHubDigestCadence): void {
+    this.digestCadence = cadence;
+    void this.preferences.SetDigestCadence(cadence);
+    this.cdr.markForCheck();
+  }
+
+  public openDigestItemInDetail(sourceItemId: string): void {
+    this.lastDigestTrigger = null;
+    this.isDigestDrawerOpen = false;
+    this.openDetailSheet(sourceItemId);
+  }
+
+  public async sendTestDigest(): Promise<void> {
+    if (this.isSendingTestDigest) return;
+    this.isSendingTestDigest = true;
+    this.sendTestDigestError = null;
+    this.sendTestDigestResult = null;
+    this.cdr.markForCheck();
+
+    const effectiveSpaceName = this.spaceName.trim() || 'MemberJunction Community';
+
+    try {
+      const provider = Metadata.Provider as GraphQLDataProvider | undefined;
+      if (!provider) {
+        this.sendTestDigestResult = {
+          sentCount: 1,
+          failedCount: 0,
+          providerName: 'Community Test Email Driver',
+          dryRun: true,
+          topReplyToAddress: this.digestPreviewItems[0]?.replyByEmailHint ?? 'reply+hmac_demo@reply.bizapps.local',
+          message: `Test digest preview queued for ${effectiveSpaceName} (${this.digestPreviewItems.length} ranked threads).`,
+        };
+        return;
+      }
+
+      const actionClient = new GraphQLActionClient(provider);
+      const actionParams: Array<{ Name: string; Value: string; Type: 'Input' }> = [
+        { Name: 'UseTestDriver', Value: 'true', Type: 'Input' },
+        { Name: 'DryRun', Value: 'false', Type: 'Input' },
+        { Name: 'CommunityName', Value: effectiveSpaceName, Type: 'Input' },
+        { Name: 'AllowedForumIDs', Value: this.allowedForumIDs.join(','), Type: 'Input' },
+        { Name: 'MaxItemsPerDigest', Value: '5', Type: 'Input' },
+      ];
+      if (this.ScopeSpaceId?.trim()) {
+        actionParams.push({ Name: 'SpaceID', Value: AssertValidUUID(this.ScopeSpaceId, 'ScopeSpaceId'), Type: 'Input' });
+      }
+
+      const actionId = await ResolveCommunityActionIDWithRunView('SendPersonalizedDigest');
+      if (!actionId) {
+        this.sendTestDigestResult = null;
+        this.sendTestDigestError =
+          'Community.SendPersonalizedDigest action is missing or disabled in the MJ: Actions catalog.';
+        return;
+      }
+      const result = await actionClient.RunAction(actionId, actionParams);
+
+      if (result?.Success !== true) {
+        this.sendTestDigestResult = null;
+        this.sendTestDigestError = result?.Message ?? 'Failed to dispatch test digest.';
+        return;
+      }
+
+      this.sendTestDigestResult = ParseSendDigestActionResult({
+        success: true,
+        message: result.Message,
+        actionResult: result,
+      });
+    } catch (err) {
+      this.sendTestDigestError = err instanceof Error ? err.message : 'Failed to dispatch test digest.';
+    } finally {
+      this.isSendingTestDigest = false;
+      this.cdr.markForCheck();
+    }
   }
 
   public async upvoteCommonsItem(itemId: string): Promise<void> {
@@ -1699,6 +1915,10 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
 
   @HostListener('document:keydown.escape')
   public onDocumentEscape(): void {
+    if (this.isDigestDrawerOpen) {
+      this.closeDigestDrawer();
+      return;
+    }
     if (this.isAskShareModalOpen) {
       this.closeAskShareModal();
       return;
@@ -1735,8 +1955,117 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
     this.detailReplyText = '';
     this.detailActionMessage = null;
     this.detailErrorMessage = null;
+    this.structuredThreadSynthesis = null;
     this.cdr.markForCheck();
     this.restoreOverlayTriggerFocus(trigger, '.mjc-inspect-btn');
+  }
+
+  public openGraduatedSpace(event: Event, promotedSpaceId: string): void {
+    event.preventDefault();
+    const spaceId = promotedSpaceId?.trim();
+    if (!spaceId) return;
+
+    this.previousSpaceFilterBeforeWorkingSpace = this.activeSpaceFilter;
+    this.activeSection = 'spaces';
+    this.embeddedCollaborationMode = true;
+    this.activeGraduatedSpaceId = spaceId;
+    this.activeSpaceFilter = spaceId;
+    this.graduatedSpaceRecord = null;
+    this.closeDetailSheet();
+    this.graduatedSpaceOpened.emit({ spaceId });
+    this.notifyHostNavigationForWorkingSpace(spaceId);
+    void this.loadGraduatedWorkingSpace(spaceId);
+    this.cdr.markForCheck();
+  }
+
+  public closeGraduatedWorkingSpace(): void {
+    this.activeSection = 'hub';
+    this.embeddedCollaborationMode = false;
+    this.activeGraduatedSpaceId = null;
+    this.activeSpaceFilter = this.previousSpaceFilterBeforeWorkingSpace ?? 'all';
+    this.previousSpaceFilterBeforeWorkingSpace = null;
+    this.cdr.markForCheck();
+  }
+
+  public openCollaborationSpaceRecord(spaceId: string): void {
+    const trimmed = spaceId?.trim();
+    if (!trimmed) return;
+    try {
+      this.navigationService?.OpenEntityRecord?.('MJ_BizApps_Collaboration: Spaces', CompositeKey.FromID(trimmed));
+    } catch {
+      // Ignore when running outside full MJ Explorer shell.
+    }
+  }
+
+  private notifyHostNavigationForWorkingSpace(spaceId: string): void {
+    try {
+      this.navigationService?.SetAgentContext?.(this, {
+        activeSection: 'spaces',
+        embeddedCollaborationMode: true,
+        activeSpaceId: spaceId,
+      });
+      if (typeof this.navigationService?.SwitchToApp === 'function') {
+        void this.navigationService
+          .SwitchToApp('94F5906B-38AB-4A9F-BFCA-3D395BBBC198', 'Spaces', {
+            view: 'space',
+            space: spaceId,
+            tab: 'overview',
+          })
+          .catch(() => undefined);
+      }
+    } catch {
+      // Standalone / embedded harness continues with embedded Collaboration Working Space view.
+    }
+  }
+
+  private async loadGraduatedWorkingSpace(spaceId: string): Promise<void> {
+    const provider = Metadata.Provider;
+    const user = provider?.CurrentUser;
+    if (!provider || !user) {
+      this.graduatedSpaceRecord = {
+        ID: spaceId,
+        Name: this.spaceNameById.get(spaceId.toLowerCase()) ?? 'Working Group Collaboration Space',
+        Description: 'Graduated Working Group workspace active for collaborative execution.',
+      };
+      this.cdr.markForCheck();
+      return;
+    }
+
+    this.isLoadingGraduatedSpace = true;
+    this.cdr.markForCheck();
+    try {
+      const safeId = AssertValidUUID(spaceId, 'graduatedSpaceId');
+      const res = await new RunView().RunView<{ ID: string; Name: string; Description: string | null }>(
+        {
+          EntityName: 'MJ_BizApps_Collaboration: Spaces',
+          ExtraFilter: `ID = '${safeId}'`,
+          Fields: ['ID', 'Name', 'Description'],
+          ResultType: 'simple',
+          MaxRows: 1,
+        },
+        user,
+      );
+      if (this.activeGraduatedSpaceId !== spaceId) return;
+      const row = res?.Success ? res.Results?.[0] : null;
+      this.graduatedSpaceRecord = row ?? {
+        ID: spaceId,
+        Name: this.spaceNameById.get(spaceId.toLowerCase()) ?? 'Working Group Collaboration Space',
+        Description: 'Graduated Working Group Collaboration Space.',
+      };
+    } catch {
+      if (this.activeGraduatedSpaceId === spaceId) {
+        this.graduatedSpaceRecord = {
+          ID: spaceId,
+          Name: this.spaceNameById.get(spaceId.toLowerCase()) ?? 'Working Group Collaboration Space',
+          Description: 'Graduated Working Group Collaboration Space.',
+        };
+      }
+    } finally {
+      if (this.activeGraduatedSpaceId === spaceId) {
+        this.isLoadingGraduatedSpace = false;
+        this.cdr.markForCheck();
+      }
+    }
   }
 
   public async submitDetailReply(): Promise<void> {
@@ -1909,22 +2238,74 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
     this.cdr.markForCheck();
   }
 
+  public async onAskShareTitleChange(nextTitle: string): Promise<void> {
+    this.askShareTitle = nextTitle;
+    const nonce = ++this.askShareDeflectionNonce;
+    const trimmed = nextTitle.trim();
+    if (trimmed.length < 4) {
+      this.liveAskShareDeflections = [];
+      this.cdr.markForCheck();
+      return;
+    }
+
+    const candidates = [
+      ...this.qaCanonItems.map((qa) => ({
+        id: `qa-${qa.id}`,
+        sourcePostId: qa.id,
+        title: qa.title,
+        bodyMarkdown: qa.bodyMarkdown,
+        epistemicStatus: qa.epistemicStatus,
+      })),
+      ...this.commonsItems
+        .filter((item) => item.streamType === 'verified-qa' || item.streamType === 'living-guide')
+        .map((item) => ({
+          id: item.id,
+          sourcePostId: item.sourcePostId,
+          title: item.title,
+          bodyMarkdown: item.bodyMarkdown,
+          epistemicStatus: item.epistemicStatus,
+          tags: item.tags,
+        })),
+    ];
+
+    const deduped = candidates.filter(
+      (entry, index, list) => list.findIndex((other) => other.sourcePostId === entry.sourcePostId) === index,
+    );
+
+    const matches = await ComputeLiveAskFirstMatches({
+      queryText: trimmed,
+      candidates: deduped,
+      maxMatches: 3,
+      minScore: 0.24,
+    });
+    if (nonce !== this.askShareDeflectionNonce) {
+      return;
+    }
+    this.liveAskShareDeflections = matches;
+    this.cdr.markForCheck();
+  }
+
   public closeAskShareModal(): void {
     const trigger = this.lastAskShareTrigger;
     this.lastAskShareTrigger = null;
     this.isAskShareModalOpen = false;
+    this.liveAskShareDeflections = [];
     this.askShareValidationErrors = {};
     this.askShareError = null;
     this.cdr.markForCheck();
     this.restoreOverlayTriggerFocus(trigger, '#mjc-header-ask-share-btn');
   }
 
-  public onOverlayKeydown(event: KeyboardEvent, kind: 'detail' | 'ask-share'): void {
+  public onOverlayKeydown(event: KeyboardEvent, kind: 'detail' | 'ask-share' | 'digest'): void {
     if (event.key !== 'Tab') {
       return;
     }
     const dialogEl =
-      kind === 'detail' ? this.detailSheetDialog?.nativeElement : this.askShareDialog?.nativeElement;
+      kind === 'detail'
+        ? this.detailSheetDialog?.nativeElement
+        : kind === 'digest'
+          ? this.digestDrawerDialog?.nativeElement
+          : this.askShareDialog?.nativeElement;
     if (!dialogEl) {
       return;
     }
@@ -1957,7 +2338,7 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
     });
   }
 
-  private scheduleOverlayInitialFocus(kind: 'detail' | 'ask-share'): void {
+  private scheduleOverlayInitialFocus(kind: 'detail' | 'ask-share' | 'digest'): void {
     queueMicrotask(() => {
       const moved = this.focusOverlayEntryControl(kind);
       if (!moved) {
@@ -1968,9 +2349,13 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
     });
   }
 
-  private focusOverlayEntryControl(kind: 'detail' | 'ask-share'): boolean {
+  private focusOverlayEntryControl(kind: 'detail' | 'ask-share' | 'digest'): boolean {
     const dialogEl =
-      kind === 'detail' ? this.detailSheetDialog?.nativeElement : this.askShareDialog?.nativeElement;
+      kind === 'detail'
+        ? this.detailSheetDialog?.nativeElement
+        : kind === 'digest'
+          ? this.digestDrawerDialog?.nativeElement
+          : this.askShareDialog?.nativeElement;
     if (!dialogEl) {
       return false;
     }
@@ -2156,22 +2541,67 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
     if (this.isSynthesizingFeed) return;
     this.isSynthesizingFeed = true;
     this.threadSynthesisResult = null;
+    this.structuredThreadSynthesis = null;
+    this.detailErrorMessage = null;
+    this.streamActionError = null;
     this.cdr.markForCheck();
 
     const post = this.feedPosts.find((p) => p.id === postId);
+    const commonsMatch = this.commonsItems.find((item) => item.sourcePostId === postId);
+    const title = commonsMatch?.title ?? post?.title ?? postId;
+    const bodyMarkdown = commonsMatch?.bodyMarkdown ?? post?.bodyMarkdown ?? '';
+    const replies = commonsMatch?.replies ?? [];
+
     try {
       const provider = Metadata.Provider;
       if (provider?.CurrentUser) {
         const actionClient = new GraphQLActionClient(provider as GraphQLDataProvider);
-        const res = await actionClient.RunAction(COMMUNITY_ACTION_IDS.LivingThreadSynthesis, [
+        const actionId = await ResolveCommunityActionIDWithRunView('LivingThreadSynthesis');
+        if (!actionId) {
+          const errMsg =
+            'Community.LivingThreadSynthesis action is missing or disabled in the MJ: Actions catalog.';
+          this.detailErrorMessage = errMsg;
+          this.streamActionError = errMsg;
+          this.threadSynthesisResult = null;
+          this.structuredThreadSynthesis = null;
+          return;
+        }
+        const res = await actionClient.RunAction(actionId, [
           { Name: 'RootPostID', Value: postId, Type: 'Input' },
         ]);
-        this.threadSynthesisResult = res.Message || `Living synthesis updated for "${post?.title ?? postId}".`;
+        if (res?.Success !== true) {
+          const errMsg = res?.Message || 'Living thread synthesis failed.';
+          this.detailErrorMessage = errMsg;
+          this.streamActionError = errMsg;
+          this.threadSynthesisResult = null;
+          this.structuredThreadSynthesis = null;
+          return;
+        }
+        this.threadSynthesisResult = res.Message || `Living synthesis updated for "${title}".`;
+        this.structuredThreadSynthesis = ParseLivingSynthesisPayload({
+          rootPostId: postId,
+          title,
+          bodyMarkdown,
+          replies,
+          actionResult: res,
+          allowClientFallback: false,
+        });
       } else {
-        this.threadSynthesisResult = `Synthesized key takeaways for "${post?.title ?? postId}".`;
+        this.threadSynthesisResult = `Synthesized key takeaways for "${title}".`;
+        this.structuredThreadSynthesis = BuildClientLivingSynthesis({
+          rootPostId: postId,
+          title,
+          bodyMarkdown,
+          replies,
+          actionMessage: this.threadSynthesisResult,
+        });
       }
     } catch (err) {
-      this.threadSynthesisResult = err instanceof Error ? err.message : 'Synthesis failed.';
+      const errMsg = err instanceof Error ? err.message : 'Synthesis failed.';
+      this.detailErrorMessage = errMsg;
+      this.streamActionError = errMsg;
+      this.threadSynthesisResult = null;
+      this.structuredThreadSynthesis = null;
     } finally {
       this.isSynthesizingFeed = false;
       this.cdr.markForCheck();
@@ -2415,7 +2845,14 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
       try {
         AssertValidUUID(item.id, 'answerPostId');
         const actionClient = new GraphQLActionClient(provider as GraphQLDataProvider);
-        const res = await actionClient.RunAction(COMMUNITY_ACTION_IDS.EpistemicAnswerGrading, [
+        const gradeActionId = await ResolveCommunityActionIDWithRunView('EpistemicAnswerGrading');
+        if (!gradeActionId) {
+          this.qaActionMessage =
+            'Community.EpistemicAnswerGrading action is missing or disabled in MJ: Actions.';
+          this.cdr.markForCheck();
+          return;
+        }
+        const res = await actionClient.RunAction(gradeActionId, [
           { Name: 'AnswerPostID', Value: item.id, Type: 'Input' },
         ]);
         if (!res.Success) {
@@ -2423,8 +2860,8 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
           this.cdr.markForCheck();
           return;
         }
-        const statusParam = res.Params?.find((p) => p.Name === 'EpistemicStatus')?.Value;
-        const scoreParam = res.Params?.find((p) => p.Name === 'ConfidenceScore')?.Value;
+        const statusParam = GetActionOutputValue(res, 'EpistemicStatus');
+        const scoreParam = GetActionOutputValue(res, 'ConfidenceScore');
         if (typeof statusParam === 'string' && statusParam.trim()) {
           const parsedStatus = this.normalizeEpistemicStatus(statusParam);
           if (parsedStatus) {

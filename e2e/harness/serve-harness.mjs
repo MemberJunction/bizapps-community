@@ -131,8 +131,26 @@ export async function StartHarnessServer() {
         sendJson(res, 200, { Success: true });
         return;
       }
+      if (urlPath === '/api/harness/faults' && req.method === 'POST') {
+        const body = await readJsonBody(req);
+        store.setFaults(body ?? {});
+        sendJson(res, 200, { Success: true });
+        return;
+      }
       if (urlPath === '/api/harness/state' && req.method === 'GET') {
         sendJson(res, 200, store.getDebugSnapshot());
+        return;
+      }
+      if (urlPath === '/api/harness/user-settings' && req.method === 'GET') {
+        sendJson(res, 200, { settings: store.getUserSettings() });
+        return;
+      }
+      if (urlPath === '/api/harness/user-settings' && req.method === 'POST') {
+        const body = await readJsonBody(req);
+        if (typeof body?.key === 'string' && typeof body?.value === 'string') {
+          store.setUserSetting(body.key, body.value);
+        }
+        sendJson(res, 200, { Success: true, settings: store.getUserSettings() });
         return;
       }
       if (urlPath === '/api/harness/run-view' && req.method === 'POST') {
@@ -157,6 +175,12 @@ export async function StartHarnessServer() {
         const body = await readJsonBody(req);
         const data = store.executeGraphQL(body?.query ?? '', body?.variables ?? {});
         sendJson(res, 200, data);
+        return;
+      }
+      if (urlPath === '/api/harness/run-action' && req.method === 'POST') {
+        const body = await readJsonBody(req);
+        const result = await store.runAction(body?.actionID ?? '', Array.isArray(body?.params) ? body.params : []);
+        sendJson(res, 200, result);
         return;
       }
       if (urlPath === '/' || urlPath === '/index.html') {

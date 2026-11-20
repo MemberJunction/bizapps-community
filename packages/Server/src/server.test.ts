@@ -3,9 +3,17 @@ import { describe, it, mock } from 'node:test';
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { type CompositeKey, Metadata, RunView, UserInfo } from '@memberjunction/core';
-import { type AppContext } from '@memberjunction/server';
-import {
+import { type CompositeKey, Metadata, RunView, TransactionGroupBase, type TransactionResult, UserInfo } from '@memberjunction/core';
+import type { AppContext } from '@memberjunction/server';
+
+const prevDbDatabase = process.env.DB_DATABASE;
+const prevDbUsername = process.env.DB_USERNAME;
+const prevDbPassword = process.env.DB_PASSWORD;
+if (!process.env.DB_DATABASE) process.env.DB_DATABASE = 'mj_ci_unit_test';
+if (!process.env.DB_USERNAME) process.env.DB_USERNAME = 'mj_ci_unit_test';
+if (!process.env.DB_PASSWORD) process.env.DB_PASSWORD = 'mj_ci_unit_test_placeholder';
+
+const {
   BuildDeterministicGraduationUUID,
   CommunityDocumentBlocks,
   CommunityGraduationResolver,
@@ -15,7 +23,31 @@ import {
   SaveOrThrow,
   ThreadGraduationService,
   ValidateCanonPromotionCrossReferences,
-} from '../dist/index.js';
+} = await (async () => {
+  try {
+    return await import('../dist/index.js');
+  } finally {
+    if (prevDbDatabase === undefined) delete process.env.DB_DATABASE;
+    else process.env.DB_DATABASE = prevDbDatabase;
+    if (prevDbUsername === undefined) delete process.env.DB_USERNAME;
+    else process.env.DB_USERNAME = prevDbUsername;
+    if (prevDbPassword === undefined) delete process.env.DB_PASSWORD;
+    else process.env.DB_PASSWORD = prevDbPassword;
+  }
+})();
+
+class InMemoryTransactionGroup extends TransactionGroupBase {
+  public submitCalls = 0;
+
+  public override async Submit(allowRetryOfFailedTransaction?: boolean): Promise<boolean> {
+    this.submitCalls += 1;
+    return super.Submit(allowRetryOfFailedTransaction);
+  }
+
+  protected override async HandleSubmit(): Promise<TransactionResult[]> {
+    return [];
+  }
+}
 
 const ROOT_POST_ID = '23acc7cf-c227-4d33-8bb1-2558d9729711';
 const USER_1 = 'e128dd44-893f-4f2b-829f-6b9bb333d9a3';
@@ -467,27 +499,48 @@ describe('@mj-biz-apps/community-server services and document blocks', () => {
       const service = new ThreadGraduationService();
       const user = new UserInfo(undefined, { ID: USER_1 });
       const prevAnswerId = '99999999-9999-4999-8999-999999999999';
+      const txGroup = new InMemoryTransactionGroup();
 
-      const questionRow: { ID: string; AcceptedAnswerPostID: string | null; AICanonAnswerPostID: string | null; Save: () => Promise<boolean> } = {
+      const questionRow: {
+        ID: string;
+        AcceptedAnswerPostID: string | null;
+        AICanonAnswerPostID: string | null;
+        TransactionGroup?: TransactionGroupBase;
+        Save: () => Promise<boolean>;
+      } = {
         ID: QUESTION_POST_ID,
         AcceptedAnswerPostID: prevAnswerId,
         AICanonAnswerPostID: ANSWER_POST_ID,
         Save: async () => true,
       };
-      const answerRow: { ID: string; QuestionPostID: string; AIEpistemicStatus: string | null; IsAcceptedByAuthor: boolean; Save: () => Promise<boolean> } = {
+      const answerRow: {
+        ID: string;
+        QuestionPostID: string;
+        AIEpistemicStatus: string | null;
+        IsAcceptedByAuthor: boolean;
+        TransactionGroup?: TransactionGroupBase;
+        Save: () => Promise<boolean>;
+      } = {
         ID: ANSWER_POST_ID,
         QuestionPostID: QUESTION_POST_ID,
         AIEpistemicStatus: 'Canon Verified',
         IsAcceptedByAuthor: false,
         Save: async () => true,
       };
-      const prevAnswerRow: { ID: string; QuestionPostID: string; IsAcceptedByAuthor: boolean; Save: () => Promise<boolean> } = {
+      const prevAnswerRow: {
+        ID: string;
+        QuestionPostID: string;
+        IsAcceptedByAuthor: boolean;
+        TransactionGroup?: TransactionGroupBase;
+        Save: () => Promise<boolean>;
+      } = {
         ID: prevAnswerId,
         QuestionPostID: QUESTION_POST_ID,
         IsAcceptedByAuthor: true,
         Save: async () => true,
       };
 
+      mock.method(Metadata.prototype, 'CreateTransactionGroup', async () => txGroup);
       mock.method(Metadata.prototype, 'GetEntityObject', async (entityName: string, key?: CompositeKey) => {
         const keyStr = JSON.stringify(key ?? '');
         if (entityName === 'MJ_BizApps_Community: Forum Question Posts') return questionRow;
@@ -507,6 +560,33 @@ describe('@mj-biz-apps/community-server services and document blocks', () => {
       assert.equal(questionRow.AICanonAnswerPostID, ANSWER_POST_ID);
       assert.equal(answerRow.IsAcceptedByAuthor, true);
       assert.equal(prevAnswerRow.IsAcceptedByAuthor, false);
+      assert.equal(questionRow.TransactionGroup, txGroup);
+      assert.equal(answerRow.TransactionGroup, txGroup);
+      assert.equal(prevAnswerRow.TransactionGroup, txGroup);
+      assert.equal(txGroup.submitCalls, 1);
+      mock.restoreAll();
+
+      // Without atomic TransactionGroup support, ApplyCanonPromotion must fail closed
+      mock.method(Metadata.prototype, 'CreateTransactionGroup', async () => {
+        throw new Error('No TransactionGroup');
+      });
+      mock.method(Metadata.prototype, 'GetEntityObject', async (entityName: string) => {
+        if (entityName === 'MJ_BizApps_Community: Forum Question Posts') {
+          return { ID: QUESTION_POST_ID, AcceptedAnswerPostID: null, AICanonAnswerPostID: null, Save: async () => true };
+        }
+        if (entityName === 'MJ_BizApps_Community: Forum Answer Posts') {
+          return { ID: ANSWER_POST_ID, QuestionPostID: QUESTION_POST_ID, AIEpistemicStatus: 'Unverified', IsAcceptedByAuthor: false, Save: async () => true };
+        }
+        return { ID: QUESTION_POST_ID, ForumID: FORUM_1_ID, AuthorUserID: USER_1, Save: async () => true };
+      });
+      await assert.rejects(
+        () =>
+          service.ApplyCanonPromotion({
+            request: { questionPostId: QUESTION_POST_ID, canonAnswerPostId: ANSWER_POST_ID },
+            contextUser: user,
+          }),
+        /Atomic transaction support is required for Canon promotion/,
+      );
       mock.restoreAll();
     });
 

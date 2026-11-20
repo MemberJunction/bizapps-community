@@ -2,6 +2,7 @@ import { CompositeKey, Metadata, RunView, type UserInfo } from '@memberjunction/
 import { ActionParam, ActionResultSimple, RunActionParams } from '@memberjunction/actions-base';
 import { BaseAction } from '@memberjunction/actions';
 import { RegisterClass, UUIDsEqual } from '@memberjunction/global';
+import type { EpistemicAnswerStatus } from '@mj-biz-apps/community-core';
 import { COMMUNITY_ENTITY_NAMES, type mjBizAppsCommunityForumPostEntity } from '@mj-biz-apps/community-entities';
 import { ParseOptionalUUIDParam, ParseRequiredUUIDParam } from './action-id-params.ts';
 import { SaveOrFail } from './save-or-fail.ts';
@@ -11,6 +12,7 @@ interface ReplyRow {
   ID: string;
   BodyMarkdown: string;
   AuthorUserID: string | null;
+  AuthorUser?: string | null;
 }
 
 interface RootPostRow {
@@ -19,8 +21,22 @@ interface RootPostRow {
   BodyMarkdown: string;
 }
 
+interface ReplyAnswerMetadataRow {
+  ID: string;
+  IsAcceptedByAuthor: boolean;
+  IsVerifiedByModerator: boolean;
+  AIEpistemicStatus: EpistemicAnswerStatus | null;
+}
+
+interface QuestionCanonRow {
+  ID: string;
+  AcceptedAnswerPostID: string | null;
+  AICanonAnswerPostID: string | null;
+}
+
 function paramValue(params: RunActionParams, name: string): string | null {
   const value = params.Params.find((p) => p.Name.toLowerCase() === name.toLowerCase())?.Value;
+  if (typeof value === 'number') return String(value);
   return typeof value === 'string' && value.trim() ? value : null;
 }
 
@@ -29,7 +45,8 @@ function paramValue(params: RunActionParams, name: string): string | null {
  *
  * Regenerates a root post's `SummaryMarkdown` (`AIExecutiveSummary`) and `SummaryGeneratedAt`
  * (`AISynthesizedAt`) via the deterministic, bounded-input synthesis in
- * {@link SynthesizeLivingThread} — no LLM call required.
+ * {@link SynthesizeLivingThread} — emitting Key Takeaways, Open Questions, and Contributor
+ * Attribution with inline citations, no LLM call required.
  */
 @RegisterClass(BaseAction, 'Community.LivingThreadSynthesis')
 export class LivingThreadSynthesisAction extends BaseAction {
@@ -69,6 +86,9 @@ export class LivingThreadSynthesisAction extends BaseAction {
       { Name: 'AIExecutiveSummary', Value: result.aiExecutiveSummary, Type: 'Output' },
       { Name: 'AISynthesizedAt', Value: result.aiSynthesizedAt.toISOString(), Type: 'Output' },
       { Name: 'ConsideredReplyCount', Value: result.consideredReplyCount, Type: 'Output' },
+      { Name: 'KeyTakeaways', Value: JSON.stringify(result.keyTakeaways), Type: 'Output' },
+      { Name: 'OpenQuestions', Value: JSON.stringify(result.openQuestions), Type: 'Output' },
+      { Name: 'ContributorCitations', Value: JSON.stringify(result.contributorCitations), Type: 'Output' },
     ];
     return {
       Success: true,
@@ -91,6 +111,9 @@ export class LivingThreadSynthesisAction extends BaseAction {
       CompositeKey.FromID(rootPostId),
       user,
     );
+    if (!post) {
+      return fail('ROOT_POST_NOT_FOUND', `Forum Post ${rootPostId} could not be loaded for summary persistence.`);
+    }
     post.SummaryMarkdown = summaryMarkdown;
     post.SummaryGeneratedAt = synthesizedAt;
     post.SummaryReplyWatermark = replyWatermark;
@@ -100,7 +123,7 @@ export class LivingThreadSynthesisAction extends BaseAction {
   private async loadRootPost(rootPostId: string, user: UserInfo): Promise<RootPostRow | null> {
     const result = await new RunView().RunView<RootPostRow>(
       {
-        EntityName: 'MJ_BizApps_Community: Forum Posts',
+        EntityName: COMMUNITY_ENTITY_NAMES.ForumPosts,
         ExtraFilter: `ID = '${rootPostId}'`,
         Fields: ['ID', 'Title', 'BodyMarkdown'],
         ResultType: 'simple',
@@ -118,21 +141,87 @@ export class LivingThreadSynthesisAction extends BaseAction {
   ): Promise<ThreadPostForSynthesis[]> {
     const result = await new RunView().RunView<ReplyRow>(
       {
-        EntityName: 'MJ_BizApps_Community: Forum Posts',
+        EntityName: COMMUNITY_ENTITY_NAMES.ForumPosts,
         ExtraFilter: `RootPostID = '${rootPostId}'`,
-        Fields: ['ID', 'BodyMarkdown', 'AuthorUserID'],
+        Fields: ['ID', 'BodyMarkdown', 'AuthorUserID', 'AuthorUser'],
         OrderBy: '__mj_CreatedAt ASC',
         ResultType: 'simple',
         MaxRows: 500,
       },
       user,
     );
-    if (!result?.Success || !result.Results) return [];
-    return result.Results.map((row) => ({
-      authorDisplayName: row.AuthorUserID ?? 'Community Member',
-      bodyMarkdown: row.BodyMarkdown,
-      isAccepted: acceptedAnswerPostId != null && UUIDsEqual(row.ID, acceptedAnswerPostId),
-    }));
+    if (!result?.Success || !result.Results || result.Results.length === 0) return [];
+
+    const replyIds = result.Results.map((r) => r.ID);
+    const [answerMetaMap, questionRow] = await Promise.all([
+      this.loadAnswerMetadata(replyIds, user),
+      this.loadQuestionCanonRow(rootPostId, user),
+    ]);
+
+    return result.Results.map((row) => {
+      const answerMeta = answerMetaMap.get(row.ID.toLowerCase());
+      const matchesExplicitAccepted = acceptedAnswerPostId != null && UUIDsEqual(row.ID, acceptedAnswerPostId);
+      const matchesQuestionAccepted =
+        questionRow?.AcceptedAnswerPostID != null && UUIDsEqual(row.ID, questionRow.AcceptedAnswerPostID);
+      const matchesQuestionCanon =
+        questionRow?.AICanonAnswerPostID != null && UUIDsEqual(row.ID, questionRow.AICanonAnswerPostID);
+
+      return {
+        postId: row.ID,
+        authorDisplayName: row.AuthorUser?.trim() || row.AuthorUserID || 'Community Member',
+        bodyMarkdown: row.BodyMarkdown,
+        isAccepted: Boolean(matchesExplicitAccepted || matchesQuestionAccepted || answerMeta?.IsAcceptedByAuthor),
+        isVerified: Boolean(matchesQuestionCanon || answerMeta?.IsVerifiedByModerator || answerMeta?.AIEpistemicStatus === 'Canon Verified'),
+        epistemicStatus: answerMeta?.AIEpistemicStatus ?? (matchesQuestionCanon ? 'Canon Verified' : null),
+      };
+    });
+  }
+
+  private async loadAnswerMetadata(
+    replyIds: string[],
+    user: UserInfo,
+  ): Promise<Map<string, ReplyAnswerMetadataRow>> {
+    const out = new Map<string, ReplyAnswerMetadataRow>();
+    if (replyIds.length === 0) return out;
+    try {
+      const idFilter = replyIds.map((id) => `'${id}'`).join(',');
+      const res = await new RunView().RunView<ReplyAnswerMetadataRow>(
+        {
+          EntityName: COMMUNITY_ENTITY_NAMES.ForumAnswerPosts,
+          ExtraFilter: `ID IN (${idFilter})`,
+          Fields: ['ID', 'IsAcceptedByAuthor', 'IsVerifiedByModerator', 'AIEpistemicStatus'],
+          ResultType: 'simple',
+          MaxRows: 500,
+        },
+        user,
+      );
+      if (res?.Success && res.Results) {
+        for (const row of res.Results) {
+          out.set(row.ID.toLowerCase(), row);
+        }
+      }
+    } catch {
+      // Optional answer metadata enrichment.
+    }
+    return out;
+  }
+
+  private async loadQuestionCanonRow(rootPostId: string, user: UserInfo): Promise<QuestionCanonRow | null> {
+    try {
+      const res = await new RunView().RunView<QuestionCanonRow>(
+        {
+          EntityName: COMMUNITY_ENTITY_NAMES.ForumQuestionPosts,
+          ExtraFilter: `ID = '${rootPostId}'`,
+          Fields: ['ID', 'AcceptedAnswerPostID', 'AICanonAnswerPostID'],
+          ResultType: 'simple',
+          MaxRows: 1,
+        },
+        user,
+      );
+      return res?.Success ? res.Results?.[0] ?? null : null;
+    } catch {
+      return null;
+    }
   }
 }
 

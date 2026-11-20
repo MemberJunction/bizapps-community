@@ -1,7 +1,7 @@
 {
   "schemaVersion": "sf-e2e/v1",
-  "evaluatedAtIso": "2026-11-18T03:52:34.811Z",
-  "harnessUrl": "http://127.0.0.1:54255/",
+  "evaluatedAtIso": "2026-11-20T05:40:34.829Z",
+  "harnessUrl": "http://127.0.0.1:53885/",
   "fontAwesomeMode": "local-package",
   "fontAwesomeLoaded": true,
   "runtimeClassFactoryRegistrationsVerified": 26,
@@ -16,6 +16,9 @@
   "askFirstDeflectionExercised": true,
   "digestExportExercised": true,
   "digestExportPdfVerified": true,
+  "personalizedDigestExercised": true,
+  "userInfoEnginePreferencesPersisted": true,
+  "livingSynthesisCitationsVerified": true,
   "qaCanonWorkbenchExercised": true,
   "persistentReloadVerified": true,
   "livingCoAuthoringExercised": true,
@@ -58,6 +61,7 @@
     "e2e/screenshots/05-quadratic-ideation-wallet.png",
     "e2e/screenshots/06-living-co-authoring.png",
     "e2e/screenshots/07-collaboration-embedded.png",
+    "e2e/screenshots/08-personalized-digest-preview.png",
     "e2e/screenshots/community-hub.png"
   ]
 }

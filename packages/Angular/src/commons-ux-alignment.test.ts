@@ -27,7 +27,7 @@ import {
   ValidateAskShareDraft,
   type CommunityCommonsReply,
 } from './lib/community-hub-commons.ts';
-import * as CommunityHubMutations from './lib/community-hub-mutations';
+import * as CommunityHubMutations from './lib/community-hub-mutations.ts';
 import {
   COMMUNITY_HUB_PREFERENCE_KEYS,
   CommunityHubPreferences,
@@ -74,9 +74,9 @@ describe('Slice 1 UX Alignment — Sticky Top Shell, Branding & Export Wiring', 
     }
   });
 
-  it('wires exportDigestPdf() to GraphQLActionClient and COMMUNITY_ACTION_IDS.ExportDigestPDF without window.print()', () => {
+  it('wires exportDigestPdf() to GraphQLActionClient and ExportDigestPDF catalog resolution without window.print()', () => {
     assert.match(hubTs, /public async exportDigestPdf\(\): Promise<void>/);
-    assert.match(hubTs, /RunAction\(COMMUNITY_ACTION_IDS\.ExportDigestPDF/);
+    assert.match(hubTs, /ResolveCommunityActionIDWithRunView\('ExportDigestPDF'\)/);
     assert.doesNotMatch(hubTs, /window\.print\s*\(/);
   });
 });
@@ -966,7 +966,7 @@ describe('Slice 3 — Live Thread Reply, Upvote Reaction, Dynamic Directories, T
     assert.doesNotMatch(streamTs, /seed-feed-1/);
     assert.match(hubTs, /PersistDetailReply\(/);
     assert.match(hubTs, /ToggleReactionViaProvider\(/);
-    assert.match(hubTs, /CommunityHubMutations.GraduateThreadViaProvider\(/);
+    assert.match(hubTs, /GraduateThreadViaProvider\(/);
     assert.doesNotMatch(hubTs, /catch\s*\([^)]*\)\s*\{[^}]*applySeededFallback/);
     assert.match(hubHtml, /id="mjc-detail-promoted-space"/);
     assert.match(hubHtml, /id="mjc-detail-error-banner"/);

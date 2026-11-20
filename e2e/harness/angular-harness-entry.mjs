@@ -3,6 +3,7 @@ import { CommonModule } from '@angular/common';
 import { Component, ChangeDetectionStrategy, provideZonelessChangeDetection } from '@angular/core';
 import { bootstrapApplication } from '@angular/platform-browser';
 import { Metadata, RunView, UserInfo } from '@memberjunction/core';
+import { UserInfoEngine } from '@memberjunction/core-entities';
 import { GraphQLActionClient } from '@memberjunction/graphql-dataprovider';
 import { MJGlobal } from '@memberjunction/global';
 import { BaseResourceComponent } from '@memberjunction/ng-shared';
@@ -14,7 +15,6 @@ import {
   UIDriverRegistry,
   assembleSpaceContributions,
 } from '@mj-biz-apps/collaboration-ng-widgets';
-import { COMMUNITY_ACTION_IDS } from '@mj-biz-apps/community-core';
 import {
   CommunityHubResource,
   CommunityCollaborationSpaceUIDriver,
@@ -133,26 +133,48 @@ async function postHarnessJson(endpoint, body) {
   }
 }
 
-function createEntityWrapper(entityName, existingRow) {
+function createEntityWrapper(entityName, existingRow, isSavedInit = Boolean(existingRow)) {
   const record = existingRow ? { ...existingRow } : { ID: crypto.randomUUID() };
+  let isSaved = isSavedInit;
   let activeTxGroup = null;
 
-  const commitOrThrow = async (op) => {
+  const commitOrFalse = async (op) => {
     try {
       const res = await postHarnessJson('/api/harness/tx-submit', {
         ops: [{ op, entityName, record: { ...record } }],
       });
-      return Boolean(res?.Success);
+      if (res?.Success) {
+        isSaved = op === 'save';
+        entityObj.LatestResult = null;
+        return true;
+      }
+      const msg = res?.ErrorMessage || `Harness ${op} failed for ${entityName}`;
+      entityObj.LatestResult = { Message: msg, CompleteMessage: msg };
+      return false;
     } catch (err) {
-      entityObj.LatestResult = { CompleteMessage: err instanceof Error ? err.message : String(err) };
-      throw err;
+      const msg = err instanceof Error ? err.message : String(err);
+      entityObj.LatestResult = { Message: msg, CompleteMessage: msg };
+      return false;
     }
   };
 
   const entityObj = {
     LatestResult: null,
+    get IsSaved() {
+      return isSaved;
+    },
     NewRecord() {
       record.ID = crypto.randomUUID();
+      isSaved = false;
+    },
+    Get(field) {
+      return record[field];
+    },
+    Set(field, value) {
+      record[field] = value;
+    },
+    GetAll() {
+      return { ...record };
     },
     get TransactionGroup() {
       return activeTxGroup;
@@ -165,14 +187,14 @@ function createEntityWrapper(entityName, existingRow) {
         activeTxGroup.AddTransaction({ op: 'save', entityName, record: { ...record } });
         return true;
       }
-      return commitOrThrow('save');
+      return commitOrFalse('save');
     },
     async Delete() {
       if (activeTxGroup) {
         activeTxGroup.AddTransaction({ op: 'delete', entityName, record: { ...record } });
         return true;
       }
-      return commitOrThrow('delete');
+      return commitOrFalse('delete');
     },
   };
 
@@ -190,24 +212,58 @@ function createEntityWrapper(entityName, existingRow) {
 }
 
 const mockProvider = {
+  ProviderType: 'Network',
   CurrentUser: HARNESS_USER,
+  Entities: [],
+  EntityByName: () => undefined,
   async RunView(params) {
-    return postHarnessJson('/api/harness/run-view', { params });
+    const res = await postHarnessJson('/api/harness/run-view', { params });
+    if (params?.ResultType !== 'simple' && Array.isArray(res?.Results)) {
+      return {
+        ...res,
+        Results: res.Results.map((row) => createEntityWrapper(params.EntityName, row, true)),
+      };
+    }
+    return res;
   },
   async RunViews(paramsArray) {
     return Promise.all(paramsArray.map((p) => this.RunView(p)));
   },
   async GetEntityObject(entityName, compositeKeyOrUser) {
     let existing = null;
-    const keyId = compositeKeyOrUser?.KeyValuePairs?.[0]?.Value ?? compositeKeyOrUser?.ID;
+    const keyId = Array.isArray(compositeKeyOrUser?.KeyValuePairs)
+      ? compositeKeyOrUser.KeyValuePairs[0]?.Value
+      : null;
     if (keyId) {
       const res = await postHarnessJson('/api/harness/entity-by-id', { entityName, id: keyId });
       existing = res?.record ?? null;
       if (!existing) return null;
     }
-    return createEntityWrapper(entityName, existing);
+    return createEntityWrapper(entityName, existing, Boolean(existing));
   },
   async ExecuteGQL(query, variables) {
+    if (String(query).includes('RunAction(') && variables?.input?.ActionID) {
+      const input = variables.input;
+      window.__executedActions = window.__executedActions || [];
+      window.__executedActions.push({ actionName: input.ActionID, params: input.Params ?? [] });
+      const actionResult = await postHarnessJson('/api/harness/run-action', {
+        actionID: input.ActionID,
+        params: Array.isArray(input.Params) ? input.Params : [],
+      });
+      return {
+        RunAction: {
+          Success: Boolean(actionResult?.Success),
+          Message: actionResult?.Message ?? '',
+          ResultCode: actionResult?.ResultCode ?? (actionResult?.Success ? 'SUCCESS' : 'FAILED'),
+          ResultData:
+            typeof actionResult?.ResultData === 'string'
+              ? actionResult.ResultData
+              : actionResult?.ResultData != null
+                ? JSON.stringify(actionResult.ResultData)
+                : null,
+        },
+      };
+    }
     return postHarnessJson('/api/harness/graphql', { query, variables });
   },
   async CreateTransactionGroup() {
@@ -227,66 +283,14 @@ const mockProvider = {
 Metadata.Provider = mockProvider;
 RunView.Provider = mockProvider;
 
-function buildSamplePdfBase64(spaceName) {
-  const safeName = String(spaceName || 'Community').replace(/[()\\]/g, '');
-  const stream = `BT /F1 12 Tf 50 720 Td (${safeName} Weekly Community Digest) Tj ET`;
-  const pdf = [
-    '%PDF-1.4',
-    '1 0 obj << /Type /Catalog /Pages 2 0 R >> endobj',
-    '2 0 obj << /Type /Pages /Kids [3 0 R] /Count 1 >> endobj',
-    '3 0 obj << /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R >> endobj',
-    `4 0 obj << /Length ${stream.length} >> stream\n${stream}\nendstream endobj`,
-    'trailer << /Root 1 0 R >>',
-    '%%EOF',
-  ].join('\n');
-  return btoa(pdf);
-}
+// Configure the real UserInfoEngine against mockProvider so GetSetting, SetSetting, and
+// SetSettingDebounced execute their genuine 'MJ: User Settings' entity persistence path with zero
+// method monkey-patching and zero fallback HTTP masking.
+await UserInfoEngine.Instance.Config(true, HARNESS_USER, mockProvider);
+window.__userInfoEngine = UserInfoEngine.Instance;
 
-GraphQLActionClient.prototype.RunAction = async function (actionName, params) {
-  window.__executedActions = window.__executedActions || [];
-  window.__executedActions.push({ actionName, params });
-
-  const getParam = (name) => params?.find((p) => p.Name === name)?.Value ?? '';
-
-  if (actionName === COMMUNITY_ACTION_IDS.AskFirstDeflection) {
-    const query = getParam('QueryText');
-    return {
-      Success: true,
-      ResultCode: 'DEFLECTED',
-      Message: `Deflected "${query}" with verified Canon answer: "How do I rotate my API key without downtime?" (94% confidence).`,
-      Params: [],
-    };
-  }
-  if (actionName === COMMUNITY_ACTION_IDS.ExportDigestPDF) {
-    const spaceName = getParam('SpaceName');
-    return {
-      Success: true,
-      ResultCode: 'SUCCESS',
-      Message: 'Digest PDF generated.',
-      Params: [{ Name: 'PDFBase64', Value: buildSamplePdfBase64(spaceName), Type: 'Output' }],
-    };
-  }
-  if (actionName === COMMUNITY_ACTION_IDS.LivingThreadSynthesis) {
-    return {
-      Success: true,
-      ResultCode: 'SUCCESS',
-      Message: 'Synthesized 3 key engineering takeaways and 2 follow-up action items.',
-      Params: [],
-    };
-  }
-  if (actionName === COMMUNITY_ACTION_IDS.EpistemicAnswerGrading) {
-    return {
-      Success: true,
-      ResultCode: 'SUCCESS',
-      Message: 'Epistemic grading complete: Canon Verified (0.95 confidence).',
-      Params: [
-        { Name: 'EpistemicStatus', Value: 'Canon Verified', Type: 'Output' },
-        { Name: 'ConfidenceScore', Value: 0.95, Type: 'Output' },
-        { Name: 'VerificationStatus', Value: 'AI_Verified', Type: 'Output' },
-      ],
-    };
-  }
-  return { Success: true, ResultCode: 'SUCCESS', Message: `Action ${actionName} executed.`, Params: [] };
+window.__runGraphQLAction = async (actionId, params = []) => {
+  return new GraphQLActionClient(mockProvider).RunAction(actionId, params);
 };
 
 const harnessMode = new URLSearchParams(window.location.search).get('mode');

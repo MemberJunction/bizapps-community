@@ -95,8 +95,8 @@ Community is pre-release (`0.1.0`). ✅ is designed in the baseline specificatio
 
 | | Feature |
 |---|---|
-| ✅ | **Ask-First Composer:** `Community.AskFirstDeflection` deterministically scores solved Q&A answers against the member's draft query (keyword-overlap today; the graceful fallback a future vector/AI search layers onto), surfaced client-side by `AskFirstDeflectionWidgetComponent`. |
-| ✅ | **Living Thread Synthesis (`AISummary`):** `Community.LivingThreadSynthesis` rebuilds a bounded (`MaxReplyCount`/`MaxCharsPerPost`) executive-summary markdown, surfacing the thread's accepted answer first. |
+| ✅ | **Ask-First Composer:** `Community.AskFirstDeflection` fuses semantic embedding cosine similarity (`0.65`) with stemmed lexical/tag overlap (`0.35`) and epistemic canon boosts (`Verified > Accepted > Unverified`), surfaced live while typing by `AskFirstDeflectionWidgetComponent` and `CommunityHubResource`'s Ask/Share modal. |
+| ✅ | **Living Thread Synthesis (`AISummary`):** `Community.LivingThreadSynthesis` rebuilds a bounded (`MaxReplyCount`/`MaxCharsPerPost`) executive-summary markdown with structured `KeyTakeaways`, `OpenQuestions`, and `ContributorCitations` (`[n]` attribution), rendered cleanly inside the thread detail drawer. |
 | ✅ | **Dual Human + AI Epistemic Answer Grading (`ForumQuestionPost` & `ForumAnswerPost`):** the Q&A single-accepted-answer invariant is enforced server-side (`AnswerPostServerDriver.ValidateAcceptedAnswerChange`), and `Community.EpistemicAnswerGrading` grades every answer 0.000–1.000, setting `VerificationStatus = 'AI_Verified'` only at or above 0.85. |
 | ✅ | **Participatory Point-Allocation & Quadratic Ideation (`ForumIdeaCampaign` & `ForumIdeaPost`):** `100-point` member wallets and Quadratic Voting ($\text{Cost} = \text{Votes}^2$) are enforced both server-side (`IdeaPostServerDriver.ValidateAllocationChange`, with refund-on-revote) and live client-side (`QuadraticVotingSliderComponent`). |
 | 🚧 | **Native Polls & Structured Intakes (`ForumFormPost`):** hard-FK integration with **`BizApps Forms`** (`__mj_BizAppsForms`) for inline single-click polls, multi-question surveys, and structured case intakes. |
@@ -107,9 +107,9 @@ Community is pre-release (`0.1.0`). ✅ is designed in the baseline specificatio
 
 | | Feature |
 |---|---|
-| 🗺️ | **Per-Member Personalized Brief:** each member's daily or weekly digest is scored individually using their `MJ: Content Item Tags` affinity vector, role/specialty attributes on `Person`, and thread velocity. |
-| 🗺️ | **"Needs Your Expertise" Prompts:** digests highlight 1–2 unanswered peer questions that match the recipient's demonstrated expertise. |
-| 🗺️ | **Zero-Login Inbound Reply-by-Email:** HMAC-authenticated `Reply-To` addresses let members reply to any thread—and attach files—directly from their email client. |
+| ✅ | **Per-Member Personalized Brief (`CommunityEmbeddingPersonalizationService` + `Community.SendPersonalizedDigest`):** ranks candidate threads per member using pluggable `ICommunityEmbeddingProvider` (`DeterministicSemanticEmbeddingProvider` out of the box, or MJ `AIEngine` embeddings at runtime), recency half-life decay, epistemic boosts, and diversity-aware re-ranking—with `"Why this was picked for you"` explanations surfaced both in email and inside `CommunityHubResource`'s **Personalized Digest** preview drawer. |
+| ✅ | **MJ `CommunicationEngine` Integration & Test Driver (`CommunityTestCommunicationProvider`):** dispatches personalized HTML + plaintext digest emails through MemberJunction's `CommunicationEngine` and `BaseCommunicationProvider` (`'Community Test Email Driver'` for zero-credential CI/E2E/staging verification). |
+| ✅ | **Zero-Login Inbound Reply-by-Email (`Community.ProcessInboundDigestReply`):** every digest item carries an HMAC-SHA256 signed `Reply-To` token (`reply+<payload>.<sig>@<domain>`) binding member, forum, root post, email, and TTL. Inbound replies verify the signature, re-check server-side `Forum`/`ForumMember` posting permissions, strip quoted email chrome, and persist a reply `ForumPost`. |
 
 ### Collaboration Bridge, Anonymous Access & AI Context
 
@@ -192,9 +192,22 @@ See [**Extensibility Architecture (`docs/EXTENSIBILITY_PLAN.md`)**](docs/EXTENSI
 
 ---
 
+### Zero-CAC Higher Logic Wedge Architecture
+
+`BizApps Community` delivers the complete association & member-community replacement wedge natively on MemberJunction with zero external SaaS seat fees:
+
+1. **Embedding Personalization (`@mj-biz-apps/community-core`):** `CommunityEmbeddingPersonalizationService` (`BaseSingleton`) uses a pluggable `ICommunityEmbeddingProvider` (`DeterministicSemanticEmbeddingProvider` with 128-dim concept clusters + stemmed feature hashing + character trigrams out of the box, or MJ `AIEngine` embeddings at runtime) to build recency-decayed member interest profiles and re-rank candidate threads with diversity penalties and `"Why this was picked for you"` explanations.
+2. **MJ `CommunicationEngine` Digest & Reply-by-Email (`@mj-biz-apps/community-actions`):** `Community.SendPersonalizedDigest` dispatches per-member HTML + plaintext digests through `CommunicationEngine` (`CommunityTestCommunicationProvider` registered as `'Community Test Email Driver'` for deterministic CI/staging testing). Each item carries an HMAC-SHA256 `Reply-To` token (`reply+<payload>.<sig>@<domain>`) verified by `Community.ProcessInboundDigestReply`, which re-checks server-side posting permissions, strips quoted email chrome, and appends a reply `ForumPost`.
+3. **Hybrid Ask-First, Living Synthesis & 1-Click Graduation:** `AskFirstDeflectionAction` fuses semantic cosine similarity (`0.65`) with lexical/tag overlap (`0.35`) and epistemic canon boosts; `LivingThreadSynthesisAction` emits structured `KeyTakeaways`, `OpenQuestions`, and `ContributorCitations`; and `ThreadGraduationService.GraduateThreadToSpace` idempotently graduates threads into Collaboration `Spaces` carrying the synthesized summary onto the Space and starter `BizApps Tasks` task.
+4. **Hub UX & `UserInfoEngine` Preferences (`@mj-biz-apps/community-ng`):** `CommunityHubResource` renders the **Personalized Digest** preview drawer, live semantic Ask-First deflection, structured synthesis citations, 1-click Working Space link, and persists cadence/topic/tab preferences via `UserInfoEngine.Instance`.
+
+See [**Zero-CAC Higher Logic Wedge Specification (`.mj/specs/bizapps-community-zero-cac-higher-logic-wedge/spec.md`)**](.mj/specs/bizapps-community-zero-cac-higher-logic-wedge/spec.md).
+
+---
+
 ## Quality & Verification
 
-`BizApps Community` ships across **8 packages**, **25 entities** (the full `__mj_BizAppsCommunity` schema — `CommunitySpace`, `ForumType`, `PostType`, `ForumRoleType`, `Forum`, `ForumIdeaCampaign`, `ForumMember`, `ForumTopicTag`, `ForumPost` and its 8 `IsA` subtypes, `ForumInteractiveSession`, `ForumPostTag`, `ForumPostReaction`, `ForumPostAttachment`, `ForumIdeaAllocation`, `CommunityMemberProfile`, `ForumSubscription`, and `ForumPostFlag`), and **4 Community Actions** (`Community.AskFirstDeflection`, `Community.EpistemicAnswerGrading`, `Community.LivingThreadSynthesis`, `Community.ExportDigestPDF`), each verified by `npm test`:
+`BizApps Community` ships across **8 packages**, **25 entities** (the full `__mj_BizAppsCommunity` schema — `CommunitySpace`, `ForumType`, `PostType`, `ForumRoleType`, `Forum`, `ForumIdeaCampaign`, `ForumMember`, `ForumTopicTag`, `ForumPost` and its 8 `IsA` subtypes, `ForumInteractiveSession`, `ForumPostTag`, `ForumPostReaction`, `ForumPostAttachment`, `ForumIdeaAllocation`, `CommunityMemberProfile`, `ForumSubscription`, and `ForumPostFlag`), and **6 Community Actions** (`Community.AskFirstDeflection`, `Community.EpistemicAnswerGrading`, `Community.LivingThreadSynthesis`, `Community.ExportDigestPDF`, `Community.SendPersonalizedDigest`, `Community.ProcessInboundDigestReply`), each verified by `pnpm run test`:
 
 - **Domain rules & drivers** (`@mj-biz-apps/community-core`, `-core-entities-server`): quadratic voting with refund-on-revote, the Q&A single-accepted-answer invariant, poll single/multi-choice enforcement, and Interactive Component attempt limits + per-`ScoringMode` leaderboard resolution — all pure-function tested, then re-verified through the real server drivers that call them.
 - **`CommunityEngineBase`** (`@mj-biz-apps/community-engine-base`): a `BaseEngine<CommunityEngineBase>` subclass (matching `CollaborationEngineBase`) with `Config()`/`Load()`-backed metadata loading, O(1) ID/Code caches invalidated on every reload, and the full 4-tier configuration cascade (`ForumType.Configuration -> Space.Configuration -> Forum.Configuration -> PostType.Configuration`).
