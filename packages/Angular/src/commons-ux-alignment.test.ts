@@ -27,7 +27,7 @@ import {
   ValidateAskShareDraft,
   type CommunityCommonsReply,
 } from './lib/community-hub-commons.ts';
-import * as CommunityHubMutations from './lib/community-hub-mutations';
+import * as CommunityHubMutations from './lib/community-hub-mutations.ts';
 import {
   COMMUNITY_HUB_PREFERENCE_KEYS,
   CommunityHubPreferences,
@@ -966,7 +966,7 @@ describe('Slice 3 — Live Thread Reply, Upvote Reaction, Dynamic Directories, T
     assert.doesNotMatch(streamTs, /seed-feed-1/);
     assert.match(hubTs, /PersistDetailReply\(/);
     assert.match(hubTs, /ToggleReactionViaProvider\(/);
-    assert.match(hubTs, /CommunityHubMutations.GraduateThreadViaProvider\(/);
+    assert.match(hubTs, /GraduateThreadViaProvider\(/);
     assert.doesNotMatch(hubTs, /catch\s*\([^)]*\)\s*\{[^}]*applySeededFallback/);
     assert.match(hubHtml, /id="mjc-detail-promoted-space"/);
     assert.match(hubHtml, /id="mjc-detail-error-banner"/);

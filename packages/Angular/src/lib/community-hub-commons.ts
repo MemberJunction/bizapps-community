@@ -1,6 +1,6 @@
 import { UUIDsEqual } from '@memberjunction/global';
 import { AssertValidUUID } from '@mj-biz-apps/community-core';
-import { CommunityGraphQLExecutor, InvokeToggleCommunityPostReactionMutation } from './community-hub-mutations';
+import { type CommunityGraphQLExecutor, InvokeToggleCommunityPostReactionMutation } from './community-hub-mutations.ts';
 import type {
   mjBizAppsCommunityForumAnswerPostEntity,
   mjBizAppsCommunityForumInteractivePostEntity,
