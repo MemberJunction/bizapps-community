@@ -13,6 +13,7 @@ import {
   ARCH_CASE_POSTS,
   ARCH_COMMUNITY_SPACES,
   ARCH_FORUM_MEMBERS,
+  ARCH_FORUM_ROLE_TYPES,
   ARCH_FORUM_SUBSCRIPTIONS,
   ARCH_FORUMS,
   ARCH_IDEA_ALLOCATIONS,
@@ -27,14 +28,19 @@ import {
   ARCH_POSTS,
   ARCH_QUESTION_POSTS,
   ARCH_SPACE_MEMBERS,
+  ARCH_SPACE_ROLE_TYPES,
+  ARCH_SPACE_TYPES,
   ARCH_TOPIC_TAGS,
   GetArchWorldSeedSummary,
 } from './arch-world-data.mjs';
 import {
+  ARCH_DEFAULT_ARTIFACT_TYPE_ID,
+  ARCH_DEFAULT_ENVIRONMENT_ID,
   BuildArchitectAssociationWorldSql,
   CountArchWorldStoreRecords,
   CreateArchWorldRuntimeBridge,
   CreatePersistedArchWorldProvider,
+  EnsureArchWorldSqliteSchema,
   ExecuteArchitectAssociationWorldSql,
   GetSharedArchWorldStore,
   LoadArchitectAssociationWorld,
@@ -696,6 +702,370 @@ function buildReplyActionParams(user, replyTarget, senderEmail, rawBody) {
   return params;
 }
 
+function transformSqlOutsideStrings(sql, transformChunk, options = {}) {
+  const stripUnicodePrefix = Boolean(options.stripUnicodePrefix);
+  let out = '';
+  let chunkStart = 0;
+  let i = 0;
+  while (i < sql.length) {
+    if (stripUnicodePrefix && sql[i] === 'N' && sql[i + 1] === "'") {
+      out += transformChunk(sql.slice(chunkStart, i));
+      i += 1; // drop N prefix before string literal
+      const strStart = i;
+      i += 1;
+      while (i < sql.length) {
+        if (sql[i] === "'" && sql[i + 1] === "'") {
+          i += 2;
+        } else if (sql[i] === "'") {
+          i += 1;
+          break;
+        } else {
+          i += 1;
+        }
+      }
+      out += sql.slice(strStart, i);
+      chunkStart = i;
+      continue;
+    }
+    if (sql[i] === "'") {
+      out += transformChunk(sql.slice(chunkStart, i));
+      const strStart = i;
+      i += 1;
+      while (i < sql.length) {
+        if (sql[i] === "'" && sql[i + 1] === "'") {
+          i += 2;
+        } else if (sql[i] === "'") {
+          i += 1;
+          break;
+        } else {
+          i += 1;
+        }
+      }
+      out += sql.slice(strStart, i);
+      chunkStart = i;
+      continue;
+    }
+    i += 1;
+  }
+  out += transformChunk(sql.slice(chunkStart));
+  return out;
+}
+
+function splitSqlStatementsOutsideStrings(sql) {
+  const stmts = [];
+  let start = 0;
+  let i = 0;
+  while (i < sql.length) {
+    if (sql[i] === "'") {
+      i += 1;
+      while (i < sql.length) {
+        if (sql[i] === "'" && sql[i + 1] === "'") {
+          i += 2;
+        } else if (sql[i] === "'") {
+          i += 1;
+          break;
+        } else {
+          i += 1;
+        }
+      }
+      continue;
+    }
+    if (sql[i] === ';') {
+      const stmt = sql.slice(start, i).trim();
+      if (stmt.length > 0) stmts.push(stmt);
+      start = i + 1;
+    }
+    i += 1;
+  }
+  const tail = sql.slice(start).trim();
+  if (tail.length > 0) stmts.push(tail);
+  return stmts;
+}
+
+function normalizeSqlServerFragmentToSqlite(fragment) {
+  return transformSqlOutsideStrings(
+    fragment,
+    (chunk) =>
+      chunk
+        .replace(/\[(?:__mj|__mj_BizAppsCollaboration|__mj_BizAppsCommunity)\]\./g, '')
+        .replace(/\[([A-Za-z0-9_]+)\]/g, '"$1"')
+        .replace(/\bSYSDATETIMEOFFSET\(\)/gi, 'CURRENT_TIMESTAMP'),
+    { stripUnicodePrefix: true },
+  );
+}
+
+function normalizePostgresFragmentToSqlite(fragment) {
+  return transformSqlOutsideStrings(fragment, (chunk) =>
+    chunk
+      .replace(/(?:__mj|__mj_BizAppsCollaboration|__mj_BizAppsCommunity)\./g, '')
+      .replace(/\bTRUE\b/g, '1')
+      .replace(/\bFALSE\b/g, '0')
+      .replace(/\bEXCLUDED\./g, 'excluded.'),
+  );
+}
+
+function stripLeadingSqlComments(stmt) {
+  return stmt
+    .split('\n')
+    .filter((line) => !line.trim().startsWith('--'))
+    .join('\n')
+    .trim();
+}
+
+function extractParenQueryAndRest(textAfterParen) {
+  let depth = 1;
+  let i = 0;
+  while (i < textAfterParen.length && depth > 0) {
+    if (textAfterParen[i] === "'") {
+      i += 1;
+      while (i < textAfterParen.length) {
+        if (textAfterParen[i] === "'" && textAfterParen[i + 1] === "'") i += 2;
+        else if (textAfterParen[i] === "'") {
+          i += 1;
+          break;
+        } else i += 1;
+      }
+      continue;
+    }
+    if (textAfterParen[i] === '(') depth += 1;
+    else if (textAfterParen[i] === ')') depth -= 1;
+    i += 1;
+  }
+  return {
+    query: textAfterParen.slice(0, i - 1).trim(),
+    rest: textAfterParen.slice(i).trim(),
+  };
+}
+
+function runSingleSqlServerStatementOnSqlite(db, stmt) {
+  // Handle: UPDATE ForumIdeaPost ... OUTER APPLY (...) agg WHERE ip.[ID] = '...'
+  if (/^UPDATE\s+\[__mj_BizAppsCommunity\]\.\[ForumIdeaPost\]/i.test(stmt) && /OUTER\s+APPLY/i.test(stmt)) {
+    const idMatch = stmt.match(/WHERE\s+ip\.\[ID\]\s*=\s*'([^']+)'/i);
+    if (!idMatch) throw new Error(`Missing IdeaPost ID in OUTER APPLY statement: ${stmt.slice(0, 140)}`);
+    const ideaId = idMatch[1];
+    db.exec(
+      `UPDATE "ForumIdeaPost" SET "TotalPointsAllocated" = COALESCE((SELECT SUM("PointsAllocated") FROM "ForumIdeaAllocation" WHERE "IdeaPostID" = '${ideaId}'), 0), "EffectiveQuadraticVotes" = COALESCE((SELECT SUM("QuadraticVotes") FROM "ForumIdeaAllocation" WHERE "IdeaPostID" = '${ideaId}'), 0.0), "UniqueBackerCount" = (SELECT COUNT(*) FROM "ForumIdeaAllocation" WHERE "IdeaPostID" = '${ideaId}') WHERE "ID" = '${ideaId}';`,
+    );
+    return;
+  }
+
+  if (/^(?:INSERT|UPDATE)\s+/i.test(stmt)) {
+    db.exec(normalizeSqlServerFragmentToSqlite(stmt));
+    return;
+  }
+
+  throw new Error(`Unrecognized SQL Server statement during transpiled execution: ${stmt.slice(0, 140)}`);
+}
+
+function executeSqlServerStatementsOnSqlite(db, sqlText) {
+  const rawStmts = splitSqlStatementsOutsideStrings(sqlText).map(stripLeadingSqlComments).filter(Boolean);
+  for (let i = 0; i < rawStmts.length; i += 1) {
+    const stmt = rawStmts[i];
+    if (/^SET\s+NOCOUNT\s+ON$/i.test(stmt)) continue;
+
+    // IF EXISTS (<query>) <updateStmt>; [ELSE IF NOT EXISTS (<query2>) <insertStmt>;]
+    const ifExistsPrefix = stmt.match(/^IF\s+EXISTS\s*\(/i);
+    if (ifExistsPrefix) {
+      const { query, rest: updateStmt } = extractParenQueryAndRest(stmt.slice(ifExistsPrefix[0].length));
+      const checkRow = db.prepare(normalizeSqlServerFragmentToSqlite(query)).get();
+      let consumedNext = false;
+      const nextStmt = rawStmts[i + 1] ?? '';
+      const elseIfPrefix = nextStmt.match(/^ELSE\s+IF\s+NOT\s+EXISTS\s*\(/i);
+      if (elseIfPrefix) {
+        consumedNext = true;
+        if (checkRow) {
+          runSingleSqlServerStatementOnSqlite(db, updateStmt);
+        } else {
+          const { query: query2, rest: insertStmt } = extractParenQueryAndRest(nextStmt.slice(elseIfPrefix[0].length));
+          if (!db.prepare(normalizeSqlServerFragmentToSqlite(query2)).get()) {
+            runSingleSqlServerStatementOnSqlite(db, insertStmt);
+          }
+        }
+      } else if (checkRow) {
+        runSingleSqlServerStatementOnSqlite(db, updateStmt);
+      }
+      if (consumedNext) i += 1;
+      continue;
+    }
+
+    // IF NOT EXISTS (<query>) <insertStmt>; [ELSE <updateStmt>;]
+    const ifNotExistsPrefix = stmt.match(/^IF\s+NOT\s+EXISTS\s*\(/i);
+    if (ifNotExistsPrefix) {
+      const { query, rest: insertStmt } = extractParenQueryAndRest(stmt.slice(ifNotExistsPrefix[0].length));
+      const existsRow = db.prepare(normalizeSqlServerFragmentToSqlite(query)).get();
+      const nextStmt = rawStmts[i + 1] ?? '';
+      const hasElse = /^ELSE\b/i.test(nextStmt);
+      if (!existsRow) {
+        runSingleSqlServerStatementOnSqlite(db, insertStmt);
+      } else if (hasElse) {
+        runSingleSqlServerStatementOnSqlite(db, nextStmt.replace(/^ELSE\s+/i, '').trim());
+      }
+      if (hasElse) i += 1;
+      continue;
+    }
+
+    runSingleSqlServerStatementOnSqlite(db, stmt);
+  }
+}
+
+function executeSqlServerBatchOnSqlite(db, sqlText) {
+  const declMarker = 'DECLARE @ArchEnvID UNIQUEIDENTIFIER;';
+  const declIdx = sqlText.indexOf(declMarker);
+  let mainSql = sqlText;
+  let envBlockSql = null;
+
+  if (declIdx >= 0) {
+    const beginMarker = 'IF @ArchEnvID IS NOT NULL AND @ArchArtifactTypeID IS NOT NULL\nBEGIN';
+    const beginIdx = sqlText.indexOf(beginMarker, declIdx);
+    const endMarker = '\nEND;';
+    const endIdx = beginIdx >= 0 ? sqlText.indexOf(endMarker, beginIdx + beginMarker.length) : -1;
+    if (beginIdx >= 0 && endIdx >= 0) {
+      envBlockSql = sqlText.slice(beginIdx + beginMarker.length, endIdx);
+      mainSql = `${sqlText.slice(0, declIdx)}\n${sqlText.slice(endIdx + endMarker.length)}`;
+    }
+  }
+
+  executeSqlServerStatementsOnSqlite(db, mainSql);
+
+  if (envBlockSql) {
+    const envRow =
+      db.prepare('SELECT "ID" FROM "Environment" WHERE "IsDefault" = 1 LIMIT 1').get() ??
+      db.prepare('SELECT "ID" FROM "Environment" ORDER BY rowid ASC LIMIT 1').get();
+    const artTypeRow = db.prepare('SELECT "ID" FROM "ArtifactType" ORDER BY rowid ASC LIMIT 1').get();
+    if (envRow?.ID && artTypeRow?.ID) {
+      const resolvedBlock = transformSqlOutsideStrings(envBlockSql, (chunk) =>
+        chunk
+          .replace(/@ArchEnvID\b/g, `'${envRow.ID}'`)
+          .replace(/@ArchArtifactTypeID\b/g, `'${artTypeRow.ID}'`),
+      );
+      executeSqlServerStatementsOnSqlite(db, resolvedBlock);
+    }
+  }
+}
+
+function executePostgresBatchOnSqlite(db, sqlText) {
+  const doStart = sqlText.indexOf('DO $$');
+  const beginMarker = 'BEGIN';
+  const beginIdx = doStart >= 0 ? sqlText.indexOf(beginMarker, doStart) : -1;
+  const endMarker = 'END $$;';
+  const endIdx = beginIdx >= 0 ? sqlText.lastIndexOf(endMarker) : -1;
+  if (beginIdx < 0 || endIdx < 0) {
+    throw new Error('Expected PostgreSQL DO $$ DECLARE ... BEGIN ... END $$; block.');
+  }
+  let body = sqlText.slice(beginIdx + beginMarker.length, endIdx);
+
+  const envStartMarker = 'SELECT "ID" INTO v_default_environment_id';
+  const envStartIdx = body.indexOf(envStartMarker);
+  let envBlockSql = null;
+  if (envStartIdx >= 0) {
+    const envIfMarker = 'IF v_default_environment_id IS NOT NULL AND v_any_artifact_type_id IS NOT NULL THEN';
+    const envIfIdx = body.indexOf(envIfMarker, envStartIdx);
+    const envEndIdx = envIfIdx >= 0 ? body.indexOf('END IF;', envIfIdx) : -1;
+    if (envIfIdx >= 0 && envEndIdx >= 0) {
+      envBlockSql = body.slice(envIfIdx + envIfMarker.length, envEndIdx);
+      body = `${body.slice(0, envStartIdx)}\n${body.slice(envEndIdx + 'END IF;'.length)}`;
+    }
+  }
+
+  const rawStmts = splitSqlStatementsOutsideStrings(body).map(stripLeadingSqlComments).filter(Boolean);
+  for (let i = 0; i < rawStmts.length; i += 1) {
+    const stmt = rawStmts[i];
+    const ifExistsPrefix = stmt.match(/^IF\s+EXISTS\s*\(/i);
+    if (ifExistsPrefix) {
+      const { query, rest } = extractParenQueryAndRest(stmt.slice(ifExistsPrefix[0].length));
+      const updateStmt = rest.replace(/^THEN\s+/i, '').trim();
+      const nextStmt = rawStmts[i + 1] ?? '';
+      const elsIfPrefix = nextStmt.match(/^ELSIF\s+NOT\s+EXISTS\s*\(/i);
+      const endIfStmt = rawStmts[i + 2] ?? '';
+      if (!elsIfPrefix || !/^END\s+IF$/i.test(endIfStmt)) {
+        throw new Error(`Unexpected PL/pgSQL IF EXISTS block shape: ${stmt.slice(0, 120)}`);
+      }
+      const { query: query2, rest: rest2 } = extractParenQueryAndRest(nextStmt.slice(elsIfPrefix[0].length));
+      const insertStmt = rest2.replace(/^THEN\s+/i, '').trim();
+      if (db.prepare(normalizePostgresFragmentToSqlite(query)).get()) {
+        db.exec(normalizePostgresFragmentToSqlite(updateStmt));
+      } else if (!db.prepare(normalizePostgresFragmentToSqlite(query2)).get()) {
+        db.exec(normalizePostgresFragmentToSqlite(insertStmt));
+      }
+      i += 2;
+      continue;
+    }
+
+    if (!/^(?:INSERT|UPDATE)\s+/i.test(stmt)) {
+      throw new Error(`Unrecognized PostgreSQL statement during transpiled execution: ${stmt.slice(0, 140)}`);
+    }
+    db.exec(normalizePostgresFragmentToSqlite(stmt));
+  }
+
+  if (envBlockSql) {
+    const envRow =
+      db.prepare('SELECT "ID" FROM "Environment" WHERE "IsDefault" = 1 LIMIT 1').get() ??
+      db.prepare('SELECT "ID" FROM "Environment" ORDER BY rowid ASC LIMIT 1').get();
+    const artTypeRow = db.prepare('SELECT "ID" FROM "ArtifactType" ORDER BY rowid ASC LIMIT 1').get();
+    if (envRow?.ID && artTypeRow?.ID) {
+      const resolvedBlock = transformSqlOutsideStrings(envBlockSql, (chunk) =>
+        chunk
+          .replace(/\bv_default_environment_id\b/g, `'${envRow.ID}'`)
+          .replace(/\bv_any_artifact_type_id\b/g, `'${artTypeRow.ID}'`),
+      );
+      for (const innerStmt of splitSqlStatementsOutsideStrings(resolvedBlock).map(stripLeadingSqlComments).filter(Boolean)) {
+        if (!/^(?:INSERT|UPDATE)\s+/i.test(innerStmt)) {
+          throw new Error(`Unrecognized PostgreSQL env-block statement: ${innerStmt.slice(0, 140)}`);
+        }
+        db.exec(normalizePostgresFragmentToSqlite(innerStmt));
+      }
+    }
+  }
+}
+
+/**
+ * Transpiles and executes a generated `'sqlserver'` or `'postgres'` `ARCH-WORLD` batch against a
+ * strict-FK SQLite database (`PRAGMA foreign_keys = ON;`), returning verified 27-table counts.
+ */
+export function ExecuteTranspiledArchWorldDialectSql({
+  dialect,
+  sqlText,
+  sqliteFilePath,
+  seedCoreCatalogs = true,
+}) {
+  const db = new DatabaseSync(sqliteFilePath);
+  try {
+    EnsureArchWorldSqliteSchema(db);
+    db.exec('PRAGMA foreign_keys = ON;');
+    if (seedCoreCatalogs) {
+      db.prepare(
+        'INSERT INTO "Environment" ("ID", "Name", "IsDefault") VALUES (?, ?, ?) ON CONFLICT("ID") DO NOTHING',
+      ).run(ARCH_DEFAULT_ENVIRONMENT_ID, 'Default', 1);
+      db.prepare('INSERT INTO "ArtifactType" ("ID", "Name") VALUES (?, ?) ON CONFLICT("ID") DO NOTHING').run(
+        ARCH_DEFAULT_ARTIFACT_TYPE_ID,
+        'Component',
+      );
+    }
+
+    db.exec('BEGIN IMMEDIATE;');
+    try {
+      if (dialect === 'sqlserver') {
+        executeSqlServerBatchOnSqlite(db, sqlText);
+      } else if (dialect === 'postgres') {
+        executePostgresBatchOnSqlite(db, sqlText);
+      } else {
+        throw new Error(`Unsupported transpiled test dialect "${dialect}".`);
+      }
+      db.exec('COMMIT;');
+    } catch (err) {
+      db.exec('ROLLBACK;');
+      throw err;
+    }
+    return {
+      dialect,
+      sqliteFilePath,
+      counts: QueryArchWorldSqliteCounts(db),
+    };
+  } finally {
+    db.close();
+  }
+}
+
 const SUITE_SYMBOL = Symbol.for('agpa.archWorldIntegrationRegistered');
 
 export function RegisterArchWorldIntegrationTests() {
@@ -853,11 +1223,44 @@ export function RegisterArchWorldIntegrationTests() {
       }
     });
 
-    it('generates and executes complete 22-table FK-safe SQL (SQL Server, PostgreSQL, SQLite) with strict foreign key enforcement and idempotent double-load', async () => {
+    it('generates and executes complete 27-table FK-safe SQL (SQL Server, PostgreSQL, SQLite) with strict foreign key enforcement and idempotent double-load', async () => {
       const sqlServer = BuildArchitectAssociationWorldSql('sqlserver');
       const postgres = BuildArchitectAssociationWorldSql('postgres');
 
-      // Verify all 22 tables/collections and every row ID appear in both SQL Server and PostgreSQL dialects
+      // Verify all 27 tables/collections, reference catalogs, and every row ID appear in both SQL Server and PostgreSQL dialects
+      assert.match(sqlServer, /\[__mj_BizAppsCollaboration\]\.\[SpaceType\]/);
+      assert.match(sqlServer, /\[__mj_BizAppsCollaboration\]\.\[SpaceRoleType\]/);
+      assert.match(sqlServer, /\[__mj_BizAppsCommunity\]\.\[ForumRoleType\]/);
+      assert.match(postgres, /__mj_BizAppsCollaboration\."SpaceType"/);
+      assert.match(postgres, /INSERT INTO __mj_BizAppsCollaboration\."SpaceRoleType"/);
+      assert.match(postgres, /INSERT INTO "ForumRoleType"/);
+
+      // Topological FK order check: SpaceType & SpaceRoleType BEFORE Space & SpaceMember; ForumRoleType BEFORE ForumMember
+      for (const script of [sqlServer, postgres]) {
+        const spaceTypeIdx = script.indexOf('SpaceType');
+        const spaceRoleTypeIdx = script.indexOf('SpaceRoleType');
+        const forumRoleTypeIdx = script.indexOf('ForumRoleType');
+        const spaceIdx = script.indexOf('2B2C14A8-CCD6-4835-A1BD-969C54236D57');
+        const spaceMemberIdx = script.indexOf('A7C40450-4E12-4B8F-9A10-000000000001');
+        const forumMemberIdx = script.indexOf('A7C40480-4E12-4B8F-9A10-000000000001');
+        assert.ok(spaceTypeIdx >= 0 && spaceTypeIdx < spaceIdx, 'SpaceType must precede Space');
+        assert.ok(spaceRoleTypeIdx >= 0 && spaceRoleTypeIdx < spaceMemberIdx, 'SpaceRoleType must precede SpaceMember');
+        assert.ok(forumRoleTypeIdx >= 0 && forumRoleTypeIdx < forumMemberIdx, 'ForumRoleType must precede ForumMember');
+      }
+
+      for (const st of ARCH_SPACE_TYPES) {
+        assert.ok(sqlServer.includes(st.ID), `sqlServer missing SpaceType ${st.ID}`);
+        assert.ok(postgres.includes(st.ID), `postgres missing SpaceType ${st.ID}`);
+      }
+      for (const srt of ARCH_SPACE_ROLE_TYPES) {
+        assert.ok(sqlServer.includes(srt.ID), `sqlServer missing SpaceRoleType ${srt.ID}`);
+        assert.ok(postgres.includes(srt.ID), `postgres missing SpaceRoleType ${srt.ID}`);
+      }
+      for (const frt of ARCH_FORUM_ROLE_TYPES) {
+        assert.ok(sqlServer.includes(frt.ID), `sqlServer missing ForumRoleType ${frt.ID}`);
+        assert.ok(postgres.includes(frt.ID), `postgres missing ForumRoleType ${frt.ID}`);
+      }
+
       for (const m of ARCH_MEMBERS) {
         assert.ok(sqlServer.includes(m.ID), `sqlServer missing User ${m.ID}`);
         assert.ok(postgres.includes(m.ID), `postgres missing User ${m.ID}`);
@@ -915,6 +1318,37 @@ export function RegisterArchWorldIntegrationTests() {
       assert.match(sqlServer, /\[__mj_BizAppsCommunity\]\.\[ForumPostTag\]/);
       assert.match(postgres, /INSERT INTO "ForumPostTag"/);
 
+      const expectedCounts = {
+        SpaceType: ARCH_SPACE_TYPES.length,
+        SpaceRoleType: ARCH_SPACE_ROLE_TYPES.length,
+        ForumType: 6,
+        PostType: 13,
+        ForumRoleType: ARCH_FORUM_ROLE_TYPES.length,
+        User: ARCH_MEMBERS.length,
+        Space: ARCH_COMMUNITY_SPACES.length,
+        SpaceMember: ARCH_SPACE_MEMBERS.length,
+        CommunitySpace: ARCH_COMMUNITY_SPACES.length,
+        Forum: ARCH_FORUMS.length,
+        ForumMember: ARCH_FORUM_MEMBERS.length,
+        CommunityMemberProfile: ARCH_MEMBER_PROFILES.length,
+        ForumSubscription: ARCH_FORUM_SUBSCRIPTIONS.length,
+        ForumTopicTag: ARCH_TOPIC_TAGS.length,
+        ForumPost: ARCH_POSTS.length,
+        ForumQuestionPost: ARCH_QUESTION_POSTS.length,
+        ForumAnswerPost: 7,
+        ForumIdeaCampaign: 1,
+        ForumIdeaPost: ARCH_IDEA_POSTS.length,
+        ForumIdeaAllocation: ARCH_IDEA_ALLOCATIONS.length,
+        ForumCasePost: ARCH_CASE_POSTS.length,
+        ForumAMAPost: ARCH_AMA_POSTS.length,
+        ForumInteractivePost: ARCH_INTERACTIVE_POSTS.length,
+        ForumInteractiveSession: ARCH_INTERACTIVE_SESSIONS.length,
+        ForumPostTag: ARCH_POST_TAGS.length,
+        ForumPostReaction: ARCH_POST_REACTIONS.length,
+        ForumPostFlag: ARCH_POST_FLAGS.length,
+        Task: 0,
+      };
+
       // Execute the full SQLite relational seed TWICE in succession with PRAGMA foreign_keys = ON
       const tempDir = mkdtempSync(join(tmpdir(), 'arch-world-sql-exec-'));
       const sqlDbPath = join(tempDir, 'arch-world-sql-exec.sqlite');
@@ -923,34 +1357,101 @@ export function RegisterArchWorldIntegrationTests() {
         const exec2 = await ExecuteArchitectAssociationWorldSql({ dialect: 'sqlite', sqliteFilePath: sqlDbPath });
 
         assert.deepEqual(exec2.counts, exec1.counts, 'double-load SQL execution must yield identical counts across all tables');
-        assert.deepEqual(exec1.counts, {
-          User: ARCH_MEMBERS.length,
-          Space: ARCH_COMMUNITY_SPACES.length,
-          SpaceMember: ARCH_SPACE_MEMBERS.length,
-          CommunitySpace: ARCH_COMMUNITY_SPACES.length,
-          ForumType: 6,
-          PostType: 13,
-          ForumRoleType: 7,
-          Forum: ARCH_FORUMS.length,
-          ForumMember: ARCH_FORUM_MEMBERS.length,
-          CommunityMemberProfile: ARCH_MEMBER_PROFILES.length,
-          ForumSubscription: ARCH_FORUM_SUBSCRIPTIONS.length,
-          ForumTopicTag: ARCH_TOPIC_TAGS.length,
-          ForumPost: ARCH_POSTS.length,
-          ForumQuestionPost: ARCH_QUESTION_POSTS.length,
-          ForumAnswerPost: 7,
-          ForumIdeaCampaign: 1,
-          ForumIdeaPost: ARCH_IDEA_POSTS.length,
-          ForumIdeaAllocation: ARCH_IDEA_ALLOCATIONS.length,
-          ForumCasePost: ARCH_CASE_POSTS.length,
-          ForumAMAPost: ARCH_AMA_POSTS.length,
-          ForumInteractivePost: ARCH_INTERACTIVE_POSTS.length,
-          ForumInteractiveSession: ARCH_INTERACTIVE_SESSIONS.length,
-          ForumPostTag: ARCH_POST_TAGS.length,
-          ForumPostReaction: ARCH_POST_REACTIONS.length,
-          ForumPostFlag: ARCH_POST_FLAGS.length,
-          Task: 0,
+        assert.deepEqual(exec1.counts, expectedCounts);
+
+        // Execute transpiled SQL Server & PostgreSQL batches against fresh empty databases (ZERO pre-created ARCH-WORLD roles/users)
+        for (const [dialectName, scriptText] of [
+          ['sqlserver', sqlServer],
+          ['postgres', postgres],
+        ]) {
+          const dialectDbPath = join(tempDir, `arch-world-${dialectName}.sqlite`);
+          const preDb = new DatabaseSync(dialectDbPath);
+          try {
+            EnsureArchWorldSqliteSchema(preDb);
+            const preCounts = QueryArchWorldSqliteCounts(preDb);
+            assert.equal(preCounts.SpaceType, 0, `${dialectName}: SpaceType must start empty`);
+            assert.equal(preCounts.SpaceRoleType, 0, `${dialectName}: SpaceRoleType must start empty`);
+            assert.equal(preCounts.ForumRoleType, 0, `${dialectName}: ForumRoleType must start empty`);
+            assert.equal(preCounts.User, 0, `${dialectName}: User must start empty`);
+          } finally {
+            preDb.close();
+          }
+
+          const dExec1 = ExecuteTranspiledArchWorldDialectSql({
+            dialect: dialectName,
+            sqlText: scriptText,
+            sqliteFilePath: dialectDbPath,
+          });
+          const dExec2 = ExecuteTranspiledArchWorldDialectSql({
+            dialect: dialectName,
+            sqlText: scriptText,
+            sqliteFilePath: dialectDbPath,
+          });
+          assert.deepEqual(dExec1.counts, expectedCounts, `${dialectName} must seed all 27 tables cleanly on empty schema`);
+          assert.deepEqual(dExec2.counts, dExec1.counts, `${dialectName} double-load must be strictly idempotent`);
+
+          // Independent membership reads (JOINs across SpaceMember -> SpaceRoleType & ForumMember -> ForumRoleType)
+          const verifyDb = new DatabaseSync(dialectDbPath);
+          try {
+            verifyDb.exec('PRAGMA foreign_keys = ON;');
+            const contribMembers = verifyDb
+              .prepare(
+                'SELECT sm."ID", srt."Code" FROM "SpaceMember" sm INNER JOIN "SpaceRoleType" srt ON sm."SpaceRoleTypeID" = srt."ID" WHERE srt."ID" = ?',
+              )
+              .all('A7C40010-4E12-4B8F-9A10-000000000003');
+            assert.ok(contribMembers.length > 0, `${dialectName}: SpaceMember contributor role A7C40010-...0003 must resolve`);
+            const forumJoin = verifyDb
+              .prepare(
+                'SELECT fm."ID", frt."Code" FROM "ForumMember" fm INNER JOIN "ForumRoleType" frt ON fm."ForumRoleTypeID" = frt."ID"',
+              )
+              .all();
+            assert.equal(forumJoin.length, ARCH_FORUM_MEMBERS.length, `${dialectName}: every ForumMember must join ForumRoleType`);
+          } finally {
+            verifyDb.close();
+          }
+        }
+
+        // Verify LoadArchitectAssociationWorld({ sqlPool, pgPool }) executes both live dialects + keeps ArchWorldEntityProvider synchronized
+        const syncedStateFile = join(tempDir, 'synced-state.json');
+        const syncedSqliteFile = join(tempDir, 'synced-state.sqlite');
+        const poolSqlDb = join(tempDir, 'pool-sqlserver.sqlite');
+        const poolPgDb = join(tempDir, 'pool-postgres.sqlite');
+        const syncedRes = await LoadArchitectAssociationWorld({
+          store: ResetSharedArchWorldStore({
+            persistenceFilePath: syncedStateFile,
+            sqliteFilePath: syncedSqliteFile,
+            clearPersistence: true,
+          }),
+          persistenceFilePath: syncedStateFile,
+          sqliteFilePath: syncedSqliteFile,
+          sqlPool: {
+            request: () => ({
+              batch: async (sql) =>
+                ExecuteTranspiledArchWorldDialectSql({
+                  dialect: 'sqlserver',
+                  sqlText: sql,
+                  sqliteFilePath: poolSqlDb,
+                }),
+            }),
+          },
+          pgPool: {
+            query: async (sql) =>
+              ExecuteTranspiledArchWorldDialectSql({
+                dialect: 'postgres',
+                sqlText: sql,
+                sqliteFilePath: poolPgDb,
+              }),
+          },
         });
+        assert.equal(syncedRes.sqlExecutions.length, 2);
+        // ForumPostServerEntity auto-provisions 3 cross-space CommunityMemberProfile rows during Validate/Save (26 seeded + 3 auto-created = 29).
+        assert.deepEqual(
+          syncedRes.sqliteCounts,
+          { ...expectedCounts, CommunityMemberProfile: 29 },
+          'entity-provider SQLite sync must match 27-table SQL counts (plus 3 auto-provisioned cross-space profiles)',
+        );
+        assert.deepEqual(QueryArchWorldSqliteCounts(poolSqlDb), expectedCounts);
+        assert.deepEqual(QueryArchWorldSqliteCounts(poolPgDb), expectedCounts);
 
         // Verify relational queries + strict FK enforcement directly via node:sqlite
         const db = new DatabaseSync(sqlDbPath);
