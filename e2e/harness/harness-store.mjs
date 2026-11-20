@@ -145,8 +145,8 @@ function buildInitialState() {
       },
     ],
     spaces: [
-      { ID: C.SPACE_1, Name: 'Customer Success Community', ParentID: null, InheritsMembership: false, ClosedAt: null },
-      { ID: C.SPACE_2, Name: 'Internal Security Guild', ParentID: null, InheritsMembership: false, ClosedAt: null },
+      { ID: C.SPACE_1, Name: 'Customer Success Community', OwnerID: C.HARNESS_USER_ID, ParentID: null, InheritsMembership: false, ClosedAt: null },
+      { ID: C.SPACE_2, Name: 'Internal Security Guild', OwnerID: C.HARNESS_USER_ID, ParentID: null, InheritsMembership: false, ClosedAt: null },
     ],
     communitySpaces: [
       { ID: C.SPACE_1, Slug: 'customer-success', CommunityKind: 'Product Community' },
@@ -569,6 +569,7 @@ function buildInitialState() {
         SpaceID: C.SPACE_1,
         UserID: C.HARNESS_USER_ID,
         SpaceRoleTypeID: C.SPACE_ROLE_MEMBER,
+        Band: 'Team',
         Status: 'Active',
       },
       {
@@ -576,6 +577,7 @@ function buildInitialState() {
         SpaceID: C.SPACE_2,
         UserID: C.HARNESS_USER_ID,
         SpaceRoleTypeID: C.SPACE_ROLE_MEMBER,
+        Band: 'Team',
         Status: 'Active',
       },
     ],
@@ -619,11 +621,17 @@ function buildInitialState() {
       { ID: C.ENTITY_MJ_ARTIFACTS, Name: 'MJ: Artifacts' },
       { ID: C.ENTITY_MJ_FILES, Name: 'MJ: Files' },
     ],
+    mjArtifactTypes: [
+      { ID: '0c39419d-de0c-4269-8d68-37fde9a2075e', Name: 'Image', ContentType: 'image/*', IsEnabled: true },
+      { ID: '1c39419d-de0c-4269-8d68-37fde9a2075e', Name: 'Audio', ContentType: 'audio/*', IsEnabled: true },
+      { ID: '2c39419d-de0c-4269-8d68-37fde9a2075e', Name: 'Video', ContentType: 'video/*', IsEnabled: true },
+      { ID: '48909b66-0019-4cc5-b94d-568fe36e09bb', Name: 'Generic Binary', ContentType: 'application/octet-stream', IsEnabled: true },
+    ],
     mjArtifacts: [
-      { ID: C.ART_HTML_1, Name: 'Multi-Region Rollover Latency Report', Type: 'HTML' },
-      { ID: C.ART_SVG_1, Name: 'Dual-Dialect Schema Parity Pipeline Diagram', Type: 'SVG' },
-      { ID: C.ART_JSON_1, Name: 'OpenTelemetry Webhook Retry Span Schema', Type: 'JSON' },
-      { ID: C.ART_MD_1, Name: 'Verified Key Rotation Cutover Checklist', Type: 'Markdown' },
+      { ID: C.ART_HTML_1, Name: 'Multi-Region Rollover Latency Report', Type: 'HTML', Visibility: 'Always' },
+      { ID: C.ART_SVG_1, Name: 'Dual-Dialect Schema Parity Pipeline Diagram', Type: 'SVG', Visibility: 'Always' },
+      { ID: C.ART_JSON_1, Name: 'OpenTelemetry Webhook Retry Span Schema', Type: 'JSON', Visibility: 'Always' },
+      { ID: C.ART_MD_1, Name: 'Verified Key Rotation Cutover Checklist', Type: 'Markdown', Visibility: 'Always' },
     ],
     mjArtifactVersions: [
       {
@@ -1295,6 +1303,40 @@ export function createHarnessStore() {
       return;
     }
 
+    if (entityName === 'MJ: Artifacts') {
+      if (isDelete) {
+        state.mjArtifacts = state.mjArtifacts.filter(
+          (a) => a.ID.toLowerCase() !== String(record.ID).toLowerCase(),
+        );
+        return;
+      }
+      const row = {
+        ID: record.ID || randomUUID(),
+        ...record,
+      };
+      const idx = state.mjArtifacts.findIndex((a) => a.ID.toLowerCase() === String(row.ID).toLowerCase());
+      if (idx >= 0) state.mjArtifacts[idx] = { ...state.mjArtifacts[idx], ...row };
+      else state.mjArtifacts.push(row);
+      return;
+    }
+
+    if (entityName === 'MJ: Artifact Versions') {
+      if (isDelete) {
+        state.mjArtifactVersions = state.mjArtifactVersions.filter(
+          (v) => v.ID.toLowerCase() !== String(record.ID).toLowerCase(),
+        );
+        return;
+      }
+      const row = {
+        ID: record.ID || randomUUID(),
+        ...record,
+      };
+      const idx = state.mjArtifactVersions.findIndex((v) => v.ID.toLowerCase() === String(row.ID).toLowerCase());
+      if (idx >= 0) state.mjArtifactVersions[idx] = { ...state.mjArtifactVersions[idx], ...row };
+      else state.mjArtifactVersions.push(row);
+      return;
+    }
+
     if (entityName === 'MJ_BizApps_Community: Forum Post Attachments') {
       if (isDelete) {
         state.forumPostAttachments = state.forumPostAttachments.filter(
@@ -1473,6 +1515,8 @@ export function createHarnessStore() {
         spaceItems: state.spaceItems,
         forumPostAttachments: state.forumPostAttachments,
         mjArtifacts: state.mjArtifacts,
+        mjArtifactVersions: state.mjArtifactVersions,
+        mjFiles: state.mjFiles,
       };
     },
 
@@ -1545,11 +1589,20 @@ export function createHarnessStore() {
         case 'MJ_BizApps_Collaboration: Space Role Types':
           return state.spaceRoles;
         case 'MJ_BizApps_Collaboration: Space Members': {
+          let rows = state.spaceMembers;
+          const spaceId = parseEqFilter(extraFilter, 'SpaceID');
           const userId = parseEqFilter(extraFilter, 'UserID');
-          if (userId) {
-            return state.spaceMembers.filter((m) => m.UserID.toLowerCase() === userId.toLowerCase());
+          const status = parseEqFilter(extraFilter, 'Status');
+          if (spaceId) {
+            rows = rows.filter((m) => m.SpaceID.toLowerCase() === spaceId.toLowerCase());
           }
-          return state.spaceMembers;
+          if (userId) {
+            rows = rows.filter((m) => m.UserID.toLowerCase() === userId.toLowerCase());
+          }
+          if (status) {
+            rows = rows.filter((m) => String(m.Status ?? '').toLowerCase() === status.toLowerCase());
+          }
+          return rows;
         }
         case 'MJ_BizApps_Community: Forum Role Types': {
           const id = parseEqFilter(extraFilter, 'ID');
@@ -1814,6 +1867,9 @@ export function createHarnessStore() {
           }
           return state.mjEntities;
         }
+        case 'MJ: Artifact Types': {
+          return state.mjArtifactTypes.filter((t) => t.IsEnabled !== false);
+        }
         case 'MJ: Artifacts': {
           let rows = state.mjArtifacts;
           const ids = parseInIds(extraFilter, 'ID');
@@ -1879,6 +1935,18 @@ export function createHarnessStore() {
       }
       if (entityName === 'MJ: User Settings') {
         return state.userSettings.find((s) => s.ID.toLowerCase() === target) ?? null;
+      }
+      if (entityName === 'MJ_BizApps_Collaboration: Spaces') {
+        return state.spaces.find((s) => s.ID.toLowerCase() === target) ?? null;
+      }
+      if (entityName === 'MJ: Artifacts') {
+        return state.mjArtifacts.find((a) => a.ID.toLowerCase() === target) ?? null;
+      }
+      if (entityName === 'MJ: Artifact Versions') {
+        return state.mjArtifactVersions.find((v) => v.ID.toLowerCase() === target) ?? null;
+      }
+      if (entityName === 'MJ: Files') {
+        return state.mjFiles.find((f) => f.ID.toLowerCase() === target) ?? null;
       }
       if (entityName === 'MJ_BizApps_Collaboration: Space Items') {
         return state.spaceItems.find((si) => si.ID.toLowerCase() === target) ?? null;

@@ -628,10 +628,12 @@ test('Real Angular 21 Community Hub: 26 ClassFactory registrations, 4 tabs, PDF 
   await mediaPostCard.getByRole('button', { name: 'Next audio track' }).click();
   await expect(mediaPostCard.locator('.mjc-att-audio-card--multi .mjc-att-counter-pill')).toContainText('Track 2 of 2');
 
-  // Create a new post with an attached PNG image + embedded MJ Artifact via + New Post modal
+  // Create a new post with an attached PNG image + embedded MJ Artifact via + New Post modal,
+  // then verify inline quick reply + Full-Page Thread View reply attachments and cold reload hydration!
   const preAttachState = await (await page.request.get(new URL('/api/harness/state', harnessUrl).toString())).json();
   const spaceItemCountBefore = preAttachState.spaceItems.length;
   const attachmentCountBefore = preAttachState.forumPostAttachments.length;
+  const artifactVersionCountBefore = preAttachState.mjArtifactVersions.length;
 
   await page.click('#mjc-header-ask-share-btn');
   await page.selectOption('#mjc-ask-share-type', 'Discussion Post');
@@ -648,6 +650,10 @@ test('Real Angular 21 Community Hub: 26 ClassFactory registrations, 4 tabs, PDF 
       ),
     });
   await expect(page.locator('#mjc-ask-share-modal-backdrop .mjc-picker-drafts')).toContainText('cutover-proof.png');
+  await page
+    .locator('#mjc-ask-share-modal-backdrop .mjc-picker-chip__caption')
+    .first()
+    .fill('Cutover verification diagram');
 
   await page.locator('#mjc-ask-share-modal-backdrop button', { hasText: 'Embed MJ Artifact' }).click();
   await page.locator('#mjc-ask-share-modal-backdrop .mjc-picker-popover__search').fill('OpenTelemetry');
@@ -669,13 +675,102 @@ test('Real Angular 21 Community Hub: 26 ClassFactory registrations, 4 tabs, PDF 
   const postAttachState = await (await page.request.get(new URL('/api/harness/state', harnessUrl).toString())).json();
   expect(postAttachState.spaceItems.length).toBe(spaceItemCountBefore + 2);
   expect(postAttachState.forumPostAttachments.length).toBe(attachmentCountBefore + 2);
+  expect(postAttachState.mjArtifactVersions.length).toBe(artifactVersionCountBefore + 1);
+  const createdMediaPost = postAttachState.posts.find(
+    (p) => p.Title === 'Media & Artifact Integration Verification',
+  );
+  expect(createdMediaPost).toBeTruthy();
+  const uploadedFileVersion = postAttachState.mjArtifactVersions.find(
+    (v) => v.FileName === 'cutover-proof.png' && v.ContentMode === 'File',
+  );
+  expect(uploadedFileVersion).toBeTruthy();
+  expect(uploadedFileVersion.Content).toMatch(/^data:image\/png;base64,/);
+  const uploadedSpaceItem = postAttachState.spaceItems.find(
+    (si) => si.ArtifactVersionID && si.ArtifactVersionID.toLowerCase() === uploadedFileVersion.ID.toLowerCase(),
+  );
+  expect(uploadedSpaceItem).toBeTruthy();
+  expect(uploadedSpaceItem.RecordID.toLowerCase()).not.toBe(`id|${createdMediaPost.ID.toLowerCase()}`);
 
-  // Switch to the Auto-Indexed Library tab, verify all media/artifacts appear, capture screenshot, filter, and View in Thread
+  // Inline quick reply composer with an uploaded PNG attachment
+  await mediaVerifiedCard.locator('.mjc-expand-btn').click();
+  const inlineReplyForm = mediaVerifiedCard.locator('.mjc-inline-reply-composer');
+  await expect(inlineReplyForm).toBeVisible();
+  await inlineReplyForm.locator('input.mjc-input').fill('Inline reply with uploaded PNG proof.');
+  await inlineReplyForm.locator('input[type="file"]').setInputFiles({
+    name: 'inline-reply-proof.png',
+    mimeType: 'image/png',
+    buffer: Buffer.from(
+      'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==',
+      'base64',
+    ),
+  });
+  await expect(inlineReplyForm.locator('.mjc-picker-drafts')).toContainText('inline-reply-proof.png');
+  await inlineReplyForm.locator('.mjc-picker-chip__caption').first().fill('Inline reply evidence');
+  await inlineReplyForm.locator('button[type="submit"]').click();
+  await expect(mediaVerifiedCard.locator('.mjc-inline-replies')).toContainText('Inline reply with uploaded PNG proof.');
+  await expect(mediaVerifiedCard.locator('.mjc-inline-replies mjc-attachment-gallery')).toContainText('Inline reply evidence');
+
+  // Full-Page Thread View reply composer with an embedded MJ Artifact
+  await mediaVerifiedCard.locator('.mjc-inspect-btn').click();
+  const mediaThreadView = page.locator('#mjc-full-thread-view');
+  await expect(mediaThreadView).toBeVisible();
+  await mediaThreadView.locator('#mjc-detail-reply-input').fill('Full thread reply embedding Verified Cutover Checklist.');
+  await mediaThreadView.locator('button', { hasText: 'Embed MJ Artifact' }).click();
+  await mediaThreadView.locator('.mjc-picker-popover__search').fill('Verified Key Rotation');
+  await mediaThreadView.locator('.mjc-picker-artifact-row button', { hasText: 'Attach' }).click();
+  await expect(mediaThreadView.locator('.mjc-picker-drafts')).toContainText('Verified Key Rotation Cutover Checklist');
+  await mediaThreadView.locator('#mjc-detail-reply-submit-btn').click();
+  await expect(mediaThreadView.locator('.mjc-full-thread-replies')).toContainText(
+    'Full thread reply embedding Verified Cutover Checklist.',
+  );
+  await expect(
+    mediaThreadView.locator('.mjc-full-thread-replies mjc-attachment-gallery', {
+      hasText: 'Verified Key Rotation Cutover Checklist',
+    }),
+  ).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(mediaThreadView).toBeHidden();
+
+  // COLD RELOAD: verify post + inline reply + full-thread reply attachments and uploaded data URLs hydrate from persisted entities!
+  await page.reload();
+  await page.waitForFunction(() => window.__harnessReady === true);
+
+  const coldReloadedMediaCard = page.locator('.mjc-stream-card', {
+    hasText: 'Media & Artifact Integration Verification',
+  });
+  await expect(coldReloadedMediaCard).toBeVisible();
+  const coldMainPostGallery = coldReloadedMediaCard.locator('mjc-attachment-gallery', {
+    hasText: 'Cutover verification diagram',
+  });
+  await expect(coldMainPostGallery).toContainText('Cutover verification diagram');
+  await expect(coldMainPostGallery).toContainText(
+    'OpenTelemetry Webhook Retry Span Schema',
+  );
+  const reloadedImgSrc = await coldMainPostGallery
+    .locator('img.mjc-att-single-img, img.mjc-att-carousel__img')
+    .first()
+    .getAttribute('src');
+  expect(reloadedImgSrc).toMatch(/^data:image\/png;base64,/);
+
+  await coldReloadedMediaCard.locator('.mjc-inspect-btn').click();
+  const coldThreadView = page.locator('#mjc-full-thread-view');
+  await expect(coldThreadView).toBeVisible();
+  await expect(coldThreadView.locator('.mjc-full-thread-replies')).toContainText('Inline reply with uploaded PNG proof.');
+  await expect(coldThreadView.locator('.mjc-full-thread-replies')).toContainText('Inline reply evidence');
+  await expect(coldThreadView.locator('.mjc-full-thread-replies')).toContainText(
+    'Verified Key Rotation Cutover Checklist',
+  );
+  await page.keyboard.press('Escape');
+  await expect(coldThreadView).toBeHidden();
+
+  // Switch to the Auto-Indexed Library tab, verify all media/artifacts appear after reload, capture screenshot, filter, and View in Thread
   await page.click('#mjc-hub-tab-media-library');
   const libraryView = page.locator('#mjc-media-library-view');
   await expect(libraryView).toBeVisible();
   await expect(libraryView).toContainText('cutover-proof.png');
+  await expect(libraryView).toContainText('inline-reply-proof.png');
   await expect(libraryView).toContainText('OpenTelemetry Webhook Retry Span Schema');
+  await expect(libraryView).toContainText('Verified Key Rotation Cutover Checklist');
   await expect(libraryView).toContainText('dual-key-sequence.png');
   await expect(libraryView).toContainText('replica-failover-audit.pdf');
 
@@ -850,6 +945,72 @@ test('Real Angular 21 Community Hub: 26 ClassFactory registrations, 4 tabs, PDF 
     ],
   };
   writeFileSync(join(REPORTS_DIR, 'community-hub-wcag-report.json'), JSON.stringify(report, null, 2));
+});
+
+test('CR-6: Post attachment persistence failure surfaces error, preserves draft, rolls back, and succeeds on retry', async ({ page }) => {
+  await page.request.post(new URL('/api/harness/reset', harnessUrl).toString());
+  await page.goto(harnessUrl);
+  await page.waitForFunction(() => window.__harnessReady === true);
+
+  const preAttachState = await (await page.request.get(new URL('/api/harness/state', harnessUrl).toString())).json();
+  const spaceItemCountBefore = preAttachState.spaceItems.length;
+  const attachmentCountBefore = preAttachState.forumPostAttachments.length;
+  const artifactVersionCountBefore = preAttachState.mjArtifactVersions.length;
+  const postCountBefore = preAttachState.posts.length;
+
+  // Inject persistence failure on Forum Post Attachments -> verify error banner, preserved draft, and rollback
+  await page.request.post(new URL('/api/harness/faults', harnessUrl).toString(), {
+    data: { failSaveEntities: ['MJ_BizApps_Community: Forum Post Attachments'] },
+  });
+
+  await page.click('#mjc-header-ask-share-btn');
+  await page.selectOption('#mjc-ask-share-type', 'Discussion Post');
+  await page.fill('#mjc-ask-share-title-input', 'Retry Draft Recovery Verification');
+  await page.fill('#mjc-ask-share-body-input', 'Verifying failed save keeps draft and rolls back orphaned records.');
+  await page
+    .locator('#mjc-ask-share-modal-backdrop input[type="file"]')
+    .setInputFiles({
+      name: 'retry-proof.png',
+      mimeType: 'image/png',
+      buffer: Buffer.from(
+        'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==',
+        'base64',
+      ),
+    });
+  await expect(page.locator('#mjc-ask-share-modal-backdrop .mjc-picker-drafts')).toContainText('retry-proof.png');
+  await page.locator('#mjc-ask-share-modal-backdrop button', { hasText: 'Embed MJ Artifact' }).click();
+  await page.locator('#mjc-ask-share-modal-backdrop .mjc-picker-popover__search').fill('OpenTelemetry');
+  await page.locator('#mjc-ask-share-modal-backdrop .mjc-picker-artifact-row button', { hasText: 'Attach' }).click();
+
+  await page.click('#mjc-ask-share-submit-btn');
+  await expect(page.locator('#mjc-ask-share-error')).toBeVisible();
+  await expect(page.locator('#mjc-ask-share-error')).toContainText(/Failed to save post attachments/i);
+  await expect(page.locator('#mjc-ask-share-modal-backdrop')).toBeVisible();
+  await expect(page.locator('#mjc-ask-share-title-input')).toHaveValue('Retry Draft Recovery Verification');
+  await expect(page.locator('#mjc-ask-share-modal-backdrop .mjc-picker-drafts')).toContainText('retry-proof.png');
+  await expect(page.locator('#mjc-ask-share-modal-backdrop .mjc-picker-drafts')).toContainText(
+    'OpenTelemetry Webhook Retry Span Schema',
+  );
+
+  const rolledBackState = await (await page.request.get(new URL('/api/harness/state', harnessUrl).toString())).json();
+  expect(rolledBackState.posts.length).toBe(postCountBefore);
+  expect(rolledBackState.spaceItems.length).toBe(spaceItemCountBefore);
+  expect(rolledBackState.forumPostAttachments.length).toBe(attachmentCountBefore);
+  expect(rolledBackState.mjArtifactVersions.length).toBe(artifactVersionCountBefore);
+
+  // Clear fault and retry submit cleanly with preserved draft
+  await page.request.post(new URL('/api/harness/faults', harnessUrl).toString(), {
+    data: { failSaveEntities: [] },
+  });
+  await page.click('#mjc-ask-share-submit-btn');
+  await expect(page.locator('#mjc-ask-share-modal-backdrop')).toBeHidden();
+  await expect(page.locator('.mjc-stream-card', { hasText: 'Retry Draft Recovery Verification' })).toBeVisible();
+
+  const retriedState = await (await page.request.get(new URL('/api/harness/state', harnessUrl).toString())).json();
+  expect(retriedState.posts.length).toBe(postCountBefore + 1);
+  expect(retriedState.spaceItems.length).toBe(spaceItemCountBefore + 2);
+  expect(retriedState.forumPostAttachments.length).toBe(attachmentCountBefore + 2);
+  expect(retriedState.mjArtifactVersions.length).toBe(artifactVersionCountBefore + 1);
 });
 
 test('CR-09: UserInfoEngine and ProcessInboundDigestReplyAction fail visibly on persistence failures without fallback masking', async ({ page }) => {
