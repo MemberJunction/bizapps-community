@@ -48,9 +48,21 @@ export * from './custom/living-thread-synthesis.ts';
 export * from './custom/LivingThreadSynthesisAction.ts';
 export * from './custom/export-community-digest-pdf.ts';
 export * from './custom/ExportCommunityDigestPDFAction.ts';
+export * from './custom/CommunityTestCommunicationProvider.ts';
+export * from './custom/digest-reply-loop.ts';
+export * from './custom/SendPersonalizedCommunityDigestAction.ts';
+export * from './custom/ProcessInboundDigestReplyAction.ts';
+
+import { CommunityTestCommunicationProvider } from './custom/CommunityTestCommunicationProvider.ts';
+import { SendPersonalizedCommunityDigestAction } from './custom/SendPersonalizedCommunityDigestAction.ts';
+import { ProcessInboundDigestReplyAction } from './custom/ProcessInboundDigestReplyAction.ts';
 
 /**
- * Forces the custom Action subclasses to be included in the build despite tree-shaking.
+ * Forces the custom Action subclasses and communication test driver to be included in the build despite tree-shaking.
  * Call this from your application bootstrap.
  */
-export function LoadBizAppsCommunityActions(): void {}
+export function LoadBizAppsCommunityActions(): void {
+  void CommunityTestCommunicationProvider;
+  void SendPersonalizedCommunityDigestAction;
+  void ProcessInboundDigestReplyAction;
+}
