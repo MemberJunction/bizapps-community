@@ -234,4 +234,4 @@ pnpm run report:openapp-readiness
 - [**`scripts/world/README.md`**](../scripts/world/README.md) — `ARCH-WORLD` entity taxonomy, natural keys, and repeat-run invariance.
 - [**`docs/EXTENSIBILITY_PLAN.md`**](./EXTENSIBILITY_PLAN.md) — Upgrade-safe `IsA` forum/post subtype architecture and driver contracts.
 - [**`.mj/specs/bizapps-community-zero-cac-higher-logic-wedge/spec.md`**](../.mj/specs/bizapps-community-zero-cac-higher-logic-wedge/spec.md) — Detailed technical specification for the Zero-CAC Higher Logic Wedge.
-- [**`.mj/specs/bizapps-community-media-artifacts-library/spec.md`**](../.mj/specs/bizapps-community-media-artifacts-library/spec.md) — Embedded MJ Artifacts, Rich Media Carousels, Composer Attachment Picker & Auto-Indexed Media Library specification.
+- [**`.mj/specs/bizapps-community-media-artifacts-library/spec.md`**](../.mj/specs/bizapps-community-media-artifacts-library/spec.md) — Embedded MJ Artifacts, Rich Media Carousels, 10 MiB durable composer attachment uploads, authoritative server/entity validation, and Auto-Indexed Media Library specification.
