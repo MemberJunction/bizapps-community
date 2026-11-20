@@ -13,7 +13,7 @@
 This specification covers the three sequential slices delivering the **American Guild of Practicing Architects (`ARCH-WORLD`)** persistent integration dataset, expanded zero-`any` backend unit suites, Playwright 1440x900 marketing screenshot capture, and comprehensive feature showcase documentation:
 
 1. **Slice 1 (`scripts/world/**`, `scripts/seed-world.test.mjs`)**:
-   - Deterministic `ARCH-WORLD` dataset (`arch-world-data.mjs`) with 26 members, 4 Community Spaces, 12 Forums across all 6 `ForumType` codes, 22 Topic Tags, 68 Posts & multi-turn threads across all 13 `PostType` codes, and 25 Quadratic Ideation allocations.
+   - Deterministic `ARCH-WORLD` dataset (`arch-world-data.mjs`) with 26 members, 4 Community Spaces, 13 Forums across all 6 `ForumType` codes, 22 Topic Tags, 68 Posts & multi-turn threads across all 13 `PostType` codes, and 25 Quadratic Ideation allocations.
    - Idempotent natural-key loader (`LoadArchitectAssociationWorld`) and deliberate no-op teardown (`TeardownArchitectAssociationWorld`) in `arch-world-loader.mjs` so seeded state persists for repeat integration runs, Explorer smoke testing, and visual verification.
    - Persistent integration suite (`arch-world-integration.mjs`) wired into `scripts/seed-world.test.mjs` verifying 2 consecutive runs, embedding digests, HMAC Reply-by-Email, Ask-First deflection, Living Thread Synthesis, Quadratic Voting, and idempotent 1-Click Graduation.
 2. **Slice 2 (`packages/*/src/**/*.test.ts`)**:

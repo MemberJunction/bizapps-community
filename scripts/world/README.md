@@ -14,7 +14,7 @@ The **American Guild of Practicing Architects (AGPA)** world model (`ARCH-WORLD`
 flowchart TB
     Users["26 AGPA Members<br/>(Principals, BIM Leads, Passive House,<br/>Code Officials, Associates, Moderators)"]
     Spaces["4 Community Spaces<br/>(Practice Commons, Mass Timber Guild,<br/>Licensure Network, Principals & Risk Council)"]
-    Forums["12 Forums<br/>(All 6 ForumTypes:<br/>general, qa, ideation, playbooks, case-rounds, ama)"]
+    Forums["13 Forums<br/>(All 6 ForumTypes:<br/>general, qa, ideation, playbooks, case-rounds, ama)"]
     Tags["22 Topic Tags<br/>(Mass Timber, IBC 2027, Passive House,<br/>AIA Contracts, BIM/Revit, ARE Licensure, ...)"]
     Posts["68+ Posts & Multi-Turn Threads<br/>(All 13 PostTypes + Subtype Records)"]
     Wallet["Quadratic Ideation Campaign<br/>(5 Proposals, 21+ Member Backers, 100-pt Wallets)"]
@@ -35,13 +35,13 @@ flowchart TB
 | --- | ---: | ---: | --- |
 | **Members (`ARCH_MEMBERS`)** | >= 24 | **26** | Principals, Project Architects, Structural/BIM Leads, Sustainability/Passive House Specialists, Emerging Associates, Code Officials, Chapter Presidents, Moderators, Cold-Start New Member, Muted/Removed Member |
 | **Community Spaces (`ARCH_COMMUNITY_SPACES`)** | 4 | **4** | National Practice Commons (`Open`/`Full Read`), Mass Timber & Sustainable Design Guild (`Open`/`Teaser Only`), Licensure & Emerging Professionals Network (`Open`/`Full Read`), Firm Principals & Risk Council (`Private`/`None`) |
-| **Forums (`ARCH_FORUMS`)** | >= 10 | **12** | Covers all 6 `ForumType` codes (`general-discussion`, `qa-knowledge-base`, `ideation-campaign`, `playbooks-and-docs`, `peer-case-rounds`, `live-events-and-amas`), including `Team`-band restricted forums |
+| **Forums (`ARCH_FORUMS`)** | >= 10 | **13** | Covers all 6 `ForumType` codes (`general-discussion`, `qa-knowledge-base`, `ideation-campaign`, `playbooks-and-docs`, `peer-case-rounds`, `live-events-and-amas`), including `Team`-band restricted forums |
 | **Topic Tags (`ARCH_TOPIC_TAGS`)** | >= 20 | **22** | Mass Timber, IBC 2027, BIM/Revit, Passive House, Net-Zero Retrofit, AIA Contracts, ARE Licensure, AI Rendering, Adaptive Reuse, Seismic, Zoning Variance, Firm Succession, Acoustics, Facade Envelopes, Historic Preservation, Embodied Carbon, MEP Coordination, Design-Build, Construction Admin, Public Procurement, Fire & Life Safety, Thermal Bridging |
 | **Posts (`ARCH_POSTS`)** | >= 60 | **68** | Covers all 13 `PostType` codes (`discussion`, `reply`, `comment`, `question`, `answer`, `idea-proposal`, `poll-or-form`, `collaborative-doc`, `collaborative-sheet`, `collaborative-deck`, `case-review`, `live-ama`, `interactive-experience`), deep 3–5 turn debates, Canon Verified Q&A, locked thread, reactions, and moderation flags |
 
-## Idempotent Natural-Key Loader Contract
+## Idempotent Natural-Key Loader & Persistence Contract
 
-`LoadArchitectAssociationWorld(options)` (`scripts/world/arch-world-loader.mjs`) upserts every entity in FK-safe topological order using stable natural keys:
+`LoadArchitectAssociationWorld(options)` (`scripts/world/arch-world-loader.mjs`) upserts every entity in FK-safe topological order using `RunView` natural-key lookups, `Metadata.GetEntityObject(...)`, authoritative `BaseEntity.ValidateAsync()`, and `entity.Save()`, backed by a durable cross-process persistent store (`.local-storage/arch-world-state.json` or `ARCH_WORLD_STATE_FILE`) and deterministic SQL/PG seed generation (`BuildArchitectAssociationWorldSql()`):
 
 - `User`: `Email` (case-insensitive)
 - `Space` / `CommunitySpace`: `Slug`

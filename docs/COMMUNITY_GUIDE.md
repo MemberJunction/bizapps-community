@@ -178,7 +178,7 @@ The **American Guild of Practicing Architects (AGPA)** world model (`ARCH-WORLD`
 | --- | ---: | ---: | --- |
 | **Members** (`ARCH_MEMBERS`) | >= 24 | **26** | Principals, Project Architects, Structural/BIM Leads, Passive House Specialists, Emerging Associates, Code Officials, Chapter Presidents, Moderators, Cold-Start New Member, Muted Member |
 | **Community Spaces** (`ARCH_COMMUNITY_SPACES`) | 4 | **4** | National Practice Commons, Mass Timber & Sustainable Design Guild, Licensure & Emerging Professionals Network, Firm Principals & Risk Council (`Private` / `Team` band) |
-| **Forums** (`ARCH_FORUMS`) | >= 10 | **12** | Covers all **6 `ForumType` codes** (`general-discussion`, `qa-knowledge-base`, `ideation-campaign`, `playbooks-and-docs`, `peer-case-rounds`, `live-events-and-amas`) |
+| **Forums** (`ARCH_FORUMS`) | >= 10 | **13** | Covers all **6 `ForumType` codes** (`general-discussion`, `qa-knowledge-base`, `ideation-campaign`, `playbooks-and-docs`, `peer-case-rounds`, `live-events-and-amas`) |
 | **Topic Tags** (`ARCH_TOPIC_TAGS`) | >= 20 | **22** | `#Mass Timber`, `#IBC 2027`, `#Passive House`, `#AIA Contracts`, `#BIM/Revit`, `#ARE Licensure`, `#Embodied Carbon`, and 15 more |
 | **Posts & Threads** (`ARCH_POSTS`) | >= 60 | **68** | Covers all **13 `PostType` codes**, 3–5 turn debates, Canon Verified Q&A, Peer Case Rounds, Living Playbooks, Live AMAs, Interactive Quiz, and Locked Charter |
 | **Quadratic Allocations** (`ARCH_IDEA_ALLOCATIONS`) | — | **25** | 21 distinct AGPA members allocating voice credits across 5 guild standards proposals |
