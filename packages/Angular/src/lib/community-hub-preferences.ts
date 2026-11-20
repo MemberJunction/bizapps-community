@@ -8,18 +8,21 @@ export type CommunityHubTabKey =
 
 export type CommunityHubFeedSort = 'recent' | 'top' | 'unanswered';
 export type CommunityHubDigestFormat = 'pdf' | 'markdown';
+export type CommunityHubDigestCadence = 'daily' | 'weekly' | 'off';
 
 /** The minimal key/value preference surface CommunityHubPreferences depends on, so tests can
  * inject an in-memory fake instead of a live, configured UserInfoEngine. */
 export interface IUserPreferenceStore {
   GetSetting(key: string): string | undefined;
   SetSetting(key: string, value: string): Promise<boolean>;
+  SetSettingDebounced?: (key: string, value: string) => void;
 }
 
 /** Adapts the real, process-wide `UserInfoEngine.Instance` (backed by `MJ: User Settings`) to {@link IUserPreferenceStore}. */
 export const UserInfoEngineAdapter: IUserPreferenceStore = {
   GetSetting: (key: string) => UserInfoEngine.Instance.GetSetting(key),
   SetSetting: (key: string, value: string) => UserInfoEngine.Instance.SetSetting(key, value),
+  SetSettingDebounced: (key: string, value: string) => UserInfoEngine.Instance.SetSettingDebounced(key, value),
 };
 
 export const COMMUNITY_HUB_PREFERENCE_KEYS = {
@@ -27,6 +30,8 @@ export const COMMUNITY_HUB_PREFERENCE_KEYS = {
   selectedSpaceId: 'bizapps-community.selectedSpaceId',
   feedSort: 'bizapps-community.feedSort',
   digestFormat: 'bizapps-community.digestFormat',
+  digestCadence: 'bizapps-community.digestCadence',
+  activeTopicFilter: 'bizapps-community.activeTopicFilter',
   porchCollapsed: 'bizapps-community.porchCollapsed',
 } as const;
 
@@ -82,5 +87,35 @@ export class CommunityHubPreferences {
 
   public async SetPorchCollapsed(collapsed: boolean): Promise<boolean> {
     return this.store.SetSetting(COMMUNITY_HUB_PREFERENCE_KEYS.porchCollapsed, collapsed ? 'true' : 'false');
+  }
+
+  public GetDigestCadence(): CommunityHubDigestCadence | undefined {
+    const raw = this.store.GetSetting(COMMUNITY_HUB_PREFERENCE_KEYS.digestCadence)?.trim().toLowerCase();
+    if (raw === 'daily' || raw === 'weekly' || raw === 'off') {
+      return raw;
+    }
+    return undefined;
+  }
+
+  public async SetDigestCadence(cadence: CommunityHubDigestCadence): Promise<boolean> {
+    if (this.store.SetSettingDebounced) {
+      this.store.SetSettingDebounced(COMMUNITY_HUB_PREFERENCE_KEYS.digestCadence, cadence);
+      return true;
+    }
+    return this.store.SetSetting(COMMUNITY_HUB_PREFERENCE_KEYS.digestCadence, cadence);
+  }
+
+  public GetActiveTopicFilter(): string | undefined {
+    const raw = this.store.GetSetting(COMMUNITY_HUB_PREFERENCE_KEYS.activeTopicFilter)?.trim();
+    return raw ? raw : undefined;
+  }
+
+  public async SetActiveTopicFilter(topic: string | null): Promise<boolean> {
+    const normalized = topic?.trim() ?? '';
+    if (this.store.SetSettingDebounced) {
+      this.store.SetSettingDebounced(COMMUNITY_HUB_PREFERENCE_KEYS.activeTopicFilter, normalized);
+      return true;
+    }
+    return this.store.SetSetting(COMMUNITY_HUB_PREFERENCE_KEYS.activeTopicFilter, normalized);
   }
 }

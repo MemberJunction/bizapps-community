@@ -9,3 +9,16 @@ export const COMMUNITY_ACTION_IDS = {
   LivingThreadSynthesis: 'B40307E3-3337-47F0-96CC-25A27A56BBDC',
   ExportDigestPDF: '6E7F8091-A2B3-44C5-D5D6-E7F8A9B0C1D2',
 } as const;
+
+/**
+ * `@RegisterClass(BaseAction, ...)` driver class names for Community actions, including
+ * personalization digest dispatch and inbound reply-by-email processing.
+ */
+export const COMMUNITY_ACTION_DRIVER_CLASSES = {
+  AskFirstDeflection: 'Community.AskFirstDeflection',
+  EpistemicAnswerGrading: 'Community.EpistemicAnswerGrading',
+  LivingThreadSynthesis: 'Community.LivingThreadSynthesis',
+  ExportDigestPDF: 'Community.ExportDigestPDF',
+  SendPersonalizedDigest: 'Community.SendPersonalizedDigest',
+  ProcessInboundDigestReply: 'Community.ProcessInboundDigestReply',
+} as const;
