@@ -10,6 +10,12 @@ import type {
   mjBizAppsCommunityForumQuestionPostEntity,
 } from '@mj-biz-apps/community-entities';
 import type { CommunityHubTabKey } from './community-hub-preferences.ts';
+import { StripMarkdownToPlainText } from './community-markdown.ts';
+
+function toPlainExcerpt(markdown: string | null | undefined, maxLength = 190): string {
+  const plain = StripMarkdownToPlainText(markdown);
+  return plain.length > maxLength ? `${plain.slice(0, maxLength).trimEnd()}...` : plain;
+}
 
 export type CommunitySpaceFilterId =
   | 'all'
@@ -596,7 +602,7 @@ export function BuildCommonsStreamItems(params: {
     items.push({
       id: `post-${post.id}`,
       title: post.title,
-      excerpt: post.bodyMarkdown.slice(0, 180) + (post.bodyMarkdown.length > 180 ? '...' : ''),
+      excerpt: toPlainExcerpt(post.bodyMarkdown),
       bodyMarkdown: post.bodyMarkdown,
       spaceId: resolvedSpace.spaceId,
       spaceLabel: resolvedSpace.spaceLabel,
@@ -648,7 +654,7 @@ export function BuildCommonsStreamItems(params: {
     items.push({
       id: `qa-${qa.id}`,
       title: qa.title,
-      excerpt: qa.bodyMarkdown.slice(0, 180) + (qa.bodyMarkdown.length > 180 ? '...' : ''),
+      excerpt: toPlainExcerpt(qa.bodyMarkdown),
       bodyMarkdown: qa.bodyMarkdown,
       spaceId: resolvedSpace.spaceId,
       spaceLabel: resolvedSpace.spaceLabel,
@@ -700,15 +706,15 @@ export function BuildCommonsStreamItems(params: {
     items.push({
       id: `idea-${idea.id}`,
       title: idea.title,
-      excerpt: idea.summary,
+      excerpt: toPlainExcerpt(idea.summary),
       bodyMarkdown: idea.summary,
       spaceId: resolvedSpace.spaceId,
       spaceLabel: resolvedSpace.spaceLabel,
       streamType: 'ideation',
-      entryTypeLabel: 'Ideation Proposal',
-      statusBadge: graduated ? 'Graduated · Working Group' : `${idea.effectiveQuadraticVotes} Quadratic Votes`,
+      entryTypeLabel: 'Idea',
+      statusBadge: graduated ? 'Graduated · Working Group' : `${idea.effectiveQuadraticVotes} Votes`,
       statusTone: graduated ? 'success' : 'brand',
-      epistemicStatus: graduated ? 'Graduated Deliverable' : `${idea.totalPointsAllocated} Voice Credits Allocated`,
+      epistemicStatus: graduated ? 'Graduated Deliverable' : `${idea.totalPointsAllocated} Points Allocated`,
       confidenceScore: null,
       authorName,
       authorRole,
@@ -757,7 +763,7 @@ export function BuildCommonsStreamItems(params: {
     items.push({
       id: `doc-${doc.id}`,
       title: doc.title,
-      excerpt: doc.bodyMarkdown.slice(0, 180) + (doc.bodyMarkdown.length > 180 ? '...' : ''),
+      excerpt: toPlainExcerpt(doc.bodyMarkdown),
       bodyMarkdown: doc.bodyMarkdown,
       spaceId: resolvedSpace.spaceId,
       spaceLabel: resolvedSpace.spaceLabel,
@@ -940,7 +946,7 @@ export function CreateAskShareStreamItem(
   return {
     id,
     title,
-    excerpt: body.slice(0, 180) + (body.length > 180 ? '...' : ''),
+    excerpt: toPlainExcerpt(body),
     bodyMarkdown: body,
     spaceId: draft.spaceId,
     spaceLabel: getSpaceLabel(draft.spaceId),

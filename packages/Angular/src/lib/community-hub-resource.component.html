@@ -288,11 +288,14 @@
                   <h2 id="mjc-detail-sheet-title" class="mjc-full-thread-title">{{ activeDetail.title }}</h2>
 
                   <div class="mjc-full-thread-author">
-                    <strong>{{ activeDetail.authorName }}</strong>
-                    <span class="mjc-drawer-meta"> · {{ activeDetail.authorRole }} · {{ activeDetail.timestampLabel }}</span>
+                    <span class="mjc-avatar" aria-hidden="true">{{ activeDetail.authorInitials }}</span>
+                    <div>
+                      <strong>{{ activeDetail.authorName }}</strong>
+                      <span class="mjc-drawer-meta"> · {{ activeDetail.authorRole }}</span>
+                    </div>
                   </div>
 
-                  <div class="mjc-full-thread-content">{{ activeDetail.bodyMarkdown }}</div>
+                  <div class="mjc-full-thread-content mjc-markdown" [innerHTML]="renderMarkdown(activeDetail.bodyMarkdown)"></div>
 
                   @if (activeDetail.tags.length > 0) {
                     <div class="mjc-drawer-tags">
@@ -347,13 +350,13 @@
                           </h3>
                           <span class="mjc-community-hub__badge">{{ synth.consideredReplyCount }} replies summarized</span>
                         </div>
-                        <p class="mjc-community-hub__card-body">{{ synth.executiveSummary }}</p>
+                        <div class="mjc-community-hub__card-body mjc-markdown" [innerHTML]="renderMarkdown(synth.executiveSummary)"></div>
                         @if (synth.keyTakeaways.length > 0) {
                           <div>
                             <strong class="mjc-community-hub__label">Key Takeaways</strong>
                             <ul class="mjc-synthesis-card__list">
                               @for (takeaway of synth.keyTakeaways; track takeaway) {
-                                <li>{{ takeaway }}</li>
+                                <li [innerHTML]="renderMarkdown(takeaway)"></li>
                               }
                             </ul>
                           </div>
@@ -363,7 +366,7 @@
                             <strong class="mjc-community-hub__label">Open Questions</strong>
                             <ul class="mjc-synthesis-card__list">
                               @for (question of synth.openQuestions; track question) {
-                                <li>{{ question }}</li>
+                                <li [innerHTML]="renderMarkdown(question)"></li>
                               }
                             </ul>
                           </div>
@@ -390,13 +393,14 @@
                     @for (reply of activeDetail.replies; track reply.id) {
                       <div class="mjc-reply-card" [class.mjc-reply-card--accepted]="reply.isAccepted">
                         <div class="mjc-reply-card__head">
+                          <span class="mjc-avatar mjc-avatar--sm" aria-hidden="true">{{ reply.authorInitials }}</span>
                           <strong>{{ reply.authorName }}</strong>
-                          <span>{{ reply.authorRole }} · {{ reply.timestampLabel }}</span>
+                          <span>{{ reply.authorRole }}</span>
                           @if (reply.isAccepted) {
                             <span class="mjc-community-hub__badge">✓ Verified Answer</span>
                           }
                         </div>
-                        <p class="mjc-reply-card__body">{{ reply.bodyMarkdown }}</p>
+                        <div class="mjc-reply-card__body mjc-markdown" [innerHTML]="renderMarkdown(reply.bodyMarkdown)"></div>
                       </div>
                     }
                   }
@@ -538,7 +542,7 @@
                         </div>
                         @if (qaCanonItems[0]; as spotlightQa) {
                           <h3 class="mjc-porch__callout-title">{{ spotlightQa.title }}</h3>
-                          <p class="mjc-porch__callout-body">{{ spotlightQa.bodyMarkdown }}</p>
+                          <p class="mjc-porch__callout-body">{{ stripMarkdown(spotlightQa.bodyMarkdown) }}</p>
                         } @else {
                           <h3 class="mjc-porch__callout-title">Community Q&amp;A Ready</h3>
                           <p class="mjc-porch__callout-body">Ask a question or verify helpful community answers for everyone to reuse.</p>
@@ -766,7 +770,7 @@
                               </span>
                             </div>
                             <span class="mjc-idea-card__title">{{ idea.title }}</span>
-                            <span class="mjc-idea-card__summary">{{ idea.summary }}</span>
+                            <span class="mjc-idea-card__summary">{{ stripMarkdown(idea.summary) }}</span>
                           </button>
                         </div>
 
@@ -808,7 +812,7 @@
                         <div class="mjc-ideation-console__head">
                           <span class="mjc-wallet-hero__kicker">Selected Idea</span>
                           <h3 class="mjc-community-hub__card-title">{{ activeIdea.title }}</h3>
-                          <p class="mjc-ideation-console__summary">{{ activeIdea.summary }}</p>
+                          <div class="mjc-ideation-console__summary mjc-markdown" [innerHTML]="renderMarkdown(activeIdea.summary)"></div>
                         </div>
 
                         <div class="mjc-ideation-console__metrics">

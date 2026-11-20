@@ -107,6 +107,7 @@ import {
 import { KnowledgeStreamComponent, type KnowledgeStreamWalletSummaryItem } from './knowledge-stream.component.ts';
 import { QaCanonWorkbenchComponent } from './qa-canon-workbench.component.ts';
 import { LivingCoAuthoringComponent } from './living-co-authoring.component.ts';
+import { RenderSafeMarkdownHtml, StripMarkdownToPlainText } from './community-markdown.ts';
 import {
   ComputeIdeationWalletSummary,
   ComputeIdeaPointPresets,
@@ -624,6 +625,14 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
     return Boolean(this.isAskShareModalOpen || this.isDigestDrawerOpen);
   }
 
+  public renderMarkdown(markdown: string | null | undefined): string {
+    return RenderSafeMarkdownHtml(markdown);
+  }
+
+  public stripMarkdown(markdown: string | null | undefined): string {
+    return StripMarkdownToPlainText(markdown);
+  }
+
   public get topDigestMatchTitle(): string | null {
     return this.digestPreviewItems[0]?.title ?? null;
   }
@@ -1005,8 +1014,12 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
       this.allowedForumIDs = this.authorizedForums.map((f) => f.id);
       if (scopedSpaceId) {
         this.spaceName = collabNameById.get(scopedSpaceId.toLowerCase()) ?? this.spaceName;
-      } else if (collabSpaces[0]?.Name) {
-        this.spaceName = collabSpaces[0].Name;
+      } else {
+        const preferredSpace =
+          liveSpaceRows.find((s) => /\b(commons|hub|community)\b/i.test(s.Name ?? '')) ??
+          collabSpaces.find((s) => /\b(commons|hub|community)\b/i.test(s.Name ?? '')) ??
+          (liveSpaceRows.length === 1 ? liveSpaceRows[0] : null);
+        this.spaceName = preferredSpace?.Name ?? 'Community';
       }
 
       if (!forumsResult.success) {

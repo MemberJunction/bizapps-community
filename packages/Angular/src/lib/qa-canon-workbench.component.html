@@ -155,7 +155,7 @@
             </div>
             <span class="mjc-qa-list-item__title">{{ item.title }}</span>
             <span class="mjc-qa-list-item__excerpt">
-              {{ item.bodyMarkdown ? (item.bodyMarkdown.length > 96 ? item.bodyMarkdown.slice(0, 96) + '...' : item.bodyMarkdown) : 'Awaiting verified answer.' }}
+              {{ excerptFor(item.bodyMarkdown) }}
             </span>
           </button>
         }
@@ -197,9 +197,11 @@
             }
           </div>
 
-          <div class="mjc-qa-inspector__body">
-            {{ activeQa.bodyMarkdown || 'No body provided yet.' }}
-          </div>
+          @if (activeQa.bodyMarkdown) {
+            <div class="mjc-qa-inspector__body mjc-markdown" [innerHTML]="renderMarkdown(activeQa.bodyMarkdown)"></div>
+          } @else {
+            <div class="mjc-qa-inspector__body">No body provided yet.</div>
+          }
 
           <div class="mjc-qa-btn-row">
             <button

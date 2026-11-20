@@ -36,6 +36,7 @@ import {
   CommunityHubPreferences,
   type IUserPreferenceStore,
 } from './lib/community-hub-preferences.ts';
+import { RenderSafeMarkdownHtml, StripMarkdownToPlainText } from './lib/community-markdown.ts';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const LIB_DIR = join(HERE, 'lib');
@@ -1198,5 +1199,44 @@ describe('Slice 3 — Live Thread Reply, Upvote Reaction, Dynamic Directories, T
         assert.match(tag, /\brole="/, `Clickable <div>/<span> in ${templateName} must declare an ARIA role: ${tag}`);
       }
     }
+  });
+
+  it('formats Markdown safely into semantic HTML and strips Markdown tokens from card excerpts', () => {
+    const sample = '### Proposal Summary\nLaunch **2027 Q1** initiative with `dual-key` rollover.\n\n- Verify latency\n- Ship playbook';
+    const plain = StripMarkdownToPlainText(sample);
+    assert.ok(!plain.includes('###'), 'headings must be stripped from plain excerpts');
+    assert.ok(!plain.includes('**'), 'bold asterisks must be stripped from plain excerpts');
+    assert.ok(plain.includes('Proposal Summary'));
+    assert.ok(plain.includes('2027 Q1'));
+
+    const rendered = RenderSafeMarkdownHtml(sample);
+    assert.match(rendered, /<p class="mjc-md-heading">Proposal Summary<\/p>/);
+    assert.match(rendered, /<strong>2027 Q1<\/strong>/);
+    assert.match(rendered, /<code class="mjc-md-code">dual-key<\/code>/);
+    assert.match(rendered, /<ul class="mjc-md-list"><li>Verify latency<\/li><li>Ship playbook<\/li><\/ul>/);
+
+    // XSS protection: raw HTML & script tags must always be escaped
+    const xss = RenderSafeMarkdownHtml('<script>alert(1)</script> **safe** [bad](javascript:alert(1))');
+    assert.ok(!xss.includes('<script>'));
+    assert.ok(xss.includes('&lt;script&gt;alert(1)&lt;/script&gt;'));
+    assert.ok(xss.includes('<strong>safe</strong>'));
+    assert.ok(!xss.includes('href="javascript:'));
+
+    // Feed card excerpts from BuildCommonsStreamItems strip raw markdown tokens
+    const built = BuildCommonsStreamItems({
+      feedPosts: [{ id: 'md-1', title: 'MD Post', bodyMarkdown: sample, status: 'Published' }],
+      qaCanonItems: [],
+      ideationItems: [],
+      livingDocItems: [],
+    });
+    assert.ok(!built[0].excerpt.includes('###'));
+    assert.ok(!built[0].excerpt.includes('**'));
+
+    // Mockup alignment checks: left upvote column, formatted markdown bindings, single unified Instant Answers search, expandable topics
+    const streamHtml = readFileSync(join(LIB_DIR, 'knowledge-stream.component.html'), 'utf8');
+    assert.ok(streamHtml.includes('mjc-stream-card__vote-col'));
+    assert.ok(streamHtml.includes('[innerHTML]="renderMarkdown('));
+    assert.ok(!streamHtml.includes('id="mjc-canon-quick-lookup"'), 'duplicate Instant Answers search input must be removed');
+    assert.ok(streamHtml.includes('toggleShowAllTopics()'));
   });
 });

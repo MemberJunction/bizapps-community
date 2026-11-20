@@ -6,10 +6,18 @@
   display: flex;
   flex-direction: column;
   gap: var(--mj-space-2);
-  padding: var(--mj-space-4);
-  border: 1px solid var(--mj-border-subtle);
-  border-radius: var(--mj-radius-md);
-  background: var(--mj-bg-surface-card);
+}
+
+.mjc-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 }
 
 .mjc-ask-first__label {
@@ -25,12 +33,13 @@
 
 .mjc-ask-first__input {
   flex: 1;
-  padding: var(--mj-space-2) var(--mj-space-3);
+  min-width: 0;
+  padding: 7px 12px;
   border: 1px solid var(--mj-border-default);
-  border-radius: var(--mj-radius-sm);
-  background: var(--mj-bg-surface);
+  border-radius: var(--mj-radius-md);
+  background: color-mix(in srgb, var(--mj-bg-page) 65%, var(--mj-bg-surface));
   color: var(--mj-text-primary);
-  font-size: var(--mj-text-sm);
+  font-size: var(--mj-text-xs);
 }
 
 .mjc-ask-first__input:focus-visible {
@@ -38,14 +47,15 @@
 }
 
 .mjc-ask-first__button {
-  padding: var(--mj-space-2) var(--mj-space-4);
+  padding: 7px 14px;
   border: none;
-  border-radius: var(--mj-radius-sm);
+  border-radius: var(--mj-radius-md);
   background: var(--mj-brand-primary);
   color: var(--mj-brand-on-primary);
-  font-size: var(--mj-text-sm);
-  font-weight: var(--mj-font-medium);
+  font-size: var(--mj-text-xs);
+  font-weight: var(--mj-font-semibold);
   cursor: pointer;
+  white-space: nowrap;
 }
 
 .mjc-ask-first__button:hover {
