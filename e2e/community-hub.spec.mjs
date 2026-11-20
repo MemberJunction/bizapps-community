@@ -149,36 +149,42 @@ test('Real Angular 21 Community Hub: 26 ClassFactory registrations, 4 tabs, PDF 
   await page.click('#mjc-feed-synthesize-btn');
   await expect(page.locator('.mjc-community-hub__status')).toContainText('Synthesized');
 
-  // --- 3b. Slice 1 UX Alignment: Editorial Porch Collapse, 3 Highlight Cards, Search Spotlight, 3-Column Commons, Detail Sheet & Ask/Share Modal ---
-  await expect(page.locator('#mjc-porch-highlights-row .mjc-highlight-card')).toHaveCount(3);
-  await page.click('#mjc-porch-toggle-btn');
+  // --- 3b. Modern Commons UX: Collapsible Weekly Highlights, Inline Card Expand, Search Spotlight, Full-Page Thread View & New Post Modal ---
   await expect(page.locator('#mjc-porch-toggle-btn')).toHaveAttribute('aria-expanded', 'false');
   await expect(page.locator('#mjc-porch-expanded-body')).toBeHidden();
   await page.click('#mjc-porch-toggle-btn');
   await expect(page.locator('#mjc-porch-toggle-btn')).toHaveAttribute('aria-expanded', 'true');
+  await expect(page.locator('#mjc-porch-highlights-row .mjc-highlight-card')).toHaveCount(3);
+  await page.click('#mjc-porch-toggle-btn');
+  await expect(page.locator('#mjc-porch-toggle-btn')).toHaveAttribute('aria-expanded', 'false');
+  await expect(page.locator('#mjc-porch-expanded-body')).toBeHidden();
 
   await page.fill('#mjc-header-search-input', 'API key');
   await expect(page.locator('#mjc-matched-question-spotlight')).toBeVisible();
   await page.click('#mjc-header-search-clear-btn');
   await expect(page.locator('#mjc-matched-question-spotlight')).toBeHidden();
 
-  // Open Slide-Over Detail Sheet Drawer, verify focus trap + metadata spacing + Escape focus restore
+  // Verify inline accordion expansion directly below a Feed card (zero slide-over drawer)
+  const firstExpandBtn = page.locator('.mjc-expand-btn').first();
+  await firstExpandBtn.click();
+  await expect(firstExpandBtn).toHaveAttribute('aria-expanded', 'true');
+  await expect(page.locator('.mjc-inline-thread').first()).toBeVisible();
+  await firstExpandBtn.click();
+  await expect(firstExpandBtn).toHaveAttribute('aria-expanded', 'false');
+
+  // Open Full-Page Thread View (replacing slide-over drawer), verify Back to Feed + Escape dismissal
   const firstInspectBtn = page.locator('.mjc-inspect-btn').first();
   await firstInspectBtn.click();
-  const detailDialog = page.locator('#mjc-detail-sheet-backdrop [role="dialog"]');
-  await expect(detailDialog).toBeVisible();
-  await expect(detailDialog.locator('.mjc-drawer-epistemic')).toContainText(/Epistemic \/ Canon Metadata:\s+\S+/);
-  await page.keyboard.press('Shift+Tab');
-  const activeInsideDetailTrap = await page.evaluate(() =>
-    Boolean(document.activeElement?.closest('#mjc-detail-sheet-backdrop [role="dialog"]')),
-  );
-  expect(activeInsideDetailTrap).toBe(true);
+  const fullThreadView = page.locator('#mjc-full-thread-view');
+  await expect(fullThreadView).toBeVisible();
+  await expect(page.locator('#mjc-detail-sheet-backdrop')).toHaveCount(0);
+  await expect(fullThreadView.locator('.mjc-full-thread-rail')).toContainText('Thread Details');
   await page.screenshot({ path: join(SCREENSHOTS_DIR, '03-detail-drawer.png'), fullPage: false });
   await page.keyboard.press('Escape');
-  await expect(page.locator('#mjc-detail-sheet-backdrop')).toBeHidden();
+  await expect(fullThreadView).toBeHidden();
   await expect(firstInspectBtn).toBeFocused();
 
-  // Open + Ask or Share Modal, verify fail-closed empty draft validation, then submit Discussion Post + ForumPostTag rows
+  // Open + New Post Modal, verify fail-closed empty draft validation, then submit Discussion Post + ForumPostTag rows
   await page.click('#mjc-header-ask-share-btn');
   const askShareDialog = page.locator('#mjc-ask-share-modal-backdrop [role="dialog"]');
   await expect(askShareDialog).toBeVisible();
@@ -203,16 +209,16 @@ test('Real Angular 21 Community Hub: 26 ClassFactory registrations, 4 tabs, PDF 
   await expect(createdPostCard).toContainText('#Multi-Region');
   await expect(createdPostCard).toContainText('#Observability');
 
-  // Inspect newly created thread in Slide-Over Detail Sheet: post reply, synthesize, toggle reaction, graduate thread
+  // Inspect newly created thread in Full-Page Thread View: post reply, AI Summary, toggle upvote, Start Working Group
   await createdPostCard.locator('.mjc-inspect-btn').click();
-  await expect(detailDialog).toBeVisible();
+  await expect(fullThreadView).toBeVisible();
 
   await page.fill('#mjc-detail-reply-input', 'Verified failover timing in staging cluster.');
   await page.click('#mjc-detail-reply-submit-btn');
-  await expect(detailDialog.locator('.mjc-drawer-replies')).toContainText('Replies & Endorsements (1)');
-  await expect(detailDialog.locator('.mjc-drawer-replies')).toContainText('Verified failover timing in staging cluster.');
+  await expect(fullThreadView.locator('.mjc-full-thread-replies')).toContainText('Replies (1)');
+  await expect(fullThreadView.locator('.mjc-full-thread-replies')).toContainText('Verified failover timing in staging cluster.');
 
-  // Exercise Living Thread Synthesis inside Detail Drawer and verify structured takeaways + citations
+  // Exercise AI Summary inside Full-Page Thread View and verify structured takeaways + citations
   await page.click('#mjc-detail-synthesize-btn');
   await expect(page.locator('#mjc-detail-synthesis-card')).toBeVisible();
   await expect(page.locator('#mjc-detail-synthesis-card')).toContainText('Key Takeaways');
@@ -220,28 +226,28 @@ test('Real Angular 21 Community Hub: 26 ClassFactory registrations, 4 tabs, PDF 
 
   // Exercise upvote create -> delete -> create persistence via ForumPostReaction
   await page.click('#mjc-detail-upvote-btn');
-  await expect(page.locator('#mjc-detail-upvote-btn')).toContainText('Endorse (1)');
+  await expect(page.locator('#mjc-detail-upvote-btn')).toContainText('Upvote (1)');
   await page.click('#mjc-detail-upvote-btn');
-  await expect(page.locator('#mjc-detail-upvote-btn')).toContainText('Endorse (0)');
+  await expect(page.locator('#mjc-detail-upvote-btn')).toContainText('Upvote (0)');
   await page.click('#mjc-detail-upvote-btn');
-  await expect(page.locator('#mjc-detail-upvote-btn')).toContainText('Endorse (1)');
+  await expect(page.locator('#mjc-detail-upvote-btn')).toContainText('Upvote (1)');
 
   // Exercise GraduateCommunityThread GraphQL mutation and verify PromotedToSpaceID + direct space link
   await page.click('#mjc-detail-graduate-btn');
   await expect(page.locator('#mjc-detail-promoted-space')).toBeVisible();
-  await expect(page.locator('#mjc-detail-promoted-space')).toContainText('Graduated Working Group Space:');
+  await expect(page.locator('#mjc-detail-promoted-space')).toContainText('Working Group Space:');
   await expect(page.locator('#mjc-detail-open-graduated-space-link')).toBeVisible();
   const promotedSpaceId = (
     await page.locator('#mjc-detail-promoted-space .mjc-promoted-space-banner__id').textContent()
   )?.trim();
   expect(promotedSpaceId).toMatch(/^[0-9a-f-]{36}$/i);
   await expect(page.locator('#mjc-detail-graduate-btn')).toBeDisabled();
-  await expect(page.locator('#mjc-detail-graduate-btn')).toContainText('Graduated to Working Space');
+  await expect(page.locator('#mjc-detail-graduate-btn')).toContainText('Working Group Active');
   await page.screenshot({ path: join(SCREENSHOTS_DIR, '03-detail-drawer.png'), fullPage: false });
 
   // Verify CR-08 Working Space handoff renders a genuine Working Space view and navigates back cleanly
   await page.click('#mjc-detail-open-graduated-space-link');
-  await expect(page.locator('#mjc-detail-sheet-backdrop')).toBeHidden();
+  await expect(fullThreadView).toBeHidden();
   await expect(page.locator('#mjc-graduated-working-space-view')).toBeVisible();
   await expect(page.locator('#mjc-graduated-working-space-view')).toHaveAttribute('data-space-id', promotedSpaceId);
   await expect(page.locator('#mjc-graduated-working-space-view')).toContainText(promotedSpaceId);
@@ -252,11 +258,11 @@ test('Real Angular 21 Community Hub: 26 ClassFactory registrations, 4 tabs, PDF 
   await expect(createdPostCard).toContainText('Graduated · Working Group');
   await expect(createdPostCard).toContainText(`Space: ${promotedSpaceId}`);
 
-  // Capture Screenshot 2: Knowledge Stream 3-Column Layout
+  // Capture Screenshot 2: Feed 3-Column Layout
   await page.locator('.mjc-commons').scrollIntoViewIfNeeded();
   await page.screenshot({ path: join(SCREENSHOTS_DIR, '02-knowledge-stream.png'), fullPage: false });
 
-  // --- 3c. Personalized Digest Preview Drawer, MJ Comms Test Driver & UserInfoEngine Preference Persistence ---
+  // --- 3c. My Digest Preview Drawer, MJ Comms Test Driver & UserInfoEngine Preference Persistence ---
   await page.locator('.mjc-topic-pill', { hasText: '#Multi-Region' }).click();
   await page.click('#mjc-header-digest-btn');
   const digestDialog = page.locator('#mjc-digest-drawer-backdrop [role="dialog"]');
@@ -264,7 +270,7 @@ test('Real Angular 21 Community Hub: 26 ClassFactory registrations, 4 tabs, PDF 
   await expect(page.locator('#mjc-digest-items-list .mjc-digest-item-card').first()).toBeVisible();
   await expect(page.locator('#mjc-digest-items-list .mjc-digest-score-chip').first()).toContainText('% match');
   await expect(page.locator('#mjc-digest-items-list .mjc-digest-reason').first()).toContainText('Why this was picked for you:');
-  await expect(page.locator('#mjc-digest-reply-indicator')).toContainText('HMAC-SHA256');
+  await expect(page.locator('#mjc-digest-reply-indicator')).toContainText('Reply by Email Enabled');
 
   await page.click('#mjc-digest-cadence-daily');
   await expect(page.locator('#mjc-digest-cadence-daily')).toHaveAttribute('aria-pressed', 'true');
@@ -537,7 +543,8 @@ test('Real Angular 21 Community Hub: 26 ClassFactory registrations, 4 tabs, PDF 
   await page.waitForFunction(() => window.__harnessReady === true);
 
   // Verify UserInfoEngine-backed digest cadence & active topic filter persisted across full reload
-  await expect(page.locator('#mjc-header-digest-btn')).toContainText('Personalized Digest (Daily)');
+  await expect(page.locator('#mjc-header-digest-btn')).toHaveAttribute('title', 'My Digest (Daily)');
+  await expect(page.locator('#mjc-header-digest-btn')).toContainText('My Digest');
   await expect(page.locator('.mjc-active-filter-banner')).toContainText('#Multi-Region');
 
   const expectedCreatedPostReplies =
@@ -556,22 +563,22 @@ test('Real Angular 21 Community Hub: 26 ClassFactory registrations, 4 tabs, PDF 
   await expect(reloadedCard.locator('.mjc-reply-count')).toContainText(`(${expectedCreatedPostReplies})`);
 
   await reloadedCard.locator('.mjc-inspect-btn').click();
-  const reloadedDialog = page.locator('#mjc-detail-sheet-backdrop [role="dialog"]');
-  await expect(reloadedDialog).toBeVisible();
-  await expect(reloadedDialog.locator('.mjc-drawer-replies')).toContainText(
-    `Replies & Endorsements (${expectedCreatedPostReplies})`,
+  const reloadedThreadView = page.locator('#mjc-full-thread-view');
+  await expect(reloadedThreadView).toBeVisible();
+  await expect(reloadedThreadView.locator('.mjc-full-thread-replies')).toContainText(
+    `Replies (${expectedCreatedPostReplies})`,
   );
-  await expect(reloadedDialog.locator('.mjc-drawer-replies')).toContainText('Verified failover timing in staging cluster.');
+  await expect(reloadedThreadView.locator('.mjc-full-thread-replies')).toContainText('Verified failover timing in staging cluster.');
   if (expectedCreatedPostReplies === 2) {
-    await expect(reloadedDialog.locator('.mjc-drawer-replies')).toContainText('Confirmed in staging — rotating keys cleanly.');
+    await expect(reloadedThreadView.locator('.mjc-full-thread-replies')).toContainText('Confirmed in staging — rotating keys cleanly.');
   }
-  await expect(page.locator('#mjc-detail-upvote-btn')).toContainText('Endorse (1)');
+  await expect(page.locator('#mjc-detail-upvote-btn')).toContainText('Upvote (1)');
   await expect(page.locator('#mjc-detail-promoted-space')).toContainText(createdPostRow.PromotedToSpaceID);
   await expect(page.locator('#mjc-detail-open-graduated-space-link')).toBeVisible();
   await expect(page.locator('#mjc-detail-graduate-btn')).toBeDisabled();
-  await expect(page.locator('#mjc-detail-graduate-btn')).toContainText('Graduated to Working Space');
+  await expect(page.locator('#mjc-detail-graduate-btn')).toContainText('Working Group Active');
   await page.keyboard.press('Escape');
-  await expect(page.locator('#mjc-detail-sheet-backdrop')).toBeHidden();
+  await expect(reloadedThreadView).toBeHidden();
   await page.click('#mjc-commons-reset-filters-btn');
 
   await page.click('#mjc-hub-tab-qa-canon-workbench');
@@ -617,17 +624,18 @@ test('Real Angular 21 Community Hub: 26 ClassFactory registrations, 4 tabs, PDF 
   expect(await page.locator('#mjc-collab-tab-body mj-page-layout').count()).toBe(0);
 
   // Verify embedded deep-link fallback bar lets user return cleanly when ShowTabBar=false
-  await page.getByRole('button', { name: 'Explore Verified Q&A Canon' }).click();
+  await page.click('#mjc-porch-toggle-btn');
+  await page.getByRole('button', { name: 'Explore Q&A' }).click();
   await expect(page.locator('#mjc-embedded-return-btn')).toBeVisible();
   await page.click('#mjc-embedded-return-btn');
   await expect(page.locator('#mjc-embedded-return-btn')).toBeHidden();
 
   await page.click('#mjc-collab-tab-qa-canon');
-  await expect(page.locator('#mjc-collab-tab-body')).toContainText('Verified Q&A Canon Workbench');
+  await expect(page.locator('#mjc-collab-tab-body')).toContainText('Community Q&A');
   await expect(page.locator('#mjc-collab-tab-body')).not.toContainText('Space 2 Secret Q&A Entry');
 
   await page.click('#mjc-collab-tab-ideation');
-  await expect(page.locator('#mjc-collab-tab-body')).toContainText('Priority Wallet');
+  await expect(page.locator('#mjc-collab-tab-body')).toContainText('Weighted Voting');
   await expect(page.locator('#mjc-collab-tab-body')).not.toContainText('Space 2 Secret Roadmap Idea');
 
   await page.click('#mjc-collab-tab-playbooks');
@@ -851,15 +859,15 @@ test('ARCH-WORLD Showcase: Capture 5 crisp 1440x900 marketing screenshots with 0
       fullPage: false,
     });
 
-    // 3. Thread Detail Drawer showing Living Thread Synthesis + 1-Click Graduation to Working Space
+    // 3. Full-Page Thread View showing AI Summary + Start Working Group
     await page.click('#mjc-hub-tab-knowledge-stream');
     const timberDebateCard = page.locator('.mjc-stream-card', {
       hasText: 'IBC 2027 Type IV-A/IV-B Exposed Mass Timber Ceiling Allowance',
     });
     await expect(timberDebateCard).toBeVisible();
     await timberDebateCard.locator('.mjc-inspect-btn').click();
-    const detailDialog = page.locator('#mjc-detail-sheet-backdrop [role="dialog"]');
-    await expect(detailDialog).toBeVisible();
+    const archThreadView = page.locator('#mjc-full-thread-view');
+    await expect(archThreadView).toBeVisible();
 
     await page.click('#mjc-detail-synthesize-btn');
     await expect(page.locator('#mjc-detail-synthesis-card')).toBeVisible();
@@ -873,7 +881,7 @@ test('ARCH-WORLD Showcase: Capture 5 crisp 1440x900 marketing screenshots with 0
     )?.trim();
     expect(graduatedSpaceId).toMatch(/^[0-9a-f-]{36}$/i);
     await expect(page.locator('#mjc-detail-graduate-btn')).toBeDisabled();
-    await expect(page.locator('#mjc-detail-graduate-btn')).toContainText('Graduated to Working Space');
+    await expect(page.locator('#mjc-detail-graduate-btn')).toContainText('Working Group Active');
 
     // Verify idempotent re-graduation returns the exact same Space ID without duplicating
     const idempotentGrad = await page.evaluate(
@@ -902,7 +910,7 @@ test('ARCH-WORLD Showcase: Capture 5 crisp 1440x900 marketing screenshots with 0
       fullPage: false,
     });
     await page.keyboard.press('Escape');
-    await expect(page.locator('#mjc-detail-sheet-backdrop')).toBeHidden();
+    await expect(archThreadView).toBeHidden();
 
     // 4. Embedding-Personalized Digest preview drawer + MJ Comms test-driver dispatch + HMAC Reply-by-Email token
     await page.click('#mjc-header-digest-btn');

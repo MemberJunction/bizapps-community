@@ -2,10 +2,10 @@
   <!-- HERO HEADER BANNER -->
   <div class="mjc-qa-hero">
     <div class="mjc-qa-hero__lead">
-      <span class="mjc-qa-hero__kicker">Epistemic Knowledge Canon</span>
-      <h2 class="mjc-qa-hero__title">Verified Q&amp;A Canon Workbench</h2>
+      <span class="mjc-qa-hero__kicker">Verified Answers</span>
+      <h2 class="mjc-qa-hero__title">Community Q&amp;A</h2>
       <p class="mjc-qa-hero__desc">
-        Inspect dual-verified community answers, evaluate AI epistemic freshness &amp; confidence rubrics, and promote authoritative solutions into organizational canon.
+        Browse verified community answers, run AI fact-checks, and accept trusted solutions for everyone to reuse.
       </p>
     </div>
 
@@ -13,11 +13,11 @@
       <div class="mjc-qa-stat-grid">
         <div class="mjc-qa-stat">
           <span class="mjc-qa-stat__value">{{ stats.total }}</span>
-          <span class="mjc-qa-stat__label">Total Entries</span>
+          <span class="mjc-qa-stat__label">Questions</span>
         </div>
         <div class="mjc-qa-stat">
           <span class="mjc-qa-stat__value">{{ stats.canonVerifiedCount }}</span>
-          <span class="mjc-qa-stat__label">Canon Verified</span>
+          <span class="mjc-qa-stat__label">Verified</span>
         </div>
         <div class="mjc-qa-stat">
           <span class="mjc-qa-stat__value">{{ stats.averageConfidencePct }}%</span>
@@ -42,8 +42,8 @@
     <form class="mjc-qa-card mjc-qa-composer" (ngSubmit)="onCreateQuestion()">
       <div class="mjc-qa-composer__head">
         <div>
-          <span class="mjc-qa-composer__kicker">New Canon Question</span>
-          <h3 class="mjc-qa-card__title">Ask a Community Question</h3>
+          <span class="mjc-qa-composer__kicker">New Question</span>
+          <h3 class="mjc-qa-card__title">Ask the Community</h3>
         </div>
       </div>
 
@@ -53,7 +53,7 @@
           id="mjc-qa-new-title"
           name="newQuestionTitle"
           class="mjc-qa-input"
-          placeholder="e.g., How do tenant schema migrations stay deterministic?"
+          placeholder="What would you like help with?"
           [ngModel]="newQuestionTitle"
           (ngModelChange)="newQuestionTitleChange.emit($event)"
           required
@@ -61,13 +61,13 @@
       </div>
 
       <div class="mjc-qa-field">
-        <label for="mjc-qa-new-body" class="mjc-qa-label">Details &amp; Constraints</label>
+        <label for="mjc-qa-new-body" class="mjc-qa-label">Details &amp; Context</label>
         <textarea
           id="mjc-qa-new-body"
           name="newQuestionBody"
           rows="3"
           class="mjc-qa-textarea"
-          placeholder="Include environment constraints, dialect parity requirements, or expected failure modes..."
+          placeholder="Share relevant background, constraints, or what you have already tried..."
           [ngModel]="newQuestionBody"
           (ngModelChange)="newQuestionBodyChange.emit($event)"
           required
@@ -84,7 +84,7 @@
 
   <!-- FILTER & SEARCH TOOLBAR -->
   <div class="mjc-qa-toolbar">
-    <div class="mjc-qa-filter-pills" role="group" aria-label="Filter Q&A entries by epistemic status">
+    <div class="mjc-qa-filter-pills" role="group" aria-label="Filter Q&A entries by status">
       @for (pill of filterPills; track pill.key) {
         <button
           type="button"
@@ -100,12 +100,12 @@
     </div>
 
     <div class="mjc-qa-search">
-      <label for="mjc-qa-search-input" class="mjc-sr-only">Filter Q&amp;A canon entries</label>
+      <label for="mjc-qa-search-input" class="mjc-sr-only">Filter Q&amp;A entries</label>
       <input
         id="mjc-qa-search-input"
         type="search"
         class="mjc-qa-search__input"
-        placeholder="Filter canon questions or answers..."
+        placeholder="Search questions or answers..."
         [ngModel]="searchQuery"
         (ngModelChange)="onSearchQueryChange($event)"
       />
@@ -209,7 +209,7 @@
               (click)="onGradeAnswer(activeQa.id)"
             >
               <i class="fa-solid fa-wand-magic-sparkles" aria-hidden="true"></i>
-              <span>Grade with Epistemic AI</span>
+              <span>Verify with AI</span>
             </button>
             <button
               type="button"
@@ -218,7 +218,7 @@
               (click)="onPromoteAnswer(activeQa.id)"
             >
               <i class="fa-solid fa-check-double" aria-hidden="true"></i>
-              <span>{{ activeQa.isAccepted ? 'Canon Accepted' : 'Promote to Canon' }}</span>
+              <span>{{ activeQa.isAccepted ? 'Accepted Answer' : 'Accept Answer' }}</span>
             </button>
           </div>
 
@@ -233,7 +233,7 @@
               name="newAnswerBody"
               rows="3"
               class="mjc-qa-textarea"
-              placeholder="Write a verifiable engineering answer for epistemic grading..."
+              placeholder="Write a clear, helpful answer for the community..."
               [ngModel]="newAnswerBody"
               (ngModelChange)="newAnswerBodyChange.emit($event)"
             ></textarea>
