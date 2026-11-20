@@ -28,6 +28,7 @@ import {
   COMMUNITY_ENTITY_NAMES,
   type mjBizAppsCommunityForumAnswerPostEntity,
   type mjBizAppsCommunityForumInteractivePostEntity,
+  type mjBizAppsCommunityForumPostAttachmentEntity,
   type mjBizAppsCommunityForumPostEntity,
   type mjBizAppsCommunityForumPostReactionEntity,
   type mjBizAppsCommunityForumPostTagEntity,
@@ -37,16 +38,29 @@ import {
   AssertValidUUID,
   AssertValidUUIDList,
   ClassifyAttachmentKind,
+  EscapeSqlLiteral,
   IsFeaturedLibraryFolder,
   NormalizeAttachmentMimeType,
   SanitizeCommunityAttachmentUrl,
   type CommunityArtifactAttachmentItem,
+  type CommunityAttachmentEntryType,
   type CommunityAttachmentItem,
   type CommunityFileAttachmentItem,
   type IdeationAllocationMode,
 } from '@mj-biz-apps/community-core';
 import { DEMO_SEED_ATTACHMENTS } from './community-attachment-demo.ts';
 import { CommunityAttachmentGalleryComponent } from './community-attachment-gallery.component.ts';
+import { CommunityAttachmentPickerComponent } from './community-attachment-picker.component.ts';
+import {
+  DEMO_ACCESSIBLE_ARTIFACTS,
+  LoadAccessibleArtifactsCatalog,
+  PersistPostAttachmentsFromClient,
+  ResolveComposerAttachmentEntryType,
+  SyncDraftsForEntryTypeChange,
+  type AccessibleArtifactCatalogItem,
+  type CollaborationSpaceItemEntityView,
+  type DraftCommunityAttachment,
+} from './community-attachment-picker.ts';
 import {
   CommunityHubPreferences,
   type CommunityHubDigestCadence,
@@ -433,6 +447,7 @@ function buildMiniAppSrcdoc(title: string, kind: string): string {
     LivingCoAuthoringComponent,
     QuadraticVotingSliderComponent,
     CommunityAttachmentGalleryComponent,
+    CommunityAttachmentPickerComponent,
   ],
   templateUrl: './community-hub-resource.component.html',
   styleUrl: './community-hub-resource.component.css',
@@ -499,6 +514,8 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
   // Slide-Over Detail Sheet Drawer state
   public detailSheetItemId: string | null = null;
   public detailReplyText = '';
+  public detailReplyAttachments: DraftCommunityAttachment[] = [];
+  public detailReplyAttachmentError: string | null = null;
   public detailActionMessage: string | null = null;
   public detailErrorMessage: string | null = null;
 
@@ -515,6 +532,9 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
   public askShareTagHighlightIndex = 0;
   public askShareValidationErrors: AskShareValidationErrors = {};
   public askShareError: string | null = null;
+  public askShareAttachments: DraftCommunityAttachment[] = [];
+  public askShareAttachmentError: string | null = null;
+  public accessibleArtifacts: AccessibleArtifactCatalogItem[] = [];
 
   public qaCanonItems: CommunityHubQACanonItem[] = [];
   public selectedQaId: string | null = null;
@@ -730,6 +750,7 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
   @ViewChild('detailSheetDialog') private detailSheetDialog?: ElementRef<HTMLElement>;
   @ViewChild('askShareDialog') private askShareDialog?: ElementRef<HTMLElement>;
   @ViewChild('digestDrawerDialog') private digestDrawerDialog?: ElementRef<HTMLElement>;
+  @ViewChild(KnowledgeStreamComponent) private knowledgeStreamRef?: KnowledgeStreamComponent;
 
   private lastDetailTrigger: HTMLElement | null = null;
   private lastAskShareTrigger: HTMLElement | null = null;
@@ -867,6 +888,8 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
     this.attachmentsByPostId.clear();
     this.detailSheetItemId = null;
     this.detailReplyText = '';
+    this.detailReplyAttachments = [];
+    this.detailReplyAttachmentError = null;
     this.detailActionMessage = null;
     this.detailErrorMessage = null;
     this.streamActionError = null;
@@ -879,6 +902,9 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
     this.ideationErrorMessage = null;
     this.showQuestionComposer = false;
     this.showIdeaComposer = false;
+    this.askShareAttachments = [];
+    this.askShareAttachmentError = null;
+    this.accessibleArtifacts = [];
     this.sendTestDigestResult = null;
     this.sendTestDigestError = null;
   }
@@ -1324,10 +1350,14 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
           ...this.livingDocItems.map((d) => d.id),
         ]),
       );
-      if (allRootIds.length > 0) {
-        await this.loadPostSupplementaryMetadata(rv, user, allRootIds);
-        if (loadVersion !== this.loadHubStateVersion) return;
-      }
+      const [_, loadedArtifacts] = await Promise.all([
+        allRootIds.length > 0
+          ? this.loadPostSupplementaryMetadata(rv, user, allRootIds)
+          : Promise.resolve(),
+        LoadAccessibleArtifactsCatalog(rv, user).catch(() => [] as AccessibleArtifactCatalogItem[]),
+      ]);
+      if (loadVersion !== this.loadHubStateVersion) return;
+      this.accessibleArtifacts = loadedArtifacts;
 
       this.sessions = [];
       this.rebuildCommonsItems();
@@ -1740,6 +1770,7 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
   private applySeededFallback(): void {
     this.resetTransientSpaceState();
     this.isOfflineDemoMode = true;
+    this.accessibleArtifacts = [...DEMO_ACCESSIBLE_ARTIFACTS];
     this.authorizedForums = [];
     this.allowedForumIDs = [];
     this.loadedTopicTags = [];
@@ -2407,12 +2438,81 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
     }
   }
 
-  public async submitDetailReply(targetItemId?: string, replyTextOverride?: string): Promise<void> {
+  private createClientAttachmentPersister(
+    user: UserInfo | undefined,
+    isOfflineDemoMode: boolean,
+  ) {
+    const md = new Metadata();
+    return async (params: {
+      postId: string;
+      spaceId: string;
+      drafts: ReadonlyArray<DraftCommunityAttachment>;
+    }) => {
+      const outcome = await PersistPostAttachmentsFromClient({
+        postId: params.postId,
+        spaceId: params.spaceId,
+        drafts: params.drafts,
+        isOfflineDemoMode,
+        currentUserId: user?.ID ?? null,
+        authorName: user?.Name || 'Community Member',
+        resolveEntityId: !isOfflineDemoMode && user
+          ? async (entityName: string) => {
+              if (typeof md.EntityByName === 'function') {
+                const info = md.EntityByName(entityName);
+                if (info?.ID) return info.ID;
+              }
+              const res = await new RunView().RunView<{ ID: string }>(
+                {
+                  EntityName: 'MJ: Entities',
+                  ExtraFilter: `Name = '${EscapeSqlLiteral(entityName)}'`,
+                  Fields: ['ID'],
+                  ResultType: 'simple',
+                  MaxRows: 1,
+                },
+                user,
+              );
+              return res?.Success ? res.Results?.[0]?.ID ?? null : null;
+            }
+          : null,
+        createSpaceItemEntity: !isOfflineDemoMode && user
+          ? () => md.GetEntityObject<CollaborationSpaceItemEntityView>('MJ_BizApps_Collaboration: Space Items', user)
+          : null,
+        createForumPostAttachmentEntity: !isOfflineDemoMode && user
+          ? () => md.GetEntityObject<mjBizAppsCommunityForumPostAttachmentEntity>(COMMUNITY_ENTITY_NAMES.ForumPostAttachments, user)
+          : null,
+      });
+
+      if (outcome.success && outcome.persistedAttachments.length > 0) {
+        this.attachmentsByPostId.set(params.postId.toLowerCase(), [...outcome.persistedAttachments]);
+      }
+
+      return {
+        success: outcome.success,
+        errorMessage: outcome.errorMessage,
+        persistedAttachments: outcome.persistedAttachments,
+      };
+    };
+  }
+
+  public async submitDetailReply(
+    targetItemId?: string,
+    replyTextOverride?: string,
+    replyAttachmentsOverride?: ReadonlyArray<DraftCommunityAttachment>,
+  ): Promise<void> {
     const item = targetItemId
       ? this.commonsItems.find((entry) => entry.id === targetItemId) ?? null
       : this.detailSheetItem;
     const text = (replyTextOverride ?? this.detailReplyText).trim();
     if (!item || !text) return;
+
+    if (replyAttachmentsOverride === undefined && this.detailReplyAttachmentError) {
+      this.detailErrorMessage = this.detailReplyAttachmentError;
+      this.streamActionError = this.detailReplyAttachmentError;
+      this.cdr.markForCheck();
+      return;
+    }
+
+    const drafts = replyAttachmentsOverride ?? this.detailReplyAttachments;
 
     this.detailActionMessage = null;
     this.detailErrorMessage = null;
@@ -2426,6 +2526,10 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
       await this.ensurePostTypesLoaded(user).catch(() => undefined);
     }
 
+    const targetSpaceId = offlineOnly
+      ? item.spaceId
+      : (item.forumId ? this.forumSpaceIdByForumId.get(item.forumId.toLowerCase()) : null) ?? item.spaceId;
+
     const rv = new RunView();
     const outcome = await PersistDetailReply({
       item,
@@ -2434,6 +2538,9 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
       isOfflineDemoMode: offlineOnly,
       postTypeIdByCode: this.postTypeIdByCode,
       currentUserId: user?.ID ?? null,
+      spaceId: targetSpaceId,
+      draftAttachments: drafts,
+      persistAttachments: this.createClientAttachmentPersister(user, offlineOnly),
       createForumPostEntity:
         provider && user
           ? () =>
@@ -2471,6 +2578,10 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
     );
     if (replyTextOverride === undefined) {
       this.detailReplyText = '';
+      this.detailReplyAttachments = [];
+      this.detailReplyAttachmentError = null;
+    } else if (targetItemId) {
+      this.knowledgeStreamRef?.clearInlineReplyDraft(targetItemId);
     }
     this.detailActionMessage = outcome.statusMessage ?? 'Reply saved to thread.';
     this.cdr.markForCheck();
@@ -2516,6 +2627,10 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
   }
 
   // ─── Ask or Share Modal ───────────────────────────────────────────────────
+
+  public get askShareAttachmentEntryType(): CommunityAttachmentEntryType {
+    return ResolveComposerAttachmentEntryType('post', this.askShareEntryType);
+  }
 
   public get compatibleAskShareForums(): ReadonlyArray<AuthorizedForumOption> {
     return FilterForumsForAskShareEntryType(
@@ -2666,6 +2781,10 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
   public onAskShareEntryTypeChange(nextType: AskShareEntryType): void {
     this.askShareEntryType = nextType;
     this.askShareError = null;
+    this.askShareAttachments = SyncDraftsForEntryTypeChange(
+      this.askShareAttachments,
+      ResolveComposerAttachmentEntryType('post', nextType),
+    );
     if (!this.isOfflineDemoMode) {
       const previousForum = this.authorizedForums.find((f) => UUIDsEqual(f.id, this.askShareForumId));
       const compatible = this.compatibleAskShareForums;
@@ -2720,6 +2839,8 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
     this.askShareTagHighlightIndex = 0;
     this.askShareValidationErrors = {};
     this.askShareError = null;
+    this.askShareAttachments = [];
+    this.askShareAttachmentError = null;
     this.cdr.markForCheck();
     this.scheduleOverlayInitialFocus('ask-share');
   }
@@ -2797,6 +2918,8 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
     this.liveAskShareDeflections = [];
     this.askShareValidationErrors = {};
     this.askShareError = null;
+    this.askShareAttachments = [];
+    this.askShareAttachmentError = null;
     this.cdr.markForCheck();
     this.restoreOverlayTriggerFocus(trigger, '#mjc-header-ask-share-btn');
   }
@@ -2906,8 +3029,15 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
 
   public async submitAskShareModal(): Promise<void> {
     this.askShareError = null;
+    if (this.askShareAttachmentError) {
+      this.askShareError = this.askShareAttachmentError;
+      this.cdr.markForCheck();
+      return;
+    }
+
     const provider = Metadata.Provider;
     const user: UserInfo | undefined = provider?.CurrentUser;
+    const offlineOnly = !provider;
     if (!this.isOfflineDemoMode && provider && user) {
       await this.ensurePostTypesLoaded(user).catch(() => undefined);
     }
@@ -2920,7 +3050,7 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
         body: this.askShareBody,
         tagsInput: this.askShareTags,
       },
-      isOfflineDemoMode: !provider,
+      isOfflineDemoMode: offlineOnly,
       targetForumId: this.askShareForumId,
       allowedForumIDs: this.allowedForumIDs,
       authorizedForums: this.authorizedForums,
@@ -2929,6 +3059,8 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
       authorName: user?.Name || 'Community Member',
       selectedTopicTagIds: this.askShareSelectedTagIds,
       topicTags: this.loadedTopicTags,
+      draftAttachments: this.askShareAttachments,
+      persistAttachments: this.createClientAttachmentPersister(user, offlineOnly),
       createForumPostEntity:
         provider && user
           ? () =>
@@ -2984,6 +3116,7 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
         replyCount: 0,
         reactionScore: 0,
         promotedToSpaceId: null,
+        attachments: newItem.attachments,
       },
       ...this.feedPosts,
     ];
@@ -3001,6 +3134,7 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
         reactionScore: 0,
         replyCount: 0,
         promotedToSpaceId: null,
+        attachments: newItem.attachments,
       };
       this.qaCanonItems = [qaEntry, ...this.qaCanonItems];
       this.selectedQaId = qaEntry.id;
@@ -3014,6 +3148,7 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
         reactionScore: 0,
         replyCount: 0,
         promotedToSpaceId: null,
+        attachments: newItem.attachments,
       };
       this.livingDocItems = [docEntry, ...this.livingDocItems];
       this.selectedLivingDocId = docEntry.id;
@@ -3026,6 +3161,8 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
     this.askShareBody = '';
     this.askShareTags = '';
     this.askShareSelectedTagIds = [];
+    this.askShareAttachments = [];
+    this.askShareAttachmentError = null;
     this.askShareValidationErrors = {};
     this.askShareError = null;
     this.closeAskShareModal();

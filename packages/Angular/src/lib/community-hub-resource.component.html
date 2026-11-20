@@ -448,8 +448,21 @@
                       placeholder="Write a reply, answer, or follow-up note..."
                       [(ngModel)]="detailReplyText"
                     ></textarea>
+                    <mjc-attachment-picker
+                      entryType="reply"
+                      pickerLabel="Thread reply attachments"
+                      [accessibleArtifacts]="accessibleArtifacts"
+                      [drafts]="detailReplyAttachments"
+                      (draftsChange)="detailReplyAttachments = $event"
+                      (validationError)="detailReplyAttachmentError = $event"
+                    ></mjc-attachment-picker>
                     <div class="mjc-community-hub__btn-row">
-                      <button type="submit" id="mjc-detail-reply-submit-btn" class="mjc-community-hub__btn mjc-community-hub__btn--primary">
+                      <button
+                        type="submit"
+                        id="mjc-detail-reply-submit-btn"
+                        class="mjc-community-hub__btn mjc-community-hub__btn--primary"
+                        [disabled]="!detailReplyText.trim() || !!detailReplyAttachmentError"
+                      >
                         Post Reply
                       </button>
                     </div>
@@ -651,6 +664,7 @@
                 [digestCadence]="digestCadence"
                 [topDigestMatchTitle]="topDigestMatchTitle"
                 [topDigestMatchScorePct]="topDigestMatchScorePct"
+                [accessibleArtifacts]="accessibleArtifacts"
                 (spaceFilterChange)="setSpaceFilter($event)"
                 (topicFilterChange)="setTopicFilter($event)"
                 (streamTypeFilterChange)="setStreamTypeFilter($event)"
@@ -659,7 +673,7 @@
                 (itemUpvoted)="upvoteCommonsItem($event)"
                 (threadSynthesized)="SynthesizeFeedThread($event)"
                 (threadRegenerated)="SynthesizeFeedThread($event, true)"
-                (inlineReplySubmitted)="submitDetailReply($event.itemId, $event.replyBody)"
+                (inlineReplySubmitted)="submitDetailReply($event.itemId, $event.replyBody, $event.attachments)"
                 (itemGraduated)="graduateDetailItem($event)"
                 (askShareRequested)="openAskShareModal()"
                 (navigateToTab)="SelectTab($event)"
@@ -1136,6 +1150,18 @@
                     </ul>
                   }
                 </div>
+              </div>
+
+              <div class="mjc-community-hub__field">
+                <label class="mjc-community-hub__label">Attachments &amp; MJ Artifacts</label>
+                <mjc-attachment-picker
+                  [entryType]="askShareAttachmentEntryType"
+                  pickerLabel="Post attachments and MJ Artifacts"
+                  [accessibleArtifacts]="accessibleArtifacts"
+                  [drafts]="askShareAttachments"
+                  (draftsChange)="askShareAttachments = $event"
+                  (validationError)="askShareAttachmentError = $event"
+                ></mjc-attachment-picker>
               </div>
 
               @if (askShareError) {

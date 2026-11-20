@@ -392,24 +392,35 @@
                   </div>
                 }
 
-                <form class="mjc-inline-reply-form" (ngSubmit)="submitInlineReply(item.id)">
-                  <label class="mjc-sr-only" [for]="'mjc-inline-reply-' + item.id">Quick reply</label>
-                  <input
-                    [id]="'mjc-inline-reply-' + item.id"
-                    [name]="'inlineReply_' + item.id"
-                    type="text"
-                    class="mjc-input"
-                    placeholder="Write a quick reply..."
-                    [ngModel]="getInlineReplyDraft(item.id)"
-                    (ngModelChange)="setInlineReplyDraft(item.id, $event)"
-                  />
-                  <button
-                    type="submit"
-                    class="mjc-btn mjc-btn--primary"
-                    [disabled]="!getInlineReplyDraft(item.id).trim()"
-                  >
-                    Reply
-                  </button>
+                <form class="mjc-inline-reply-composer" (ngSubmit)="submitInlineReply(item.id)">
+                  <div class="mjc-inline-reply-form">
+                    <label class="mjc-sr-only" [for]="'mjc-inline-reply-' + item.id">Quick reply</label>
+                    <input
+                      [id]="'mjc-inline-reply-' + item.id"
+                      [name]="'inlineReply_' + item.id"
+                      type="text"
+                      class="mjc-input"
+                      placeholder="Write a quick reply..."
+                      [ngModel]="getInlineReplyDraft(item.id)"
+                      (ngModelChange)="setInlineReplyDraft(item.id, $event)"
+                    />
+                    <button
+                      type="submit"
+                      class="mjc-btn mjc-btn--primary"
+                      [disabled]="!getInlineReplyDraft(item.id).trim() || !!getInlineReplyAttachmentError(item.id)"
+                    >
+                      Reply
+                    </button>
+                  </div>
+                  <mjc-attachment-picker
+                    [compact]="true"
+                    entryType="reply"
+                    pickerLabel="Quick reply attachments"
+                    [accessibleArtifacts]="accessibleArtifacts"
+                    [drafts]="getInlineReplyAttachments(item.id)"
+                    (draftsChange)="setInlineReplyAttachments(item.id, $event)"
+                    (validationError)="setInlineReplyAttachmentError(item.id, $event)"
+                  ></mjc-attachment-picker>
                 </form>
               </div>
             }
