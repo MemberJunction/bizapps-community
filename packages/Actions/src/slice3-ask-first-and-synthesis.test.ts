@@ -514,4 +514,143 @@ describe('Slice 3 — Living Thread Synthesis (Takeaways, Open Questions, Contri
       mock.restoreAll();
     }
   });
+
+  it('uses managed AI Prompt (Gemini 3.5 Flash-Lite), serves cache hits when thread is unchanged, and regenerates on thread edits or ForceRegenerate', async () => {
+    const { LivingThreadSynthesisAction } = await import('../dist/index.js');
+
+    let promptCalls = 0;
+    let saveCalls = 0;
+    let storedSummary: string | null = null;
+    let storedGeneratedAt: Date | null = null;
+    let storedWatermark: number | null = null;
+    let replies = [
+      {
+        ID: REPLY_1_ID,
+        BodyMarkdown: 'Use dual-active keys for 24h before revoking the legacy secret.',
+        AuthorUserID: USER_ID,
+        AuthorUser: 'Elena Rostova',
+      },
+    ];
+
+    class TestableSynthesisAction extends LivingThreadSynthesisAction {
+      protected override async findSynthesisPrompt() {
+        return { ID: '268C3B8F-9284-4DA2-84A8-40FEF21AB5ED', Name: 'Community: Living Thread Synthesis' } as never;
+      }
+
+      protected override async executeSynthesisPrompt() {
+        promptCalls += 1;
+        return {
+          success: true,
+          modelName: 'Gemini 3.5 Flash-Lite',
+          result: {
+            executiveSummary: `AI synthesis run #${promptCalls}: dual-active rollover recommended.`,
+            keyTakeaways: ['Mint secondary key and overlap for 24h [1]'],
+            openQuestions: [],
+          },
+        };
+      }
+    }
+
+    const action = new TestableSynthesisAction();
+    try {
+      mock.method(RunView.prototype, 'RunView', async (params: { EntityName: string; ExtraFilter?: string }) => {
+        if (params.EntityName === COMMUNITY_ENTITY_NAMES.ForumPosts) {
+          if (params.ExtraFilter?.includes(`RootPostID = '${ROOT_POST_ID}'`)) {
+            return { Success: true, Results: replies };
+          }
+          if (params.ExtraFilter?.includes(`ID = '${ROOT_POST_ID}'`)) {
+            return {
+              Success: true,
+              Results: [
+                {
+                  ID: ROOT_POST_ID,
+                  Title: 'Zero-Downtime Key Rotation',
+                  BodyMarkdown: 'How should we rotate API keys safely?',
+                  SummaryMarkdown: storedSummary,
+                  SummaryGeneratedAt: storedGeneratedAt,
+                  SummaryReplyWatermark: storedWatermark,
+                },
+              ],
+            };
+          }
+        }
+        return { Success: true, Results: [] };
+      });
+
+      mock.method(Metadata.prototype, 'GetEntityObject', async () => {
+        const entity = {
+          SummaryMarkdown: null as string | null,
+          SummaryGeneratedAt: null as Date | null,
+          SummaryReplyWatermark: 0,
+          Save: async () => {
+            saveCalls += 1;
+            storedSummary = entity.SummaryMarkdown;
+            storedGeneratedAt = entity.SummaryGeneratedAt;
+            storedWatermark = entity.SummaryReplyWatermark;
+            return true;
+          },
+        };
+        return entity;
+      });
+
+      const user = new UserInfo(undefined, { ID: USER_ID });
+      const invoke = async (force = false) => {
+        const rp = new RunActionParams();
+        rp.ContextUser = user;
+        rp.Filters = [];
+        rp.Params = [{ Name: 'RootPostID', Value: ROOT_POST_ID, Type: 'Input' }];
+        if (force) {
+          rp.Params.push({ Name: 'ForceRegenerate', Value: 'true', Type: 'Input' });
+        }
+        const out = await action.Run(rp);
+        const param = (name: string) => out.Params?.find((p) => p.Name === name)?.Value;
+        return { out, param };
+      };
+
+      // 1st call: cache miss -> calls Gemini 3.5 Flash-Lite & persists cache metadata
+      const first = await invoke(false);
+      assert.equal(first.out.Success, true);
+      assert.equal(promptCalls, 1);
+      assert.equal(saveCalls, 1);
+      assert.equal(first.param('CacheHit'), 'false');
+      assert.equal(first.param('ModelUsed'), 'Gemini 3.5 Flash-Lite');
+      assert.equal(first.param('AIExecutiveSummary'), 'AI synthesis run #1: dual-active rollover recommended.');
+
+      // 2nd call (thread unchanged): cache hit -> 0 extra LLM calls, 0 extra saves
+      const second = await invoke(false);
+      assert.equal(second.out.Success, true);
+      assert.equal(promptCalls, 1);
+      assert.equal(saveCalls, 1);
+      assert.equal(second.param('CacheHit'), 'true');
+      assert.equal(second.param('ModelUsed'), 'Gemini 3.5 Flash-Lite');
+      assert.equal(second.param('AIExecutiveSummary'), 'AI synthesis run #1: dual-active rollover recommended.');
+
+      // 3rd call (ForceRegenerate=true): bypasses cache and regenerates
+      const forced = await invoke(true);
+      assert.equal(forced.out.Success, true);
+      assert.equal(promptCalls, 2);
+      assert.equal(saveCalls, 2);
+      assert.equal(forced.param('CacheHit'), 'false');
+      assert.equal(forced.param('AIExecutiveSummary'), 'AI synthesis run #2: dual-active rollover recommended.');
+
+      // 4th call (new reply added): fingerprint & watermark change -> cache invalidated automatically
+      replies = [
+        ...replies,
+        {
+          ID: REPLY_2_ID,
+          BodyMarkdown: 'Should we also emit a webhook alert when legacy keys are retired?',
+          AuthorUserID: USER_ID,
+          AuthorUser: 'Mateo Lindqvist',
+        },
+      ];
+      const afterNewReply = await invoke(false);
+      assert.equal(afterNewReply.out.Success, true);
+      assert.equal(promptCalls, 3);
+      assert.equal(saveCalls, 3);
+      assert.equal(afterNewReply.param('CacheHit'), 'false');
+      assert.equal(afterNewReply.param('ConsideredReplyCount'), 2);
+    } finally {
+      mock.restoreAll();
+    }
+  });
 });

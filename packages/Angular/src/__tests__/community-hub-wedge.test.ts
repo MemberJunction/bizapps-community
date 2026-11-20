@@ -337,10 +337,12 @@ describe('Zero-CAC Wedge UX — Live Ask-First, Living Thread Synthesis & GraphQ
           Message: 'Synthesized 2 replies',
           ResultCode: 'SUCCESS',
           ResultData: JSON.stringify([
-            { Name: 'AIExecutiveSummary', Value: 'Server synthesis summary from ResultData.', Type: 'Output' },
+            { Name: 'AIExecutiveSummary', Value: 'Server synthesis summary from ResultData.\n<!-- mjc-synthesis-cache:{"version":1} -->', Type: 'Output' },
             { Name: 'ConsideredReplyCount', Value: 2, Type: 'Output' },
             { Name: 'KeyTakeaways', Value: JSON.stringify(['Use dual-key grace window [1]']), Type: 'Output' },
             { Name: 'OpenQuestions', Value: JSON.stringify(['Default TTL?']), Type: 'Output' },
+            { Name: 'CacheHit', Value: 'true', Type: 'Output' },
+            { Name: 'ModelUsed', Value: 'Gemini 3.5 Flash-Lite', Type: 'Output' },
             {
               Name: 'ContributorCitations',
               Value: JSON.stringify([
@@ -370,6 +372,8 @@ describe('Zero-CAC Wedge UX — Live Ask-First, Living Thread Synthesis & GraphQ
     assert.ok(parsed);
     assert.equal(parsed.executiveSummary, 'Server synthesis summary from ResultData.');
     assert.equal(parsed.consideredReplyCount, 2);
+    assert.equal(parsed.cacheHit, true);
+    assert.equal(parsed.modelUsed, 'Gemini 3.5 Flash-Lite');
     assert.deepEqual(parsed.keyTakeaways, ['Use dual-key grace window [1]']);
     assert.deepEqual(parsed.openQuestions, ['Default TTL?']);
     assert.equal(parsed.contributorCitations[0].authorDisplayName, 'Ada Lovelace');
@@ -467,6 +471,8 @@ describe('Zero-CAC Wedge UX — Live Ask-First, Living Thread Synthesis & GraphQ
     assert.match(hubHtml, /id="mjc-digest-send-test-btn"/);
     assert.match(hubHtml, /id="mjc-digest-reply-indicator"/);
     assert.match(hubHtml, /id="mjc-detail-synthesis-card"/);
+    assert.match(hubHtml, /id="mjc-detail-resynthesize-btn"/);
+    assert.match(hubTs, /ForceRegenerate/);
     assert.match(hubHtml, /id="mjc-detail-open-graduated-space-link"/);
     assert.match(hubHtml, /Why this was picked for you:/);
   });

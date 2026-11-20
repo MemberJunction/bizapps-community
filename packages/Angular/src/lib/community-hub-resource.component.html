@@ -348,7 +348,25 @@
                             <i class="fa-solid fa-wand-magic-sparkles" aria-hidden="true"></i>
                             AI Summary
                           </h3>
-                          <span class="mjc-community-hub__badge">{{ synth.consideredReplyCount }} replies summarized</span>
+                          <div class="mjc-synthesis-card__meta">
+                            <span class="mjc-community-hub__badge">{{ synth.consideredReplyCount }} replies summarized</span>
+                            @if (synth.cacheHit) {
+                              <span id="mjc-detail-synthesis-cache-badge" class="mjc-community-hub__badge" title="Served from cached summary (thread unchanged)">Cached</span>
+                            }
+                            @if (synth.modelUsed) {
+                              <span class="mjc-community-hub__badge">{{ synth.modelUsed }}</span>
+                            }
+                            <button
+                              type="button"
+                              id="mjc-detail-resynthesize-btn"
+                              class="mjc-community-hub__btn"
+                              [disabled]="isSynthesizingFeed"
+                              (click)="SynthesizeFeedThread(activeDetail.sourcePostId, true)"
+                            >
+                              <i class="fa-solid fa-rotate-right" aria-hidden="true"></i>
+                              <span>Regenerate</span>
+                            </button>
+                          </div>
                         </div>
                         <div class="mjc-community-hub__card-body mjc-markdown" [innerHTML]="renderMarkdown(synth.executiveSummary)"></div>
                         @if (synth.keyTakeaways.length > 0) {
@@ -625,6 +643,7 @@
                 (itemInspected)="openDetailSheet($event)"
                 (itemUpvoted)="upvoteCommonsItem($event)"
                 (threadSynthesized)="SynthesizeFeedThread($event)"
+                (threadRegenerated)="SynthesizeFeedThread($event, true)"
                 (inlineReplySubmitted)="submitDetailReply($event.itemId, $event.replyBody)"
                 (itemGraduated)="graduateDetailItem($event)"
                 (askShareRequested)="openAskShareModal()"

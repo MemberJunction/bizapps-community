@@ -73,6 +73,7 @@ export class KnowledgeStreamComponent {
   @Output() public readonly itemInspected = new EventEmitter<string>();
   @Output() public readonly itemUpvoted = new EventEmitter<string>();
   @Output() public readonly threadSynthesized = new EventEmitter<string>();
+  @Output() public readonly threadRegenerated = new EventEmitter<string>();
   @Output() public readonly inlineReplySubmitted = new EventEmitter<{ itemId: string; replyBody: string }>();
   @Output() public readonly itemGraduated = new EventEmitter<string>();
   @Output() public readonly askShareRequested = new EventEmitter<void>();
@@ -217,6 +218,10 @@ export class KnowledgeStreamComponent {
   public expandAndSynthesize(item: CommunityCommonsItem): void {
     this.expandedItemIds.add(item.id);
     this.threadSynthesized.emit(item.sourcePostId);
+  }
+
+  public regenerateSynthesis(sourcePostId: string): void {
+    this.threadRegenerated.emit(sourcePostId);
   }
 
   public getInlineReplyDraft(itemId: string): string {

@@ -1,0 +1,96 @@
+[
+  {
+    "fields": {
+      "Name": "Community: Living Thread Synthesis",
+      "Description": "Synthesizes a community discussion thread and its replies into a concise executive summary, key takeaways with contributor citations, and open questions.",
+      "TypeID": "@lookup:MJ: AI Prompt Types.Name=Chat",
+      "CategoryID": "@lookup:MJ: AI Prompt Categories.Name=Community?create&Description=AI Prompts for BizApps Community",
+      "TemplateText": "@file:templates/living-thread-synthesis.template.md",
+      "Status": "Active",
+      "ResponseFormat": "JSON",
+      "SelectionStrategy": "Specific",
+      "PowerPreference": "Lowest",
+      "ParallelizationMode": "None",
+      "MaxRetries": 1,
+      "PromptRole": "System",
+      "PromptPosition": "First",
+      "OutputType": "object",
+      "OutputExample": "{\"executiveSummary\": \"Concise synthesis of the discussion and resolved guidance [1].\", \"keyTakeaways\": [\"Actionable decision or verified parameter from the thread [1]\"], \"openQuestions\": [\"Any unresolved follow-up question raised by contributors [2]\"]}"
+    },
+    "relatedEntities": {
+      "MJ: AI Prompt Models": [
+        {
+          "fields": {
+            "PromptID": "@parent:ID",
+            "ModelID": "@lookup:MJ: AI Models.Name=Gemini 3.5 Flash-Lite",
+            "VendorID": "@lookup:MJ: AI Vendors.Name=Google",
+            "Priority": 12,
+            "Status": "Active"
+          },
+          "primaryKey": {
+            "ID": "A00BE6A7-E183-4B81-AE84-0C78E9B1DA85"
+          },
+          "sync": {
+            "lastModified": "2026-11-20T21:17:59.077Z",
+            "checksum": "1e2ef886622736afb9665fd6b711b9a247edf80294f0b79b0bccb5830adb78be"
+          }
+        },
+        {
+          "fields": {
+            "PromptID": "@parent:ID",
+            "ModelID": "@lookup:MJ: AI Models.Name=Gemini 3.5 Flash-Lite",
+            "VendorID": "@lookup:MJ: AI Vendors.Name=Vertex AI",
+            "Priority": 11,
+            "Status": "Active"
+          },
+          "primaryKey": {
+            "ID": "4783F07D-9187-44BB-B41A-5BFDC77DFB8D"
+          },
+          "sync": {
+            "lastModified": "2026-11-20T21:17:59.100Z",
+            "checksum": "f7476f90a85f6f97bb755da6719b1f56a6514bcbf5b54ab69edd12bf45f6dd12"
+          }
+        },
+        {
+          "fields": {
+            "PromptID": "@parent:ID",
+            "ModelID": "@lookup:MJ: AI Models.Name=Gemini 3.5 Flash-Lite",
+            "VendorID": "@lookup:MJ: AI Vendors.Name=OpenRouter",
+            "Priority": 10,
+            "Status": "Active"
+          },
+          "primaryKey": {
+            "ID": "E9326F2A-CDAE-4FBB-A235-C3399A53A931"
+          },
+          "sync": {
+            "lastModified": "2026-11-20T21:17:59.120Z",
+            "checksum": "5c45842e0ae1351c7b8836652f2c6246947152cdfa55360347a0d88be5e79b05"
+          }
+        },
+        {
+          "fields": {
+            "PromptID": "@parent:ID",
+            "ModelID": "@lookup:MJ: AI Models.Name=GPT 5.4-mini",
+            "VendorID": "@lookup:MJ: AI Vendors.Name=OpenAI",
+            "Priority": 5,
+            "Status": "Active"
+          },
+          "primaryKey": {
+            "ID": "573A6E3C-7D66-4911-AF55-0ACA569BDD32"
+          },
+          "sync": {
+            "lastModified": "2026-11-20T21:17:59.144Z",
+            "checksum": "28cb2c7ec27b55b9fb69549d8dfd4079bc5dca4e467d148491f4df82d642c85b"
+          }
+        }
+      ]
+    },
+    "primaryKey": {
+      "ID": "268C3B8F-9284-4DA2-84A8-40FEF21AB5ED"
+    },
+    "sync": {
+      "lastModified": "2026-11-20T21:17:59.008Z",
+      "checksum": "26dd5ba4497890514c5100c350b684cd1d1eadc831bf149beca059c6b865599d"
+    }
+  }
+]

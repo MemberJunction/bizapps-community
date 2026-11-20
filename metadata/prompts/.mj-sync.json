@@ -1,0 +1,11 @@
+{
+  "entity": "MJ: AI Prompts",
+  "filePattern": "**/.*.json",
+  "ignoreDirectories": [
+    "templates"
+  ],
+  "defaults": {
+    "CategoryID": "@lookup:MJ: AI Prompt Categories.Name=Community?create&Description=AI Prompts for BizApps Community",
+    "TypeID": "@lookup:MJ: AI Prompt Types.Name=Chat"
+  }
+}
