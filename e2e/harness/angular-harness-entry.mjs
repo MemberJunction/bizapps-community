@@ -15,7 +15,6 @@ import {
   UIDriverRegistry,
   assembleSpaceContributions,
 } from '@mj-biz-apps/collaboration-ng-widgets';
-import { COMMUNITY_ACTION_DRIVER_CLASSES, COMMUNITY_ACTION_IDS } from '@mj-biz-apps/community-core';
 import {
   CommunityHubResource,
   CommunityCollaborationSpaceUIDriver,
@@ -255,130 +254,37 @@ uiEngine.SetSettingDebounced = (key, value) => {
   void postHarnessJson('/api/harness/user-settings', { key, value });
 };
 
-function buildSamplePdfBase64(spaceName) {
-  const safeName = String(spaceName || 'Community').replace(/[()\\]/g, '');
-  const stream = `BT /F1 12 Tf 50 720 Td (${safeName} Weekly Community Digest) Tj ET`;
-  const pdf = [
-    '%PDF-1.4',
-    '1 0 obj << /Type /Catalog /Pages 2 0 R >> endobj',
-    '2 0 obj << /Type /Pages /Kids [3 0 R] /Count 1 >> endobj',
-    '3 0 obj << /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R >> endobj',
-    `4 0 obj << /Length ${stream.length} >> stream\n${stream}\nendstream endobj`,
-    'trailer << /Root 1 0 R >>',
-    '%%EOF',
-  ].join('\n');
-  return btoa(pdf);
-}
-
 GraphQLActionClient.prototype.RunAction = async function (actionName, params) {
   window.__executedActions = window.__executedActions || [];
   window.__executedActions.push({ actionName, params });
 
-  const getParam = (name) => params?.find((p) => p.Name === name)?.Value ?? '';
+  const actionResult = await postHarnessJson('/api/harness/run-action', {
+    actionID: actionName,
+    params: Array.isArray(params) ? params : [],
+  });
 
-  if (actionName === COMMUNITY_ACTION_IDS.AskFirstDeflection) {
-    const query = getParam('QueryText');
-    return {
-      Success: true,
-      ResultCode: 'DEFLECTED',
-      Message: `Deflected "${query}" with verified Canon answer: "How do I rotate my API key without downtime?" (94% confidence).`,
-      Params: [],
-    };
+  let parsedResult = null;
+  if (typeof actionResult?.ResultData === 'string' && actionResult.ResultData.trim()) {
+    try {
+      parsedResult = JSON.parse(actionResult.ResultData);
+    } catch {
+      parsedResult = actionResult.ResultData;
+    }
   }
-  if (actionName === COMMUNITY_ACTION_IDS.ExportDigestPDF) {
-    const spaceName = getParam('SpaceName');
-    return {
-      Success: true,
-      ResultCode: 'SUCCESS',
-      Message: 'Digest PDF generated.',
-      Params: [{ Name: 'PDFBase64', Value: buildSamplePdfBase64(spaceName), Type: 'Output' }],
-    };
-  }
-  if (actionName === COMMUNITY_ACTION_IDS.LivingThreadSynthesis) {
-    const rootPostId = getParam('RootPostID');
-    return {
-      Success: true,
-      ResultCode: 'SUCCESS',
-      Message: 'Synthesized 3 key engineering takeaways and 2 follow-up action items.',
-      Params: [
-        {
-          Name: 'AIExecutiveSummary',
-          Value: `Living synthesis for thread ${rootPostId || 'active'}: consensus favors dual-key rotation with lease telemetry checks.`,
-          Type: 'Output',
-        },
-        { Name: 'ConsideredReplyCount', Value: 3, Type: 'Output' },
-        {
-          Name: 'KeyTakeaways',
-          Value: JSON.stringify([
-            'Deploy secondary credential across workers before revoking primary key [1]',
-            'Monitor 429 Retry-After lease telemetry across US-East and EU-West [2]',
-          ]),
-          Type: 'Output',
-        },
-        {
-          Name: 'OpenQuestions',
-          Value: JSON.stringify(['Should lease window default to 24h for partner tenants?']),
-          Type: 'Output',
-        },
-        {
-          Name: 'ContributorCitations',
-          Value: JSON.stringify([
-            {
-              citationIndex: 1,
-              authorDisplayName: 'E2E Harness Member',
-              postId: rootPostId || null,
-              roleLabel: 'Accepted Answer',
-            },
-          ]),
-          Type: 'Output',
-        },
-      ],
-    };
-  }
-  if (actionName === COMMUNITY_ACTION_DRIVER_CLASSES.SendPersonalizedDigest) {
-    const communityName = getParam('CommunityName') || 'BizApps Community';
-    const replyToAddress = 'reply+hmac_e2e_verified_token@reply.bizapps.local';
-    return {
-      Success: true,
-      ResultCode: 'SUCCESS',
-      Message: `Dispatched 1 personalized digest(s) for ${communityName} via Community Test Email Driver (0 failed).`,
-      Params: [
-        { Name: 'SentCount', Value: 1, Type: 'Output' },
-        { Name: 'FailedCount', Value: 0, Type: 'Output' },
-        { Name: 'DryRun', Value: false, Type: 'Output' },
-        { Name: 'ProviderName', Value: 'Community Test Email Driver', Type: 'Output' },
-        {
-          Name: 'DeliveriesJSON',
-          Value: JSON.stringify([
-            {
-              userId: HARNESS_USER.ID,
-              email: HARNESS_USER.Email,
-              itemCount: 3,
-              replyToAddress,
-              providerName: 'Community Test Email Driver',
-              usedCommunicationEngine: true,
-              dryRun: false,
-              success: true,
-            },
-          ]),
-          Type: 'Output',
-        },
-      ],
-    };
-  }
-  if (actionName === COMMUNITY_ACTION_IDS.EpistemicAnswerGrading) {
-    return {
-      Success: true,
-      ResultCode: 'SUCCESS',
-      Message: 'Epistemic grading complete: Canon Verified (0.95 confidence).',
-      Params: [
-        { Name: 'EpistemicStatus', Value: 'Canon Verified', Type: 'Output' },
-        { Name: 'ConfidenceScore', Value: 0.95, Type: 'Output' },
-        { Name: 'VerificationStatus', Value: 'AI_Verified', Type: 'Output' },
-      ],
-    };
-  }
-  return { Success: true, ResultCode: 'SUCCESS', Message: `Action ${actionName} executed.`, Params: [] };
+
+  return {
+    Success: Boolean(actionResult?.Success),
+    ResultCode: actionResult?.ResultCode ?? (actionResult?.Success ? 'SUCCESS' : 'FAILED'),
+    Message: actionResult?.Message ?? '',
+    Result: parsedResult,
+    LogEntry: null,
+    Params: Array.isArray(params) ? params : [],
+    RunParams: null,
+  };
+};
+
+window.__runGraphQLAction = async (actionId, params = []) => {
+  return new GraphQLActionClient(mockProvider).RunAction(actionId, params);
 };
 
 const harnessMode = new URLSearchParams(window.location.search).get('mode');

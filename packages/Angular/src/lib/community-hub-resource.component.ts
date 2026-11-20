@@ -460,6 +460,7 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
   public streamTopics: string[] = [];
   public loadedTopicTags: LiveForumTopicTagRow[] = [];
   public activeSpaceFilter: CommunitySpaceFilterId = 'all';
+  private previousSpaceFilterBeforeWorkingSpace: CommunitySpaceFilterId | null = null;
   public activeTopicFilter: string | null = null;
   public activeStreamTypeFilter: CommunityStreamTypeFilter = 'all';
   public sessions: CommunitySessionItem[] = [];
@@ -1954,6 +1955,7 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
     const spaceId = promotedSpaceId?.trim();
     if (!spaceId) return;
 
+    this.previousSpaceFilterBeforeWorkingSpace = this.activeSpaceFilter;
     this.activeSection = 'spaces';
     this.embeddedCollaborationMode = true;
     this.activeGraduatedSpaceId = spaceId;
@@ -1970,6 +1972,8 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
     this.activeSection = 'hub';
     this.embeddedCollaborationMode = false;
     this.activeGraduatedSpaceId = null;
+    this.activeSpaceFilter = this.previousSpaceFilterBeforeWorkingSpace ?? 'all';
+    this.previousSpaceFilterBeforeWorkingSpace = null;
     this.cdr.markForCheck();
   }
 

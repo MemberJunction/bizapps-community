@@ -237,8 +237,16 @@ test('Real Angular 21 Community Hub: 26 ClassFactory registrations, 4 tabs, PDF 
   await expect(page.locator('#mjc-detail-graduate-btn')).toContainText('Graduated to Working Space');
   await page.screenshot({ path: join(SCREENSHOTS_DIR, '03-detail-drawer.png'), fullPage: false });
 
-  await page.keyboard.press('Escape');
+  // Verify CR-08 Working Space handoff renders a genuine Working Space view and navigates back cleanly
+  await page.click('#mjc-detail-open-graduated-space-link');
   await expect(page.locator('#mjc-detail-sheet-backdrop')).toBeHidden();
+  await expect(page.locator('#mjc-graduated-working-space-view')).toBeVisible();
+  await expect(page.locator('#mjc-graduated-working-space-view')).toHaveAttribute('data-space-id', promotedSpaceId);
+  await expect(page.locator('#mjc-graduated-working-space-view')).toContainText(promotedSpaceId);
+  await expect(page.locator('#mjc-working-space-open-record-btn')).toBeVisible();
+  await page.click('#mjc-working-space-back-btn');
+  await expect(page.locator('#mjc-graduated-working-space-view')).toBeHidden();
+  await page.click('#mjc-hub-tab-knowledge-stream');
   await expect(createdPostCard).toContainText('Graduated · Working Group');
   await expect(createdPostCard).toContainText(`Space: ${promotedSpaceId}`);
 
@@ -260,7 +268,12 @@ test('Real Angular 21 Community Hub: 26 ClassFactory registrations, 4 tabs, PDF 
   await expect(page.locator('#mjc-digest-cadence-daily')).toHaveAttribute('aria-pressed', 'true');
   await page.click('#mjc-digest-send-test-btn');
   await expect(page.locator('#mjc-digest-send-status')).toContainText('Community Test Email Driver');
-  await expect(page.locator('#mjc-digest-reply-indicator')).toContainText('reply+hmac_e2e_verified_token@reply.bizapps.local');
+  const replyIndicatorText = (await page.locator('#mjc-digest-reply-indicator').textContent()) ?? '';
+  expect(replyIndicatorText).not.toContain('hmac_e2e_verified_token');
+  const replyMatch = replyIndicatorText.match(/reply\+[0-9a-f]{16}\.[A-Za-z0-9_-]{32}@reply\.bizapps\.local/);
+  expect(replyMatch, `Expected compact HMAC reply address in: ${replyIndicatorText}`).toBeTruthy();
+  const digestReplyLocalPart = replyMatch[0].split('@')[0];
+  expect(Buffer.byteLength(digestReplyLocalPart, 'utf8')).toBeLessThanOrEqual(64);
 
   const digestAxe = await new AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa']).analyze();
   const digestCriticalOrSerious = digestAxe.violations.filter((v) => v.impact === 'critical' || v.impact === 'serious');
@@ -422,6 +435,31 @@ test('Real Angular 21 Community Hub: 26 ClassFactory registrations, 4 tabs, PDF 
     stateBeforeReload.gqlCalls.some((c) => c.query.includes('GraduateCommunityThread')),
     'GraduateCommunityThread GraphQL mutation must execute',
   ).toBe(true);
+  expect(
+    String(createdPostRow.SummaryMarkdown ?? ''),
+    'LivingThreadSynthesis action must update root post SummaryMarkdown from persisted replies',
+  ).toContain('Verified failover timing in staging cluster.');
+  expect(
+    Array.isArray(stateBeforeReload.digestOutbox) && stateBeforeReload.digestOutbox.length >= 1,
+    'SendPersonalizedDigest action must record outbound digest in harness outbox',
+  ).toBe(true);
+  const outboxEntry = stateBeforeReload.digestOutbox[0];
+  expect(outboxEntry.replyTo).toMatch(/^reply\+[0-9a-f]{16}\.[A-Za-z0-9_-]{32}@reply\.bizapps\.local$/);
+  expect(Buffer.byteLength(outboxEntry.replyTo.split('@')[0], 'utf8')).toBeLessThanOrEqual(64);
+  expect(
+    Array.isArray(stateBeforeReload.actionCalls) && stateBeforeReload.actionCalls.length >= 4,
+    'Backend /api/harness/run-action endpoint must capture real RunAction invocations',
+  ).toBe(true);
+  for (const call of stateBeforeReload.actionCalls) {
+    expect(call.actionId, `Action ID "${call.actionId}" must be a canonical UUID`).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i,
+    );
+  }
+  const invalidActionResult = await page.evaluate(() =>
+    window.__runGraphQLAction('00000000-0000-0000-0000-000000000000', []),
+  );
+  expect(invalidActionResult.Success).toBe(false);
+  expect(invalidActionResult.ResultCode).toBe('ACTION_NOT_FOUND');
 
   // RELOAD FULL PAGE and verify all 6 mutated states + UserInfoEngine preferences remain rendered cleanly from DB!
   await page.reload();

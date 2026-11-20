@@ -1,4 +1,5 @@
-import { randomUUID } from 'node:crypto';
+import { createHmac, randomBytes, randomUUID } from 'node:crypto';
+import { COMMUNITY_ACTION_DRIVER_CLASSES, COMMUNITY_ACTION_IDS } from '../../packages/Core/dist/index.js';
 
 export const HARNESS_CONSTANTS = {
   HARNESS_USER_ID: '11111111-1111-4111-8111-111111111111',
@@ -385,6 +386,8 @@ function buildInitialState() {
     ],
     userSettings: {},
     gqlCalls: [],
+    digestOutbox: [],
+    actionCalls: [],
   };
 }
 
@@ -560,6 +563,8 @@ export function createHarnessStore() {
         questions: state.questions,
         userSettings: state.userSettings,
         gqlCalls: state.gqlCalls,
+        digestOutbox: state.digestOutbox,
+        actionCalls: state.actionCalls,
       };
     },
 
@@ -728,6 +733,19 @@ export function createHarnessStore() {
           }
           return rows;
         }
+        case 'MJ: Actions': {
+          const catalog = Object.entries(COMMUNITY_ACTION_IDS).map(([key, id]) => ({
+            ID: id,
+            Name: COMMUNITY_ACTION_DRIVER_CLASSES[key],
+            DriverClass: COMMUNITY_ACTION_DRIVER_CLASSES[key],
+            Status: 'Active',
+          }));
+          const driverFilter = parseEqFilter(extraFilter, 'DriverClass');
+          if (driverFilter) {
+            return catalog.filter((a) => a.DriverClass === driverFilter);
+          }
+          return catalog;
+        }
         default:
           return [];
       }
@@ -894,6 +912,236 @@ export function createHarnessStore() {
       }
 
       return {};
+    },
+
+    runAction(actionId, params = []) {
+      const normalizedId = String(actionId ?? '').trim().toUpperCase();
+      const inputParams = Array.isArray(params) ? params : [];
+      const getParam = (name) => {
+        const found = inputParams.find((p) => String(p?.Name ?? '').toLowerCase() === name.toLowerCase());
+        return found?.Value ?? '';
+      };
+
+      state.actionCalls.push({
+        actionId: String(actionId ?? ''),
+        params: inputParams,
+        calledAt: new Date().toISOString(),
+      });
+
+      const knownIds = new Set(Object.values(COMMUNITY_ACTION_IDS).map((id) => id.toUpperCase()));
+      if (!normalizedId || !knownIds.has(normalizedId)) {
+        return {
+          Success: false,
+          ResultCode: 'ACTION_NOT_FOUND',
+          Message: `Unknown or inactive action ID: ${String(actionId || '(empty)')}`,
+          ResultData: null,
+        };
+      }
+
+      if (normalizedId === COMMUNITY_ACTION_IDS.AskFirstDeflection.toUpperCase()) {
+        const queryText = String(getParam('QueryText') ?? '').trim().toLowerCase();
+        const terms = queryText.split(/\s+/).filter((t) => t.length >= 2);
+        const candidates = state.posts.filter((p) => p.RootPostID == null && p.PostTypeID !== C.PT_REPLY);
+        let bestPost = candidates.find((p) => p.ID === C.Q_1) ?? candidates[0] ?? null;
+        let bestOverlap = 0;
+        for (const post of candidates) {
+          const haystack = `${post.Title ?? ''} ${post.BodyMarkdown ?? ''}`.toLowerCase();
+          const overlap = terms.filter((t) => haystack.includes(t)).length;
+          if (overlap > bestOverlap) {
+            bestOverlap = overlap;
+            bestPost = post;
+          }
+        }
+        const confidencePct = bestPost ? Math.min(98, 74 + bestOverlap * 8) : 0;
+        const output = [
+          { Name: 'Deflected', Value: Boolean(bestPost), Type: 'Output' },
+          { Name: 'MatchCount', Value: bestPost ? 1 : 0, Type: 'Output' },
+          {
+            Name: 'MatchesJSON',
+            Value: JSON.stringify(
+              bestPost
+                ? [{ PostID: bestPost.ID, Title: bestPost.Title, ConfidencePct: confidencePct }]
+                : [],
+            ),
+            Type: 'Output',
+          },
+        ];
+        return {
+          Success: true,
+          ResultCode: bestPost ? 'DEFLECTED' : 'NO_MATCH',
+          Message: bestPost
+            ? `Deflected "${String(getParam('QueryText') ?? '')}" with verified Canon answer: "${bestPost.Title}" (${confidencePct}% confidence).`
+            : 'No verified Canon match found.',
+          ResultData: JSON.stringify(output),
+        };
+      }
+
+      if (normalizedId === COMMUNITY_ACTION_IDS.ExportDigestPDF.toUpperCase()) {
+        const spaceName = String(getParam('SpaceName') ?? 'BizApps Community').replace(/[()\\]/g, '');
+        const postCount = state.posts.filter((p) => p.RootPostID == null).length;
+        const stream = `BT /F1 12 Tf 50 720 Td (${spaceName} Community Digest - ${postCount} threads) Tj ET`;
+        const pdf = [
+          '%PDF-1.4',
+          '1 0 obj << /Type /Catalog /Pages 2 0 R >> endobj',
+          '2 0 obj << /Type /Pages /Kids [3 0 R] /Count 1 >> endobj',
+          '3 0 obj << /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R >> endobj',
+          `4 0 obj << /Length ${stream.length} >> stream\n${stream}\nendstream endobj`,
+          'trailer << /Root 1 0 R >>',
+          '%%EOF',
+        ].join('\n');
+        const pdfBase64 = Buffer.from(pdf, 'utf8').toString('base64');
+        return {
+          Success: true,
+          ResultCode: 'SUCCESS',
+          Message: `Digest PDF generated for ${spaceName}.`,
+          ResultData: JSON.stringify([{ Name: 'PDFBase64', Value: pdfBase64, Type: 'Output' }]),
+        };
+      }
+
+      if (normalizedId === COMMUNITY_ACTION_IDS.LivingThreadSynthesis.toUpperCase()) {
+        const rootPostId = String(getParam('RootPostID') ?? '').trim();
+        const rootPost = state.posts.find((p) => p.ID.toLowerCase() === rootPostId.toLowerCase());
+        if (!rootPost) {
+          return {
+            Success: false,
+            ResultCode: 'POST_NOT_FOUND',
+            Message: `Cannot synthesize thread: post ${rootPostId || '(empty)'} not found.`,
+            ResultData: null,
+          };
+        }
+        const replies = state.posts.filter(
+          (p) => p.RootPostID && p.RootPostID.toLowerCase() === rootPost.ID.toLowerCase(),
+        );
+        const firstSnippet = replies[0]?.BodyMarkdown
+          ? replies[0].BodyMarkdown.slice(0, 96)
+          : rootPost.BodyMarkdown.slice(0, 96);
+        const executiveSummary = `Living synthesis for "${rootPost.Title}" across ${replies.length} persisted replies: ${firstSnippet}`;
+        rootPost.SummaryMarkdown = executiveSummary;
+        const takeaways = [
+          `Root discussion: ${rootPost.Title} [1]`,
+          ...replies.map((r, idx) => `${r.BodyMarkdown} [${idx + 1}]`),
+        ];
+        const citations = (replies.length > 0 ? replies : [rootPost]).map((entry, idx) => ({
+          citationIndex: idx + 1,
+          authorDisplayName: 'E2E Harness Member',
+          postId: entry.ID,
+          roleLabel: entry.ID === rootPost.ID ? 'Thread Author' : 'Verified Contributor',
+        }));
+        const output = [
+          { Name: 'AIExecutiveSummary', Value: executiveSummary, Type: 'Output' },
+          { Name: 'ConsideredReplyCount', Value: replies.length, Type: 'Output' },
+          { Name: 'KeyTakeaways', Value: JSON.stringify(takeaways), Type: 'Output' },
+          {
+            Name: 'OpenQuestions',
+            Value: JSON.stringify(
+              replies.length > 0
+                ? ['Should this runbook be graduated into a Working Group checklist?']
+                : ['Awaiting peer verification replies on this thread.'],
+            ),
+            Type: 'Output',
+          },
+          { Name: 'ContributorCitations', Value: JSON.stringify(citations), Type: 'Output' },
+        ];
+        return {
+          Success: true,
+          ResultCode: 'SUCCESS',
+          Message: `Synthesized ${takeaways.length} key takeaways from ${replies.length} persisted replies.`,
+          ResultData: JSON.stringify(output),
+        };
+      }
+
+      if (normalizedId === COMMUNITY_ACTION_IDS.SendPersonalizedDigest.toUpperCase()) {
+        const communityName = String(getParam('CommunityName') ?? 'BizApps Community').trim() || 'BizApps Community';
+        const dryRunRaw = getParam('DryRun');
+        const dryRun = dryRunRaw === true || String(dryRunRaw).toLowerCase() === 'true';
+        const primaryPost =
+          state.posts.find((p) => p.RootPostID == null && p.SpaceID !== C.SPACE_2) ?? state.posts[0] ?? null;
+        const tokenId = randomBytes(8).toString('hex');
+        const sig = createHmac('sha256', 'mj-community-harness-hmac-key')
+          .update(`${tokenId}|${C.HARNESS_USER_ID}|${primaryPost?.ID ?? C.POST_FEED_1}`)
+          .digest('base64url')
+          .slice(0, 32);
+        const replyToAddress = `reply+${tokenId}.${sig}@reply.bizapps.local`;
+        const localPart = replyToAddress.split('@')[0] ?? '';
+        if (Buffer.byteLength(localPart, 'utf8') > 64) {
+          return {
+            Success: false,
+            ResultCode: 'TOKEN_TOO_LONG',
+            Message: `Generated reply address local-part (${localPart.length} octets) exceeded RFC 5321 64-octet limit.`,
+            ResultData: null,
+          };
+        }
+
+        const itemCount = state.posts.filter((p) => p.RootPostID == null && p.SpaceID !== C.SPACE_2).length;
+        state.digestOutbox.push({
+          id: randomUUID(),
+          communityName,
+          recipientUserId: C.HARNESS_USER_ID,
+          recipientEmail: 'member@bizapps-community.local',
+          replyTo: replyToAddress,
+          tokenHandle: `${tokenId}.${sig}`,
+          itemCount,
+          dryRun,
+          sentAt: new Date().toISOString(),
+        });
+
+        const output = [
+          { Name: 'SentCount', Value: 1, Type: 'Output' },
+          { Name: 'FailedCount', Value: 0, Type: 'Output' },
+          { Name: 'DryRun', Value: dryRun, Type: 'Output' },
+          { Name: 'ProviderName', Value: 'Community Test Email Driver', Type: 'Output' },
+          {
+            Name: 'DeliveriesJSON',
+            Value: JSON.stringify([
+              {
+                userId: C.HARNESS_USER_ID,
+                email: 'member@bizapps-community.local',
+                itemCount,
+                replyToAddress,
+                providerName: 'Community Test Email Driver',
+                usedCommunicationEngine: true,
+                dryRun,
+                success: true,
+              },
+            ]),
+            Type: 'Output',
+          },
+        ];
+        return {
+          Success: true,
+          ResultCode: 'SUCCESS',
+          Message: `Dispatched 1 personalized digest(s) for ${communityName} via Community Test Email Driver (0 failed).`,
+          ResultData: JSON.stringify(output),
+        };
+      }
+
+      if (normalizedId === COMMUNITY_ACTION_IDS.EpistemicAnswerGrading.toUpperCase()) {
+        const answerPostId = String(getParam('AnswerPostID') ?? '').trim();
+        const answerRow = state.answers.find((a) => a.ID.toLowerCase() === answerPostId.toLowerCase());
+        if (answerRow) {
+          answerRow.VerificationStatus = 'AI_Verified';
+          answerRow.AIEpistemicStatus = 'Canon Verified';
+          answerRow.ConfidenceScore = 0.95;
+        }
+        const output = [
+          { Name: 'EpistemicStatus', Value: 'Canon Verified', Type: 'Output' },
+          { Name: 'ConfidenceScore', Value: 0.95, Type: 'Output' },
+          { Name: 'VerificationStatus', Value: 'AI_Verified', Type: 'Output' },
+        ];
+        return {
+          Success: true,
+          ResultCode: 'SUCCESS',
+          Message: 'Epistemic grading complete: Canon Verified (0.95 confidence).',
+          ResultData: JSON.stringify(output),
+        };
+      }
+
+      return {
+        Success: true,
+        ResultCode: 'SUCCESS',
+        Message: `Action ${normalizedId} executed cleanly.`,
+        ResultData: '[]',
+      };
     },
   };
 }
