@@ -7,6 +7,7 @@ import { CommunityGraduationResolver } from './resolvers.ts';
 
 export * from './document-blocks.ts';
 export * from './resolvers.ts';
+export * from './attachments.ts';
 
 const here = fileURLToPath(new URL('.', import.meta.url));
 
