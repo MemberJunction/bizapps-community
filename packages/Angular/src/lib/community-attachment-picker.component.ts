@@ -13,12 +13,16 @@ import {
 import { FormsModule } from '@angular/forms';
 import {
   COMMUNITY_ATTACHMENT_MAX_CAPTION_LENGTH,
+  ClassifyAttachmentKind,
+  IsAllowedAttachmentMimeType,
+  ValidateAttachmentFileSize,
   type CommunityAttachmentEntryType,
 } from '@mj-biz-apps/community-core';
 import {
   CreateDraftArtifactAttachment,
   CreateDraftFileAttachment,
   FilterAccessibleArtifacts,
+  InferAttachmentMimeType,
   MoveDraftAttachment,
   PICKER_ACCEPTED_FILE_EXTENSIONS,
   PICKER_HELPER_LIBRARY_COPY,
@@ -146,30 +150,51 @@ export class CommunityAttachmentPickerComponent {
     let nextSequence = this.drafts.length + 1;
 
     for (const file of files) {
-      const prelim = CreateDraftFileAttachment({
-        fileName: file.name,
-        mimeType: file.type,
-        sizeBytes: file.size,
-        url: `https://attachments.local/${encodeURIComponent(file.name)}`,
-        entryType: this.entryType,
-        sequence: nextSequence,
-      });
-      if (prelim.error || !prelim.draft) {
-        errors.push(prelim.error ?? `Unable to attach "${file.name}".`);
+      const trimmedName = file.name.trim();
+      if (!trimmedName) {
+        errors.push('Attachment file name cannot be empty.');
+        continue;
+      }
+      const resolvedMime = InferAttachmentMimeType(file.type, trimmedName);
+      if (!IsAllowedAttachmentMimeType(resolvedMime)) {
+        errors.push(
+          `File "${trimmedName}" (${resolvedMime || 'unknown type'}) is not an allowed image, video, audio, or document type.`,
+        );
+        continue;
+      }
+      const sizeCheck = ValidateAttachmentFileSize(file.size);
+      if (!sizeCheck.valid) {
+        errors.push(`${trimmedName}: ${sizeCheck.errors.join(' ')}`);
+        continue;
+      }
+      const kind = ClassifyAttachmentKind(resolvedMime, false);
+      if (kind === 'artifact') {
+        errors.push(`File "${trimmedName}" cannot be classified as a regular file attachment.`);
         continue;
       }
 
-      const previewUrl = await ReadBrowserFilePreviewUrl(file, prelim.draft.kind, prelim.draft.mimeType);
+      let durableDataUrl: string;
+      try {
+        durableDataUrl = await ReadBrowserFilePreviewUrl(file, kind, resolvedMime);
+      } catch (readErr) {
+        errors.push(
+          readErr instanceof Error
+            ? readErr.message
+            : `Failed to read "${trimmedName}" into a durable attachment payload.`,
+        );
+        continue;
+      }
+
       const finalized = CreateDraftFileAttachment({
-        fileName: file.name,
-        mimeType: file.type,
+        fileName: trimmedName,
+        mimeType: resolvedMime,
         sizeBytes: file.size,
-        url: previewUrl,
+        url: durableDataUrl,
         entryType: this.entryType,
         sequence: nextSequence,
       });
       if (finalized.error || !finalized.draft) {
-        errors.push(finalized.error ?? `Unable to attach "${file.name}".`);
+        errors.push(finalized.error ?? `Unable to attach "${trimmedName}".`);
         continue;
       }
 

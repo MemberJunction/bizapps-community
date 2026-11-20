@@ -10,10 +10,12 @@ import {
   CommunityRules,
   EscapeSqlLiteral,
   IsAllowedAttachmentMimeType,
+  IsTemporaryOrPlaceholderAttachmentUrl,
   NormalizeAttachmentMimeType,
   ResolveAttachmentSpaceItemFolder,
   ResolveDefaultFeatureInLibrary,
   SanitizeCommunityAttachmentUrl,
+  SanitizePersistedAttachmentUrl,
   ValidateAttachmentBatchLimits,
   ValidateCommunityAttachmentInput,
   type CommunityArtifactAttachmentItem,
@@ -467,9 +469,9 @@ export function CreateDraftFileAttachment(params: {
     return { error: `${trimmedName}: ${validation.errors.join(' ')}` };
   }
 
-  const safeUrl = SanitizeCommunityAttachmentUrl(params.url, kind);
+  const safeUrl = SanitizePersistedAttachmentUrl(params.url, kind);
   if (!safeUrl) {
-    return { error: `${trimmedName}: Attachment preview URL uses an unsafe or unsupported scheme.` };
+    return { error: `${trimmedName}: Attachment URL must be a durable safe data: or http(s): URL (blob: and placeholder URLs are not permitted).` };
   }
 
   const featureInLibrary = ResolveDefaultFeatureInLibrary(kind, params.entryType ?? 'post');
@@ -731,6 +733,11 @@ export function ValidateDraftAttachmentsForSubmit(
         errors.push(...res.errors.map((e) => `${draft.artifactName}: ${e}`));
       }
     } else {
+      if (!draft.url || !SanitizePersistedAttachmentUrl(draft.url, draft.kind)) {
+        errors.push(
+          `${draft.fileName}: Attachment URL must be a durable safe data: or http(s): payload (temporary blob: or placeholder URLs cannot be persisted).`,
+        );
+      }
       const res = ValidateCommunityAttachmentInput({
         kind: draft.kind,
         fileName: draft.fileName,
@@ -1231,14 +1238,14 @@ export async function AuthorizeClientPostAttachmentWrite(params: {
         if (ver.ContentMode !== 'File') {
           return deny(`Artifact Version ${validVerId} has ContentMode "${ver.ContentMode ?? 'null'}", expected "File".`);
         }
-        if (draft.fileId && ver.FileID && !UUIDsEqual(ver.FileID, draft.fileId)) {
-          return deny(`Artifact Version ${validVerId} belongs to a different File than ${draft.fileId}.`);
+        if (draft.fileId && (!ver.FileID || !UUIDsEqual(ver.FileID, draft.fileId))) {
+          return deny(`Artifact Version ${validVerId} does not belong to File ${draft.fileId}.`);
         }
         if (ver.MimeType && !IsAllowedAttachmentMimeType(NormalizeAttachmentMimeType(ver.MimeType))) {
           return deny(`Artifact Version ${validVerId} MIME type "${ver.MimeType}" is not permitted.`);
         }
-        if (ver.Content && !SanitizeCommunityAttachmentUrl(ver.Content, draft.kind)) {
-          return deny(`Artifact Version ${validVerId} content URL uses an unsafe or unsupported scheme.`);
+        if (ver.Content && !SanitizePersistedAttachmentUrl(ver.Content, draft.kind)) {
+          return deny(`Artifact Version ${validVerId} content URL uses an unsafe, temporary, or unsupported scheme.`);
         }
       }
     }
@@ -1467,7 +1474,16 @@ export async function PersistPostAttachmentsFromClient(
         targetRecordId = AssertValidUUID(draft.artifactId, 'artifactId');
         resolvedArtifactId = targetRecordId;
         resolvedArtifactVersionId = draft.pinnedVersionId ?? draft.latestVersionId ?? null;
+      } else if (IsTemporaryOrPlaceholderAttachmentUrl(draft.url) || (draft.url && !SanitizePersistedAttachmentUrl(draft.url, draft.kind))) {
+        throw new Error(
+          `Attachment "${draft.fileName}" has a temporary or unsafe URL (blob:/attachments.local) that cannot be persisted into ArtifactVersion.Content.`,
+        );
       } else if (!draft.fileId && !draft.artifactVersionId) {
+        if (!draft.url || !SanitizePersistedAttachmentUrl(draft.url, draft.kind)) {
+          throw new Error(
+            `Attachment "${draft.fileName}" requires a durable data: or http(s): payload before persistence.`,
+          );
+        }
         const artifactTypeId = await params.resolveArtifactTypeId!(draft.kind, draft.mimeType);
         if (!artifactTypeId) {
           throw new Error(
@@ -1759,63 +1775,94 @@ export function BuildSpaceItemCompositeKey(spaceItemId: string): CompositeKey {
   return CompositeKey.FromID(AssertValidUUID(spaceItemId, 'spaceItemId'));
 }
 
+function encodeBytesToBase64(bytes: Uint8Array): string {
+  const chunkSize = 0x8000;
+  const parts: string[] = [];
+  for (let i = 0; i < bytes.length; i += chunkSize) {
+    parts.push(String.fromCharCode(...bytes.subarray(i, i + chunkSize)));
+  }
+  return btoa(parts.join(''));
+}
+
+function normalizeDataUrlMime(dataUrl: string, resolvedMimeType?: string, fileType?: string): string {
+  const targetMime = NormalizeAttachmentMimeType(resolvedMimeType || fileType);
+  if (!targetMime) {
+    return dataUrl;
+  }
+  const commaIdx = dataUrl.indexOf(',');
+  if (commaIdx <= 5) {
+    return dataUrl;
+  }
+  const header = dataUrl.slice(5, commaIdx);
+  const payload = dataUrl.slice(commaIdx + 1);
+  const currentMime = header.split(';')[0].trim().toLowerCase();
+  if (!currentMime || currentMime === 'application/octet-stream') {
+    return `data:${targetMime};base64,${payload}`;
+  }
+  return dataUrl;
+}
+
 /**
- * Reads a browser `File` into a durable `data:` URL when `<= 1.5 MiB` (falling back to a
- * `blob:` URL for oversized media files) so uploaded files survive persistence and cold reload.
+ * Reads every accepted browser `File` (up to `COMMUNITY_ATTACHMENT_MAX_FILE_BYTES`, 10 MiB) into
+ * a durable `data:<mime>;base64,...` URL so uploaded files survive persistence and cold reload.
+ * Never falls back to transient `blob:` URLs or unbacked `https://attachments.local/...` placeholders;
+ * rejects with a descriptive Error if reading fails or validation rejects the payload.
  */
 export async function ReadBrowserFilePreviewUrl(
   file: File,
   kind: CommunityAttachmentKind,
   resolvedMimeType?: string,
 ): Promise<string> {
-  if (
-    kind !== 'artifact' &&
-    file.size <= 1_500_000 &&
-    typeof FileReader !== 'undefined'
-  ) {
-    return new Promise<string>((resolve) => {
+  if (kind === 'artifact') {
+    throw new Error(`Cannot read MJ Artifact "${file.name}" as a raw file data URL.`);
+  }
+  if (!Number.isFinite(file.size) || file.size <= 0) {
+    throw new Error(`File "${file.name}" is empty and cannot be attached.`);
+  }
+  if (file.size > COMMUNITY_ATTACHMENT_MAX_FILE_BYTES) {
+    throw new Error(
+      `File "${file.name}" (${file.size} bytes) exceeds the ${COMMUNITY_ATTACHMENT_MAX_FILE_BYTES}-byte upload limit.`,
+    );
+  }
+
+  if (typeof FileReader !== 'undefined') {
+    return new Promise<string>((resolve, reject) => {
       const reader = new FileReader();
       reader.onload = () => {
         if (typeof reader.result === 'string' && reader.result.startsWith('data:')) {
-          let dataUrl = reader.result;
-          const targetMime = NormalizeAttachmentMimeType(resolvedMimeType || file.type);
-          if (targetMime) {
-            const commaIdx = dataUrl.indexOf(',');
-            if (commaIdx > 5) {
-              const header = dataUrl.slice(5, commaIdx);
-              const payload = dataUrl.slice(commaIdx + 1);
-              const currentMime = header.split(';')[0].trim().toLowerCase();
-              if (!currentMime || currentMime === 'application/octet-stream') {
-                dataUrl = `data:${targetMime};base64,${payload}`;
-              }
-            }
-          }
-          if (SanitizeCommunityAttachmentUrl(dataUrl, kind)) {
-            resolve(dataUrl);
+          const dataUrl = normalizeDataUrlMime(reader.result, resolvedMimeType, file.type);
+          const durable = SanitizePersistedAttachmentUrl(dataUrl, kind);
+          if (durable) {
+            resolve(durable);
             return;
           }
         }
-        if (typeof URL !== 'undefined' && typeof URL.createObjectURL === 'function') {
-          resolve(URL.createObjectURL(file));
-        } else {
-          resolve('');
-        }
+        reject(new Error(`Failed to validate durable data payload for "${file.name}".`));
       };
       reader.onerror = () => {
-        if (typeof URL !== 'undefined' && typeof URL.createObjectURL === 'function') {
-          resolve(URL.createObjectURL(file));
-        } else {
-          resolve('');
-        }
+        reject(new Error(`Failed to read "${file.name}" into a durable attachment payload.`));
+      };
+      reader.onabort = () => {
+        reject(new Error(`Reading "${file.name}" was aborted before completion.`));
       };
       reader.readAsDataURL(file);
     });
   }
-  if (typeof URL !== 'undefined' && typeof URL.createObjectURL === 'function') {
-    const objectUrl = URL.createObjectURL(file);
-    if (objectUrl.startsWith('blob:https://') || objectUrl.startsWith('blob:http://')) {
-      return objectUrl;
+
+  if (typeof file.arrayBuffer === 'function') {
+    const buffer = await file.arrayBuffer();
+    const bytes = new Uint8Array(buffer);
+    const targetMime = NormalizeAttachmentMimeType(resolvedMimeType || file.type) || InferAttachmentMimeType(file.type, file.name);
+    if (!targetMime || !IsAllowedAttachmentMimeType(targetMime)) {
+      throw new Error(`File "${file.name}" does not have an allowed MIME type.`);
     }
+    const dataUrl = `data:${targetMime};base64,${encodeBytesToBase64(bytes)}`;
+    const durable = SanitizePersistedAttachmentUrl(dataUrl, kind);
+    if (!durable) {
+      throw new Error(`Failed to validate durable data payload for "${file.name}".`);
+    }
+    return durable;
   }
-  return `https://attachments.local/${encodeURIComponent(file.name)}`;
+
+  throw new Error(`Browser file reader is unavailable — cannot durably read "${file.name}".`);
 }

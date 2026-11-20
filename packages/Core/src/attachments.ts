@@ -38,7 +38,7 @@ export type CommunitySpaceItemFolder =
 export const COMMUNITY_ATTACHMENT_MAX_FILE_BYTES = 10 * 1024 * 1024;
 export const COMMUNITY_ATTACHMENT_MAX_COUNT_PER_POST = 12;
 export const COMMUNITY_ATTACHMENT_MAX_AGGREGATE_BYTES_PER_POST = 50 * 1024 * 1024;
-export const COMMUNITY_ATTACHMENT_MAX_DATA_URL_BYTES = 2 * 1024 * 1024;
+export const COMMUNITY_ATTACHMENT_MAX_DATA_URL_BYTES = COMMUNITY_ATTACHMENT_MAX_FILE_BYTES;
 export const COMMUNITY_ATTACHMENT_MAX_CAPTION_LENGTH = 300;
 
 export interface CommunityAttachmentLimits {
@@ -104,6 +104,26 @@ export const COMMUNITY_ALLOWED_MIME_TYPES: ReadonlySet<string> = new Set([
   ...COMMUNITY_ALLOWED_VIDEO_MIME_TYPES,
   ...COMMUNITY_ALLOWED_AUDIO_MIME_TYPES,
   ...COMMUNITY_ALLOWED_FILE_MIME_TYPES,
+]);
+
+export const COMMUNITY_ALLOWED_TEXT_ARTIFACT_MIME_TYPES: ReadonlySet<string> = new Set([
+  'text/html',
+  'image/svg+xml',
+  'text/markdown',
+  'text/x-markdown',
+  'application/json',
+  'text/plain',
+  'text/csv',
+  'application/xml',
+  'text/xml',
+  'text/css',
+  'application/x-yaml',
+  'text/yaml',
+  'text/javascript',
+  'application/javascript',
+  'application/typescript',
+  'text/x-sql',
+  'application/sql',
 ]);
 
 const SAFE_DATA_IMAGE_MIME_TYPES: ReadonlySet<string> = COMMUNITY_ALLOWED_IMAGE_MIME_TYPES;
@@ -225,6 +245,15 @@ export function NormalizeAttachmentMimeType(mimeType: string | null | undefined)
 export function IsAllowedAttachmentMimeType(mimeType: string | null | undefined): boolean {
   const normalized = NormalizeAttachmentMimeType(mimeType);
   return COMMUNITY_ALLOWED_MIME_TYPES.has(normalized);
+}
+
+/**
+ * Returns true if the normalized MIME type is permitted for sandboxed `ContentMode = 'Text'`
+ * MJ Artifact versions (HTML, SVG, Markdown, JSON, CSV, plain text, code).
+ */
+export function IsAllowedTextArtifactMimeType(mimeType: string | null | undefined): boolean {
+  const normalized = NormalizeAttachmentMimeType(mimeType);
+  return COMMUNITY_ALLOWED_TEXT_ARTIFACT_MIME_TYPES.has(normalized);
 }
 
 /**
@@ -452,6 +481,447 @@ export function SanitizeCommunityAttachmentUrl(
   }
 
   return null;
+}
+
+/**
+ * Returns true when a URL is a transient browser `blob:` URL or an unbacked `attachments.local`
+ * placeholder that must NEVER be persisted into `MJ: Artifact Versions.Content`.
+ */
+export function IsTemporaryOrPlaceholderAttachmentUrl(rawUrl: string | null | undefined): boolean {
+  if (typeof rawUrl !== 'string') {
+    return false;
+  }
+  const trimmed = rawUrl.trim();
+  if (!trimmed) {
+    return false;
+  }
+  const lower = trimmed.toLowerCase();
+  if (lower.startsWith('blob:')) {
+    return true;
+  }
+  if (lower.startsWith('https://') || lower.startsWith('http://')) {
+    try {
+      const parsed = new URL(trimmed);
+      const host = parsed.hostname.toLowerCase();
+      return host === 'attachments.local' || host.endsWith('.attachments.local');
+    } catch {
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * Sanitizes an attachment URL for durable persistence. Rejects every scheme disallowed by
+ * `SanitizeCommunityAttachmentUrl` AND explicitly rejects `blob:` and `attachments.local` URLs.
+ */
+export function SanitizePersistedAttachmentUrl(
+  rawUrl: string | null | undefined,
+  kind?: CommunityAttachmentKind,
+  maxDataUrlBytes: number = COMMUNITY_ATTACHMENT_MAX_DATA_URL_BYTES,
+): string | null {
+  if (IsTemporaryOrPlaceholderAttachmentUrl(rawUrl)) {
+    return null;
+  }
+  return SanitizeCommunityAttachmentUrl(rawUrl, kind, maxDataUrlBytes);
+}
+
+/**
+ * Computes the exact byte length of an authoritative `MJ: Artifact Versions.Content` payload
+ * when `ContentSizeBytes` is omitted (supports `data:` URIs and `ContentMode = 'Text'` payloads).
+ * Returns `null` when size cannot be determined from the content string (e.g., `https://` URLs).
+ */
+export function ComputeAttachmentContentByteLength(
+  content: string | null | undefined,
+  contentMode?: string | null,
+): number | null {
+  if (typeof content !== 'string') {
+    return null;
+  }
+  const trimmed = content.trim();
+  if (!trimmed) {
+    return null;
+  }
+  if (trimmed.toLowerCase().startsWith('data:')) {
+    const commaIdx = trimmed.indexOf(',');
+    if (commaIdx <= 5) {
+      return null;
+    }
+    const header = trimmed.slice(5, commaIdx).toLowerCase();
+    const payload = trimmed.slice(commaIdx + 1);
+    const isBase64 = header
+      .split(';')
+      .map((p) => p.trim())
+      .includes('base64');
+    if (isBase64) {
+      const compact = payload.replace(/\s+/g, '');
+      if (!compact || !/^[A-Za-z0-9+/=]+$/.test(compact) || compact.length % 4 !== 0) {
+        return null;
+      }
+      const padding = compact.endsWith('==') ? 2 : compact.endsWith('=') ? 1 : 0;
+      const decoded = Math.floor((compact.length * 3) / 4) - padding;
+      return decoded > 0 ? decoded : null;
+    }
+    try {
+      const decodedText = decodeURIComponent(payload);
+      const len = new TextEncoder().encode(decodedText).byteLength;
+      return len > 0 ? len : null;
+    } catch {
+      const len = new TextEncoder().encode(payload).byteLength;
+      return len > 0 ? len : null;
+    }
+  }
+  if (contentMode === 'Text') {
+    const len = new TextEncoder().encode(trimmed).byteLength;
+    return len > 0 ? len : null;
+  }
+  return null;
+}
+
+export interface AuthoritativeFileRowInput {
+  ID: string;
+  Name?: string | null;
+  ContentType?: string | null;
+  Size?: number | null;
+  ContentSizeBytes?: number | null;
+  DownloadURL?: string | null;
+  Url?: string | null;
+  Content?: string | null;
+  ProviderKey?: string | null;
+  Status?: string | null;
+}
+
+export interface AuthoritativeFileValidationResult {
+  valid: boolean;
+  error?: string;
+  fileId?: string;
+  fileName?: string;
+  mimeType?: string;
+  kind?: 'image' | 'video' | 'audio' | 'file';
+  sizeBytes?: number;
+  url?: string;
+}
+
+/**
+ * Validates an `MJ: Files` record for `MJ: Files`-only attachment targets under `ContextUser`.
+ * Derives authoritative MIME type, positive byte size, and durable URL — failing closed if any
+ * authoritative field is missing, disallowed, or unsafe.
+ */
+export function ValidateAuthoritativeFileRecord(
+  fileRow: AuthoritativeFileRowInput,
+  expectedKind?: 'image' | 'video' | 'audio' | 'file',
+): AuthoritativeFileValidationResult {
+  const status = typeof fileRow.Status === 'string' ? fileRow.Status.trim().toLowerCase() : '';
+  if (status === 'deleting' || status === 'deleted') {
+    return {
+      valid: false,
+      error: `Referenced MJ: Files record ${fileRow.ID} has status "${fileRow.Status}" and cannot be attached.`,
+    };
+  }
+
+  const mimeType = NormalizeAttachmentMimeType(fileRow.ContentType ?? '');
+  if (!mimeType || !IsAllowedAttachmentMimeType(mimeType)) {
+    return {
+      valid: false,
+      error: `MJ: Files record ${fileRow.ID} MIME type "${fileRow.ContentType ?? ''}" is missing or not permitted by the Community attachment allowlist.`,
+    };
+  }
+
+  const classified = ClassifyAttachmentKind(mimeType, false);
+  if (classified === 'artifact') {
+    return {
+      valid: false,
+      error: `MJ: Files record ${fileRow.ID} MIME type "${mimeType}" cannot be attached as a file.`,
+    };
+  }
+  if (expectedKind && classified !== expectedKind) {
+    return {
+      valid: false,
+      error: `MJ: Files record ${fileRow.ID} MIME type "${mimeType}" classifies as "${classified}", not "${expectedKind}".`,
+    };
+  }
+
+  const rawSize = fileRow.ContentSizeBytes ?? fileRow.Size ?? null;
+  if (typeof rawSize !== 'number' || !Number.isFinite(rawSize) || rawSize <= 0) {
+    return {
+      valid: false,
+      error: `MJ: Files record ${fileRow.ID} is missing a valid positive authoritative byte size.`,
+    };
+  }
+  if (rawSize > COMMUNITY_ATTACHMENT_MAX_FILE_BYTES) {
+    return {
+      valid: false,
+      error: `MJ: Files record ${fileRow.ID} size (${rawSize} bytes) exceeds the maximum allowed (${COMMUNITY_ATTACHMENT_MAX_FILE_BYTES} bytes).`,
+    };
+  }
+
+  const rawUrl = fileRow.DownloadURL ?? fileRow.Url ?? fileRow.Content ?? fileRow.ProviderKey ?? null;
+  const safeUrl = SanitizePersistedAttachmentUrl(rawUrl, classified);
+  if (!safeUrl) {
+    return {
+      valid: false,
+      error: `MJ: Files record ${fileRow.ID} lacks a valid durable download/provider URL.`,
+    };
+  }
+
+  const fileName = fileRow.Name?.trim() || 'attachment';
+  return {
+    valid: true,
+    fileId: fileRow.ID,
+    fileName,
+    mimeType,
+    kind: classified,
+    sizeBytes: rawSize,
+    url: safeUrl,
+  };
+}
+
+export interface AuthoritativeArtifactVersionRowInput {
+  ID: string;
+  ArtifactID: string;
+  FileID: string | null;
+  ContentMode: string | null;
+  MimeType: string | null;
+  ContentSizeBytes: number | null;
+  Content: string | null;
+  FileName?: string | null;
+  VersionNumber?: number | null;
+}
+
+export interface AuthoritativeArtifactVersionValidationResult {
+  valid: boolean;
+  error?: string;
+  versionId?: string;
+  artifactId?: string;
+  fileId?: string | null;
+  contentMode?: 'File' | 'Text';
+  mimeType?: string;
+  sizeBytes?: number;
+  url?: string | null;
+  fileName?: string;
+}
+
+function idsMatchCaseInsensitive(a: string | null | undefined, b: string | null | undefined): boolean {
+  if (!a || !b) return false;
+  return a.trim().toLowerCase() === b.trim().toLowerCase();
+}
+
+/**
+ * Centralized server-boundary validation for an `MJ: Artifact Versions` target across both
+ * `ForumPostAttachmentServerEntity` and `CommunityAttachmentServerService`.
+ */
+export function ValidateAuthoritativeArtifactVersionRecord(
+  version: AuthoritativeArtifactVersionRowInput,
+  options: {
+    targetEntityName?: 'MJ: Files' | 'MJ: Artifacts';
+    targetRecordUuid?: string | null;
+    expectedFileId?: string | null;
+    expectedKind?: CommunityAttachmentKind;
+    linkedFileRow?: AuthoritativeFileRowInput | null;
+  } = {},
+): AuthoritativeArtifactVersionValidationResult {
+  if (!version.ArtifactID || !IsValidUUID(version.ArtifactID.trim())) {
+    return {
+      valid: false,
+      error: `Artifact Version ${version.ID} is missing a valid parent ArtifactID.`,
+    };
+  }
+
+  if (
+    options.targetEntityName === 'MJ: Artifacts' &&
+    options.targetRecordUuid &&
+    !idsMatchCaseInsensitive(version.ArtifactID, options.targetRecordUuid)
+  ) {
+    return {
+      valid: false,
+      error: `Artifact Version ${version.ID} does not belong to Artifact ${options.targetRecordUuid}.`,
+    };
+  }
+
+  const requiredFileTarget =
+    options.targetEntityName === 'MJ: Files' ? options.targetRecordUuid ?? null : options.expectedFileId ?? null;
+  if (requiredFileTarget) {
+    if (!version.FileID || !IsValidUUID(version.FileID.trim())) {
+      return {
+        valid: false,
+        error: `Artifact Version ${version.ID} has null or invalid FileID and cannot bind to MJ: Files ${requiredFileTarget}.`,
+      };
+    }
+    if (!idsMatchCaseInsensitive(version.FileID, requiredFileTarget)) {
+      return {
+        valid: false,
+        error: `Artifact Version ${version.ID} belongs to File ${version.FileID}, not ${requiredFileTarget}.`,
+      };
+    }
+  }
+
+  const mode = version.ContentMode;
+  if (mode !== 'File' && mode !== 'Text') {
+    return {
+      valid: false,
+      error: `Artifact Version ${version.ID} has unsupported ContentMode "${mode ?? 'null'}".`,
+    };
+  }
+
+  if (options.targetEntityName === 'MJ: Files' && mode !== 'File') {
+    return {
+      valid: false,
+      error: `Artifact Version ${version.ID} targeting MJ: Files has ContentMode "${mode}", expected "File".`,
+    };
+  }
+  if (options.expectedKind && options.expectedKind !== 'artifact' && mode !== 'File') {
+    return {
+      valid: false,
+      error: `Artifact Version ${version.ID} has ContentMode "${mode}", expected "File" for file/media attachments.`,
+    };
+  }
+
+  if (mode === 'File') {
+    const mimeType = NormalizeAttachmentMimeType(version.MimeType || options.linkedFileRow?.ContentType || '');
+    if (!mimeType || !IsAllowedAttachmentMimeType(mimeType)) {
+      return {
+        valid: false,
+        error: `Artifact Version ${version.ID} MIME type "${version.MimeType ?? ''}" is not permitted by the Community attachment allowlist.`,
+      };
+    }
+
+    const classified = ClassifyAttachmentKind(mimeType, false);
+    if (classified === 'artifact') {
+      return {
+        valid: false,
+        error: `Artifact Version ${version.ID} MIME type "${mimeType}" cannot be attached as a file.`,
+      };
+    }
+    if (options.expectedKind && options.expectedKind !== 'artifact' && classified !== options.expectedKind) {
+      return {
+        valid: false,
+        error: `Artifact Version ${version.ID} MIME type "${mimeType}" classifies as "${classified}", not "${options.expectedKind}".`,
+      };
+    }
+
+    let safeUrl: string | null = null;
+    if (version.Content && version.Content.trim()) {
+      if (IsTemporaryOrPlaceholderAttachmentUrl(version.Content)) {
+        return {
+          valid: false,
+          error: `Artifact Version ${version.ID} content URL uses a temporary or placeholder scheme (blob:/attachments.local).`,
+        };
+      }
+      safeUrl = SanitizePersistedAttachmentUrl(version.Content, classified);
+      if (!safeUrl) {
+        return {
+          valid: false,
+          error: `Artifact Version ${version.ID} content URL uses an unsafe or unsupported scheme.`,
+        };
+      }
+    } else if (options.linkedFileRow) {
+      const fallbackFileUrl =
+        options.linkedFileRow.DownloadURL ??
+        options.linkedFileRow.Url ??
+        options.linkedFileRow.Content ??
+        options.linkedFileRow.ProviderKey ??
+        null;
+      safeUrl = SanitizePersistedAttachmentUrl(fallbackFileUrl, classified);
+      if (!safeUrl) {
+        return {
+          valid: false,
+          error: `Artifact Version ${version.ID} lacks durable Content URL and linked MJ: Files record lacks a valid URL.`,
+        };
+      }
+    } else if (!version.FileID) {
+      return {
+        valid: false,
+        error: `Artifact Version ${version.ID} requires either a valid FileID or a durable safe Content URL.`,
+      };
+    }
+
+    const authoritativeSize =
+      version.ContentSizeBytes != null
+        ? version.ContentSizeBytes
+        : ComputeAttachmentContentByteLength(version.Content, 'File');
+
+    if (typeof authoritativeSize !== 'number' || !Number.isFinite(authoritativeSize) || authoritativeSize <= 0) {
+      return {
+        valid: false,
+        error: `Artifact Version ${version.ID} is missing a valid positive authoritative ContentSizeBytes.`,
+      };
+    }
+    if (authoritativeSize > COMMUNITY_ATTACHMENT_MAX_FILE_BYTES) {
+      return {
+        valid: false,
+        error: `Artifact Version ${version.ID} size (${authoritativeSize} bytes) exceeds the maximum allowed (${COMMUNITY_ATTACHMENT_MAX_FILE_BYTES} bytes).`,
+      };
+    }
+
+    return {
+      valid: true,
+      versionId: version.ID,
+      artifactId: version.ArtifactID,
+      fileId: version.FileID,
+      contentMode: 'File',
+      mimeType,
+      sizeBytes: authoritativeSize,
+      url: safeUrl,
+      fileName: version.FileName?.trim() || options.linkedFileRow?.Name?.trim() || 'attachment',
+    };
+  }
+
+  // ContentMode === 'Text': sandboxed HTML / SVG / Markdown / JSON / Code artifacts
+  const textMime = NormalizeAttachmentMimeType(version.MimeType ?? '');
+  if (!textMime || !IsAllowedTextArtifactMimeType(textMime)) {
+    return {
+      valid: false,
+      error: `Artifact Version ${version.ID} text MIME type "${version.MimeType ?? ''}" is missing or not permitted.`,
+    };
+  }
+
+  const trimmedContent = typeof version.Content === 'string' ? version.Content.trim() : '';
+  if (!trimmedContent || containsControlCharacters(trimmedContent.replace(/[\r\n\t]/g, ''))) {
+    return {
+      valid: false,
+      error: `Artifact Version ${version.ID} text Content must be non-empty and free of unsafe control characters.`,
+    };
+  }
+  const lowerContent = trimmedContent.toLowerCase();
+  if (
+    IsTemporaryOrPlaceholderAttachmentUrl(trimmedContent) ||
+    lowerContent.startsWith('javascript:') ||
+    lowerContent.startsWith('vbscript:')
+  ) {
+    return {
+      valid: false,
+      error: `Artifact Version ${version.ID} text Content uses a forbidden URL scheme.`,
+    };
+  }
+
+  const textSize =
+    version.ContentSizeBytes != null
+      ? version.ContentSizeBytes
+      : ComputeAttachmentContentByteLength(version.Content, 'Text');
+  if (typeof textSize !== 'number' || !Number.isFinite(textSize) || textSize <= 0) {
+    return {
+      valid: false,
+      error: `Artifact Version ${version.ID} is missing a valid positive authoritative ContentSizeBytes.`,
+    };
+  }
+  if (textSize > COMMUNITY_ATTACHMENT_MAX_FILE_BYTES) {
+    return {
+      valid: false,
+      error: `Artifact Version ${version.ID} size (${textSize} bytes) exceeds the maximum allowed (${COMMUNITY_ATTACHMENT_MAX_FILE_BYTES} bytes).`,
+    };
+  }
+
+  return {
+    valid: true,
+    versionId: version.ID,
+    artifactId: version.ArtifactID,
+    fileId: version.FileID,
+    contentMode: 'Text',
+    mimeType: textMime,
+    sizeBytes: textSize,
+    url: null,
+    fileName: version.FileName?.trim() || 'artifact',
+  };
 }
 
 /**
