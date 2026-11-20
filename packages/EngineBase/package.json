@@ -22,9 +22,9 @@
     "@mj-biz-apps/community-entities": "0.1.0"
   },
   "peerDependencies": {
-    "@memberjunction/core": "6.3.0-edge.0",
-    "@memberjunction/core-entities": "6.3.0-edge.0",
-    "@memberjunction/global": "6.3.0-edge.0"
+    "@memberjunction/core": "^6.3.0-edge.0",
+    "@memberjunction/core-entities": "^6.3.0-edge.0",
+    "@memberjunction/global": "^6.3.0-edge.0"
   },
   "devDependencies": {
     "@memberjunction/core": "6.3.0-edge.0",

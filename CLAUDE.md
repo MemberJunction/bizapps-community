@@ -30,3 +30,7 @@ To preserve 100% generic purity, zero downstream app names (`voting`, `issues`, 
 Work runs on MemberJunction's `next` (`6.3+`), in a workspace made by `mj dev workspace` beside MemberJunction, BizApps Common, BizApps Tasks, and BizApps Collaboration. This clone sits inside the `M5` joined pnpm mega-workspace:
 - **NEVER run `pnpm install` inside `bizapps-community/`**.
 - **NEVER create per-package `node_modules` symlinks or run `pnpm link`**.
+
+## Release lines
+
+`next` is built on MJ Edge and never publishes. Production releases come from release lines (`lts/<MJ major.minor>`), listed in `release-lines.json`. Land every change on `next` first, then add a `backport lts/X.Y` label; a PR that adds a migration needs a label for every open line, or its files listed as edge-only in `release-lines.json`. Never open a PR straight into a line or into `main`. Full rules, publishing and the line cut: [guides/RELEASE_LINES.md](guides/RELEASE_LINES.md).

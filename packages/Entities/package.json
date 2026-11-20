@@ -17,8 +17,8 @@
   },
   "license": "BUSL-1.1",
   "peerDependencies": {
-    "@memberjunction/core": "6.3.0-edge.0",
-    "@memberjunction/global": "6.3.0-edge.0"
+    "@memberjunction/core": "^6.3.0-edge.0",
+    "@memberjunction/global": "^6.3.0-edge.0"
   },
   "dependencies": {
     "@mj-biz-apps/community-core": "0.1.0",
