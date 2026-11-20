@@ -1,0 +1,256 @@
+<div
+  class="mjc-picker"
+  [class.mjc-picker--compact]="compact"
+  role="region"
+  [attr.aria-label]="pickerLabel"
+>
+  <input
+    #fileInput
+    type="file"
+    multiple
+    class="mjc-picker__file-input"
+    [attr.id]="'mjc-picker-file-input-' + instanceId"
+    [accept]="acceptedFileExtensions"
+    [disabled]="disabled"
+    (change)="onFileInputChange($event)"
+  />
+
+  <div
+    class="mjc-picker-dropzone"
+    [class.mjc-picker-dropzone--active]="isDragOver"
+    [class.mjc-picker-dropzone--compact]="compact"
+    (dragover)="onDragOver($event)"
+    (dragleave)="onDragLeave($event)"
+    (drop)="onDrop($event)"
+  >
+    <div class="mjc-picker-dropzone__controls">
+      <button
+        type="button"
+        class="mjc-picker-btn"
+        [disabled]="disabled"
+        (click)="triggerFilePicker()"
+      >
+        <i class="fa-solid fa-paperclip" aria-hidden="true"></i>
+        <span>Attach Media / Files</span>
+      </button>
+
+      <button
+        type="button"
+        class="mjc-picker-btn mjc-picker-btn--accent"
+        [disabled]="disabled"
+        [attr.aria-expanded]="isArtifactPopoverOpen"
+        [attr.aria-controls]="'mjc-picker-artifact-popover-' + instanceId"
+        (click)="toggleArtifactPopover()"
+      >
+        <i class="fa-solid fa-cubes" aria-hidden="true"></i>
+        <span>Embed MJ Artifact</span>
+      </button>
+
+      @if (!compact) {
+        <span class="mjc-picker-dropzone__hint">
+          or drag &amp; drop images, videos, audio, PDFs, or documents
+        </span>
+      }
+    </div>
+
+    <p class="mjc-picker-helper">
+      <i class="fa-solid fa-folder-tree" aria-hidden="true"></i>
+      <span>{{ helperLibraryCopy }}</span>
+    </p>
+  </div>
+
+  @if (isArtifactPopoverOpen) {
+    <div
+      [id]="'mjc-picker-artifact-popover-' + instanceId"
+      class="mjc-picker-popover"
+      role="region"
+      aria-label="Search accessible MJ Artifacts"
+    >
+      <div class="mjc-picker-popover__head">
+        <div class="mjc-picker-popover__search-wrap">
+          <i class="fa-solid fa-magnifying-glass mjc-picker-popover__search-icon" aria-hidden="true"></i>
+          <input
+            type="search"
+            class="mjc-picker-popover__search"
+            [attr.id]="'mjc-picker-artifact-search-' + instanceId"
+            aria-label="Search MJ Artifacts by name or type"
+            placeholder="Search MJ Artifacts by name or type..."
+            [(ngModel)]="artifactSearchQuery"
+            [ngModelOptions]="{ standalone: true }"
+          />
+        </div>
+        <button
+          type="button"
+          class="mjc-picker-icon-btn"
+          aria-label="Close MJ Artifact picker"
+          (click)="closeArtifactPopover()"
+        >
+          ✕
+        </button>
+      </div>
+
+      @if (filteredArtifacts.length === 0) {
+        <p class="mjc-picker-popover__empty">
+          No accessible MJ Artifacts match your search.
+        </p>
+      } @else {
+        <ul class="mjc-picker-artifact-list" role="list">
+          @for (art of filteredArtifacts; track art.artifactId) {
+            <li class="mjc-picker-artifact-row">
+              <div class="mjc-picker-artifact-row__info">
+                <span class="mjc-picker-artifact-row__icon" aria-hidden="true">
+                  <i [class]="art.iconClass"></i>
+                </span>
+                <div class="mjc-picker-artifact-row__text">
+                  <span class="mjc-picker-artifact-row__name">{{ art.name }}</span>
+                  <span class="mjc-picker-artifact-row__meta">
+                    <span class="mjc-picker-badge">{{ art.typeName }}</span>
+                    @if (art.latestVersionNumber !== null) {
+                      <span class="mjc-picker-badge mjc-picker-badge--brand">v{{ art.latestVersionNumber }}</span>
+                    }
+                  </span>
+                </div>
+              </div>
+              <button
+                type="button"
+                class="mjc-picker-btn mjc-picker-btn--sm mjc-picker-btn--primary"
+                (click)="attachArtifact(art)"
+              >
+                Attach
+              </button>
+            </li>
+          }
+        </ul>
+      }
+    </div>
+  }
+
+  @if (localError) {
+    <p class="mjc-picker-error" role="alert">{{ localError }}</p>
+  }
+
+  @if (drafts.length > 0) {
+    <ul class="mjc-picker-drafts" role="list" aria-label="Staged attachments">
+      @for (draft of drafts; track draft.draftId; let idx = $index) {
+        <li class="mjc-picker-chip">
+          <div class="mjc-picker-chip__top">
+            <div class="mjc-picker-chip__preview">
+              @if (draft.kind === 'image' && draft.previewUrl) {
+                <img
+                  class="mjc-picker-chip__thumb"
+                  [src]="draft.previewUrl"
+                  [alt]="draft.fileName"
+                />
+              } @else {
+                <span class="mjc-picker-chip__icon" aria-hidden="true">
+                  <i [class]="draft.iconClass"></i>
+                </span>
+              }
+            </div>
+
+            <div class="mjc-picker-chip__summary">
+              <div class="mjc-picker-chip__title-row">
+                <span class="mjc-picker-chip__order">{{ idx + 1 }}.</span>
+                <strong class="mjc-picker-chip__name">{{ displayTitle(draft) }}</strong>
+              </div>
+              <div class="mjc-picker-chip__badges">
+                @if (draft.kind === 'artifact') {
+                  <span class="mjc-picker-badge">{{ draft.artifactTypeName }}</span>
+                  @if (draft.pinnedVersionNumber !== null) {
+                    <span class="mjc-picker-badge mjc-picker-badge--brand">Pinned v{{ draft.pinnedVersionNumber }}</span>
+                  } @else if (draft.latestVersionNumber !== null) {
+                    <span class="mjc-picker-badge mjc-picker-badge--brand">Latest v{{ draft.latestVersionNumber }}</span>
+                  }
+                } @else {
+                  <span class="mjc-picker-badge">{{ draft.typeLabel }}</span>
+                  <span class="mjc-picker-badge">{{ draft.formattedSize }}</span>
+                }
+                <span
+                  class="mjc-picker-badge"
+                  [class.mjc-picker-badge--success]="draft.featureInLibrary"
+                >
+                  {{ draft.folder }}
+                </span>
+              </div>
+            </div>
+
+            <div class="mjc-picker-chip__order-actions">
+              <button
+                type="button"
+                class="mjc-picker-icon-btn"
+                [disabled]="disabled || idx === 0"
+                [attr.aria-label]="'Move ' + displayTitle(draft) + ' up'"
+                title="Move up"
+                (click)="moveDraft(draft.draftId, 'up')"
+              >
+                <i class="fa-solid fa-arrow-up" aria-hidden="true"></i>
+              </button>
+              <button
+                type="button"
+                class="mjc-picker-icon-btn"
+                [disabled]="disabled || idx === drafts.length - 1"
+                [attr.aria-label]="'Move ' + displayTitle(draft) + ' down'"
+                title="Move down"
+                (click)="moveDraft(draft.draftId, 'down')"
+              >
+                <i class="fa-solid fa-arrow-down" aria-hidden="true"></i>
+              </button>
+              <button
+                type="button"
+                class="mjc-picker-icon-btn mjc-picker-icon-btn--danger"
+                [disabled]="disabled"
+                [attr.aria-label]="'Remove ' + displayTitle(draft)"
+                title="Remove attachment"
+                (click)="removeDraft(draft.draftId)"
+              >
+                <i class="fa-solid fa-trash-can" aria-hidden="true"></i>
+              </button>
+            </div>
+          </div>
+
+          <div class="mjc-picker-chip__controls">
+            <input
+              type="text"
+              class="mjc-picker-chip__caption"
+              [maxlength]="maxCaptionLength"
+              [disabled]="disabled"
+              [ngModel]="draft.caption"
+              [ngModelOptions]="{ standalone: true }"
+              (ngModelChange)="onCaptionChange(draft.draftId, $event)"
+              placeholder="Add optional caption..."
+              [attr.aria-label]="'Caption for ' + displayTitle(draft)"
+            />
+
+            @if (draft.kind === 'artifact' && draft.availableVersions.length > 0) {
+              <select
+                class="mjc-picker-chip__version"
+                [disabled]="disabled"
+                [ngModel]="draft.pinnedVersionId ?? ''"
+                [ngModelOptions]="{ standalone: true }"
+                (ngModelChange)="onPinnedVersionChange(draft.draftId, $event)"
+                [attr.aria-label]="'Version pin for ' + draft.artifactName"
+              >
+                <option value="">Latest (v{{ draft.latestVersionNumber ?? 1 }})</option>
+                @for (ver of draft.availableVersions; track ver.versionId) {
+                  <option [value]="ver.versionId">
+                    Pin v{{ ver.versionNumber }}{{ ver.name ? ' — ' + ver.name : '' }}
+                  </option>
+                }
+              </select>
+            }
+
+            <label class="mjc-picker-toggle">
+              <input
+                type="checkbox"
+                [disabled]="disabled"
+                [checked]="draft.featureInLibrary"
+                (change)="onToggleFeatureInLibrary(draft.draftId, $event)"
+              />
+              <span>Feature in Space Library</span>
+            </label>
+          </div>
+        </li>
+      }
+    </ul>
+  }
+</div>
