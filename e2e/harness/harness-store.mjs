@@ -6,6 +6,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import {
   COMMUNITY_ACTION_IDS,
 } from '../../packages/Core/dist/index.js';
+import { GetArchWorldDataset } from '../../scripts/world/arch-world-data.mjs';
 import {
   BuildCommunityDigestPDF,
   ClearCompactReplyTokenRegistry,
@@ -563,6 +564,10 @@ function buildInitialState() {
     gqlCalls: [],
     actionCalls: [],
   };
+  stateObj.worldMode = 'default';
+  stateObj.currentUserId = C.HARNESS_USER_ID;
+  stateObj.replyPostTypeIds = new Set([C.PT_REPLY]);
+  stateObj.askFirstCandidateTypeIds = new Set([C.PT_ANSWER, C.PT_COLLAB_DOC, C.PT_DISCUSSION]);
   stateObj.posts = stateObj.posts.map((p) => ({
     VisibilityBand: 'Shared',
     IsLocked: false,
@@ -572,6 +577,93 @@ function buildInitialState() {
     ...p,
   }));
   return stateObj;
+}
+
+const ARCH_KENJI_USER_ID = 'A7C40400-4E12-4B8F-9A10-000000000001';
+
+function buildArchWorldState() {
+  const dataset = GetArchWorldDataset();
+  const base = buildInitialState();
+  const userNameById = new Map(dataset.Members.map((m) => [m.ID.toLowerCase(), m.Name]));
+  const questionTitleById = new Map(
+    dataset.Posts.filter((p) => p.PostTypeCode === 'question' && p.Title).map((p) => [p.ID.toLowerCase(), p.Title]),
+  );
+  const answerQuestionTitleById = new Map(
+    dataset.AnswerPosts.map((a) => [
+      a.ID.toLowerCase(),
+      questionTitleById.get(String(a.QuestionPostID).toLowerCase()) ?? 'Community Answer',
+    ]),
+  );
+  const tagCounts = new Map();
+  for (const pt of dataset.PostTags) {
+    const key = String(pt.TopicTagID).toLowerCase();
+    tagCounts.set(key, (tagCounts.get(key) ?? 0) + 1);
+  }
+
+  return {
+    ...base,
+    worldMode: 'arch',
+    currentUserId: ARCH_KENJI_USER_ID,
+    replyPostTypeIds: new Set([
+      'C8A17200-4E12-4B8F-9A10-100000000002', // reply
+      'C8A17200-4E12-4B8F-9A10-100000000003', // comment
+    ]),
+    askFirstCandidateTypeIds: new Set([
+      'C8A17200-4E12-4B8F-9A10-100000000005', // answer
+      'C8A17200-4E12-4B8F-9A10-100000000008', // collaborative-doc
+      'C8A17200-4E12-4B8F-9A10-100000000001', // discussion
+    ]),
+    users: dataset.Members.map((m) => ({ ID: m.ID, Name: m.Name, Email: m.Email })),
+    spaces: dataset.Spaces.map((s) => ({
+      ID: s.ID,
+      Name: s.Name,
+      Description: s.Description,
+      ParentID: s.ParentID,
+      InheritsMembership: s.InheritsMembership,
+      ClosedAt: s.ClosedAt,
+    })),
+    communitySpaces: dataset.Spaces.map((s) => ({
+      ID: s.ID,
+      Slug: s.Slug,
+      CommunityKind: s.CommunityKind,
+    })),
+    forums: dataset.Forums.map((f) => ({ ...f })),
+    postTypes: dataset.postTypes.map((pt) => ({ ...pt })),
+    topicTags: dataset.TopicTags.map((t) => ({
+      ...t,
+      PostCount: tagCounts.get(t.ID.toLowerCase()) ?? 1,
+    })),
+    postTags: dataset.PostTags.map((pt) => ({ ...pt })),
+    reactions: dataset.PostReactions.map((r) => ({ ...r, Weight: 1 })),
+    campaigns: dataset.IdeaCampaigns.map((c) => ({ ...c })),
+    posts: dataset.Posts.map((p) => ({
+      ...p,
+      Title: p.Title ?? answerQuestionTitleById.get(p.ID.toLowerCase()) ?? null,
+      AuthorUser: userNameById.get(String(p.AuthorUserID).toLowerCase()) ?? 'AGPA Member',
+      __mj_CreatedAt: p.CreatedAt ?? '2026-11-18T10:00:00.000Z',
+    })),
+    answers: dataset.AnswerPosts.map((a) => ({
+      ...a,
+      Title: answerQuestionTitleById.get(a.ID.toLowerCase()) ?? 'AGPA Canon Answer',
+    })),
+    ideas: dataset.IdeaPosts.map((i) => ({ ...i })),
+    allocations: dataset.IdeaAllocations.map((a) => ({ ...a })),
+    artifacts: dataset.Posts.filter((p) =>
+      ['collaborative-doc', 'collaborative-sheet', 'collaborative-deck'].includes(p.PostTypeCode),
+    ).map((p) => ({ ID: p.ID })),
+    forms: dataset.Posts.filter((p) => p.PostTypeCode === 'poll-or-form').map((p) => ({ ID: p.ID })),
+    interactivePosts: dataset.InteractivePosts.map((ip) => ({ ...ip })),
+    questions: dataset.QuestionPosts.map((q) => ({ ...q })),
+    communityMemberProfiles: dataset.MemberProfiles.map((mp) => ({ ...mp })),
+    spaceRoles: dataset.spaceRoleTypes.map((sr) => ({ ...sr })),
+    spaceMembers: dataset.SpaceMembers.map((sm) => ({ ...sm })),
+    forumRoleTypes: dataset.forumRoleTypes.map((fr) => ({ ...fr })),
+    forumMembers: dataset.ForumMembers.map((fm) => ({ ...fm })),
+    communicationLogs: [],
+    userSettings: [],
+    gqlCalls: [],
+    actionCalls: [],
+  };
 }
 
 function parseInIds(extraFilter, columnName = 'ID') {
@@ -601,12 +693,15 @@ export function createHarnessStore() {
     disableCommunicationEngineProviders: false,
   };
 
-  const HARNESS_SERVER_USER = new UserInfo(undefined, {
-    ID: C.HARNESS_USER_ID,
-    Name: 'E2E Harness Member',
-    Email: 'member@bizapps-community.local',
-    UserRoles: [],
-  });
+  function getActiveUser() {
+    const row = state.users.find((u) => u.ID.toLowerCase() === state.currentUserId.toLowerCase());
+    return new UserInfo(undefined, {
+      ID: row?.ID ?? C.HARNESS_USER_ID,
+      Name: row?.Name ?? 'E2E Harness Member',
+      Email: row?.Email ?? 'member@bizapps-community.local',
+      UserRoles: [],
+    });
+  }
 
   function recomputePostRollups(postId) {
     if (!postId) return;
@@ -614,7 +709,7 @@ export function createHarnessStore() {
     const rootPost = state.posts.find((p) => p.ID.toLowerCase() === key);
     if (!rootPost) return;
     rootPost.ReplyCount = state.posts.filter(
-      (p) => p.RootPostID && p.RootPostID.toLowerCase() === key && p.PostTypeID === C.PT_REPLY,
+      (p) => p.RootPostID && p.RootPostID.toLowerCase() === key && state.replyPostTypeIds.has(p.PostTypeID),
     ).length;
     rootPost.ReactionScore = state.reactions
       .filter((r) => r.PostID.toLowerCase() === key)
@@ -753,12 +848,12 @@ export function createHarnessStore() {
       const idx = state.userSettings.findIndex(
         (s) =>
           s.ID.toLowerCase() === String(record.ID).toLowerCase() ||
-          (s.UserID.toLowerCase() === String(record.UserID ?? C.HARNESS_USER_ID).toLowerCase() &&
+          (s.UserID.toLowerCase() === String(record.UserID ?? state.currentUserId).toLowerCase() &&
             s.Setting === record.Setting),
       );
       const row = {
         ID: record.ID || randomUUID(),
-        UserID: record.UserID || C.HARNESS_USER_ID,
+        UserID: record.UserID || state.currentUserId,
         Setting: String(record.Setting ?? ''),
         Value: String(record.Value ?? ''),
       };
@@ -847,7 +942,9 @@ export function createHarnessStore() {
   function createStoreProvider() {
     return {
       ProviderType: ProviderType.Network,
-      CurrentUser: HARNESS_SERVER_USER,
+      get CurrentUser() {
+        return getActiveUser();
+      },
       Entities: [],
       EntityByName: () => undefined,
       async RunView(params) {
@@ -879,6 +976,16 @@ export function createHarnessStore() {
       CommunityTestCommunicationProvider.ClearSentMessages();
       ClearCompactReplyTokenRegistry();
       state = buildInitialState();
+      faults = {
+        failSaveEntities: new Set(),
+        disableCommunicationEngineProviders: false,
+      };
+    },
+
+    loadArchWorld() {
+      CommunityTestCommunicationProvider.ClearSentMessages();
+      ClearCompactReplyTokenRegistry();
+      state = buildArchWorldState();
       faults = {
         failSaveEntities: new Set(),
         disableCommunicationEngineProviders: false,
@@ -935,14 +1042,14 @@ export function createHarnessStore() {
 
     setUserSetting(key, value) {
       const idx = state.userSettings.findIndex(
-        (s) => s.UserID.toLowerCase() === C.HARNESS_USER_ID.toLowerCase() && s.Setting === key,
+        (s) => s.UserID.toLowerCase() === state.currentUserId.toLowerCase() && s.Setting === key,
       );
       if (idx >= 0) {
         state.userSettings[idx] = { ...state.userSettings[idx], Value: value };
       } else {
         state.userSettings.push({
           ID: randomUUID(),
-          UserID: C.HARNESS_USER_ID,
+          UserID: state.currentUserId,
           Setting: key,
           Value: value,
         });
@@ -974,7 +1081,7 @@ export function createHarnessStore() {
             rows = rows.filter((f) => f.ID.toLowerCase() === id.toLowerCase());
           } else if (spaceId) {
             rows = rows.filter((f) => f.SpaceID.toLowerCase() === spaceId.toLowerCase());
-          } else {
+          } else if (state.worldMode === 'default') {
             rows = rows.filter((f) => f.SpaceID.toLowerCase() !== C.SPACE_2.toLowerCase());
           }
           if (status) {
@@ -987,7 +1094,9 @@ export function createHarnessStore() {
           if (id) {
             return state.spaces.filter((s) => s.ID.toLowerCase() === id.toLowerCase());
           }
-          return state.spaces.filter((s) => s.ID.toLowerCase() !== C.SPACE_2.toLowerCase());
+          return state.worldMode === 'default'
+            ? state.spaces.filter((s) => s.ID.toLowerCase() !== C.SPACE_2.toLowerCase())
+            : state.spaces;
         }
         case 'MJ_BizApps_Collaboration: Space Role Types':
           return state.spaceRoles;
@@ -1038,7 +1147,9 @@ export function createHarnessStore() {
           if (id) {
             return state.communitySpaces.filter((s) => s.ID.toLowerCase() === id.toLowerCase());
           }
-          return state.communitySpaces.filter((s) => s.ID.toLowerCase() !== C.SPACE_2.toLowerCase());
+          return state.worldMode === 'default'
+            ? state.communitySpaces.filter((s) => s.ID.toLowerCase() !== C.SPACE_2.toLowerCase())
+            : state.communitySpaces;
         }
         case 'MJ_BizApps_Community: Post Types': {
           const code = parseEqFilter(extraFilter, 'Code');
@@ -1056,7 +1167,9 @@ export function createHarnessStore() {
           if (spaceId) {
             return state.topicTags.filter((t) => t.SpaceID.toLowerCase() === spaceId.toLowerCase());
           }
-          return state.topicTags.filter((t) => t.SpaceID.toLowerCase() !== C.SPACE_2.toLowerCase());
+          return state.worldMode === 'default'
+            ? state.topicTags.filter((t) => t.SpaceID.toLowerCase() !== C.SPACE_2.toLowerCase())
+            : state.topicTags;
         }
         case 'MJ_BizApps_Community: Forum Post Tags': {
           const postIds = parseInIds(extraFilter, 'PostID');
@@ -1089,7 +1202,7 @@ export function createHarnessStore() {
             rows = rows.filter((a) => a.QuestionPostID && questionIds.has(a.QuestionPostID.toLowerCase()));
           } else if (ids) {
             rows = rows.filter((a) => ids.has(a.ID.toLowerCase()));
-          } else {
+          } else if (state.worldMode === 'default') {
             rows = rows.filter((a) => !OTHER_SPACE_POST_ID_SET.has(a.ID.toLowerCase()));
           }
           if (extraFilter.includes('IsAcceptedByAuthor = 1')) {
@@ -1099,46 +1212,69 @@ export function createHarnessStore() {
         }
         case 'MJ_BizApps_Community: Forum Idea Campaigns': {
           const campaignIds = parseInIds(extraFilter, 'ID');
-          return campaignIds
-            ? state.campaigns.filter((c) => campaignIds.has(c.ID.toLowerCase()))
-            : state.campaigns.filter((c) => c.ID !== C.FORUM_OTHER_SPACE);
+          if (campaignIds) {
+            return state.campaigns.filter((c) => campaignIds.has(c.ID.toLowerCase()));
+          }
+          return state.worldMode === 'default'
+            ? state.campaigns.filter((c) => c.ID !== C.FORUM_OTHER_SPACE)
+            : state.campaigns;
         }
         case 'MJ_BizApps_Community: Forum Idea Posts': {
           const ids = parseInIds(extraFilter, 'ID');
-          return ids
-            ? state.ideas.filter((i) => ids.has(i.ID.toLowerCase()))
-            : state.ideas.filter((i) => !OTHER_SPACE_POST_ID_SET.has(i.ID.toLowerCase()));
+          if (ids) {
+            return state.ideas.filter((i) => ids.has(i.ID.toLowerCase()));
+          }
+          return state.worldMode === 'default'
+            ? state.ideas.filter((i) => !OTHER_SPACE_POST_ID_SET.has(i.ID.toLowerCase()))
+            : state.ideas;
         }
         case 'MJ_BizApps_Community: Forum Artifact Posts': {
           const ids = parseInIds(extraFilter, 'ID');
-          return ids
-            ? state.artifacts.filter((a) => ids.has(a.ID.toLowerCase()))
-            : state.artifacts.filter((a) => !OTHER_SPACE_POST_ID_SET.has(a.ID.toLowerCase()));
+          if (ids) {
+            return state.artifacts.filter((a) => ids.has(a.ID.toLowerCase()));
+          }
+          return state.worldMode === 'default'
+            ? state.artifacts.filter((a) => !OTHER_SPACE_POST_ID_SET.has(a.ID.toLowerCase()))
+            : state.artifacts;
         }
         case 'MJ_BizApps_Community: Forum Form Posts': {
           const ids = parseInIds(extraFilter, 'ID');
-          return ids
-            ? state.forms.filter((f) => ids.has(f.ID.toLowerCase()))
-            : state.forms.filter((f) => !OTHER_SPACE_POST_ID_SET.has(f.ID.toLowerCase()));
+          if (ids) {
+            return state.forms.filter((f) => ids.has(f.ID.toLowerCase()));
+          }
+          return state.worldMode === 'default'
+            ? state.forms.filter((f) => !OTHER_SPACE_POST_ID_SET.has(f.ID.toLowerCase()))
+            : state.forms;
         }
         case 'MJ_BizApps_Community: Forum Interactive Posts': {
           const ids = parseInIds(extraFilter, 'ID');
-          return ids
-            ? state.interactivePosts.filter((p) => ids.has(p.ID.toLowerCase()))
-            : state.interactivePosts.filter((p) => !OTHER_SPACE_POST_ID_SET.has(p.ID.toLowerCase()));
+          if (ids) {
+            return state.interactivePosts.filter((p) => ids.has(p.ID.toLowerCase()));
+          }
+          return state.worldMode === 'default'
+            ? state.interactivePosts.filter((p) => !OTHER_SPACE_POST_ID_SET.has(p.ID.toLowerCase()))
+            : state.interactivePosts;
         }
         case 'MJ_BizApps_Community: Forum Question Posts': {
           const ids = parseInIds(extraFilter, 'ID');
-          return ids
-            ? state.questions.filter((q) => ids.has(q.ID.toLowerCase()))
-            : state.questions.filter((q) => !OTHER_SPACE_POST_ID_SET.has(q.ID.toLowerCase()));
+          if (ids) {
+            return state.questions.filter((q) => ids.has(q.ID.toLowerCase()));
+          }
+          return state.worldMode === 'default'
+            ? state.questions.filter((q) => !OTHER_SPACE_POST_ID_SET.has(q.ID.toLowerCase()))
+            : state.questions;
         }
         case 'MJ_BizApps_Community: Forum Idea Allocations': {
+          let rows = state.allocations;
           const ideaId = parseEqFilter(extraFilter, 'IdeaPostID');
+          const userId = parseEqFilter(extraFilter, 'UserID');
           if (ideaId) {
-            return state.allocations.filter((a) => a.IdeaPostID.toLowerCase() === ideaId.toLowerCase());
+            rows = rows.filter((a) => a.IdeaPostID.toLowerCase() === ideaId.toLowerCase());
           }
-          return state.allocations;
+          if (userId) {
+            rows = rows.filter((a) => a.UserID.toLowerCase() === userId.toLowerCase());
+          }
+          return rows;
         }
         case 'MJ_BizApps_Community: Forum Posts': {
           let rows = state.posts;
@@ -1152,7 +1288,7 @@ export function createHarnessStore() {
 
           if (forumIds) {
             rows = rows.filter((p) => forumIds.has(String(p.ForumID).toLowerCase()));
-          } else if (!ids && !idEq && !rootIds && !rootEq) {
+          } else if (!ids && !idEq && !rootIds && !rootEq && state.worldMode === 'default') {
             rows = rows.filter((p) => !OTHER_SPACE_POST_ID_SET.has(p.ID.toLowerCase()));
           }
 
@@ -1174,7 +1310,7 @@ export function createHarnessStore() {
               (p) =>
                 p.RootPostID &&
                 rootIds.has(p.RootPostID.toLowerCase()) &&
-                p.PostTypeID === C.PT_REPLY &&
+                state.replyPostTypeIds.has(p.PostTypeID) &&
                 ['Published', 'Answered', 'Resolved'].includes(p.Status),
             );
           }
@@ -1183,11 +1319,14 @@ export function createHarnessStore() {
               (p) =>
                 p.RootPostID &&
                 p.RootPostID.toLowerCase() === rootEq.toLowerCase() &&
-                p.PostTypeID === C.PT_REPLY &&
+                state.replyPostTypeIds.has(p.PostTypeID) &&
                 ['Published', 'Answered', 'Resolved'].includes(p.Status),
             );
           }
           if (extraFilter.includes('RootPostID IS NULL')) {
+            if (state.worldMode === 'arch') {
+              return rows.filter((p) => p.RootPostID == null);
+            }
             return rows.filter(
               (p) =>
                 p.RootPostID == null &&
@@ -1443,9 +1582,10 @@ export function createHarnessStore() {
 
         const answerById = new Map(state.answers.map((a) => [a.ID.toLowerCase(), a]));
         const tagNamesById = new Map(state.topicTags.map((t) => [t.ID.toLowerCase(), t.Name]));
+        const userNameById = new Map(state.users.map((u) => [u.ID.toLowerCase(), u.Name]));
         const candidates = state.posts
-          .filter((p) => (!allowedSet || allowedSet.has(String(p.ForumID).toLowerCase())) && p.PostTypeID !== C.PT_REPLY)
-          .filter((p) => p.PostTypeID === C.PT_ANSWER || p.PostTypeID === C.PT_COLLAB_DOC || p.PostTypeID === C.PT_DISCUSSION)
+          .filter((p) => (!allowedSet || allowedSet.has(String(p.ForumID).toLowerCase())) && !state.replyPostTypeIds.has(p.PostTypeID))
+          .filter((p) => state.askFirstCandidateTypeIds.has(p.PostTypeID))
           .map((p) => {
             const answerMeta = answerById.get(p.ID.toLowerCase());
             const tags = state.postTags
@@ -1456,7 +1596,7 @@ export function createHarnessStore() {
               postId: p.ID,
               forumSlug: state.forums.find((f) => f.ID.toLowerCase() === p.ForumID.toLowerCase())?.Name ?? p.ForumID,
               title: p.Title ?? 'Community Thread',
-              authorDisplayName: 'E2E Harness Member',
+              authorDisplayName: userNameById.get(String(p.AuthorUserID ?? '').toLowerCase()) ?? 'Community Member',
               bodyMarkdown: p.BodyMarkdown ?? '',
               epistemicStatus: answerMeta?.AIEpistemicStatus ?? null,
               topicTags: tags,
@@ -1535,11 +1675,12 @@ export function createHarnessStore() {
             ResultData: null,
           };
         }
+        const userNameById = new Map(state.users.map((u) => [u.ID.toLowerCase(), u.Name]));
         const replies = state.posts
           .filter((p) => p.RootPostID && p.RootPostID.toLowerCase() === rootPost.ID.toLowerCase())
           .map((r) => ({
             postId: r.ID,
-            authorDisplayName: 'E2E Harness Member',
+            authorDisplayName: userNameById.get(String(r.AuthorUserID ?? '').toLowerCase()) ?? 'Community Member',
             bodyMarkdown: r.BodyMarkdown,
             isAccepted: false,
             isVerified: false,
@@ -1584,7 +1725,7 @@ export function createHarnessStore() {
           };
         }
 
-        const callerUserId = String(getParam('UserID') || C.HARNESS_USER_ID).trim();
+        const callerUserId = String(getParam('UserID') || state.currentUserId).trim();
         const userRow = state.users.find((u) => u.ID.toLowerCase() === callerUserId.toLowerCase());
         const effectiveUser = new UserInfo(undefined, {
           ID: callerUserId,
