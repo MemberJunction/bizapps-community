@@ -513,10 +513,6 @@ export class ThreadGraduationService {
     if (typeof md.CreateTransactionGroup !== 'function') {
       return null;
     }
-    const provider = Metadata.Provider;
-    if (!provider || typeof provider.CreateTransactionGroup !== 'function') {
-      return null;
-    }
     try {
       return await md.CreateTransactionGroup();
     } catch {
