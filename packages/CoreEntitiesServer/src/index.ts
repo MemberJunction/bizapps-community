@@ -21,6 +21,10 @@ export {
   LoadForumPostReactionServerEntity,
 } from './entities/ForumPostReactionServerEntity.ts';
 export {
+  ForumPostAttachmentServerEntity,
+  LoadForumPostAttachmentServerEntity,
+} from './entities/ForumPostAttachmentServerEntity.ts';
+export {
   ForumPostTagServerEntity,
   LoadForumPostTagServerEntity,
 } from './entities/ForumPostTagServerEntity.ts';
@@ -28,6 +32,7 @@ export {
 import { RegisterBuiltInCommunityServerDrivers } from './drivers/CommunitySpaceServerDriver.ts';
 import { LoadForumAnswerPostServerEntity } from './entities/ForumAnswerPostServerEntity.ts';
 import { LoadForumIdeaAllocationServerEntity } from './entities/ForumIdeaAllocationServerEntity.ts';
+import { LoadForumPostAttachmentServerEntity } from './entities/ForumPostAttachmentServerEntity.ts';
 import { LoadForumPostReactionServerEntity } from './entities/ForumPostReactionServerEntity.ts';
 import { LoadForumPostServerEntity } from './entities/ForumPostServerEntity.ts';
 import { LoadForumPostTagServerEntity } from './entities/ForumPostTagServerEntity.ts';
@@ -37,6 +42,7 @@ export function LoadBizAppsCommunityCoreEntitiesServer(): void {
   LoadForumPostServerEntity();
   LoadForumAnswerPostServerEntity();
   LoadForumIdeaAllocationServerEntity();
+  LoadForumPostAttachmentServerEntity();
   LoadForumPostReactionServerEntity();
   LoadForumPostTagServerEntity();
 }

@@ -109,6 +109,7 @@ export const COMMUNITY_ALLOWED_MIME_TYPES: ReadonlySet<string> = new Set([
 const SAFE_DATA_IMAGE_MIME_TYPES: ReadonlySet<string> = COMMUNITY_ALLOWED_IMAGE_MIME_TYPES;
 const SAFE_DATA_AUDIO_MIME_TYPES: ReadonlySet<string> = COMMUNITY_ALLOWED_AUDIO_MIME_TYPES;
 const SAFE_DATA_VIDEO_MIME_TYPES: ReadonlySet<string> = COMMUNITY_ALLOWED_VIDEO_MIME_TYPES;
+const SAFE_DATA_FILE_MIME_TYPES: ReadonlySet<string> = COMMUNITY_ALLOWED_FILE_MIME_TYPES;
 
 const LIBRARY_FEATURED_ENTRY_TYPES: ReadonlySet<string> = new Set([
   'playbook',
@@ -344,13 +345,17 @@ function isAllowedDataMimeForKind(mime: string, kind?: CommunityAttachmentKind):
   if (kind === 'video') {
     return SAFE_DATA_VIDEO_MIME_TYPES.has(mime);
   }
-  if (kind === 'file' || kind === 'artifact') {
+  if (kind === 'file') {
+    return SAFE_DATA_FILE_MIME_TYPES.has(mime);
+  }
+  if (kind === 'artifact') {
     return false;
   }
   return (
     SAFE_DATA_IMAGE_MIME_TYPES.has(mime) ||
     SAFE_DATA_AUDIO_MIME_TYPES.has(mime) ||
-    SAFE_DATA_VIDEO_MIME_TYPES.has(mime)
+    SAFE_DATA_VIDEO_MIME_TYPES.has(mime) ||
+    SAFE_DATA_FILE_MIME_TYPES.has(mime)
   );
 }
 
