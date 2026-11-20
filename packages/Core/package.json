@@ -13,7 +13,7 @@
   ],
   "scripts": {
     "build": "tsc",
-    "test": "node --experimental-strip-types --test src/rules.test.ts src/configuration.test.ts src/wave3-rules.test.ts src/sql-safety.test.ts src/personalization.test.ts"
+    "test": "node --experimental-strip-types --test src/rules.test.ts src/configuration.test.ts src/wave3-rules.test.ts src/sql-safety.test.ts src/personalization.test.ts src/__tests__/community-attachments.spec.ts"
   },
   "license": "BUSL-1.1",
   "peerDependencies": {
