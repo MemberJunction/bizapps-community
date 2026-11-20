@@ -125,7 +125,7 @@
               <button
                 type="button"
                 class="mjc-lib-thumb-btn"
-                [attr.aria-label]="'Open ' + entry.title + ' in lightbox'"
+                [attr.aria-label]="'Open ' + entry.typeLabel + ' ' + entry.title + (entry.formattedDuration ? ' ' + entry.formattedDuration : '') + ' in lightbox'"
                 (click)="openLightbox(idx)"
               >
                 @if (entry.kind === 'image' && entry.safeUrl) {
