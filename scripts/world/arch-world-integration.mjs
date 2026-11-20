@@ -4,17 +4,29 @@ import { existsSync, mkdtempSync, rmSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { DatabaseSync } from 'node:sqlite';
 import { describe, it, mock } from 'node:test';
 import {
   ARCH_ALL_FORUM_TYPE_CODES,
   ARCH_ALL_POST_TYPE_CODES,
+  ARCH_AMA_POSTS,
+  ARCH_CASE_POSTS,
   ARCH_COMMUNITY_SPACES,
+  ARCH_FORUM_MEMBERS,
+  ARCH_FORUM_SUBSCRIPTIONS,
   ARCH_FORUMS,
   ARCH_IDEA_ALLOCATIONS,
   ARCH_IDEA_POSTS,
+  ARCH_INTERACTIVE_POSTS,
+  ARCH_INTERACTIVE_SESSIONS,
+  ARCH_MEMBER_PROFILES,
   ARCH_MEMBERS,
+  ARCH_POST_FLAGS,
+  ARCH_POST_REACTIONS,
   ARCH_POST_TAGS,
   ARCH_POSTS,
+  ARCH_QUESTION_POSTS,
+  ARCH_SPACE_MEMBERS,
   ARCH_TOPIC_TAGS,
   GetArchWorldSeedSummary,
 } from './arch-world-data.mjs';
@@ -23,9 +35,11 @@ import {
   CountArchWorldStoreRecords,
   CreateArchWorldRuntimeBridge,
   CreatePersistedArchWorldProvider,
+  ExecuteArchitectAssociationWorldSql,
   GetSharedArchWorldStore,
   LoadArchitectAssociationWorld,
   MakeArchUserInfo,
+  QueryArchWorldSqliteCounts,
   ResetSharedArchWorldStore,
   TeardownArchitectAssociationWorld,
 } from './arch-world-loader.mjs';
@@ -173,7 +187,8 @@ function setupRuntimeMocks(store, txGroup, options = {}) {
  */
 export async function RunArchitectAssociationIntegrationCycle(options = {}) {
   const persistenceFilePath = options.persistenceFilePath;
-  const store = options.store ?? GetSharedArchWorldStore({ persistenceFilePath });
+  const sqliteFilePath = options.sqliteFilePath;
+  const store = options.store ?? GetSharedArchWorldStore({ persistenceFilePath, sqliteFilePath });
   const isRepeatCycle = Boolean(options.isRepeatCycle);
   const txGroup = new InMemoryArchTxGroup();
 
@@ -185,11 +200,12 @@ export async function RunArchitectAssociationIntegrationCycle(options = {}) {
   const prevMetadataProvider = Metadata.Provider;
   const prevRunViewProvider = RunView.Provider;
   process.env.COMMUNITY_DIGEST_REPLY_SECRET = ARCH_SIGNING_SECRET;
+  let activeBridge = null;
 
   try {
     // 1. Authoritative Entity-Backed Idempotent Double-Load (via Metadata.GetEntityObject + ValidateAsync + Save)
-    const load1 = await LoadArchitectAssociationWorld({ store, persistenceFilePath });
-    const load2 = await LoadArchitectAssociationWorld({ store, persistenceFilePath });
+    const load1 = await LoadArchitectAssociationWorld({ store, persistenceFilePath, sqliteFilePath });
+    const load2 = await LoadArchitectAssociationWorld({ store, persistenceFilePath, sqliteFilePath });
     assert.equal(load2.createdCount, 0, 'second load must create 0 records');
     assert.equal(load2.updatedCount, 0, 'second load must update 0 records');
     assert.equal(load2.idempotent, true, 'second load must be strictly idempotent');
@@ -198,7 +214,7 @@ export async function RunArchitectAssociationIntegrationCycle(options = {}) {
       assert.ok(load1.validatedEntityCount > 300, 'initial load must validate all seeded records via BaseEntity.ValidateAsync()');
     }
 
-    setupRuntimeMocks(store, txGroup, { persistenceFilePath });
+    activeBridge = setupRuntimeMocks(store, txGroup, { persistenceFilePath, sqliteFilePath });
 
     // 2. Personalized Embedding Email Digest + MJ CommunicationEngine Test Driver
     const kenjiUser = MakeArchUserInfo({ ID: KENJI_ID, Email: 'kenji.takahashi@agpa-guild.org', Name: 'Dr. Kenji Takahashi, FAIA' });
@@ -604,38 +620,42 @@ export async function RunArchitectAssociationIntegrationCycle(options = {}) {
     assert.match(graduatedSpace.Description, /\*\*Key Takeaways:\*\*/);
     assert.equal(seededTask.Description, graduatedSpace.Description);
 
-    // 8. No-op Teardown preserves everything in store and durable backing file
-    const teardownRes = TeardownArchitectAssociationWorld({ store, persistenceFilePath });
+    // 8. No-op Teardown preserves everything in store, relational SQLite DB, and durable backing file
+    const teardownRes = TeardownArchitectAssociationWorld({ store, persistenceFilePath, sqliteFilePath });
     assert.equal(teardownRes.preserved, true);
     assert.ok(store.spaces.has(expectedSpaceId.toLowerCase()), 'no-op teardown must preserve graduated space');
     assert.ok(store.posts.has(persistedReplyId.toLowerCase()), 'no-op teardown must preserve inbound reply');
 
-    // Verify independent fresh provider read from disk sees all retained records without re-seeding
-    if (persistenceFilePath !== null) {
-      const freshProvider = CreatePersistedArchWorldProvider({ persistenceFilePath });
-      const freshRv = new RunView(freshProvider);
-      const freshAllocRes = await freshRv.RunView(
-        {
-          EntityName: COMMUNITY_ENTITY_NAMES.ForumIdeaAllocations,
-          ExtraFilter: `UserID = '${KENJI_ID}'`,
-          ResultType: 'simple',
-        },
-        kenjiUser,
-      );
-      assert.equal(freshAllocRes.Results.length, 2);
-      const freshP32 = freshAllocRes.Results.find(
-        (a) => a.IdeaPostID.toLowerCase() === IDEA_P32_ID.toLowerCase(),
-      );
-      assert.equal(freshP32?.PointsAllocated, 49, 'fresh persisted reader must see updated 49-pt allocation');
-      const freshSpaceRes = await freshRv.RunView(
-        {
-          EntityName: 'MJ_BizApps_Collaboration: Spaces',
-          ExtraFilter: `ID = '${expectedSpaceId}'`,
-          ResultType: 'simple',
-        },
-        kenjiUser,
-      );
-      assert.equal(freshSpaceRes.Results.length, 1, 'fresh persisted reader must see graduated Working Space');
+    // Verify independent fresh provider read from persisted relational SQLite DB sees all retained records without re-seeding
+    if (persistenceFilePath !== null || sqliteFilePath) {
+      const freshProvider = CreatePersistedArchWorldProvider({ persistenceFilePath, sqliteFilePath });
+      try {
+        const freshRv = new RunView(freshProvider);
+        const freshAllocRes = await freshRv.RunView(
+          {
+            EntityName: COMMUNITY_ENTITY_NAMES.ForumIdeaAllocations,
+            ExtraFilter: `UserID = '${KENJI_ID}'`,
+            ResultType: 'simple',
+          },
+          kenjiUser,
+        );
+        assert.equal(freshAllocRes.Results.length, 2);
+        const freshP32 = freshAllocRes.Results.find(
+          (a) => a.IdeaPostID.toLowerCase() === IDEA_P32_ID.toLowerCase(),
+        );
+        assert.equal(freshP32?.PointsAllocated, 49, 'fresh persisted reader must see updated 49-pt allocation');
+        const freshSpaceRes = await freshRv.RunView(
+          {
+            EntityName: 'MJ_BizApps_Collaboration: Spaces',
+            ExtraFilter: `ID = '${expectedSpaceId}'`,
+            ResultType: 'simple',
+          },
+          kenjiUser,
+        );
+        assert.equal(freshSpaceRes.Results.length, 1, 'fresh persisted reader must see graduated Working Space');
+      } finally {
+        freshProvider.CloseSqlite();
+      }
     }
 
     return {
@@ -645,6 +665,7 @@ export async function RunArchitectAssociationIntegrationCycle(options = {}) {
       persistedReplyId,
     };
   } finally {
+    activeBridge?.provider?.CloseSqlite?.();
     if (prevSecret === undefined) delete process.env.COMMUNITY_DIGEST_REPLY_SECRET;
     else process.env.COMMUNITY_DIGEST_REPLY_SECRET = prevSecret;
     Metadata.Provider = prevMetadataProvider;
@@ -779,49 +800,207 @@ export function RegisterArchWorldIntegrationTests() {
       }
     });
 
-    it('executes full end-to-end integration cycle across 2 consecutive runs on the retained world (with no-op teardown & cross-process persistence)', async () => {
+    it('executes full end-to-end integration cycle across 2 consecutive runs on the retained world (with no-op teardown, SQLite relational DB & cross-process persistence)', async () => {
       const tempDir = mkdtempSync(join(tmpdir(), 'arch-world-persist-'));
       const tempStateFile = join(tempDir, 'arch-world-state.json');
+      const tempSqliteFile = join(tempDir, 'arch-world-state.sqlite');
       try {
         const retainedStore = ResetSharedArchWorldStore({
           persistenceFilePath: tempStateFile,
+          sqliteFilePath: tempSqliteFile,
           clearPersistence: true,
         });
         const firstRun = await RunArchitectAssociationIntegrationCycle({
           store: retainedStore,
           persistenceFilePath: tempStateFile,
+          sqliteFilePath: tempSqliteFile,
           isRepeatCycle: false,
         });
         assert.ok(firstRun.counts.totalRecords > 150);
-        assert.equal(existsSync(tempStateFile), true, 'durable backing store must exist on disk after run 1');
+        assert.equal(existsSync(tempStateFile), true, 'durable JSON backing store must exist on disk after run 1');
+        assert.equal(existsSync(tempSqliteFile), true, 'durable relational SQLite DB must exist on disk after run 1');
 
-        // Run #2 against the EXACT same retained store (after no-op TeardownArchitectAssociationWorld)
+        // Run #2 against the EXACT same retained store & SQLite DB (after no-op TeardownArchitectAssociationWorld)
         // proving repeat-run invariance without destructive cleanup or duplicate Working Spaces/Tasks/Allocations.
         const secondRun = await RunArchitectAssociationIntegrationCycle({
           store: retainedStore,
           persistenceFilePath: tempStateFile,
+          sqliteFilePath: tempSqliteFile,
           isRepeatCycle: true,
         });
         assert.equal(secondRun.graduatedSpaceId, firstRun.graduatedSpaceId);
         assert.equal(secondRun.store.tasks.size, 1, 'repeat run must not create duplicate starter Tasks');
 
-        // Independent child process read (zero shared memory) sees retained state without re-seeding
+        // Independent child process relational SQLite + RunView read (zero shared memory) sees retained state without re-seeding
         const verifyOutput = execFileSync(
           process.execPath,
           ['scripts/world/arch-world-loader.mjs', '--verify'],
           {
-            env: { ...process.env, ARCH_WORLD_STATE_FILE: tempStateFile },
+            env: {
+              ...process.env,
+              ARCH_WORLD_STATE_FILE: tempStateFile,
+              ARCH_WORLD_SQLITE_FILE: tempSqliteFile,
+            },
             encoding: 'utf8',
           },
         );
-        assert.match(verifyOutput, /Spaces=5, CommunitySpaces=4, Forums=13, Posts=70, TopicTags=22, IdeaAllocations=25/);
+        assert.match(
+          verifyOutput,
+          /Users=26, Spaces=5, SpaceMembers=67, CommunitySpaces=4, Forums=13, ForumMembers=14, MemberProfiles=29, ForumSubscriptions=10, Posts=70, TopicTags=22, IdeaAllocations=25, CasePosts=2, AMAPosts=2, InteractivePosts=1, InteractiveSessions=6, PostReactions=10, PostFlags=2/,
+        );
+      } finally {
+        rmSync(tempDir, { recursive: true, force: true });
+      }
+    });
 
-        // Deterministic SQL Server & PostgreSQL script generation matches world dataset
-        const sqlScripts = BuildArchitectAssociationWorldSql();
-        assert.match(sqlScripts.sqlServer, /\[__mj_BizAppsCommunity\]\.\[ForumPostTag\]/);
-        assert.match(sqlScripts.postgres, /INSERT INTO "ForumPostTag"/);
-        assert.match(sqlScripts.sqlServer, /UPDATE \[__mj_BizAppsCommunity\]\.\[ForumIdeaPost\]/);
-        assert.match(sqlScripts.postgres, /UPDATE "ForumIdeaPost" AS ip/);
+    it('generates and executes complete 22-table FK-safe SQL (SQL Server, PostgreSQL, SQLite) with strict foreign key enforcement and idempotent double-load', async () => {
+      const sqlServer = BuildArchitectAssociationWorldSql('sqlserver');
+      const postgres = BuildArchitectAssociationWorldSql('postgres');
+
+      // Verify all 22 tables/collections and every row ID appear in both SQL Server and PostgreSQL dialects
+      for (const m of ARCH_MEMBERS) {
+        assert.ok(sqlServer.includes(m.ID), `sqlServer missing User ${m.ID}`);
+        assert.ok(postgres.includes(m.ID), `postgres missing User ${m.ID}`);
+      }
+      assert.match(sqlServer, /\[__mj\]\.\[User\]/);
+      assert.match(postgres, /INSERT INTO __mj\."User"/);
+      assert.match(sqlServer, /\[__mj_BizAppsCollaboration\]\.\[SpaceMember\]/);
+      assert.match(postgres, /INSERT INTO __mj_BizAppsCollaboration\."SpaceMember"/);
+      for (const sm of ARCH_SPACE_MEMBERS) {
+        assert.ok(sqlServer.includes(sm.ID));
+        assert.ok(postgres.includes(sm.ID));
+      }
+      for (const fm of ARCH_FORUM_MEMBERS) {
+        assert.ok(sqlServer.includes(fm.ID));
+        assert.ok(postgres.includes(fm.ID));
+      }
+      for (const mp of ARCH_MEMBER_PROFILES) {
+        assert.ok(sqlServer.includes(mp.ID));
+        assert.ok(postgres.includes(mp.ID));
+      }
+      for (const sub of ARCH_FORUM_SUBSCRIPTIONS) {
+        assert.ok(sqlServer.includes(sub.ID));
+        assert.ok(postgres.includes(sub.ID));
+      }
+      for (const c of ARCH_CASE_POSTS) {
+        assert.ok(sqlServer.includes(c.ID));
+        assert.ok(postgres.includes(c.ID));
+      }
+      for (const ama of ARCH_AMA_POSTS) {
+        assert.ok(sqlServer.includes(ama.ID));
+        assert.ok(postgres.includes(ama.ID));
+      }
+      for (const ip of ARCH_INTERACTIVE_POSTS) {
+        assert.ok(sqlServer.includes(ip.ID));
+        assert.ok(postgres.includes(ip.ID));
+      }
+      for (const s of ARCH_INTERACTIVE_SESSIONS) {
+        assert.ok(sqlServer.includes(s.ID));
+        assert.ok(postgres.includes(s.ID));
+      }
+      for (const rx of ARCH_POST_REACTIONS) {
+        assert.ok(sqlServer.includes(rx.ID));
+        assert.ok(postgres.includes(rx.ID));
+      }
+      for (const flag of ARCH_POST_FLAGS) {
+        assert.ok(sqlServer.includes(flag.ID));
+        assert.ok(postgres.includes(flag.ID));
+      }
+
+      // Cyclic-FK-safe AcceptedAnswerPostID linkage + IdeaPost recomputation present in both dialects
+      assert.match(sqlServer, /UPDATE \[__mj_BizAppsCommunity\]\.\[ForumQuestionPost\]/);
+      assert.match(postgres, /UPDATE "ForumQuestionPost"/);
+      assert.match(sqlServer, /UPDATE \[__mj_BizAppsCommunity\]\.\[ForumIdeaPost\]/);
+      assert.match(postgres, /UPDATE "ForumIdeaPost" AS ip/);
+      assert.match(sqlServer, /\[__mj_BizAppsCommunity\]\.\[ForumPostTag\]/);
+      assert.match(postgres, /INSERT INTO "ForumPostTag"/);
+
+      // Execute the full SQLite relational seed TWICE in succession with PRAGMA foreign_keys = ON
+      const tempDir = mkdtempSync(join(tmpdir(), 'arch-world-sql-exec-'));
+      const sqlDbPath = join(tempDir, 'arch-world-sql-exec.sqlite');
+      try {
+        const exec1 = await ExecuteArchitectAssociationWorldSql({ dialect: 'sqlite', sqliteFilePath: sqlDbPath });
+        const exec2 = await ExecuteArchitectAssociationWorldSql({ dialect: 'sqlite', sqliteFilePath: sqlDbPath });
+
+        assert.deepEqual(exec2.counts, exec1.counts, 'double-load SQL execution must yield identical counts across all tables');
+        assert.deepEqual(exec1.counts, {
+          User: ARCH_MEMBERS.length,
+          Space: ARCH_COMMUNITY_SPACES.length,
+          SpaceMember: ARCH_SPACE_MEMBERS.length,
+          CommunitySpace: ARCH_COMMUNITY_SPACES.length,
+          ForumType: 6,
+          PostType: 13,
+          ForumRoleType: 7,
+          Forum: ARCH_FORUMS.length,
+          ForumMember: ARCH_FORUM_MEMBERS.length,
+          CommunityMemberProfile: ARCH_MEMBER_PROFILES.length,
+          ForumSubscription: ARCH_FORUM_SUBSCRIPTIONS.length,
+          ForumTopicTag: ARCH_TOPIC_TAGS.length,
+          ForumPost: ARCH_POSTS.length,
+          ForumQuestionPost: ARCH_QUESTION_POSTS.length,
+          ForumAnswerPost: 7,
+          ForumIdeaCampaign: 1,
+          ForumIdeaPost: ARCH_IDEA_POSTS.length,
+          ForumIdeaAllocation: ARCH_IDEA_ALLOCATIONS.length,
+          ForumCasePost: ARCH_CASE_POSTS.length,
+          ForumAMAPost: ARCH_AMA_POSTS.length,
+          ForumInteractivePost: ARCH_INTERACTIVE_POSTS.length,
+          ForumInteractiveSession: ARCH_INTERACTIVE_SESSIONS.length,
+          ForumPostTag: ARCH_POST_TAGS.length,
+          ForumPostReaction: ARCH_POST_REACTIONS.length,
+          ForumPostFlag: ARCH_POST_FLAGS.length,
+          Task: 0,
+        });
+
+        // Verify relational queries + strict FK enforcement directly via node:sqlite
+        const db = new DatabaseSync(sqlDbPath);
+        try {
+          db.exec('PRAGMA foreign_keys = ON;');
+          const linkedQ = db
+            .prepare('SELECT "AcceptedAnswerPostID", "AICanonAnswerPostID" FROM "ForumQuestionPost" WHERE "ID" = ?')
+            .get('A7C40600-4E12-4B8F-9A10-000000000007');
+          assert.equal(linkedQ?.AcceptedAnswerPostID, 'A7C40600-4E12-4B8F-9A10-000000000008');
+          assert.equal(linkedQ?.AICanonAnswerPostID, 'A7C40600-4E12-4B8F-9A10-000000000008');
+
+          const ideaP32 = db
+            .prepare('SELECT "TotalPointsAllocated", "EffectiveQuadraticVotes", "UniqueBackerCount" FROM "ForumIdeaPost" WHERE "ID" = ?')
+            .get('A7C40600-4E12-4B8F-9A10-000000000032');
+          assert.equal(ideaP32?.TotalPointsAllocated, 262);
+          assert.equal(ideaP32?.EffectiveQuadraticVotes, 50);
+          assert.equal(ideaP32?.UniqueBackerCount, 10);
+
+          // FK violation probe must throw when referencing an unknown User
+          assert.throws(
+            () =>
+              db
+                .prepare('INSERT INTO "ForumPostTag" ("ID", "PostID", "TopicTagID") VALUES (?, ?, ?)')
+                .run('00000000-0000-4000-8000-000000000099', 'A7C40600-4E12-4B8F-9A10-000000000001', '00000000-0000-4000-8000-999999999999'),
+            /FOREIGN KEY constraint failed/i,
+          );
+        } finally {
+          db.close();
+        }
+
+        // Independent child-process SQL verification after TeardownArchitectAssociationWorld()
+        const teardown = TeardownArchitectAssociationWorld({
+          persistenceFilePath: null,
+          sqliteFilePath: sqlDbPath,
+        });
+        assert.equal(teardown.preserved, true);
+        assert.equal(teardown.sqlitePersistedOnDisk, true);
+
+        const verifyOut = execFileSync(
+          process.execPath,
+          ['scripts/world/arch-world-loader.mjs', '--verify'],
+          {
+            env: {
+              ...process.env,
+              ARCH_WORLD_SQLITE_FILE: sqlDbPath,
+            },
+            encoding: 'utf8',
+          },
+        );
+        assert.match(verifyOut, /Users=26, Spaces=4, SpaceMembers=64, CommunitySpaces=4, Forums=13, ForumMembers=14, MemberProfiles=26, ForumSubscriptions=10, Posts=68, TopicTags=22, IdeaAllocations=25, CasePosts=2, AMAPosts=2, InteractivePosts=1, InteractiveSessions=6, PostReactions=10, PostFlags=2/);
       } finally {
         rmSync(tempDir, { recursive: true, force: true });
       }

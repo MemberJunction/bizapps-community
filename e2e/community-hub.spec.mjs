@@ -794,7 +794,12 @@ test('ARCH-WORLD Showcase: Capture 5 crisp 1440x900 marketing screenshots with 0
   });
 
   try {
-    await page.request.post(new URL('/api/harness/load-arch-world', harnessUrl).toString());
+    const loadResp = await page.request.post(new URL('/api/harness/load-arch-world', harnessUrl).toString());
+    expect(loadResp.ok()).toBe(true);
+    const loadBody = await loadResp.json();
+    expect(loadBody.source).toBe('sqlite');
+    expect(loadBody.dbCounts?.User).toBe(26);
+    expect(loadBody.dbCounts?.ForumPost).toBe(68);
     await page.goto(`${harnessUrl}?world=arch`);
     await page.waitForFunction(() => window.__harnessReady === true);
 

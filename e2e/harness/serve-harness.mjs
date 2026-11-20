@@ -133,8 +133,13 @@ export async function StartHarnessServer() {
         return;
       }
       if (urlPath === '/api/harness/load-arch-world' && req.method === 'POST') {
-        store.loadArchWorld();
-        sendJson(res, 200, { Success: true, world: 'ARCH-WORLD' });
+        const loaded = store.loadArchWorld();
+        sendJson(res, 200, {
+          Success: true,
+          world: 'ARCH-WORLD',
+          source: loaded.source,
+          dbCounts: loaded.dbCounts,
+        });
         return;
       }
       if (urlPath === '/api/harness/faults' && req.method === 'POST') {

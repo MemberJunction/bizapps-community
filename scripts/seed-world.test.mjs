@@ -19,16 +19,28 @@ import {
   WORLD_TOPIC_TAGS,
 } from './seed-world.mjs';
 import {
+  ARCH_AMA_POSTS,
+  ARCH_CASE_POSTS,
   ARCH_COMMUNITY_SPACES,
+  ARCH_FORUM_MEMBERS,
+  ARCH_FORUM_SUBSCRIPTIONS,
   ARCH_FORUMS,
   ARCH_IDEA_ALLOCATIONS,
+  ARCH_INTERACTIVE_POSTS,
+  ARCH_INTERACTIVE_SESSIONS,
+  ARCH_MEMBER_PROFILES,
+  ARCH_MEMBERS,
+  ARCH_POST_FLAGS,
+  ARCH_POST_REACTIONS,
   ARCH_POST_TAGS,
   ARCH_POSTS,
+  ARCH_SPACE_MEMBERS,
   ARCH_TOPIC_TAGS,
 } from './world/arch-world-data.mjs';
 import {
   BuildArchitectAssociationWorldSql,
   CreatePersistedArchWorldProvider,
+  ExecuteArchitectAssociationWorldSql,
   LoadArchitectAssociationWorld,
   ResetSharedArchWorldStore,
   TeardownArchitectAssociationWorld,
@@ -211,65 +223,114 @@ describe('seed-world.sql / seed-world.pg.sql parity with seed-world.mjs', () => 
 });
 
 describe('ARCH-WORLD entity persistence, independent reads, SQL/PG generator, and space-tag parity', () => {
-  it('persists double-load + no-op teardown via Metadata/RunView and supports independent fresh-provider reads without re-seeding', async () => {
+  it('persists double-load + no-op teardown via Metadata/RunView + SQLite and supports independent fresh-provider reads without re-seeding', async () => {
     const tempDir = mkdtempSync(join(tmpdir(), 'arch-world-seed-test-'));
     const stateFile = join(tempDir, 'arch-world-state.json');
+    const sqliteFile = join(tempDir, 'arch-world-state.sqlite');
     try {
-      const store = ResetSharedArchWorldStore({ persistenceFilePath: stateFile, clearPersistence: true });
-      const first = await LoadArchitectAssociationWorld({ store, persistenceFilePath: stateFile });
+      const store = ResetSharedArchWorldStore({
+        persistenceFilePath: stateFile,
+        sqliteFilePath: sqliteFile,
+        clearPersistence: true,
+      });
+      const first = await LoadArchitectAssociationWorld({
+        store,
+        persistenceFilePath: stateFile,
+        sqliteFilePath: sqliteFile,
+      });
       assert.ok(first.createdCount > 0);
       assert.ok(first.validatedEntityCount > 300);
 
-      const second = await LoadArchitectAssociationWorld({ store, persistenceFilePath: stateFile });
+      const second = await LoadArchitectAssociationWorld({
+        store,
+        persistenceFilePath: stateFile,
+        sqliteFilePath: sqliteFile,
+      });
       assert.equal(second.createdCount, 0);
       assert.equal(second.updatedCount, 0);
       assert.equal(second.idempotent, true);
 
-      const teardown = TeardownArchitectAssociationWorld({ store, persistenceFilePath: stateFile });
+      const teardown = TeardownArchitectAssociationWorld({
+        store,
+        persistenceFilePath: stateFile,
+        sqliteFilePath: sqliteFile,
+      });
       assert.equal(teardown.preserved, true);
       assert.equal(teardown.persistedOnDisk, true);
+      assert.equal(teardown.sqlitePersistedOnDisk, true);
 
-      // Independent reader using a brand-new provider instance with zero shared memory and no re-seed
-      const independentProvider = CreatePersistedArchWorldProvider({ persistenceFilePath: stateFile });
-      const rv = new RunView(independentProvider);
-      const [spacesRes, forumsRes, postsRes, postTagsRes, allocsRes] = await Promise.all([
-        rv.RunView({ EntityName: COMMUNITY_ENTITY_NAMES.CommunitySpaces, ResultType: 'simple' }, independentProvider.CurrentUser),
-        rv.RunView({ EntityName: COMMUNITY_ENTITY_NAMES.Forums, ResultType: 'simple' }, independentProvider.CurrentUser),
-        rv.RunView({ EntityName: COMMUNITY_ENTITY_NAMES.ForumPosts, ResultType: 'simple' }, independentProvider.CurrentUser),
-        rv.RunView({ EntityName: COMMUNITY_ENTITY_NAMES.ForumPostTags, ResultType: 'simple' }, independentProvider.CurrentUser),
-        rv.RunView({ EntityName: COMMUNITY_ENTITY_NAMES.ForumIdeaAllocations, ResultType: 'simple' }, independentProvider.CurrentUser),
-      ]);
-      assert.equal(spacesRes.Results.length, ARCH_COMMUNITY_SPACES.length);
-      assert.equal(forumsRes.Results.length, ARCH_FORUMS.length);
-      assert.equal(postsRes.Results.length, ARCH_POSTS.length);
-      assert.equal(postTagsRes.Results.length, ARCH_POST_TAGS.length);
-      assert.equal(allocsRes.Results.length, ARCH_IDEA_ALLOCATIONS.length);
+      // Independent reader using a brand-new provider instance backed by SQLite with zero shared memory
+      const independentProvider = CreatePersistedArchWorldProvider({
+        persistenceFilePath: stateFile,
+        sqliteFilePath: sqliteFile,
+      });
+      try {
+        const rv = new RunView(independentProvider);
+        const [usersRes, spacesRes, spaceMembersRes, forumsRes, postsRes, postTagsRes, allocsRes] = await Promise.all([
+          rv.RunView({ EntityName: 'MJ: Users', ResultType: 'simple' }, independentProvider.CurrentUser),
+          rv.RunView({ EntityName: COMMUNITY_ENTITY_NAMES.CommunitySpaces, ResultType: 'simple' }, independentProvider.CurrentUser),
+          rv.RunView({ EntityName: 'MJ_BizApps_Collaboration: Space Members', ResultType: 'simple' }, independentProvider.CurrentUser),
+          rv.RunView({ EntityName: COMMUNITY_ENTITY_NAMES.Forums, ResultType: 'simple' }, independentProvider.CurrentUser),
+          rv.RunView({ EntityName: COMMUNITY_ENTITY_NAMES.ForumPosts, ResultType: 'simple' }, independentProvider.CurrentUser),
+          rv.RunView({ EntityName: COMMUNITY_ENTITY_NAMES.ForumPostTags, ResultType: 'simple' }, independentProvider.CurrentUser),
+          rv.RunView({ EntityName: COMMUNITY_ENTITY_NAMES.ForumIdeaAllocations, ResultType: 'simple' }, independentProvider.CurrentUser),
+        ]);
+        assert.equal(usersRes.Results.length, ARCH_MEMBERS.length);
+        assert.equal(spacesRes.Results.length, ARCH_COMMUNITY_SPACES.length);
+        assert.equal(spaceMembersRes.Results.length, ARCH_SPACE_MEMBERS.length);
+        assert.equal(forumsRes.Results.length, ARCH_FORUMS.length);
+        assert.equal(postsRes.Results.length, ARCH_POSTS.length);
+        assert.equal(postTagsRes.Results.length, ARCH_POST_TAGS.length);
+        assert.equal(allocsRes.Results.length, ARCH_IDEA_ALLOCATIONS.length);
+      } finally {
+        independentProvider.CloseSqlite();
+      }
     } finally {
       rmSync(tempDir, { recursive: true, force: true });
     }
   });
 
-  it('BuildArchitectAssociationWorldSql() emits idempotent SQL Server and PostgreSQL statements for all ARCH-WORLD entities', () => {
-    const { sqlServer, postgres } = BuildArchitectAssociationWorldSql();
-    for (const space of ARCH_COMMUNITY_SPACES) {
-      assert.ok(sqlServer.includes(space.ID));
-      assert.ok(postgres.includes(space.ID));
+  it('BuildArchitectAssociationWorldSql() emits complete 22-table idempotent SQL Server, PostgreSQL, and SQLite statements for all ARCH-WORLD entities', async () => {
+    const sqlServer = BuildArchitectAssociationWorldSql('sqlserver');
+    const postgres = BuildArchitectAssociationWorldSql('postgres');
+    const dual = BuildArchitectAssociationWorldSql();
+    assert.equal(dual.sqlServer, sqlServer);
+    assert.equal(dual.postgres, postgres);
+
+    for (const group of [
+      ARCH_MEMBERS,
+      ARCH_COMMUNITY_SPACES,
+      ARCH_SPACE_MEMBERS,
+      ARCH_FORUMS,
+      ARCH_FORUM_MEMBERS,
+      ARCH_MEMBER_PROFILES,
+      ARCH_FORUM_SUBSCRIPTIONS,
+      ARCH_TOPIC_TAGS,
+      ARCH_POST_TAGS,
+      ARCH_IDEA_ALLOCATIONS,
+      ARCH_CASE_POSTS,
+      ARCH_AMA_POSTS,
+      ARCH_INTERACTIVE_POSTS,
+      ARCH_INTERACTIVE_SESSIONS,
+      ARCH_POST_REACTIONS,
+      ARCH_POST_FLAGS,
+    ]) {
+      for (const row of group) {
+        assert.ok(sqlServer.includes(row.ID), `sqlServer missing ${row.ID}`);
+        assert.ok(postgres.includes(row.ID), `postgres missing ${row.ID}`);
+      }
     }
-    for (const forum of ARCH_FORUMS) {
-      assert.ok(sqlServer.includes(forum.ID));
-      assert.ok(postgres.includes(forum.ID));
-    }
-    for (const tag of ARCH_TOPIC_TAGS) {
-      assert.ok(sqlServer.includes(tag.ID));
-      assert.ok(postgres.includes(tag.ID));
-    }
-    for (const pt of ARCH_POST_TAGS) {
-      assert.ok(sqlServer.includes(pt.ID));
-      assert.ok(postgres.includes(pt.ID));
-    }
-    for (const alloc of ARCH_IDEA_ALLOCATIONS) {
-      assert.ok(sqlServer.includes(alloc.ID));
-      assert.ok(postgres.includes(alloc.ID));
+
+    const tempDir = mkdtempSync(join(tmpdir(), 'arch-world-sql-seed-'));
+    const sqliteFile = join(tempDir, 'arch-world.sqlite');
+    try {
+      const res = await ExecuteArchitectAssociationWorldSql({ dialect: 'sqlite', sqliteFilePath: sqliteFile });
+      assert.equal(res.counts.User, ARCH_MEMBERS.length);
+      assert.equal(res.counts.SpaceMember, ARCH_SPACE_MEMBERS.length);
+      assert.equal(res.counts.ForumCasePost, ARCH_CASE_POSTS.length);
+      assert.equal(res.counts.ForumPostFlag, ARCH_POST_FLAGS.length);
+    } finally {
+      rmSync(tempDir, { recursive: true, force: true });
     }
   });
 });

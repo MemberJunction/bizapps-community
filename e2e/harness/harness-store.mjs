@@ -1,12 +1,17 @@
 import { randomUUID } from 'node:crypto';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import {
   COMMUNITY_ACTION_IDS,
 } from '../../packages/Core/dist/index.js';
-import { GetArchWorldDataset } from '../../scripts/world/arch-world-data.mjs';
+import {
+  DEFAULT_ARCH_WORLD_SQLITE_PATH,
+  LoadArchWorldStoreFromSqlite,
+  QueryArchWorldSqliteCounts,
+  SeedArchWorldSqliteSync,
+} from '../../scripts/world/arch-world-loader.mjs';
 import {
   BuildCommunityDigestPDF,
   ClearCompactReplyTokenRegistry,
@@ -581,21 +586,56 @@ function buildInitialState() {
 
 const ARCH_KENJI_USER_ID = 'A7C40400-4E12-4B8F-9A10-000000000001';
 
-function buildArchWorldState() {
-  const dataset = GetArchWorldDataset();
+function buildArchWorldState(options = {}) {
+  const sqliteFilePath =
+    options.sqliteFilePath ?? process.env.ARCH_WORLD_SQLITE_FILE ?? DEFAULT_ARCH_WORLD_SQLITE_PATH;
+  let persistedStore = existsSync(sqliteFilePath) ? LoadArchWorldStoreFromSqlite(sqliteFilePath) : null;
+  if (!persistedStore || persistedStore.spaces.size < 4 || persistedStore.users.size < 26) {
+    SeedArchWorldSqliteSync({ sqliteFilePath });
+    persistedStore = LoadArchWorldStoreFromSqlite(sqliteFilePath);
+  }
+  if (!persistedStore) {
+    throw new Error(`Failed to hydrate ARCH-WORLD state from persisted SQLite DB at ${sqliteFilePath}`);
+  }
+  const dbCounts = QueryArchWorldSqliteCounts(sqliteFilePath);
   const base = buildInitialState();
-  const userNameById = new Map(dataset.Members.map((m) => [m.ID.toLowerCase(), m.Name]));
+
+  const members = Array.from(persistedStore.users.values());
+  const spaces = Array.from(persistedStore.spaces.values());
+  const communitySpaces = Array.from(persistedStore.communitySpaces.values());
+  const forums = Array.from(persistedStore.forums.values());
+  const postTypes = Array.from(persistedStore.postTypes.values());
+  const topicTags = Array.from(persistedStore.topicTags.values());
+  const postTags = Array.from(persistedStore.postTags.values());
+  const postReactions = Array.from(persistedStore.postReactions.values());
+  const ideaCampaigns = Array.from(persistedStore.ideaCampaigns.values());
+  const posts = Array.from(persistedStore.posts.values());
+  const answerPosts = Array.from(persistedStore.answerPosts.values());
+  const ideaPosts = Array.from(persistedStore.ideaPosts.values());
+  const ideaAllocations = Array.from(persistedStore.ideaAllocations.values());
+  const interactivePosts = Array.from(persistedStore.interactivePosts.values());
+  const questionPosts = Array.from(persistedStore.questionPosts.values());
+  const memberProfiles = Array.from(persistedStore.memberProfiles.values());
+  const spaceRoleTypes = Array.from(persistedStore.spaceRoleTypes.values());
+  const spaceMembers = Array.from(persistedStore.spaceMembers.values());
+  const forumRoleTypes = Array.from(persistedStore.forumRoleTypes.values());
+  const forumMembers = Array.from(persistedStore.forumMembers.values());
+
+  const postTypeCodeById = new Map(postTypes.map((pt) => [pt.ID.toLowerCase(), pt.Code]));
+  const userNameById = new Map(members.map((m) => [m.ID.toLowerCase(), m.Name]));
   const questionTitleById = new Map(
-    dataset.Posts.filter((p) => p.PostTypeCode === 'question' && p.Title).map((p) => [p.ID.toLowerCase(), p.Title]),
+    posts
+      .filter((p) => postTypeCodeById.get(String(p.PostTypeID).toLowerCase()) === 'question' && p.Title)
+      .map((p) => [p.ID.toLowerCase(), p.Title]),
   );
   const answerQuestionTitleById = new Map(
-    dataset.AnswerPosts.map((a) => [
+    answerPosts.map((a) => [
       a.ID.toLowerCase(),
       questionTitleById.get(String(a.QuestionPostID).toLowerCase()) ?? 'Community Answer',
     ]),
   );
   const tagCounts = new Map();
-  for (const pt of dataset.PostTags) {
+  for (const pt of postTags) {
     const key = String(pt.TopicTagID).toLowerCase();
     tagCounts.set(key, (tagCounts.get(key) ?? 0) + 1);
   }
@@ -603,6 +643,9 @@ function buildArchWorldState() {
   return {
     ...base,
     worldMode: 'arch',
+    archWorldSource: 'sqlite',
+    archWorldSqlitePath: sqliteFilePath,
+    archWorldDbCounts: dbCounts,
     currentUserId: ARCH_KENJI_USER_ID,
     replyPostTypeIds: new Set([
       'C8A17200-4E12-4B8F-9A10-100000000002', // reply
@@ -613,8 +656,8 @@ function buildArchWorldState() {
       'C8A17200-4E12-4B8F-9A10-100000000008', // collaborative-doc
       'C8A17200-4E12-4B8F-9A10-100000000001', // discussion
     ]),
-    users: dataset.Members.map((m) => ({ ID: m.ID, Name: m.Name, Email: m.Email })),
-    spaces: dataset.Spaces.map((s) => ({
+    users: members.map((m) => ({ ID: m.ID, Name: m.Name, Email: m.Email })),
+    spaces: spaces.map((s) => ({
       ID: s.ID,
       Name: s.Name,
       Description: s.Description,
@@ -622,43 +665,49 @@ function buildArchWorldState() {
       InheritsMembership: s.InheritsMembership,
       ClosedAt: s.ClosedAt,
     })),
-    communitySpaces: dataset.Spaces.map((s) => ({
-      ID: s.ID,
-      Slug: s.Slug,
-      CommunityKind: s.CommunityKind,
+    communitySpaces: communitySpaces.map((cs) => ({
+      ID: cs.ID,
+      Slug: cs.Slug,
+      CommunityKind: cs.CommunityKind,
     })),
-    forums: dataset.Forums.map((f) => ({ ...f })),
-    postTypes: dataset.postTypes.map((pt) => ({ ...pt })),
-    topicTags: dataset.TopicTags.map((t) => ({
+    forums: forums.map((f) => ({ ...f })),
+    postTypes: postTypes.map((pt) => ({ ...pt })),
+    topicTags: topicTags.map((t) => ({
       ...t,
       PostCount: tagCounts.get(t.ID.toLowerCase()) ?? 1,
     })),
-    postTags: dataset.PostTags.map((pt) => ({ ...pt })),
-    reactions: dataset.PostReactions.map((r) => ({ ...r, Weight: 1 })),
-    campaigns: dataset.IdeaCampaigns.map((c) => ({ ...c })),
-    posts: dataset.Posts.map((p) => ({
+    postTags: postTags.map((pt) => ({ ...pt })),
+    reactions: postReactions.map((r) => ({ ...r, Weight: r.Weight ?? 1 })),
+    campaigns: ideaCampaigns.map((c) => ({ ...c })),
+    posts: posts.map((p) => ({
       ...p,
       Title: p.Title ?? answerQuestionTitleById.get(p.ID.toLowerCase()) ?? null,
       AuthorUser: userNameById.get(String(p.AuthorUserID).toLowerCase()) ?? 'AGPA Member',
       __mj_CreatedAt: p.CreatedAt ?? '2026-11-18T10:00:00.000Z',
     })),
-    answers: dataset.AnswerPosts.map((a) => ({
+    answers: answerPosts.map((a) => ({
       ...a,
       Title: answerQuestionTitleById.get(a.ID.toLowerCase()) ?? 'AGPA Canon Answer',
     })),
-    ideas: dataset.IdeaPosts.map((i) => ({ ...i })),
-    allocations: dataset.IdeaAllocations.map((a) => ({ ...a })),
-    artifacts: dataset.Posts.filter((p) =>
-      ['collaborative-doc', 'collaborative-sheet', 'collaborative-deck'].includes(p.PostTypeCode),
-    ).map((p) => ({ ID: p.ID })),
-    forms: dataset.Posts.filter((p) => p.PostTypeCode === 'poll-or-form').map((p) => ({ ID: p.ID })),
-    interactivePosts: dataset.InteractivePosts.map((ip) => ({ ...ip })),
-    questions: dataset.QuestionPosts.map((q) => ({ ...q })),
-    communityMemberProfiles: dataset.MemberProfiles.map((mp) => ({ ...mp })),
-    spaceRoles: dataset.spaceRoleTypes.map((sr) => ({ ...sr })),
-    spaceMembers: dataset.SpaceMembers.map((sm) => ({ ...sm })),
-    forumRoleTypes: dataset.forumRoleTypes.map((fr) => ({ ...fr })),
-    forumMembers: dataset.ForumMembers.map((fm) => ({ ...fm })),
+    ideas: ideaPosts.map((i) => ({ ...i })),
+    allocations: ideaAllocations.map((a) => ({ ...a })),
+    artifacts: posts
+      .filter((p) =>
+        ['collaborative-doc', 'collaborative-sheet', 'collaborative-deck'].includes(
+          postTypeCodeById.get(String(p.PostTypeID).toLowerCase()) ?? '',
+        ),
+      )
+      .map((p) => ({ ID: p.ID })),
+    forms: posts
+      .filter((p) => postTypeCodeById.get(String(p.PostTypeID).toLowerCase()) === 'poll-or-form')
+      .map((p) => ({ ID: p.ID })),
+    interactivePosts: interactivePosts.map((ip) => ({ ...ip })),
+    questions: questionPosts.map((q) => ({ ...q })),
+    communityMemberProfiles: memberProfiles.map((mp) => ({ ...mp })),
+    spaceRoles: spaceRoleTypes.map((sr) => ({ ...sr })),
+    spaceMembers: spaceMembers.map((sm) => ({ ...sm })),
+    forumRoleTypes: forumRoleTypes.map((fr) => ({ ...fr })),
+    forumMembers: forumMembers.map((fm) => ({ ...fm })),
     communicationLogs: [],
     userSettings: [],
     gqlCalls: [],
@@ -982,13 +1031,18 @@ export function createHarnessStore() {
       };
     },
 
-    loadArchWorld() {
+    loadArchWorld(options = {}) {
       CommunityTestCommunicationProvider.ClearSentMessages();
       ClearCompactReplyTokenRegistry();
-      state = buildArchWorldState();
+      state = buildArchWorldState(options);
       faults = {
         failSaveEntities: new Set(),
         disableCommunicationEngineProviders: false,
+      };
+      return {
+        source: state.archWorldSource,
+        sqlitePath: state.archWorldSqlitePath,
+        dbCounts: state.archWorldDbCounts,
       };
     },
 
@@ -1011,6 +1065,9 @@ export function createHarnessStore() {
 
     getDebugSnapshot() {
       return {
+        worldMode: state.worldMode,
+        archWorldSource: state.archWorldSource ?? null,
+        archWorldDbCounts: state.archWorldDbCounts ?? null,
         spaces: state.spaces,
         communitySpaces: state.communitySpaces,
         forums: state.forums,
