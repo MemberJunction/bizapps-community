@@ -1,13 +1,27 @@
 import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
+import {
+  appendFileSync,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  renameSync,
+  unlinkSync,
+  writeFileSync,
+} from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import { GetGlobalObjectStore, IsValidUUID } from '@memberjunction/global';
 import type { PersonalizedPostScore } from '@mj-biz-apps/community-core';
 
 const EPHEMERAL_SECRET_GLOBAL_KEY = '___COMMUNITY_DIGEST_REPLY_SECRET__';
-const TOKEN_REGISTRY_GLOBAL_KEY = '___COMMUNITY_DIGEST_REPLY_TOKEN_REGISTRY__';
+const TOKEN_STORE_GLOBAL_KEY = '___COMMUNITY_DIGEST_REPLY_TOKEN_STORE__';
 const DEFAULT_TOKEN_TTL_SECONDS = 14 * 24 * 60 * 60; // 14 days
-const MAX_REGISTRY_ENTRIES = 50_000;
+export const MAX_REGISTRY_ENTRIES = 50_000;
 const COMPACT_HANDLE_MAX_CHARS = 24;
 const COMPACT_HMAC_TAG_BYTES = 24; // 192-bit truncated HMAC-SHA256 tag -> 32 base64url chars
+const DEFAULT_TOKEN_STORE_FILENAME = 'mj-community-digest-reply-tokens-v1.json';
+const SNAPSHOT_SYNC_ENTRY_LIMIT = 200;
+const SNAPSHOT_CHECKPOINT_INTERVAL = 5_000;
 export const RFC_5321_MAX_LOCAL_PART_OCTETS = 64;
 export const RFC_5321_MAX_ADDRESS_OCTETS = 254;
 
@@ -32,10 +46,22 @@ export interface DigestReplyTokenPayload {
   n: string;
 }
 
-interface StoredCompactReplyTokenEntry {
+export interface StoredCompactReplyTokenEntry {
   tokenId: string;
   payloadB64: string;
+  binaryPayloadB64?: string;
   exp: number;
+}
+
+/**
+ * Pluggable durable token store interface for compact RFC 5321 digest reply handles.
+ * Enables cross-process sharing and restart survival without exceeding 64-octet email local-parts.
+ */
+export interface IDigestReplyTokenStore {
+  get(tokenId: string): StoredCompactReplyTokenEntry | undefined;
+  set(tokenId: string, entry: StoredCompactReplyTokenEntry, nowEpoch: number): void;
+  clear(options?: { memoryOnly?: boolean }): void;
+  size(): number;
 }
 
 export interface SignDigestReplyTokenInput {
@@ -89,41 +115,336 @@ export interface RenderedPersonalizedDigest {
   itemCount: number;
 }
 
-const fallbackTokenRegistry = new Map<string, StoredCompactReplyTokenEntry>();
+/** Resolves the shared cross-process durable token store path. */
+export function ResolveDigestReplyTokenStorePath(): string {
+  const configured = process.env.COMMUNITY_DIGEST_TOKEN_STORE_PATH?.trim();
+  if (configured) {
+    return configured;
+  }
+  return path.join(os.tmpdir(), DEFAULT_TOKEN_STORE_FILENAME);
+}
 
-function getTokenRegistryMap(): Map<string, StoredCompactReplyTokenEntry> {
+function uuidToBytes16(uuid: string): Buffer {
+  const hex = uuid.replace(/-/g, '').toLowerCase();
+  if (!/^[0-9a-f]{32}$/.test(hex)) {
+    throw new Error(`Invalid UUID for binary token encoding: ${uuid}`);
+  }
+  return Buffer.from(hex, 'hex');
+}
+
+function bytes16ToUuid(buf: Buffer): string {
+  const hex = buf.toString('hex');
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20, 32)}`;
+}
+
+/**
+ * Encodes a {@link DigestReplyTokenPayload} into a compact binary layout containing four 16-byte
+ * UUIDs (`u`, `f`, `r`, `p`), 4-byte uint32 `iat`/`exp`, nonce, and optional UTF-8 recipient email.
+ */
+export function EncodeCompactBinaryTokenPayload(payload: DigestReplyTokenPayload): string {
+  const emailBuf = payload.e ? Buffer.from(payload.e.trim().toLowerCase(), 'utf8') : Buffer.alloc(0);
+  const nonceBuf = Buffer.from(payload.n, 'utf8');
+  const headerSize = 2 + 16 * 4 + 4 + 4 + 2 + 2; // version+flags, 4 UUIDs, iat, exp, nonceLen, emailLen
+  const buf = Buffer.allocUnsafe(headerSize + nonceBuf.length + emailBuf.length);
+
+  let offset = 0;
+  buf.writeUInt8(1, offset);
+  offset += 1;
+  buf.writeUInt8(emailBuf.length > 0 ? 1 : 0, offset);
+  offset += 1;
+
+  uuidToBytes16(payload.u).copy(buf, offset);
+  offset += 16;
+  uuidToBytes16(payload.f).copy(buf, offset);
+  offset += 16;
+  uuidToBytes16(payload.r).copy(buf, offset);
+  offset += 16;
+  uuidToBytes16(payload.p).copy(buf, offset);
+  offset += 16;
+
+  buf.writeUInt32BE(Math.max(0, payload.iat >>> 0), offset);
+  offset += 4;
+  buf.writeUInt32BE(Math.max(0, payload.exp >>> 0), offset);
+  offset += 4;
+
+  buf.writeUInt16BE(nonceBuf.length, offset);
+  offset += 2;
+  buf.writeUInt16BE(emailBuf.length, offset);
+  offset += 2;
+
+  nonceBuf.copy(buf, offset);
+  offset += nonceBuf.length;
+  emailBuf.copy(buf, offset);
+
+  return buf.toString('base64url');
+}
+
+/** Decodes a compact binary payload produced by {@link EncodeCompactBinaryTokenPayload}. */
+export function DecodeCompactBinaryTokenPayload(encoded: string): DigestReplyTokenPayload | null {
+  try {
+    const buf = Buffer.from(encoded, 'base64url');
+    if (buf.length < 78) return null;
+    const version = buf.readUInt8(0);
+    if (version !== 1) return null;
+    const flags = buf.readUInt8(1);
+    let offset = 2;
+
+    const u = bytes16ToUuid(buf.subarray(offset, offset + 16));
+    offset += 16;
+    const f = bytes16ToUuid(buf.subarray(offset, offset + 16));
+    offset += 16;
+    const r = bytes16ToUuid(buf.subarray(offset, offset + 16));
+    offset += 16;
+    const p = bytes16ToUuid(buf.subarray(offset, offset + 16));
+    offset += 16;
+
+    const iat = buf.readUInt32BE(offset);
+    offset += 4;
+    const exp = buf.readUInt32BE(offset);
+    offset += 4;
+
+    const nonceLen = buf.readUInt16BE(offset);
+    offset += 2;
+    const emailLen = buf.readUInt16BE(offset);
+    offset += 2;
+
+    if (offset + nonceLen + emailLen > buf.length) return null;
+    const n = buf.subarray(offset, offset + nonceLen).toString('utf8');
+    offset += nonceLen;
+    const e =
+      (flags & 1) !== 0 && emailLen > 0
+        ? buf.subarray(offset, offset + emailLen).toString('utf8')
+        : undefined;
+
+    return { v: 1, u, f, r, p, ...(e ? { e } : {}), iat, exp, n };
+  } catch {
+    return null;
+  }
+}
+
+interface SnapshotFileShape {
+  version: 1;
+  entries: StoredCompactReplyTokenEntry[];
+}
+
+/**
+ * Shared cross-process durable file-backed token store with an in-memory cache.
+ * Synchronizes via atomic JSON snapshot + append-only WAL (`<storePath>.wal`) so tokens issued
+ * in one worker process or before restart verify cleanly in any worker sharing the store path.
+ * Capacity pruning removes ONLY expired entries and never evicts unexpired tokens.
+ */
+export class FileBackedDigestReplyTokenStore implements IDigestReplyTokenStore {
+  private readonly memoryMap = new Map<string, StoredCompactReplyTokenEntry>();
+  private loadedPath: string | null = null;
+  private writesSinceCheckpoint = 0;
+
+  private ensureCurrentPath(): string {
+    const targetPath = ResolveDigestReplyTokenStorePath();
+    if (this.loadedPath !== targetPath) {
+      this.memoryMap.clear();
+      this.loadedPath = targetPath;
+      this.writesSinceCheckpoint = 0;
+    }
+    return targetPath;
+  }
+
+  private walPathFor(storePath: string): string {
+    return `${storePath}.wal`;
+  }
+
+  private readEntriesFromSnapshot(storePath: string): StoredCompactReplyTokenEntry[] {
+    if (!existsSync(storePath)) return [];
+    try {
+      const raw = readFileSync(storePath, 'utf8').trim();
+      if (!raw) return [];
+      const parsed = JSON.parse(raw) as SnapshotFileShape | StoredCompactReplyTokenEntry[];
+      const list = Array.isArray(parsed) ? parsed : parsed?.entries;
+      if (!Array.isArray(list)) return [];
+      return list.filter(
+        (entry): entry is StoredCompactReplyTokenEntry =>
+          Boolean(entry && typeof entry.tokenId === 'string' && typeof entry.payloadB64 === 'string'),
+      );
+    } catch {
+      return [];
+    }
+  }
+
+  private readEntriesFromWal(walPath: string): StoredCompactReplyTokenEntry[] {
+    if (!existsSync(walPath)) return [];
+    try {
+      const raw = readFileSync(walPath, 'utf8');
+      if (!raw) return [];
+      const out: StoredCompactReplyTokenEntry[] = [];
+      for (const line of raw.split('\n')) {
+        const trimmed = line.trim();
+        if (!trimmed) continue;
+        try {
+          const parsed = JSON.parse(trimmed) as StoredCompactReplyTokenEntry;
+          if (parsed && typeof parsed.tokenId === 'string' && typeof parsed.payloadB64 === 'string') {
+            out.push(parsed);
+          }
+        } catch {
+          // Skip incomplete trailing line if a concurrent writer was mid-append.
+        }
+      }
+      return out;
+    } catch {
+      return [];
+    }
+  }
+
+  private hydrateFromDisk(storePath: string): void {
+    const snapshotEntries = this.readEntriesFromSnapshot(storePath);
+    for (const entry of snapshotEntries) {
+      this.memoryMap.set(entry.tokenId, entry);
+    }
+    const walEntries = this.readEntriesFromWal(this.walPathFor(storePath));
+    for (const entry of walEntries) {
+      this.memoryMap.set(entry.tokenId, entry);
+    }
+  }
+
+  private pruneExpiredInMemory(nowEpoch: number): void {
+    if (this.memoryMap.size < MAX_REGISTRY_ENTRIES) {
+      return;
+    }
+    // Prune ONLY expired tokens; NEVER evict unexpired tokens even above MAX_REGISTRY_ENTRIES.
+    for (const [key, entry] of this.memoryMap.entries()) {
+      if (entry.exp < nowEpoch) {
+        this.memoryMap.delete(key);
+      }
+    }
+  }
+
+  private writeSnapshotAtomically(storePath: string, nowEpoch: number): void {
+    const dir = path.dirname(storePath);
+    mkdirSync(dir, { recursive: true });
+
+    const merged = new Map<string, StoredCompactReplyTokenEntry>();
+    for (const entry of this.readEntriesFromSnapshot(storePath)) {
+      if (entry.exp >= nowEpoch) merged.set(entry.tokenId, entry);
+    }
+    for (const entry of this.readEntriesFromWal(this.walPathFor(storePath))) {
+      if (entry.exp >= nowEpoch) merged.set(entry.tokenId, entry);
+    }
+    for (const [key, entry] of this.memoryMap.entries()) {
+      if (entry.exp >= nowEpoch) merged.set(key, entry);
+    }
+
+    const payload: SnapshotFileShape = {
+      version: 1,
+      entries: Array.from(merged.values()),
+    };
+    const tmpPath = `${storePath}.${process.pid}.${randomBytes(4).toString('hex')}.tmp`;
+    writeFileSync(tmpPath, JSON.stringify(payload), 'utf8');
+    renameSync(tmpPath, storePath);
+
+    const walPath = this.walPathFor(storePath);
+    if (existsSync(walPath)) {
+      try {
+        unlinkSync(walPath);
+      } catch {
+        // Ignore if already removed by another process.
+      }
+    }
+  }
+
+  public get(tokenId: string): StoredCompactReplyTokenEntry | undefined {
+    const storePath = this.ensureCurrentPath();
+    const cached = this.memoryMap.get(tokenId);
+    if (cached) {
+      return cached;
+    }
+    this.hydrateFromDisk(storePath);
+    return this.memoryMap.get(tokenId);
+  }
+
+  public set(tokenId: string, entry: StoredCompactReplyTokenEntry, nowEpoch: number): void {
+    const storePath = this.ensureCurrentPath();
+    this.pruneExpiredInMemory(nowEpoch);
+    this.memoryMap.set(tokenId, entry);
+
+    const dir = path.dirname(storePath);
+    mkdirSync(dir, { recursive: true });
+
+    this.writesSinceCheckpoint += 1;
+    if (this.memoryMap.size <= SNAPSHOT_SYNC_ENTRY_LIMIT && !existsSync(this.walPathFor(storePath))) {
+      this.writeSnapshotAtomically(storePath, nowEpoch);
+      return;
+    }
+
+    appendFileSync(this.walPathFor(storePath), `${JSON.stringify(entry)}\n`, 'utf8');
+    if (this.writesSinceCheckpoint >= SNAPSHOT_CHECKPOINT_INTERVAL) {
+      this.writesSinceCheckpoint = 0;
+      this.writeSnapshotAtomically(storePath, nowEpoch);
+    }
+  }
+
+  public clear(options?: { memoryOnly?: boolean }): void {
+    const storePath = this.ensureCurrentPath();
+    this.memoryMap.clear();
+    this.writesSinceCheckpoint = 0;
+    if (options?.memoryOnly) {
+      return;
+    }
+    for (const target of [storePath, this.walPathFor(storePath)]) {
+      if (existsSync(target)) {
+        try {
+          unlinkSync(target);
+        } catch {
+          // Ignore concurrent unlink.
+        }
+      }
+    }
+  }
+
+  public size(): number {
+    const storePath = this.ensureCurrentPath();
+    this.hydrateFromDisk(storePath);
+    return this.memoryMap.size;
+  }
+}
+
+const fallbackTokenStore = new FileBackedDigestReplyTokenStore();
+
+/** Returns the active durable compact reply token store. */
+export function GetDigestReplyTokenStore(): IDigestReplyTokenStore {
   const store = GetGlobalObjectStore();
   if (!store) {
-    return fallbackTokenRegistry;
+    return fallbackTokenStore;
   }
-  const existing = store[TOKEN_REGISTRY_GLOBAL_KEY];
-  if (existing instanceof Map) {
-    return existing as Map<string, StoredCompactReplyTokenEntry>;
+  const existing = store[TOKEN_STORE_GLOBAL_KEY] as IDigestReplyTokenStore | undefined;
+  if (existing && typeof existing.get === 'function' && typeof existing.set === 'function') {
+    return existing;
   }
-  const created = new Map<string, StoredCompactReplyTokenEntry>();
-  store[TOKEN_REGISTRY_GLOBAL_KEY] = created;
+  const created = new FileBackedDigestReplyTokenStore();
+  store[TOKEN_STORE_GLOBAL_KEY] = created;
   return created;
 }
 
-function pruneTokenRegistry(registry: Map<string, StoredCompactReplyTokenEntry>, nowEpoch: number): void {
-  if (registry.size < MAX_REGISTRY_ENTRIES) {
-    return;
-  }
-  for (const [key, entry] of registry.entries()) {
-    if (entry.exp < nowEpoch) {
-      registry.delete(key);
-    }
-  }
-  while (registry.size >= MAX_REGISTRY_ENTRIES) {
-    const oldestKey = registry.keys().next().value;
-    if (typeof oldestKey !== 'string') break;
-    registry.delete(oldestKey);
+/** Overrides the active compact reply token store (pass `null` to restore the default file-backed store). */
+export function SetDigestReplyTokenStore(customStore: IDigestReplyTokenStore | null): void {
+  const store = GetGlobalObjectStore();
+  if (!store) return;
+  if (customStore === null) {
+    store[TOKEN_STORE_GLOBAL_KEY] = new FileBackedDigestReplyTokenStore();
+  } else {
+    store[TOKEN_STORE_GLOBAL_KEY] = customStore;
   }
 }
 
-/** Clears the in-memory compact reply token registry (intended for isolated unit tests). */
-export function ClearDigestReplyTokenRegistry(): void {
-  getTokenRegistryMap().clear();
+/**
+ * Clears the compact reply token registry. When `{ memoryOnly: true }` is passed, only the
+ * process-local in-memory cache is cleared while preserving the durable shared store (simulating
+ * a worker restart or separate worker process).
+ */
+export function ClearCompactReplyTokenRegistry(options?: { memoryOnly?: boolean }): void {
+  GetDigestReplyTokenStore().clear(options);
+}
+
+/** Alias for {@link ClearCompactReplyTokenRegistry}. */
+export function ClearDigestReplyTokenRegistry(options?: { memoryOnly?: boolean }): void {
+  ClearCompactReplyTokenRegistry(options);
 }
 
 /**
@@ -200,9 +521,10 @@ export function BuildReplyToEmailAddress(token: string, replyDomain: string): st
 }
 
 /**
- * Signs a member- and thread-bound digest reply token with HMAC-SHA256 and registers its payload
- * under a compact 16-char handle + 32-char (192-bit) HMAC tag (`<id>.<hmac>`, 49 chars) so
- * `reply+<token>` is strictly <= 64 octets under RFC 5321.
+ * Signs a member- and thread-bound digest reply token with HMAC-SHA256 and persists both the JSON
+ * payload and compact binary UUID+timestamp payload in the durable shared store under a 16-char
+ * handle + 32-char (192-bit) HMAC tag (`<id>.<hmac>`, 49 chars) so `reply+<token>` is strictly
+ * `<= 64` octets under RFC 5321 while surviving restarts and cross-process lookups.
  */
 export function SignDigestReplyToken(input: SignDigestReplyTokenInput): string {
   if (!IsValidUUID(input.memberUserId)) {
@@ -238,6 +560,7 @@ export function SignDigestReplyToken(input: SignDigestReplyTokenInput): string {
   };
 
   const payloadB64 = Buffer.from(JSON.stringify(payload), 'utf8').toString('base64url');
+  const binaryPayloadB64 = EncodeCompactBinaryTokenPayload(payload);
   const tokenId = randomBytes(12).toString('base64url'); // 16 chars
   const secret = ResolveDigestReplySigningSecret(input.signingSecret);
   const sigTag = createHmac('sha256', secret)
@@ -246,13 +569,16 @@ export function SignDigestReplyToken(input: SignDigestReplyTokenInput): string {
     .subarray(0, COMPACT_HMAC_TAG_BYTES)
     .toString('base64url'); // 32 chars -> reply+<16>.<32> = 55 octets <= 64 octets
 
-  const registry = getTokenRegistryMap();
-  pruneTokenRegistry(registry, nowEpoch);
-  registry.set(tokenId, {
+  GetDigestReplyTokenStore().set(
     tokenId,
-    payloadB64,
-    exp: payload.exp,
-  });
+    {
+      tokenId,
+      payloadB64,
+      binaryPayloadB64,
+      exp: payload.exp,
+    },
+    nowEpoch,
+  );
 
   return `${tokenId}.${sigTag}`;
 }
@@ -295,10 +621,11 @@ export function VerifyDigestReplyToken(
   }
 
   let payloadB64: string;
+  let binaryPayloadB64: string | undefined;
   let expectedSigBuf: Buffer;
 
   if (partA.length <= COMPACT_HANDLE_MAX_CHARS) {
-    const entry = getTokenRegistryMap().get(partA);
+    const entry = GetDigestReplyTokenStore().get(partA);
     if (!entry) {
       return {
         valid: false,
@@ -307,12 +634,13 @@ export function VerifyDigestReplyToken(
       };
     }
     payloadB64 = entry.payloadB64;
+    binaryPayloadB64 = entry.binaryPayloadB64;
     expectedSigBuf = createHmac('sha256', secret)
       .update(`${partA}.${payloadB64}`)
       .digest()
       .subarray(0, COMPACT_HMAC_TAG_BYTES);
   } else {
-    // Support full <payloadB64>.<sigB64> verification when delivered via header/reference outside local-part.
+    // Support full stateless <payloadB64>.<sigB64> or binary payload verification when delivered via header/reference.
     payloadB64 = partA;
     expectedSigBuf = createHmac('sha256', secret).update(payloadB64).digest();
   }
@@ -328,20 +656,23 @@ export function VerifyDigestReplyToken(
     };
   }
 
-  let parsed: DigestReplyTokenPayload;
+  let parsed: DigestReplyTokenPayload | null = null;
   try {
     const json = Buffer.from(payloadB64, 'base64url').toString('utf8');
     parsed = JSON.parse(json) as DigestReplyTokenPayload;
   } catch {
+    parsed = DecodeCompactBinaryTokenPayload(binaryPayloadB64 ?? payloadB64);
+  }
+
+  if (!parsed) {
     return {
       valid: false,
       errorCode: 'INVALID_PAYLOAD',
-      reason: 'Reply token payload could not be parsed as JSON.',
+      reason: 'Reply token payload could not be parsed.',
     };
   }
 
   if (
-    !parsed ||
     typeof parsed !== 'object' ||
     parsed.v !== 1 ||
     typeof parsed.u !== 'string' ||

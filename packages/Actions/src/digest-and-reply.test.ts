@@ -1,15 +1,28 @@
 import { describe, it, mock } from 'node:test';
 import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
+import { existsSync, readFileSync, rmSync } from 'node:fs';
+import os from 'node:os';
+import path, { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { Metadata, RunView, UserInfo } from '@memberjunction/core';
+import { BaseAction } from '@memberjunction/actions';
 import { RunActionParams } from '@memberjunction/actions-base';
 import { BaseCommunicationProvider, CommunicationEngineBase, Message } from '@memberjunction/communication-types';
 import { CommunicationEngine } from '@memberjunction/communication-engine';
 import { IsValidUUID, MJGlobal } from '@memberjunction/global';
-import { CommunityEmbeddingPersonalizationService } from '@mj-biz-apps/community-core';
+import {
+  COMMUNITY_ACTION_DRIVER_CLASSES,
+  COMMUNITY_ACTION_IDS,
+  CommunityEmbeddingPersonalizationService,
+} from '@mj-biz-apps/community-core';
 import { COMMUNITY_ENTITY_NAMES } from '@mj-biz-apps/community-entities';
 import {
   BuildReplyToEmailAddress,
+  ClearCompactReplyTokenRegistry,
   ClearDigestReplyTokenRegistry,
+  GetDigestReplyTokenStore,
+  MAX_REGISTRY_ENTRIES,
   ParseAndVerifyInboundEmailReply,
   RenderPersonalizedDigestEmail,
   RFC_5321_MAX_ADDRESS_OCTETS,
@@ -1030,6 +1043,131 @@ describe('MJ CommunicationEngine + CommunityTestCommunicationProvider + Personal
       ClearDigestReplyTokenRegistry();
       CommunityTestCommunicationProvider.ClearSentMessages();
       mock.restoreAll();
+    }
+  });
+
+  it('provisions SendPersonalizedDigest and ProcessInboundDigestReply in metadata/actions/.community-actions.json and resolves them in ClassFactory (CR-03)', async () => {
+    const { LoadBizAppsCommunityActions } = await import('../dist/index.js');
+    LoadBizAppsCommunityActions();
+
+    const here = dirname(fileURLToPath(import.meta.url));
+    const actionsJsonPath = join(here, '..', '..', '..', 'metadata', 'actions', '.community-actions.json');
+    const entries = JSON.parse(readFileSync(actionsJsonPath, 'utf8')) as Array<{
+      primaryKey: { ID: string };
+      fields: { Name: string; DriverClass: string; Status: string };
+    }>;
+
+    const sendEntry = entries.find((e) => e.fields.DriverClass === COMMUNITY_ACTION_DRIVER_CLASSES.SendPersonalizedDigest);
+    const replyEntry = entries.find((e) => e.fields.DriverClass === COMMUNITY_ACTION_DRIVER_CLASSES.ProcessInboundDigestReply);
+
+    assert.ok(sendEntry, 'SendPersonalizedDigest must be provisioned in .community-actions.json');
+    assert.ok(replyEntry, 'ProcessInboundDigestReply must be provisioned in .community-actions.json');
+    assert.equal(sendEntry.primaryKey.ID, COMMUNITY_ACTION_IDS.SendPersonalizedDigest);
+    assert.equal(replyEntry.primaryKey.ID, COMMUNITY_ACTION_IDS.ProcessInboundDigestReply);
+    assert.equal(sendEntry.fields.Status, 'Active');
+    assert.equal(replyEntry.fields.Status, 'Active');
+
+    const sendDriver = MJGlobal.Instance.ClassFactory.CreateInstance<BaseAction>(BaseAction, sendEntry.fields.DriverClass);
+    const replyDriver = MJGlobal.Instance.ClassFactory.CreateInstance<BaseAction>(BaseAction, replyEntry.fields.DriverClass);
+    assert.ok(sendDriver, 'SendPersonalizedDigest driver must resolve from MJ ClassFactory');
+    assert.ok(replyDriver, 'ProcessInboundDigestReply driver must resolve from MJ ClassFactory');
+  });
+
+  it('persists compact reply tokens across memory-only restarts, separate worker node processes, and >50,000-entry capacity pressure (CR-10)', () => {
+    const prevStorePath = process.env.COMMUNITY_DIGEST_TOKEN_STORE_PATH;
+    const prevSecret = process.env.COMMUNITY_DIGEST_REPLY_SECRET;
+    const testStorePath = path.join(os.tmpdir(), `mj-digest-cr10-test-${process.pid}-${Date.now()}.json`);
+    process.env.COMMUNITY_DIGEST_TOKEN_STORE_PATH = testStorePath;
+    process.env.COMMUNITY_DIGEST_REPLY_SECRET = TEST_SIGNING_SECRET;
+
+    try {
+      ClearCompactReplyTokenRegistry();
+      const firstToken = SignDigestReplyToken({
+        memberUserId: MEMBER_A_ID,
+        forumId: FORUM_TAX_ID,
+        rootPostId: POST_TAX_ID,
+        recipientEmail: 'alice@example.org',
+        ttlSeconds: 3600,
+      });
+      const firstAddress = BuildReplyToEmailAddress(firstToken, 'reply.bizapps.local');
+      assertRfc5321CompliantAddress(firstAddress);
+
+      // 1. Simulate worker restart / in-memory Map wipe via ClearCompactReplyTokenRegistry({ memoryOnly: true })
+      ClearCompactReplyTokenRegistry({ memoryOnly: true });
+      const afterRestart = ParseAndVerifyInboundEmailReply({
+        replyToAddressOrToken: firstAddress,
+        rawBodyText: 'Verified after memory-only restart.\n\n> Quoted digest',
+        senderEmail: 'alice@example.org',
+      });
+      assert.equal(afterRestart.token.valid, true);
+      if (afterRestart.token.valid) {
+        assert.equal(afterRestart.token.payload.u, MEMBER_A_ID);
+        assert.equal(afterRestart.token.payload.r, POST_TAX_ID);
+      }
+      assert.equal(afterRestart.cleanedBody, 'Verified after memory-only restart.');
+
+      // 2. Verify in a separate spawned child node process sharing ONLY env config & durable store
+      const here = dirname(fileURLToPath(import.meta.url));
+      const loopModulePath = join(here, 'custom', 'digest-reply-loop.ts');
+      const childScript = `
+        import assert from 'node:assert/strict';
+        import { ParseAndVerifyInboundEmailReply } from ${JSON.stringify(loopModulePath)};
+        const res = ParseAndVerifyInboundEmailReply({
+          replyToAddressOrToken: process.env.TEST_REPLY_ADDRESS,
+          rawBodyText: 'Reply from separate worker\\n\\n-- \\nSig',
+          senderEmail: 'alice@example.org',
+        });
+        assert.equal(res.token.valid, true, JSON.stringify(res.token));
+        assert.equal(res.token.payload.u, ${JSON.stringify(MEMBER_A_ID)});
+        assert.equal(res.token.payload.r, ${JSON.stringify(POST_TAX_ID)});
+        assert.equal(res.cleanedBody, 'Reply from separate worker');
+      `;
+      const child = spawnSync(
+        process.execPath,
+        ['--experimental-strip-types', '--input-type=module', '-e', childScript],
+        {
+          env: {
+            ...process.env,
+            COMMUNITY_DIGEST_TOKEN_STORE_PATH: testStorePath,
+            COMMUNITY_DIGEST_REPLY_SECRET: TEST_SIGNING_SECRET,
+            TEST_REPLY_ADDRESS: firstAddress,
+          },
+          encoding: 'utf8',
+        },
+      );
+      assert.equal(child.status, 0, `Child worker failed: ${child.stderr || child.stdout}`);
+
+      // 3. Capacity pressure: push past MAX_REGISTRY_ENTRIES (50,000) and verify first unexpired token is NEVER evicted
+      const store = GetDigestReplyTokenStore();
+      const nowEpoch = Math.floor(Date.now() / 1000);
+      for (let i = 0; i < MAX_REGISTRY_ENTRIES + 5; i += 1) {
+        store.set(
+          `bulk-handle-${i}`,
+          {
+            tokenId: `bulk-handle-${i}`,
+            payloadB64: 'e30',
+            exp: nowEpoch + 3600,
+          },
+          nowEpoch,
+        );
+      }
+      assert.ok(store.size() >= MAX_REGISTRY_ENTRIES + 1);
+      ClearCompactReplyTokenRegistry({ memoryOnly: true });
+      const stillValidAfterBurst = ParseAndVerifyInboundEmailReply({
+        replyToAddressOrToken: firstAddress,
+        rawBodyText: 'Still valid after >50k entries',
+        senderEmail: 'alice@example.org',
+      });
+      assert.equal(stillValidAfterBurst.token.valid, true);
+    } finally {
+      ClearCompactReplyTokenRegistry();
+      for (const f of [testStorePath, `${testStorePath}.wal`]) {
+        if (existsSync(f)) rmSync(f, { force: true });
+      }
+      if (prevStorePath === undefined) delete process.env.COMMUNITY_DIGEST_TOKEN_STORE_PATH;
+      else process.env.COMMUNITY_DIGEST_TOKEN_STORE_PATH = prevStorePath;
+      if (prevSecret === undefined) delete process.env.COMMUNITY_DIGEST_REPLY_SECRET;
+      else process.env.COMMUNITY_DIGEST_REPLY_SECRET = prevSecret;
     }
   });
 });

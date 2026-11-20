@@ -89,6 +89,16 @@ function extractReplyToHeader(headers?: Record<string, string>): string | undefi
  */
 @RegisterClass(BaseCommunicationProvider, COMMUNITY_TEST_EMAIL_DRIVER_NAME)
 export class CommunityTestCommunicationProvider extends BaseCommunicationProvider {
+  private static _instance: CommunityTestCommunicationProvider | null = null;
+
+  /** Singleton accessor used by server actions and integration harnesses. */
+  public static get Instance(): CommunityTestCommunicationProvider {
+    if (!CommunityTestCommunicationProvider._instance) {
+      CommunityTestCommunicationProvider._instance = new CommunityTestCommunicationProvider();
+    }
+    return CommunityTestCommunicationProvider._instance;
+  }
+
   protected override get ProviderName(): string {
     return COMMUNITY_TEST_EMAIL_DRIVER_NAME;
   }
@@ -98,6 +108,14 @@ export class CommunityTestCommunicationProvider extends BaseCommunicationProvide
   }
 
   public static GetSentMessages(): RecordedOutboxMessage[] {
+    return CommunityTestOutbox.Instance.List();
+  }
+
+  public static GetOutbox(): RecordedOutboxMessage[] {
+    return CommunityTestOutbox.Instance.List();
+  }
+
+  public GetOutbox(): RecordedOutboxMessage[] {
     return CommunityTestOutbox.Instance.List();
   }
 
