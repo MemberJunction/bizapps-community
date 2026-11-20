@@ -1,6 +1,6 @@
 {
   "schemaVersion": "sf-migration-parity/v1",
-  "evaluatedAtIso": "2026-11-20T04:52:55.113Z",
+  "evaluatedAtIso": "2026-11-20T05:12:13.942Z",
   "overallPassed": true,
   "expectedTableCount": 25,
   "sqlServerMigration": {

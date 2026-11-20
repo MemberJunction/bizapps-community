@@ -1,7 +1,7 @@
 {
   "schemaVersion": "sf-e2e/v1",
-  "evaluatedAtIso": "2026-11-20T04:53:12.835Z",
-  "harnessUrl": "http://127.0.0.1:51775/",
+  "evaluatedAtIso": "2026-11-20T05:12:31.698Z",
+  "harnessUrl": "http://127.0.0.1:52024/",
   "fontAwesomeMode": "local-package",
   "fontAwesomeLoaded": true,
   "runtimeClassFactoryRegistrationsVerified": 26,
