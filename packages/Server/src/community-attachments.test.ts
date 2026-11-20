@@ -103,15 +103,46 @@ interface StoredArtifactPost {
   deleted: boolean;
 }
 
+interface StoredMJArtifact {
+  ID: string;
+  Name: string;
+  Description: string | null;
+  TypeID: string;
+  Type?: string | null;
+  UserID?: string;
+  Visibility?: 'Always' | 'System Only';
+  deleted?: boolean;
+}
+
+interface StoredMJArtifactVersion {
+  ID: string;
+  ArtifactID: string;
+  VersionNumber: number;
+  Name: string | null;
+  UserID?: string;
+  ContentMode: 'File' | 'Text';
+  Content: string | null;
+  FileID: string | null;
+  FileName: string | null;
+  MimeType: string | null;
+  ContentSizeBytes: number | null;
+  deleted?: boolean;
+}
+
 interface MockWorldOptions {
   failSpaceItemSave?: boolean;
   failAttachmentSave?: boolean;
+  failAttachmentSaveOnCall?: number;
+  failSpaceItemDelete?: boolean;
+  failSpaceItemRestoreSave?: boolean;
   failArtifactQuery?: boolean;
   failRunViewForEntity?: string;
 }
 
 function buildMockWorld(options: MockWorldOptions = {}) {
   let seqCounter = 10;
+  let attachmentSaveAttempts = 0;
+  let spaceItemSaveAttempts = 0;
   const nextUuid = (prefix: string): string => {
     seqCounter += 1;
     const suffix = String(seqCounter).padStart(12, '0');
@@ -242,10 +273,16 @@ function buildMockWorld(options: MockWorldOptions = {}) {
     { ID: MOD_ROLE_ID, CanConfigureForum: true, CanModerateQueue: true, CanCreateRootPost: true, CanReply: true },
   ];
 
-  const artifacts = [
-    { ID: ARTIFACT_ID, Name: 'Benchmark Interactive Report', TypeID: 'type-html', Type: 'HTML' },
+  const artifactTypes = [
+    { ID: 'type-image', Name: 'Image', ContentType: 'image/*', IsEnabled: true },
+    { ID: 'type-audio', Name: 'Audio', ContentType: 'audio/*', IsEnabled: true },
+    { ID: 'type-video', Name: 'Video', ContentType: 'video/*', IsEnabled: true },
+    { ID: 'type-binary', Name: 'Generic Binary', ContentType: 'application/octet-stream', IsEnabled: true },
   ];
-  const artifactVersions = [
+  const artifacts: StoredMJArtifact[] = [
+    { ID: ARTIFACT_ID, Name: 'Benchmark Interactive Report', Description: null, TypeID: 'type-html', Type: 'HTML', Visibility: 'Always' },
+  ];
+  const artifactVersions: StoredMJArtifactVersion[] = [
     {
       ID: ARTIFACT_VERSION_ID,
       ArtifactID: ARTIFACT_ID,
@@ -281,32 +318,125 @@ function buildMockWorld(options: MockWorldOptions = {}) {
           ? String(keyOrUser.KeyValuePairs[0]?.Value ?? '')
           : '';
 
+      if (entityName === 'MJ: Artifacts') {
+        const record: StoredMJArtifact = {
+          ID: nextUuid('80000001'),
+          Name: '',
+          Description: null,
+          TypeID: '',
+          UserID: '',
+          Visibility: 'System Only',
+          deleted: false,
+        };
+        return {
+          get ID() { return record.ID; },
+          set ID(v: string) { record.ID = v; },
+          get Name() { return record.Name; },
+          set Name(v: string) { record.Name = v; },
+          get Description() { return record.Description; },
+          set Description(v: string | null) { record.Description = v; },
+          get TypeID() { return record.TypeID; },
+          set TypeID(v: string) { record.TypeID = v; },
+          get UserID() { return record.UserID ?? ''; },
+          set UserID(v: string) { record.UserID = v; },
+          get Visibility() { return record.Visibility ?? 'System Only'; },
+          set Visibility(v: 'Always' | 'System Only') { record.Visibility = v; },
+          Save: async () => {
+            artifacts.push(record);
+            return true;
+          },
+          Delete: async () => {
+            if (options.failSpaceItemDelete) return false;
+            record.deleted = true;
+            return true;
+          },
+        };
+      }
+
+      if (entityName === 'MJ: Artifact Versions') {
+        const record: StoredMJArtifactVersion = {
+          ID: nextUuid('80000002'),
+          ArtifactID: '',
+          VersionNumber: 1,
+          Name: null,
+          UserID: '',
+          ContentMode: 'File',
+          Content: null,
+          FileID: null,
+          FileName: null,
+          MimeType: null,
+          ContentSizeBytes: null,
+          deleted: false,
+        };
+        return {
+          get ID() { return record.ID; },
+          set ID(v: string) { record.ID = v; },
+          get ArtifactID() { return record.ArtifactID; },
+          set ArtifactID(v: string) { record.ArtifactID = v; },
+          get VersionNumber() { return record.VersionNumber; },
+          set VersionNumber(v: number) { record.VersionNumber = v; },
+          get Name() { return record.Name; },
+          set Name(v: string | null) { record.Name = v; },
+          get UserID() { return record.UserID ?? ''; },
+          set UserID(v: string) { record.UserID = v; },
+          get ContentMode() { return record.ContentMode; },
+          set ContentMode(v: 'File' | 'Text') { record.ContentMode = v; },
+          get Content() { return record.Content; },
+          set Content(v: string | null) { record.Content = v; },
+          get FileID() { return record.FileID; },
+          set FileID(v: string | null) { record.FileID = v; },
+          get FileName() { return record.FileName; },
+          set FileName(v: string | null) { record.FileName = v; },
+          get MimeType() { return record.MimeType; },
+          set MimeType(v: string | null) { record.MimeType = v; },
+          get ContentSizeBytes() { return record.ContentSizeBytes; },
+          set ContentSizeBytes(v: number | null) { record.ContentSizeBytes = v; },
+          Save: async () => {
+            artifactVersions.push(record);
+            return true;
+          },
+          Delete: async () => {
+            if (options.failSpaceItemDelete) return false;
+            record.deleted = true;
+            return true;
+          },
+        };
+      }
+
       if (entityName === 'MJ_BizApps_Collaboration: Space Items') {
         if (requestedId) {
           const existing = spaceItems.find((si) => !si.deleted && si.ID.toLowerCase() === requestedId.toLowerCase());
           if (!existing) return null;
+          let draft = { ...existing };
           return {
-            get ID() { return existing.ID; },
-            set ID(v: string) { existing.ID = v; },
-            get SpaceID() { return existing.SpaceID; },
-            set SpaceID(v: string) { existing.SpaceID = v; },
-            get EntityID() { return existing.EntityID; },
-            set EntityID(v: string) { existing.EntityID = v; },
-            get RecordID() { return existing.RecordID; },
-            set RecordID(v: string) { existing.RecordID = v; },
-            get Band() { return existing.Band; },
-            set Band(v: 'Shared' | 'Team') { existing.Band = v; },
-            get PromotedAt() { return existing.PromotedAt; },
-            set PromotedAt(v: Date | null) { existing.PromotedAt = v; },
-            get PromotedByUserID() { return existing.PromotedByUserID; },
-            set PromotedByUserID(v: string | null) { existing.PromotedByUserID = v; },
-            get Folder() { return existing.Folder; },
-            set Folder(v: string | null) { existing.Folder = v; },
-            get ArtifactVersionID() { return existing.ArtifactVersionID; },
-            set ArtifactVersionID(v: string | null) { existing.ArtifactVersionID = v; },
+            get ID() { return draft.ID; },
+            set ID(v: string) { draft.ID = v; },
+            get SpaceID() { return draft.SpaceID; },
+            set SpaceID(v: string) { draft.SpaceID = v; },
+            get EntityID() { return draft.EntityID; },
+            set EntityID(v: string) { draft.EntityID = v; },
+            get RecordID() { return draft.RecordID; },
+            set RecordID(v: string) { draft.RecordID = v; },
+            get Band() { return draft.Band; },
+            set Band(v: 'Shared' | 'Team') { draft.Band = v; },
+            get PromotedAt() { return draft.PromotedAt; },
+            set PromotedAt(v: Date | null) { draft.PromotedAt = v; },
+            get PromotedByUserID() { return draft.PromotedByUserID; },
+            set PromotedByUserID(v: string | null) { draft.PromotedByUserID = v; },
+            get Folder() { return draft.Folder; },
+            set Folder(v: string | null) { draft.Folder = v; },
+            get ArtifactVersionID() { return draft.ArtifactVersionID; },
+            set ArtifactVersionID(v: string | null) { draft.ArtifactVersionID = v; },
             get IsSaved() { return existing.IsSaved; },
-            Save: async () => !options.failSpaceItemSave,
+            Save: async () => {
+              spaceItemSaveAttempts += 1;
+              if (options.failSpaceItemSave) return false;
+              if (options.failSpaceItemRestoreSave && spaceItemSaveAttempts > 1) return false;
+              Object.assign(existing, draft);
+              return true;
+            },
             Delete: async () => {
+              if (options.failSpaceItemDelete) return false;
               existing.deleted = true;
               return true;
             },
@@ -353,6 +483,7 @@ function buildMockWorld(options: MockWorldOptions = {}) {
             return true;
           },
           Delete: async () => {
+            if (options.failSpaceItemDelete) return false;
             record.deleted = true;
             return true;
           },
@@ -375,7 +506,12 @@ function buildMockWorld(options: MockWorldOptions = {}) {
             get Sequence() { return existing.Sequence; },
             set Sequence(v: number) { existing.Sequence = v; },
             get IsSaved() { return existing.IsSaved; },
-            Save: async () => !options.failAttachmentSave,
+            Save: async () => {
+              attachmentSaveAttempts += 1;
+              if (options.failAttachmentSave) return false;
+              if (options.failAttachmentSaveOnCall && attachmentSaveAttempts === options.failAttachmentSaveOnCall) return false;
+              return true;
+            },
             Delete: async () => {
               existing.deleted = true;
               return true;
@@ -405,12 +541,15 @@ function buildMockWorld(options: MockWorldOptions = {}) {
           set Sequence(v: number) { record.Sequence = v; },
           get IsSaved() { return record.IsSaved; },
           Save: async () => {
+            attachmentSaveAttempts += 1;
             if (options.failAttachmentSave) return false;
+            if (options.failAttachmentSaveOnCall && attachmentSaveAttempts === options.failAttachmentSaveOnCall) return false;
             record.IsSaved = true;
             attachments.push(record);
             return true;
           },
           Delete: async () => {
+            if (options.failSpaceItemDelete) return false;
             record.deleted = true;
             return true;
           },
@@ -455,6 +594,7 @@ function buildMockWorld(options: MockWorldOptions = {}) {
             return true;
           },
           Delete: async () => {
+            if (options.failSpaceItemDelete) return false;
             record.deleted = true;
             return true;
           },
@@ -566,13 +706,20 @@ function buildMockWorld(options: MockWorldOptions = {}) {
         };
       }
 
+      if (entity === 'MJ: Artifact Types') {
+        return {
+          Success: true,
+          Results: artifactTypes,
+        };
+      }
+
       if (entity === 'MJ: Artifacts') {
         if (options.failArtifactQuery) {
           return { Success: false, ErrorMessage: 'Access denied to MJ: Artifacts', Results: [] };
         }
         return {
           Success: true,
-          Results: artifacts.filter((a) => filter.toLowerCase().includes(a.ID.toLowerCase())),
+          Results: artifacts.filter((a) => !a.deleted && filter.toLowerCase().includes(a.ID.toLowerCase())),
         };
       }
 
@@ -581,8 +728,9 @@ function buildMockWorld(options: MockWorldOptions = {}) {
           Success: true,
           Results: artifactVersions.filter(
             (v) =>
-              filter.toLowerCase().includes(v.ID.toLowerCase()) ||
-              filter.toLowerCase().includes(v.ArtifactID.toLowerCase()),
+              !v.deleted &&
+              (filter.toLowerCase().includes(v.ID.toLowerCase()) ||
+                filter.toLowerCase().includes(v.ArtifactID.toLowerCase())),
           ),
         };
       }
@@ -598,7 +746,7 @@ function buildMockWorld(options: MockWorldOptions = {}) {
     },
   );
 
-  return { spaceItems, attachments, artifactPosts };
+  return { spaceItems, attachments, artifactPosts, artifacts, artifactVersions };
 }
 
 describe('@mj-biz-apps/community-server media/artifact attachments & SpaceItem library indexing', () => {
@@ -1156,6 +1304,406 @@ describe('@mj-biz-apps/community-server media/artifact attachments & SpaceItem l
         folder: 'All',
       });
       assert.equal(teamViewAll.totalCount, 6);
+    } finally {
+      mock.restoreAll();
+    }
+  });
+
+  it('CR-1: durably persists newly uploaded files into MJ: Artifacts + MJ: Artifact Versions (never ForumPost.ID) and round-trip hydrates', async () => {
+    const world = buildMockWorld();
+    try {
+      const svc = new CommunityAttachmentServerService();
+      const sharedMember = makeUser(SHARED_USER_ID, 'Shared Member');
+      const dataUrl = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
+
+      const persisted = await svc.PersistPostAttachments({
+        postId: SHARED_POST_ID,
+        contextUser: sharedMember,
+        attachments: [
+          {
+            kind: 'image',
+            fileName: 'uploaded-proof.png',
+            mimeType: 'image/png',
+            sizeBytes: 2048,
+            url: dataUrl,
+            caption: 'Cold reload proof',
+            sequence: 1,
+            featureInLibrary: true,
+          },
+        ],
+      });
+
+      assert.equal(persisted.length, 1);
+      assert.equal(world.spaceItems.length, 1);
+      assert.equal(world.spaceItems[0].EntityID, ENTITY_ARTIFACTS_ID);
+      assert.notEqual(world.spaceItems[0].RecordID, `ID|${SHARED_POST_ID}`);
+      assert.ok(world.spaceItems[0].ArtifactVersionID);
+
+      // Cold hydration from persisted entities (zero draft state)
+      const hydratedPost = await svc.QueryPostAttachments({
+        postId: SHARED_POST_ID,
+        contextUser: sharedMember,
+      });
+      assert.equal(hydratedPost.length, 1);
+      assert.equal(hydratedPost[0].kind, 'image');
+      if (hydratedPost[0].kind === 'image') {
+        assert.equal(hydratedPost[0].fileName, 'uploaded-proof.png');
+        assert.equal(hydratedPost[0].mimeType, 'image/png');
+        assert.equal(hydratedPost[0].sizeBytes, 2048);
+        assert.equal(hydratedPost[0].url, dataUrl);
+        assert.equal(hydratedPost[0].caption, 'Cold reload proof');
+        assert.equal(hydratedPost[0].sequence, 1);
+        assert.equal(hydratedPost[0].featureInLibrary, true);
+      }
+
+      const library = await svc.QuerySpaceMediaLibrary({
+        spaceId: SPACE_ID,
+        contextUser: sharedMember,
+        folder: 'Library',
+      });
+      assert.equal(library.totalCount, 1);
+      assert.equal(library.items[0].kind, 'image');
+    } finally {
+      mock.restoreAll();
+    }
+  });
+
+  it('CR-3: rejects mismatched existingSpaceItemId targets and unauthorized Team -> Shared promotion', async () => {
+    const world = buildMockWorld();
+    try {
+      const svc = new CommunityAttachmentServerService();
+      const sharedMember = makeUser(SHARED_USER_ID, 'Shared Member');
+      const teamMember = makeUser(TEAM_USER_ID, 'Team Staff');
+
+      // Seed a Team-band SpaceItem for FILE_ID_1
+      const teamSiId = '50000001-0000-4000-8000-000000000701';
+      world.spaceItems.push({
+        ID: teamSiId,
+        SpaceID: SPACE_ID,
+        EntityID: ENTITY_FILES_ID,
+        RecordID: `ID|${FILE_ID_1}`,
+        Band: 'Team',
+        PromotedAt: null,
+        PromotedByUserID: null,
+        Folder: 'Post Media',
+        ArtifactVersionID: null,
+        IsSaved: true,
+        deleted: false,
+        __mj_CreatedAt: new Date(),
+      });
+
+      // Mismatched RecordID (FILE_ID_2 instead of FILE_ID_1) must be rejected
+      await assert.rejects(
+        () =>
+          svc.PersistPostAttachments({
+            postId: TEAM_POST_ID,
+            contextUser: teamMember,
+            attachments: [
+              {
+                kind: 'image',
+                fileId: FILE_ID_2,
+                fileName: 'wrong.png',
+                mimeType: 'image/png',
+                sizeBytes: 1024,
+                url: 'https://cdn.example.com/wrong.png',
+                existingSpaceItemId: teamSiId,
+              },
+            ],
+          }),
+        /does not match target record/,
+      );
+
+      // Mismatched ArtifactVersionID must be rejected
+      const verFileId = 'ffff1111-0000-4000-8000-000000000901';
+      world.artifactVersions.push({
+        ID: verFileId,
+        ArtifactID: ARTIFACT_ID,
+        VersionNumber: 1,
+        Name: 'architecture.png',
+        ContentMode: 'File',
+        Content: 'https://cdn.example.com/architecture.png',
+        FileID: FILE_ID_1,
+        FileName: 'architecture.png',
+        MimeType: 'image/png',
+        ContentSizeBytes: 1024,
+      });
+      await assert.rejects(
+        () =>
+          svc.PersistPostAttachments({
+            postId: TEAM_POST_ID,
+            contextUser: teamMember,
+            attachments: [
+              {
+                kind: 'image',
+                fileId: FILE_ID_1,
+                artifactVersionId: verFileId,
+                fileName: 'architecture.png',
+                mimeType: 'image/png',
+                sizeBytes: 1024,
+                url: 'https://cdn.example.com/architecture.png',
+                existingSpaceItemId: teamSiId,
+              },
+            ],
+          }),
+        /ArtifactVersionID.*does not match validated version/,
+      );
+
+      // Attaching Team SpaceItem to Shared post without promotion authorization must be rejected
+      await assert.rejects(
+        () =>
+          svc.PersistPostAttachments({
+            postId: SHARED_POST_ID,
+            contextUser: sharedMember,
+            attachments: [
+              {
+                kind: 'image',
+                fileId: FILE_ID_1,
+                fileName: 'architecture.png',
+                mimeType: 'image/png',
+                sizeBytes: 1024,
+                url: 'https://cdn.example.com/architecture.png',
+                existingSpaceItemId: teamSiId,
+              },
+            ],
+          }),
+        /Team band and cannot be attached to a Shared post/,
+      );
+      assert.equal(world.spaceItems[0].Band, 'Team');
+    } finally {
+      mock.restoreAll();
+    }
+  });
+
+  it('CR-4: validates authoritative MJ: Artifact Versions fields (ContentMode, FileID, MimeType, Size, URL) for file attachments', async () => {
+    const world = buildMockWorld();
+    try {
+      const svc = new CommunityAttachmentServerService();
+      const sharedMember = makeUser(SHARED_USER_ID, 'Shared Member');
+
+      // 1. Text-mode version rejected on file attachment
+      await assert.rejects(
+        () =>
+          svc.PersistPostAttachments({
+            postId: SHARED_POST_ID,
+            contextUser: sharedMember,
+            attachments: [
+              {
+                kind: 'image',
+                fileName: 'fake.png',
+                mimeType: 'image/png',
+                sizeBytes: 512,
+                artifactVersionId: ARTIFACT_VERSION_ID,
+              },
+            ],
+          }),
+        /expected "File"/,
+      );
+
+      // 2. Version with unsafe MIME type rejected even when caller sends image/png
+      const badMimeVerId = 'ffff1111-0000-4000-8000-000000000902';
+      world.artifactVersions.push({
+        ID: badMimeVerId,
+        ArtifactID: ARTIFACT_ID,
+        VersionNumber: 3,
+        Name: 'evil.html',
+        ContentMode: 'File',
+        Content: 'https://cdn.example.com/evil.html',
+        FileID: FILE_ID_1,
+        FileName: 'evil.html',
+        MimeType: 'text/html',
+        ContentSizeBytes: 512,
+      });
+      await assert.rejects(
+        () =>
+          svc.PersistPostAttachments({
+            postId: SHARED_POST_ID,
+            contextUser: sharedMember,
+            attachments: [
+              {
+                kind: 'image',
+                fileId: FILE_ID_1,
+                fileName: 'innocent.png',
+                mimeType: 'image/png',
+                sizeBytes: 512,
+                artifactVersionId: badMimeVerId,
+              },
+            ],
+          }),
+        /not permitted/,
+      );
+
+      // 3. Version with mismatched FileID rejected
+      const mismatchedFileVerId = 'ffff1111-0000-4000-8000-000000000903';
+      world.artifactVersions.push({
+        ID: mismatchedFileVerId,
+        ArtifactID: ARTIFACT_ID,
+        VersionNumber: 4,
+        Name: 'other.png',
+        ContentMode: 'File',
+        Content: 'https://cdn.example.com/other.png',
+        FileID: FILE_ID_2,
+        FileName: 'other.png',
+        MimeType: 'image/png',
+        ContentSizeBytes: 512,
+      });
+      await assert.rejects(
+        () =>
+          svc.PersistPostAttachments({
+            postId: SHARED_POST_ID,
+            contextUser: sharedMember,
+            attachments: [
+              {
+                kind: 'image',
+                fileId: FILE_ID_1,
+                fileName: 'other.png',
+                mimeType: 'image/png',
+                sizeBytes: 512,
+                artifactVersionId: mismatchedFileVerId,
+              },
+            ],
+          }),
+        /belongs to File/,
+      );
+
+      // 4. Version with oversized ContentSizeBytes rejected even when caller sends small sizeBytes
+      const oversizedVerId = 'ffff1111-0000-4000-8000-000000000904';
+      world.artifactVersions.push({
+        ID: oversizedVerId,
+        ArtifactID: ARTIFACT_ID,
+        VersionNumber: 5,
+        Name: 'giant.png',
+        ContentMode: 'File',
+        Content: 'https://cdn.example.com/giant.png',
+        FileID: FILE_ID_1,
+        FileName: 'giant.png',
+        MimeType: 'image/png',
+        ContentSizeBytes: COMMUNITY_ATTACHMENT_MAX_FILE_BYTES + 100,
+      });
+      await assert.rejects(
+        () =>
+          svc.PersistPostAttachments({
+            postId: SHARED_POST_ID,
+            contextUser: sharedMember,
+            attachments: [
+              {
+                kind: 'image',
+                fileId: FILE_ID_1,
+                fileName: 'giant.png',
+                mimeType: 'image/png',
+                sizeBytes: 512,
+                artifactVersionId: oversizedVerId,
+              },
+            ],
+          }),
+        /exceeds the maximum allowed/,
+      );
+    } finally {
+      mock.restoreAll();
+    }
+  });
+
+  it('CR-5: restores pre-existing SpaceItem snapshot (never deletes it) on mid-batch failure and UpdateAttachmentLibraryState failure', async () => {
+    const world = buildMockWorld({ failAttachmentSaveOnCall: 2 });
+    try {
+      const svc = new CommunityAttachmentServerService();
+      const sharedMember = makeUser(SHARED_USER_ID, 'Shared Member');
+
+      const existingSiId = '50000001-0000-4000-8000-000000000801';
+      world.spaceItems.push({
+        ID: existingSiId,
+        SpaceID: SPACE_ID,
+        EntityID: ENTITY_ARTIFACTS_ID,
+        RecordID: `ID|${ARTIFACT_ID}`,
+        Band: 'Shared',
+        PromotedAt: new Date('2026-11-01T00:00:00Z'),
+        PromotedByUserID: SHARED_USER_ID,
+        Folder: 'Post Media',
+        ArtifactVersionID: ARTIFACT_VERSION_ID,
+        IsSaved: true,
+        deleted: false,
+        __mj_CreatedAt: new Date('2026-11-01T00:00:00Z'),
+      });
+
+      // Item 1 mutates existingSiId (Folder -> Library); Item 2 fails at attachment save #2
+      await assert.rejects(
+        () =>
+          svc.PersistPostAttachments({
+            postId: SHARED_POST_ID,
+            contextUser: sharedMember,
+            cleanupSpaceItemOnFailure: true,
+            attachments: [
+              {
+                kind: 'artifact',
+                artifactId: ARTIFACT_ID,
+                artifactVersionId: ARTIFACT_VERSION_ID,
+                existingSpaceItemId: existingSiId,
+                featureInLibrary: true,
+              },
+              {
+                kind: 'image',
+                fileName: 'second-fails.png',
+                mimeType: 'image/png',
+                sizeBytes: 1024,
+                url: 'https://cdn.example.com/second-fails.png',
+              },
+            ],
+          }),
+        /Failed to persist ForumPostAttachment/,
+      );
+
+      // Pre-existing SpaceItem MUST NOT be deleted and MUST be restored to Folder = 'Post Media'
+      assert.equal(world.spaceItems[0].deleted, false);
+      assert.equal(world.spaceItems[0].Folder, 'Post Media');
+      // Newly created item #2 records MUST be deleted
+      assert.equal(world.spaceItems[1].deleted, true);
+      assert.equal(world.attachments.filter((a) => !a.deleted).length, 0);
+    } finally {
+      mock.restoreAll();
+    }
+
+    // Also test UpdateAttachmentLibraryState rollback restoration + compensation error surfacing
+    const world2 = buildMockWorld({ failAttachmentSave: true, failSpaceItemRestoreSave: true });
+    try {
+      const svc2 = new CommunityAttachmentServerService();
+      const sharedMember = makeUser(SHARED_USER_ID, 'Shared Member');
+      const existingSiId = '50000001-0000-4000-8000-000000000802';
+      const existingAttId = '60000001-0000-4000-8000-000000000802';
+      world2.spaceItems.push({
+        ID: existingSiId,
+        SpaceID: SPACE_ID,
+        EntityID: ENTITY_ARTIFACTS_ID,
+        RecordID: `ID|${ARTIFACT_ID}`,
+        Band: 'Shared',
+        PromotedAt: new Date(),
+        PromotedByUserID: SHARED_USER_ID,
+        Folder: 'Post Media',
+        ArtifactVersionID: ARTIFACT_VERSION_ID,
+        IsSaved: true,
+        deleted: false,
+        __mj_CreatedAt: new Date(),
+      });
+      world2.attachments.push({
+        ID: existingAttId,
+        PostID: SHARED_POST_ID,
+        SpaceItemID: existingSiId,
+        Caption: 'Original caption',
+        Sequence: 1,
+        IsSaved: true,
+        deleted: false,
+        __mj_CreatedAt: new Date(),
+      });
+
+      await assert.rejects(
+        () =>
+          svc2.UpdateAttachmentLibraryState({
+            postId: SHARED_POST_ID,
+            attachmentId: existingAttId,
+            featureInLibrary: true,
+            caption: 'Updated caption',
+            contextUser: sharedMember,
+          }),
+        /Rollback compensation failure/,
+      );
     } finally {
       mock.restoreAll();
     }

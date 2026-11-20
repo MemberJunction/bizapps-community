@@ -15,6 +15,7 @@ import {
   ClassifyAttachmentKind,
   CommunityRules,
   EscapeSqlLiteral,
+  IsAllowedAttachmentMimeType,
   IsFeaturedLibraryFolder,
   NormalizeAttachmentMimeType,
   ResolveAttachmentSpaceItemFolder,
@@ -50,6 +51,7 @@ const COLLABORATION_SPACE_MEMBERS_ENTITY = 'MJ_BizApps_Collaboration: Space Memb
 const COLLABORATION_SPACE_ITEMS_ENTITY = 'MJ_BizApps_Collaboration: Space Items';
 const MJ_ARTIFACTS_ENTITY = 'MJ: Artifacts';
 const MJ_ARTIFACT_VERSIONS_ENTITY = 'MJ: Artifact Versions';
+const MJ_ARTIFACT_TYPES_ENTITY = 'MJ: Artifact Types';
 const MJ_FILES_ENTITY = 'MJ: Files';
 const MJ_ENTITIES_ENTITY = 'MJ: Entities';
 
@@ -167,6 +169,36 @@ interface MJArtifactRow {
   Type?: string | null;
 }
 
+interface MJArtifactTypeRow {
+  ID: string;
+  Name: string;
+  ContentType: string | null;
+  IsEnabled?: boolean | null;
+}
+
+interface MJArtifactEntityView extends BaseEntity {
+  ID: string;
+  Name: string;
+  Description: string | null;
+  TypeID: string;
+  UserID: string;
+  Visibility: 'Always' | 'System Only';
+}
+
+interface MJArtifactVersionEntityView extends BaseEntity {
+  ID: string;
+  ArtifactID: string;
+  VersionNumber: number;
+  Name: string | null;
+  UserID: string;
+  ContentMode: 'File' | 'Text';
+  Content: string | null;
+  FileID: string | null;
+  FileName: string | null;
+  MimeType: string | null;
+  ContentSizeBytes: number | null;
+}
+
 interface MJArtifactVersionRow {
   ID: string;
   ArtifactID: string;
@@ -252,8 +284,10 @@ export interface PersistPostAttachmentsParams {
   attachments: ReadonlyArray<PersistCommunityAttachmentInput>;
   entryType?: CommunityAttachmentEntryType;
   contextUser: UserInfo;
-  /** When true, deletes an existingSpaceItemId during rollback if ForumPostAttachment persistence fails. */
+  /** Deprecated: pre-existing SpaceItems are restored to their snapshot rather than deleted on failure. */
   cleanupSpaceItemOnFailure?: boolean;
+  /** Must be explicitly true (alongside Space owner or Forum moderator privileges) to promote a Team SpaceItem to Shared. */
+  allowBandPromotion?: boolean;
 }
 
 export interface UpdateAttachmentLibraryStateParams {
@@ -638,19 +672,87 @@ export class CommunityAttachmentServerService {
       post,
       forum,
       spaceAccess,
+      forumContext,
       entryType: params.entryType ?? (post.ParentPostID ? 'reply' : 'post'),
       existingCount,
+      existingSizeEntries,
+      allowBandPromotion: Boolean(params.allowBandPromotion),
       md,
       contextUser: params.contextUser,
     });
 
-    const createdForRollback: Array<{ Delete?: () => Promise<boolean> }> = [];
+    interface RollbackNewRecord {
+      label: string;
+      entity: { Delete?: () => Promise<boolean>; LatestResult?: { CompleteMessage?: string | null; Message?: string | null } | null };
+    }
+    interface RollbackSnapshot {
+      label: string;
+      restore: () => Promise<void>;
+    }
+
+    const newlyCreatedForRollback: RollbackNewRecord[] = [];
+    const mutatedSnapshotsForRollback: RollbackSnapshot[] = [];
     const persistedResults: CommunityAttachmentItem[] = [];
 
     try {
       for (const prepared of preparedItems) {
+        let resolvedTargetEntityId = prepared.targetEntityId;
+        let resolvedTargetRecordId = prepared.targetRecordId;
+        let resolvedArtifactVersionId = prepared.artifactVersionId;
+        let resolvedArtifactId = prepared.kind === 'artifact' ? prepared.artifactId : prepared.artifactId;
+
+        if (prepared.kind !== 'artifact' && prepared.needsCreateArtifact) {
+          const artifact = await md.GetEntityObject<MJArtifactEntityView>(
+            MJ_ARTIFACTS_ENTITY,
+            params.contextUser,
+          );
+          if (!artifact) {
+            throw new Error('Failed to instantiate MJ: Artifacts entity for uploaded file.');
+          }
+          artifact.Name = prepared.fileName.slice(0, 255);
+          artifact.Description = prepared.caption ? prepared.caption.slice(0, 500) : null;
+          artifact.TypeID = prepared.artifactTypeId!;
+          artifact.UserID = validUserId;
+          artifact.Visibility = 'System Only';
+          await SaveOrThrow(artifact, `Failed to persist MJ: Artifacts record for "${prepared.fileName}".`);
+          newlyCreatedForRollback.push({ label: `MJ: Artifacts ${artifact.ID}`, entity: artifact });
+
+          const artifactVersion = await md.GetEntityObject<MJArtifactVersionEntityView>(
+            MJ_ARTIFACT_VERSIONS_ENTITY,
+            params.contextUser,
+          );
+          if (!artifactVersion) {
+            throw new Error('Failed to instantiate MJ: Artifact Versions entity for uploaded file.');
+          }
+          artifactVersion.ArtifactID = artifact.ID;
+          artifactVersion.VersionNumber = 1;
+          artifactVersion.Name = prepared.fileName.slice(0, 255);
+          artifactVersion.UserID = validUserId;
+          artifactVersion.ContentMode = 'File';
+          artifactVersion.Content = prepared.url;
+          artifactVersion.FileID = prepared.fileId;
+          artifactVersion.FileName = prepared.fileName.slice(0, 500);
+          artifactVersion.MimeType = prepared.mimeType.slice(0, 200);
+          artifactVersion.ContentSizeBytes = prepared.sizeBytes;
+          await SaveOrThrow(
+            artifactVersion,
+            `Failed to persist MJ: Artifact Versions record for "${prepared.fileName}".`,
+          );
+          newlyCreatedForRollback.push({
+            label: `MJ: Artifact Versions ${artifactVersion.ID}`,
+            entity: artifactVersion,
+          });
+
+          resolvedArtifactId = artifact.ID;
+          resolvedArtifactVersionId = artifactVersion.ID;
+          if (!prepared.fileId) {
+            resolvedTargetEntityId = prepared.artifactsEntityId;
+            resolvedTargetRecordId = artifact.ID;
+          }
+        }
+
         let spaceItem: CollaborationSpaceItemEntityView | null = null;
-        let createdNewSpaceItem = false;
+        let effectiveBand: CommunityVisibilityBand = prepared.band;
 
         if (prepared.existingSpaceItemId) {
           spaceItem = await md.GetEntityObject<CollaborationSpaceItemEntityView>(
@@ -664,16 +766,79 @@ export class CommunityAttachmentServerService {
           if (!UUIDsEqual(spaceItem.SpaceID, forum.SpaceID)) {
             throw new Error(`SpaceItem ${spaceItem.ID} belongs to a different Space and cannot be attached here.`);
           }
+          if (!UUIDsEqual(spaceItem.EntityID, resolvedTargetEntityId)) {
+            throw new Error(
+              `SpaceItem ${spaceItem.ID} EntityID (${spaceItem.EntityID}) does not match target entity (${resolvedTargetEntityId}).`,
+            );
+          }
+          const existingRecordUuid = extractRecordUuid(spaceItem.RecordID);
+          if (!existingRecordUuid || !UUIDsEqual(existingRecordUuid, resolvedTargetRecordId)) {
+            throw new Error(
+              `SpaceItem ${spaceItem.ID} RecordID (${spaceItem.RecordID}) does not match target record (${resolvedTargetRecordId}).`,
+            );
+          }
+          const versionMismatch =
+            (spaceItem.ArtifactVersionID != null) !== (resolvedArtifactVersionId != null) ||
+            (spaceItem.ArtifactVersionID != null &&
+              resolvedArtifactVersionId != null &&
+              !UUIDsEqual(spaceItem.ArtifactVersionID, resolvedArtifactVersionId));
+          if (versionMismatch) {
+            throw new Error(
+              `SpaceItem ${spaceItem.ID} ArtifactVersionID (${spaceItem.ArtifactVersionID ?? 'null'}) does not match validated version (${resolvedArtifactVersionId ?? 'null'}).`,
+            );
+          }
+
+          if (spaceItem.Band === 'Team' && prepared.band === 'Shared') {
+            const canPromote =
+              Boolean(params.allowBandPromotion) &&
+              (spaceAccess.isOwner || forumContext.decision.canModerateQueue);
+            if (!canPromote) {
+              throw new Error(
+                `SpaceItem ${spaceItem.ID} is in the Team band and cannot be attached to a Shared post without promotion authorization.`,
+              );
+            }
+          }
+
+          const snapshot = {
+            SpaceID: spaceItem.SpaceID,
+            EntityID: spaceItem.EntityID,
+            RecordID: spaceItem.RecordID,
+            Band: spaceItem.Band,
+            PromotedAt: spaceItem.PromotedAt,
+            PromotedByUserID: spaceItem.PromotedByUserID,
+            Folder: spaceItem.Folder,
+            ArtifactVersionID: spaceItem.ArtifactVersionID,
+          };
+
+          const targetBand: CommunityVisibilityBand =
+            spaceItem.Band === 'Shared' && prepared.band === 'Team' ? 'Shared' : prepared.band;
+          effectiveBand = targetBand;
+
           spaceItem.Folder = prepared.folder;
-          spaceItem.Band = prepared.band;
-          if (prepared.band === 'Shared') {
+          spaceItem.Band = targetBand;
+          if (targetBand === 'Shared') {
             spaceItem.PromotedAt = spaceItem.PromotedAt ?? new Date();
             spaceItem.PromotedByUserID = spaceItem.PromotedByUserID ?? validUserId;
           }
           await SaveOrThrow(spaceItem, `Failed to update SpaceItem ${spaceItem.ID} for post attachment.`);
-          if (params.cleanupSpaceItemOnFailure) {
-            createdForRollback.push(spaceItem);
-          }
+          const capturedSpaceItem = spaceItem;
+          mutatedSnapshotsForRollback.push({
+            label: `SpaceItem ${capturedSpaceItem.ID}`,
+            restore: async () => {
+              capturedSpaceItem.SpaceID = snapshot.SpaceID;
+              capturedSpaceItem.EntityID = snapshot.EntityID;
+              capturedSpaceItem.RecordID = snapshot.RecordID;
+              capturedSpaceItem.Band = snapshot.Band;
+              capturedSpaceItem.PromotedAt = snapshot.PromotedAt;
+              capturedSpaceItem.PromotedByUserID = snapshot.PromotedByUserID;
+              capturedSpaceItem.Folder = snapshot.Folder;
+              capturedSpaceItem.ArtifactVersionID = snapshot.ArtifactVersionID;
+              await SaveOrThrow(
+                capturedSpaceItem,
+                `Failed to restore SpaceItem ${capturedSpaceItem.ID} to pre-batch snapshot.`,
+              );
+            },
+          });
         } else {
           spaceItem = await md.GetEntityObject<CollaborationSpaceItemEntityView>(
             COLLABORATION_SPACE_ITEMS_ENTITY,
@@ -683,16 +848,15 @@ export class CommunityAttachmentServerService {
             throw new Error('Failed to instantiate Collaboration SpaceItem entity.');
           }
           spaceItem.SpaceID = forum.SpaceID;
-          spaceItem.EntityID = prepared.targetEntityId;
-          spaceItem.RecordID = `ID|${prepared.targetRecordId}`;
+          spaceItem.EntityID = resolvedTargetEntityId;
+          spaceItem.RecordID = `ID|${resolvedTargetRecordId}`;
           spaceItem.Band = prepared.band;
           spaceItem.PromotedAt = prepared.band === 'Shared' ? new Date() : null;
           spaceItem.PromotedByUserID = prepared.band === 'Shared' ? validUserId : null;
           spaceItem.Folder = prepared.folder;
-          spaceItem.ArtifactVersionID = prepared.artifactVersionId;
+          spaceItem.ArtifactVersionID = resolvedArtifactVersionId;
           await SaveOrThrow(spaceItem, `Failed to persist SpaceItem in Space ${forum.SpaceID}.`);
-          createdNewSpaceItem = true;
-          createdForRollback.push(spaceItem);
+          newlyCreatedForRollback.push({ label: `SpaceItem ${spaceItem.ID}`, entity: spaceItem });
         }
 
         const postAttachment = await md.GetEntityObject<mjBizAppsCommunityForumPostAttachmentEntity>(
@@ -710,7 +874,10 @@ export class CommunityAttachmentServerService {
           postAttachment,
           `Failed to persist ForumPostAttachment linking SpaceItem ${spaceItem.ID} to Post ${post.ID}.`,
         );
-        createdForRollback.push(postAttachment);
+        newlyCreatedForRollback.push({
+          label: `ForumPostAttachment ${postAttachment.ID}`,
+          entity: postAttachment,
+        });
 
         if (prepared.kind === 'artifact' && prepared.linkAsForumArtifactPost) {
           const existingArtifactPost = await md.GetEntityObject<mjBizAppsCommunityForumArtifactPostEntity>(
@@ -729,16 +896,43 @@ export class CommunityAttachmentServerService {
             throw new Error(`Failed to instantiate ForumArtifactPost entity for Post ${post.ID}.`);
           }
           const isNewArtifactPost = !artifactPost.IsSaved;
+          const apSnapshot = isNewArtifactPost
+            ? null
+            : {
+                ArtifactID: artifactPost.ArtifactID,
+                PinnedArtifactVersionID: artifactPost.PinnedArtifactVersionID,
+                SpaceItemID: artifactPost.SpaceItemID,
+                ArtifactModality: artifactPost.ArtifactModality,
+                CollaborationMode: artifactPost.CollaborationMode,
+                ShowInlinePreview: artifactPost.ShowInlinePreview,
+              };
           artifactPost.ID = post.ID;
           artifactPost.ArtifactID = prepared.artifactId;
-          artifactPost.PinnedArtifactVersionID = prepared.artifactVersionId;
+          artifactPost.PinnedArtifactVersionID = resolvedArtifactVersionId;
           artifactPost.SpaceItemID = spaceItem.ID;
           artifactPost.ArtifactModality = prepared.modality;
           artifactPost.CollaborationMode = prepared.collaborationMode;
           artifactPost.ShowInlinePreview = prepared.showInlinePreview;
           await SaveOrThrow(artifactPost, `Failed to persist ForumArtifactPost for Post ${post.ID}.`);
           if (isNewArtifactPost) {
-            createdForRollback.push(artifactPost);
+            newlyCreatedForRollback.push({ label: `ForumArtifactPost ${artifactPost.ID}`, entity: artifactPost });
+          } else if (apSnapshot) {
+            const capturedArtifactPost = artifactPost;
+            mutatedSnapshotsForRollback.push({
+              label: `ForumArtifactPost ${capturedArtifactPost.ID}`,
+              restore: async () => {
+                capturedArtifactPost.ArtifactID = apSnapshot.ArtifactID;
+                capturedArtifactPost.PinnedArtifactVersionID = apSnapshot.PinnedArtifactVersionID;
+                capturedArtifactPost.SpaceItemID = apSnapshot.SpaceItemID;
+                capturedArtifactPost.ArtifactModality = apSnapshot.ArtifactModality;
+                capturedArtifactPost.CollaborationMode = apSnapshot.CollaborationMode;
+                capturedArtifactPost.ShowInlinePreview = apSnapshot.ShowInlinePreview;
+                await SaveOrThrow(
+                  capturedArtifactPost,
+                  `Failed to restore ForumArtifactPost ${capturedArtifactPost.ID} to pre-batch snapshot.`,
+                );
+              },
+            });
           }
         }
 
@@ -752,7 +946,7 @@ export class CommunityAttachmentServerService {
             spaceItemId: spaceItem.ID,
             forumPostAttachmentId: postAttachment.ID,
             artifactId: prepared.artifactId,
-            artifactVersionId: prepared.artifactVersionId,
+            artifactVersionId: resolvedArtifactVersionId,
             artifactTypeName: prepared.artifactTypeName,
             artifactName: prepared.artifactName,
             previewContent: prepared.previewContent,
@@ -765,7 +959,7 @@ export class CommunityAttachmentServerService {
             sequence: prepared.sequence,
             featureInLibrary: prepared.featureInLibrary,
             folder: prepared.folder,
-            band: prepared.band,
+            band: effectiveBand,
             authorUserId: post.AuthorUserID,
             authorName: post.AuthorUser ?? null,
             postTitle: post.Title,
@@ -788,12 +982,13 @@ export class CommunityAttachmentServerService {
             url: prepared.url,
             posterUrl: prepared.posterUrl,
             durationSeconds: prepared.durationSeconds,
-            artifactVersionId: prepared.artifactVersionId,
+            artifactId: resolvedArtifactId,
+            artifactVersionId: resolvedArtifactVersionId,
             caption: prepared.caption,
             sequence: prepared.sequence,
             featureInLibrary: prepared.featureInLibrary,
             folder: prepared.folder,
-            band: prepared.band,
+            band: effectiveBand,
             authorUserId: post.AuthorUserID,
             authorName: post.AuthorUser ?? null,
             postTitle: post.Title,
@@ -802,18 +997,42 @@ export class CommunityAttachmentServerService {
           };
           persistedResults.push(fileItem);
         }
-
-        void createdNewSpaceItem;
       }
     } catch (err) {
-      for (const created of createdForRollback.reverse()) {
-        if (typeof created.Delete === 'function') {
+      const compensationFailures: string[] = [];
+
+      for (const snap of mutatedSnapshotsForRollback.reverse()) {
+        try {
+          await snap.restore();
+        } catch (restoreErr) {
+          compensationFailures.push(
+            `${snap.label}: ${restoreErr instanceof Error ? restoreErr.message : 'restore failed'}`,
+          );
+        }
+      }
+
+      for (const created of newlyCreatedForRollback.reverse()) {
+        if (typeof created.entity.Delete === 'function') {
           try {
-            await created.Delete();
-          } catch {
-            // Best-effort compensating rollback to avoid orphaned SpaceItem / attachment records
+            const deleted = await created.entity.Delete();
+            if (!deleted) {
+              const reason =
+                created.entity.LatestResult?.CompleteMessage?.trim() ||
+                created.entity.LatestResult?.Message?.trim() ||
+                'Delete() returned false';
+              compensationFailures.push(`${created.label}: ${reason}`);
+            }
+          } catch (delErr) {
+            compensationFailures.push(
+              `${created.label}: ${delErr instanceof Error ? delErr.message : 'Delete() threw an error'}`,
+            );
           }
         }
+      }
+
+      if (compensationFailures.length > 0) {
+        const baseMsg = err instanceof Error ? err.message : 'Failed to persist post attachments.';
+        throw new Error(`${baseMsg} (Rollback compensation failures: ${compensationFailures.join('; ')})`);
       }
       throw err;
     }
@@ -861,24 +1080,42 @@ export class CommunityAttachmentServerService {
       throw new Error(`SpaceItem ${spaceItem.ID} does not belong to Space ${auth.forumContext.forum.SpaceID}.`);
     }
 
+    const prevFolder = spaceItem.Folder;
+    let spaceItemMutated = false;
     let nextFeature = IsFeaturedLibraryFolder(spaceItem.Folder);
-    if (params.featureInLibrary !== undefined) {
-      nextFeature = params.featureInLibrary;
-      spaceItem.Folder = ResolveAttachmentSpaceItemFolder(nextFeature);
-      await SaveOrThrow(spaceItem, `Failed to update SpaceItem ${spaceItem.ID} folder.`);
-    }
 
-    let attachmentChanged = false;
-    if (params.caption !== undefined) {
-      attachment.Caption = params.caption?.trim() ? params.caption.trim() : null;
-      attachmentChanged = true;
-    }
-    if (params.sequence !== undefined) {
-      attachment.Sequence = params.sequence;
-      attachmentChanged = true;
-    }
-    if (attachmentChanged) {
-      await SaveOrThrow(attachment, `Failed to update ForumPostAttachment ${attachment.ID}.`);
+    try {
+      if (params.featureInLibrary !== undefined) {
+        nextFeature = params.featureInLibrary;
+        spaceItem.Folder = ResolveAttachmentSpaceItemFolder(nextFeature);
+        await SaveOrThrow(spaceItem, `Failed to update SpaceItem ${spaceItem.ID} folder.`);
+        spaceItemMutated = true;
+      }
+
+      let attachmentChanged = false;
+      if (params.caption !== undefined) {
+        attachment.Caption = params.caption?.trim() ? params.caption.trim() : null;
+        attachmentChanged = true;
+      }
+      if (params.sequence !== undefined) {
+        attachment.Sequence = params.sequence;
+        attachmentChanged = true;
+      }
+      if (attachmentChanged) {
+        await SaveOrThrow(attachment, `Failed to update ForumPostAttachment ${attachment.ID}.`);
+      }
+    } catch (err) {
+      if (spaceItemMutated) {
+        try {
+          spaceItem.Folder = prevFolder;
+          await SaveOrThrow(spaceItem, `Failed to restore SpaceItem ${spaceItem.ID} folder after attachment error.`);
+        } catch (restoreErr) {
+          const baseMsg = err instanceof Error ? err.message : 'Failed to update attachment library state.';
+          const restoreMsg = restoreErr instanceof Error ? restoreErr.message : 'Folder restore failed.';
+          throw new Error(`${baseMsg} (Rollback compensation failure: ${restoreMsg})`);
+        }
+      }
+      throw err;
     }
 
     void validUserId;
@@ -1210,8 +1447,11 @@ export class CommunityAttachmentServerService {
     post: ForumPostRow;
     forum: ForumRow;
     spaceAccess: SpaceAccessResolution;
+    forumContext: AuthorizedForumContext;
     entryType: CommunityAttachmentEntryType;
     existingCount: number;
+    existingSizeEntries: ReadonlyArray<{ sizeBytes?: number | null }>;
+    allowBandPromotion: boolean;
     md: Metadata;
     contextUser: UserInfo;
   }): Promise<
@@ -1247,7 +1487,11 @@ export class CommunityAttachmentServerService {
           url: string;
           posterUrl: string | null;
           durationSeconds: number | null;
+          artifactId: string | null;
           artifactVersionId: string | null;
+          artifactTypeId: string | null;
+          needsCreateArtifact: boolean;
+          artifactsEntityId: string;
           targetEntityId: string;
           targetRecordId: string;
           existingSpaceItemId: string | null;
@@ -1301,7 +1545,11 @@ export class CommunityAttachmentServerService {
           url: string;
           posterUrl: string | null;
           durationSeconds: number | null;
+          artifactId: string | null;
           artifactVersionId: string | null;
+          artifactTypeId: string | null;
+          needsCreateArtifact: boolean;
+          artifactsEntityId: string;
           targetEntityId: string;
           targetRecordId: string;
           existingSpaceItemId: string | null;
@@ -1426,6 +1674,7 @@ export class CommunityAttachmentServerService {
         const validFileId = raw.fileId
           ? AssertValidUUID(raw.fileId, `attachments[${idx}].fileId`)
           : null;
+        let fileRow: MJFileRow | null = null;
         if (validFileId) {
           const fileRes = await rv.RunView<MJFileRow>(
             {
@@ -1440,14 +1689,154 @@ export class CommunityAttachmentServerService {
           if (!fileRes?.Success || !fileRes.Results?.[0]) {
             throw new Error(`File ${validFileId} was not found or caller lacks read access.`);
           }
+          fileRow = fileRes.Results[0];
+          if (fileRow.ContentType) {
+            const normalizedFileMime = NormalizeAttachmentMimeType(fileRow.ContentType);
+            if (!IsAllowedAttachmentMimeType(normalizedFileMime)) {
+              throw new Error(
+                `attachments[${idx}]: File ${validFileId} MIME type "${fileRow.ContentType}" is not permitted by the Community attachment allowlist.`,
+              );
+            }
+          }
         }
 
         const validArtifactVersionId = raw.artifactVersionId
           ? AssertValidUUID(raw.artifactVersionId, `attachments[${idx}].artifactVersionId`)
           : null;
 
-        if (!validFileId && !validation.sanitizedUrl) {
-          throw new Error(`attachments[${idx}]: File/media attachment requires either a valid fileId or a safe URL.`);
+        let effectiveFileName = raw.fileName.trim();
+        let effectiveMimeType = validation.normalizedMimeType ?? NormalizeAttachmentMimeType(raw.mimeType);
+        let effectiveSizeBytes = raw.sizeBytes;
+        let effectiveUrl = validation.sanitizedUrl ?? '';
+        let resolvedArtifactId: string | null = null;
+        let resolvedArtifactTypeId: string | null = null;
+        let needsCreateArtifact = false;
+
+        if (validArtifactVersionId) {
+          const verRes = await rv.RunView<MJArtifactVersionRow>(
+            {
+              EntityName: MJ_ARTIFACT_VERSIONS_ENTITY,
+              ExtraFilter: `ID = '${validArtifactVersionId}'`,
+              Fields: ['ID', 'ArtifactID', 'VersionNumber', 'Name', 'ContentMode', 'Content', 'FileID', 'FileName', 'MimeType', 'ContentSizeBytes'],
+              ResultType: 'simple',
+              MaxRows: 1,
+            },
+            params.contextUser,
+          );
+          if (!verRes?.Success || !verRes.Results?.[0]) {
+            throw new Error(
+              `Artifact Version ${validArtifactVersionId} was not found or caller lacks read access.`,
+            );
+          }
+          const versionRow = verRes.Results[0];
+
+          const parentArtRes = await rv.RunView<MJArtifactRow>(
+            {
+              EntityName: MJ_ARTIFACTS_ENTITY,
+              ExtraFilter: `ID = '${AssertValidUUID(versionRow.ArtifactID, 'versionRow.ArtifactID')}'`,
+              Fields: ['ID', 'Name', 'TypeID', 'Type'],
+              ResultType: 'simple',
+              MaxRows: 1,
+            },
+            params.contextUser,
+          );
+          if (!parentArtRes?.Success || !parentArtRes.Results?.[0]) {
+            throw new Error(
+              `Parent Artifact ${versionRow.ArtifactID} for Artifact Version ${validArtifactVersionId} was not found or caller lacks read access.`,
+            );
+          }
+          resolvedArtifactId = parentArtRes.Results[0].ID;
+
+          if (versionRow.ContentMode !== 'File') {
+            throw new Error(
+              `Artifact Version ${validArtifactVersionId} has ContentMode "${versionRow.ContentMode ?? 'null'}", expected "File" for file/media attachments.`,
+            );
+          }
+          if (validFileId && versionRow.FileID && !UUIDsEqual(versionRow.FileID, validFileId)) {
+            throw new Error(
+              `Artifact Version ${validArtifactVersionId} belongs to File ${versionRow.FileID}, not ${validFileId}.`,
+            );
+          }
+
+          effectiveFileName = versionRow.FileName?.trim() || fileRow?.Name?.trim() || effectiveFileName;
+          const authoritativeMime = NormalizeAttachmentMimeType(
+            versionRow.MimeType || fileRow?.ContentType || '',
+          );
+          if (!authoritativeMime || !IsAllowedAttachmentMimeType(authoritativeMime)) {
+            throw new Error(
+              `Artifact Version ${validArtifactVersionId} MIME type "${versionRow.MimeType ?? ''}" is not permitted by the Community attachment allowlist.`,
+            );
+          }
+          const authoritativeKind = ClassifyAttachmentKind(authoritativeMime, false);
+          if (authoritativeKind !== raw.kind) {
+            throw new Error(
+              `Artifact Version ${validArtifactVersionId} MIME type "${authoritativeMime}" classifies as "${authoritativeKind}", not "${raw.kind}".`,
+            );
+          }
+          effectiveMimeType = authoritativeMime;
+
+          if (versionRow.ContentSizeBytes != null) {
+            effectiveSizeBytes = versionRow.ContentSizeBytes;
+          }
+
+          let sanitizedVersionUrl: string | null = null;
+          if (versionRow.Content && versionRow.Content.trim()) {
+            sanitizedVersionUrl = SanitizeCommunityAttachmentUrl(versionRow.Content, raw.kind);
+            if (!sanitizedVersionUrl) {
+              throw new Error(
+                `Artifact Version ${validArtifactVersionId} content URL uses an unsafe or unsupported scheme.`,
+              );
+            }
+          }
+          effectiveUrl = sanitizedVersionUrl ?? effectiveUrl;
+
+          const authoritativeValidation = ValidateCommunityAttachmentInput({
+            kind: raw.kind,
+            fileName: effectiveFileName,
+            mimeType: effectiveMimeType,
+            sizeBytes: effectiveSizeBytes,
+            url: effectiveUrl || null,
+            posterUrl: validation.sanitizedPosterUrl ?? null,
+            caption,
+          });
+          if (!authoritativeValidation.valid) {
+            throw new Error(`attachments[${idx}]: ${authoritativeValidation.errors.join(' ')}`);
+          }
+
+          if (!validFileId && !versionRow.FileID && !effectiveUrl) {
+            throw new Error(
+              `attachments[${idx}]: Artifact Version ${validArtifactVersionId} requires either a FileID or a safe URL.`,
+            );
+          }
+        } else if (!validFileId) {
+          if (!effectiveUrl) {
+            throw new Error(
+              `attachments[${idx}]: Newly uploaded file attachment requires a safe data/media URL.`,
+            );
+          }
+          if (existingSpaceItemId) {
+            throw new Error(
+              `attachments[${idx}]: existingSpaceItemId cannot be paired with an unpersisted file upload lacking fileId and artifactVersionId.`,
+            );
+          }
+          resolvedArtifactTypeId = await this.resolveArtifactTypeIdForKind(
+            rv,
+            raw.kind,
+            effectiveMimeType,
+            params.contextUser,
+          );
+          needsCreateArtifact = true;
+        } else if (!existingSpaceItemId && effectiveUrl) {
+          const maybeTypeId = await this.tryResolveArtifactTypeIdForKind(
+            rv,
+            raw.kind,
+            effectiveMimeType,
+            params.contextUser,
+          );
+          if (maybeTypeId) {
+            resolvedArtifactTypeId = maybeTypeId;
+            needsCreateArtifact = true;
+          }
         }
 
         const featureInLibrary =
@@ -1457,15 +1846,19 @@ export class CommunityAttachmentServerService {
         prepared.push({
           kind: raw.kind,
           fileId: validFileId,
-          fileName: raw.fileName.trim(),
-          mimeType: validation.normalizedMimeType ?? NormalizeAttachmentMimeType(raw.mimeType),
-          sizeBytes: raw.sizeBytes,
-          url: validation.sanitizedUrl ?? '',
+          fileName: effectiveFileName,
+          mimeType: effectiveMimeType,
+          sizeBytes: effectiveSizeBytes,
+          url: effectiveUrl,
           posterUrl: validation.sanitizedPosterUrl ?? null,
           durationSeconds: raw.durationSeconds ?? null,
+          artifactId: resolvedArtifactId,
           artifactVersionId: validArtifactVersionId,
-          targetEntityId: filesEntityId,
-          targetRecordId: validFileId ?? params.post.ID,
+          artifactTypeId: resolvedArtifactTypeId,
+          needsCreateArtifact,
+          artifactsEntityId,
+          targetEntityId: validFileId ? filesEntityId : artifactsEntityId,
+          targetRecordId: validFileId ?? resolvedArtifactId ?? '',
           existingSpaceItemId,
           folder,
           featureInLibrary,
@@ -1476,7 +1869,86 @@ export class CommunityAttachmentServerService {
       }
     }
 
+    // Re-verify combined post count & aggregate byte limits using authoritative sizes from Artifact Versions
+    const preparedSizeEntries: Array<{ sizeBytes?: number | null }> = prepared.map((item) => ({
+      sizeBytes: item.kind === 'artifact' ? null : item.sizeBytes,
+    }));
+    const authoritativeBatchCheck = ValidateAttachmentBatchLimits(
+      [...params.existingSizeEntries, ...preparedSizeEntries],
+      {
+        maxFileBytes: COMMUNITY_ATTACHMENT_MAX_FILE_BYTES,
+        maxCountPerPost: COMMUNITY_ATTACHMENT_MAX_COUNT_PER_POST,
+        maxAggregateBytesPerPost: COMMUNITY_ATTACHMENT_MAX_AGGREGATE_BYTES_PER_POST,
+      },
+    );
+    if (!authoritativeBatchCheck.valid) {
+      throw new Error(authoritativeBatchCheck.errors.join(' '));
+    }
+
     return prepared;
+  }
+
+  private async resolveArtifactTypeIdForKind(
+    rv: Pick<RunView, 'RunView'>,
+    kind: 'image' | 'video' | 'audio' | 'file',
+    mimeType: string,
+    contextUser: UserInfo,
+  ): Promise<string> {
+    const resolved = await this.tryResolveArtifactTypeIdForKind(rv, kind, mimeType, contextUser);
+    if (!resolved) {
+      throw new Error(
+        `No enabled MJ: Artifact Types record was found to durably store "${kind}" (${mimeType}) attachment.`,
+      );
+    }
+    return resolved;
+  }
+
+  private async tryResolveArtifactTypeIdForKind(
+    rv: Pick<RunView, 'RunView'>,
+    kind: 'image' | 'video' | 'audio' | 'file',
+    mimeType: string,
+    contextUser: UserInfo,
+  ): Promise<string | null> {
+    const res = await rv.RunView<MJArtifactTypeRow>(
+      {
+        EntityName: MJ_ARTIFACT_TYPES_ENTITY,
+        ExtraFilter: 'IsEnabled = 1',
+        Fields: ['ID', 'Name', 'ContentType', 'IsEnabled'],
+        ResultType: 'simple',
+        MaxRows: 100,
+      },
+      contextUser,
+    );
+    const rows = res?.Success ? res.Results ?? [] : [];
+    if (rows.length === 0) {
+      return null;
+    }
+
+    const normalizedMime = NormalizeAttachmentMimeType(mimeType);
+    const exactMime = rows.find(
+      (r) => r.ContentType && NormalizeAttachmentMimeType(r.ContentType) === normalizedMime,
+    );
+    if (exactMime) return exactMime.ID;
+
+    const preferredNamesByKind: Record<'image' | 'video' | 'audio' | 'file', string[]> = {
+      image: ['image'],
+      video: ['video', 'video production'],
+      audio: ['audio'],
+      file: ['generic binary', 'file', 'document'],
+    };
+    const preferredNames = preferredNamesByKind[kind];
+    for (const targetName of preferredNames) {
+      const byName = rows.find((r) => r.Name.trim().toLowerCase() === targetName);
+      if (byName) return byName.ID;
+    }
+
+    const wildcardMime = rows.find(
+      (r) => r.ContentType && r.ContentType.trim().toLowerCase() === `${kind}/*`,
+    );
+    if (wildcardMime) return wildcardMime.ID;
+
+    const genericBinary = rows.find((r) => r.Name.trim().toLowerCase() === 'generic binary');
+    return genericBinary?.ID ?? rows[0].ID;
   }
 
   private async resolveEntityId(md: Metadata, entityName: string, contextUser: UserInfo): Promise<string> {
@@ -1662,10 +2134,11 @@ export class CommunityAttachmentServerService {
       const version = si.ArtifactVersionID ? versionMap.get(si.ArtifactVersionID.toLowerCase()) ?? null : null;
       const recordUuid = extractRecordUuid(si.RecordID);
       const isDirectArtifact = Boolean(artifactsEntityId && UUIDsEqual(si.EntityID, artifactsEntityId));
+      const isFileBackedVersion = Boolean(version && version.ContentMode === 'File');
       const linkedArtifactPost = artifactPostMap.get(si.ID.toLowerCase()) ?? null;
       const resolvedArtifactId =
         linkedArtifactPost?.ArtifactID ??
-        (isDirectArtifact ? recordUuid : null) ??
+        (!isFileBackedVersion && isDirectArtifact ? recordUuid : null) ??
         (version && version.ContentMode !== 'File' ? version.ArtifactID : null);
 
       const featureInLibrary = IsFeaturedLibraryFolder(si.Folder);
@@ -1706,7 +2179,8 @@ export class CommunityAttachmentServerService {
         continue;
       }
 
-      const fileId = version?.FileID ?? recordUuid;
+      const fileId = version?.FileID ?? (isDirectArtifact ? null : recordUuid);
+      const artifactId = version?.ArtifactID ?? (isDirectArtifact ? recordUuid : null);
       const fileRow = fileId ? fileMap.get(fileId.toLowerCase()) ?? null : null;
       const fileName = version?.FileName || fileRow?.Name || att.Caption || 'attachment';
       const mimeType = NormalizeAttachmentMimeType(version?.MimeType || fileRow?.ContentType || 'application/octet-stream');
@@ -1728,7 +2202,8 @@ export class CommunityAttachmentServerService {
         mimeType,
         sizeBytes: version?.ContentSizeBytes ?? 0,
         url: safeUrl,
-        artifactVersionId: si.ArtifactVersionID,
+        artifactId,
+        artifactVersionId: version?.ID ?? si.ArtifactVersionID,
         caption: att.Caption,
         sequence: att.Sequence,
         featureInLibrary,
