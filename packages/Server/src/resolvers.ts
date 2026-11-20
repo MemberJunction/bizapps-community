@@ -16,7 +16,11 @@ import {
 import type { MJTaskEntity } from '@memberjunction/core-entities';
 import { AssertValidUUID, AssertValidUUIDList, CommunityRules, EscapeSqlLiteral, type AnonymousReadMode } from '@mj-biz-apps/community-core';
 import { ForumPostReactionServerEntity } from '@mj-biz-apps/community-core-entities-server';
-import type { ThreadGraduationRequest, ThreadGraduationResult } from '@mj-biz-apps/community-actions';
+import {
+  SynthesizeLivingThread,
+  type ThreadGraduationRequest,
+  type ThreadGraduationResult,
+} from '@mj-biz-apps/community-actions';
 import {
   COMMUNITY_ENTITY_NAMES,
   type IForumPostSummary,
@@ -48,6 +52,7 @@ interface CollaborationSpaceEntityView extends BaseEntity {
   SpaceTypeID: string;
   ParentID: string | null;
   Name: string;
+  Description: string | null;
   OwnerID: string;
   InheritsMembership: boolean;
   AgentRetrieval: 'ExcludedEntirely' | 'ExcludedFromParentScope' | 'Included';
@@ -566,12 +571,16 @@ export class ThreadGraduationService {
 
     if (rootPost.PromotedToSpaceID) {
       // Idempotent retry: already graduated — hand back the existing Space, create nothing new.
-      return this.ValidateAndBuildGraduationPlan({
+      const existingPlan = this.ValidateAndBuildGraduationPlan({
         request: params.request,
         allowedChildSpaceTypeCodes: authoritativeAllowedChildSpaceTypeCodes,
         userCanPromoteToSpace,
         currentPromotedToSpaceId: rootPost.PromotedToSpaceID,
       });
+      return {
+        ...existingPlan,
+        alreadyGraduated: true,
+      };
     }
 
     const plan = this.ValidateAndBuildGraduationPlan({
@@ -579,6 +588,8 @@ export class ThreadGraduationService {
       allowedChildSpaceTypeCodes: authoritativeAllowedChildSpaceTypeCodes,
       userCanPromoteToSpace,
     });
+
+    const graduatedSummaryMarkdown = await this.buildGraduatedSpaceSummary(rootPost, params.request.targetSpaceName, params.contextUser);
 
     // --- Resolve EVERY prerequisite before any Save() ---
     const spaceTypeId = await this.ResolveIdByFilter(
@@ -658,6 +669,7 @@ export class ThreadGraduationService {
         space.SpaceTypeID = spaceTypeId;
         space.ParentID = forum.SpaceID;
         space.Name = params.request.targetSpaceName;
+        space.Description = graduatedSummaryMarkdown;
         space.OwnerID = params.contextUser.ID;
         space.InheritsMembership = false;
         space.AgentRetrieval = 'Included';
@@ -675,7 +687,9 @@ export class ThreadGraduationService {
         }
         task.ID = plan.seededTaskId;
         task.Name = params.request.seedInitialTaskTitle ?? 'Graduated Thread Follow-Up';
+        task.Description = graduatedSummaryMarkdown;
         task.TypeID = taskTypeId;
+        task.UserID = params.contextUser.ID;
         if (txGroup) task.TransactionGroup = txGroup;
         await SaveOrThrow(task, `Failed to seed the starter Task for graduated thread ${params.request.rootPostId}.`);
         if (!txGroup) createdForRollback.push(task);
@@ -727,7 +741,64 @@ export class ThreadGraduationService {
       throw err;
     }
 
-    return plan;
+    return {
+      ...plan,
+      alreadyGraduated: false,
+    };
+  }
+
+  /**
+   * Builds the carried summary markdown for a newly graduated Collaboration Working Space and
+   * its seeded starter task: prefers the root post's existing `SummaryMarkdown`, otherwise
+   * synthesizes a structured summary from the root post and its replies.
+   */
+  private async buildGraduatedSpaceSummary(
+    rootPost: Pick<mjBizAppsCommunityForumPostEntity, 'ID' | 'Title' | 'BodyMarkdown' | 'SummaryMarkdown'>,
+    targetSpaceName: string,
+    user: UserInfo,
+  ): Promise<string> {
+    if (rootPost.SummaryMarkdown && rootPost.SummaryMarkdown.trim()) {
+      return rootPost.SummaryMarkdown.trim();
+    }
+
+    if (rootPost.BodyMarkdown && rootPost.BodyMarkdown.trim()) {
+      let replies: Array<{ postId: string; authorDisplayName: string; bodyMarkdown: string }> = [];
+      try {
+        const validRootId = AssertValidUUID(rootPost.ID, 'rootPostId');
+        const replyRes = await new RunView().RunView<{
+          ID: string;
+          BodyMarkdown: string;
+          AuthorUserID: string | null;
+          AuthorUser?: string | null;
+        }>(
+          {
+            EntityName: COMMUNITY_ENTITY_NAMES.ForumPosts,
+            ExtraFilter: `RootPostID = '${validRootId}'`,
+            Fields: ['ID', 'BodyMarkdown', 'AuthorUserID', 'AuthorUser'],
+            OrderBy: '__mj_CreatedAt ASC',
+            ResultType: 'simple',
+            MaxRows: 50,
+          },
+          user,
+        );
+        if (replyRes?.Success && replyRes.Results) {
+          replies = replyRes.Results.map((r) => ({
+            postId: r.ID,
+            authorDisplayName: r.AuthorUser?.trim() || r.AuthorUserID || 'Community Member',
+            bodyMarkdown: r.BodyMarkdown,
+          }));
+        }
+      } catch {
+        // Fallback to root-only synthesis when reply lookup is unavailable.
+      }
+      return SynthesizeLivingThread({
+        rootTitle: rootPost.Title ?? targetSpaceName,
+        rootBodyMarkdown: rootPost.BodyMarkdown,
+        replies,
+      }).aiExecutiveSummary;
+    }
+
+    return `Graduated from Community thread "${rootPost.Title ?? targetSpaceName}" (Post ${rootPost.ID}).`;
   }
 
   /** Resolves the first matching record's ID for a lookup entity, or null if none exists. */
@@ -883,6 +954,9 @@ export class GraduateCommunityThreadPayload {
 
   @Field(() => Int, { nullable: true })
   InvitedParticipantCount?: number;
+
+  @Field({ nullable: true })
+  AlreadyGraduated?: boolean;
 
   @Field({ nullable: true })
   ErrorMessage?: string;
@@ -1066,6 +1140,7 @@ export class CommunityGraduationResolver extends ResolverBase {
         TargetSpaceTypeCode: result.targetSpaceTypeCode,
         SeededTaskID: result.seededTaskId ?? undefined,
         InvitedParticipantCount: result.invitedParticipantCount,
+        AlreadyGraduated: result.alreadyGraduated,
       };
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
