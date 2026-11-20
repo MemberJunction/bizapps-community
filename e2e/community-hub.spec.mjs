@@ -8,8 +8,10 @@ import { StartHarnessServer } from './harness/serve-harness.mjs';
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPORTS_DIR = join(HERE, 'reports');
 const SCREENSHOTS_DIR = join(HERE, 'screenshots');
+const MARKETING_SCREENSHOTS_DIR = join(HERE, '..', 'docs', 'screenshots');
 mkdirSync(REPORTS_DIR, { recursive: true });
 mkdirSync(SCREENSHOTS_DIR, { recursive: true });
+mkdirSync(MARKETING_SCREENSHOTS_DIR, { recursive: true });
 
 const TAB_KEYS = [
   'knowledge-stream',
@@ -773,4 +775,227 @@ test('CR-09: UserInfoEngine and ProcessInboundDigestReplyAction fail visibly on 
     () => window.__userInfoEngine.GetSetting('bizapps-community.digestCadence') ?? null,
   );
   expect(reloadedSetting).toBeNull();
+});
+
+test('ARCH-WORLD Showcase: Capture 5 crisp 1440x900 marketing screenshots with 0 errors and 0 WCAG 2.1 AA violations', async ({ browser }) => {
+  const context = await browser.newContext({
+    viewport: { width: 1440, height: 900 },
+    deviceScaleFactor: 2,
+  });
+  const page = await context.newPage();
+
+  /** @type {string[]} */
+  const pageErrors = [];
+  /** @type {string[]} */
+  const consoleErrors = [];
+  page.on('pageerror', (err) => pageErrors.push(err.message));
+  page.on('console', (msg) => {
+    if (msg.type() === 'error') consoleErrors.push(msg.text());
+  });
+
+  try {
+    const loadResp = await page.request.post(new URL('/api/harness/load-arch-world', harnessUrl).toString());
+    expect(loadResp.ok()).toBe(true);
+    const loadBody = await loadResp.json();
+    expect(loadBody.source).toBe('sqlite');
+    expect(loadBody.dbCounts?.User).toBe(26);
+    expect(loadBody.dbCounts?.ForumPost).toBe(68);
+    await page.goto(`${harnessUrl}?world=arch`);
+    await page.waitForFunction(() => window.__harnessReady === true);
+
+    // Verify AGPA spaces and topic tags render with loaded FontAwesome icons
+    await expect(page.locator('.mjc-commons__left-rail')).toContainText('National Practice Commons');
+    await expect(page.locator('.mjc-commons__left-rail')).toContainText('Mass Timber & Sustainable Design Guild');
+    await expect(page.locator('.mjc-commons__left-rail')).toContainText('#Mass Timber');
+    await expect(page.locator('.mjc-commons__left-rail')).toContainText('#IBC 2027');
+
+    const iconAndTokenCheck = await page.evaluate(async () => {
+      await document.fonts.ready;
+      const faEl = document.querySelector('i.fa-solid');
+      const rect = faEl ? faEl.getBoundingClientRect() : null;
+      const styleLoaded = Array.from(document.styleSheets).some((s) =>
+        (s.href ?? '').includes('/fontawesome/css/all.min.css'),
+      );
+      const brandToken = getComputedStyle(document.documentElement).getPropertyValue('--mj-brand-primary').trim();
+      return { styleLoaded, iconWidth: rect?.width ?? 0, iconHeight: rect?.height ?? 0, brandToken };
+    });
+    expect(iconAndTokenCheck.styleLoaded).toBe(true);
+    expect(iconAndTokenCheck.iconWidth).toBeGreaterThan(0);
+    expect(iconAndTokenCheck.iconHeight).toBeGreaterThan(0);
+    expect(iconAndTokenCheck.brandToken.length).toBeGreaterThan(0);
+
+    // 1. Knowledge Stream + Semantic Ask-First Deflection rail
+    await page.fill('#mjc-ask-first-input', 'exposed CLT floor char rate IBC 2027');
+    await expect(page.locator('#mjc-ask-first-live-matches')).toBeVisible();
+    await expect(page.locator('#mjc-ask-first-live-matches')).toContainText('% semantic match');
+    await page.click('.mjc-ask-first__button');
+    await expect(page.locator('.mjc-ask-first__result')).toContainText('Deflected');
+    await page.locator('.mjc-commons').scrollIntoViewIfNeeded();
+    const streamAxe = await new AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa']).analyze();
+    expect(streamAxe.violations.filter((v) => v.impact === 'critical' || v.impact === 'serious')).toEqual([]);
+    await page.screenshot({
+      path: join(MARKETING_SCREENSHOTS_DIR, '01-knowledge-stream-overview.png'),
+      fullPage: false,
+    });
+
+    // 2. Verified Q&A Canon Workbench with epistemic grading badges
+    await page.click('#mjc-hub-tab-qa-canon-workbench');
+    await expect(page.locator('#mjc-hub-panel-qa-canon-workbench')).toBeVisible();
+    await expect(page.locator('#mjc-hub-panel-qa-canon-workbench')).toContainText('Canon Verified');
+    await expect(page.locator('#mjc-hub-panel-qa-canon-workbench')).toContainText('Partially Outdated');
+    await expect(page.locator('#mjc-hub-panel-qa-canon-workbench')).toContainText('IBC 2027 Type IV-B');
+    const qaAxe = await new AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa']).analyze();
+    expect(qaAxe.violations.filter((v) => v.impact === 'critical' || v.impact === 'serious')).toEqual([]);
+    await page.screenshot({
+      path: join(MARKETING_SCREENSHOTS_DIR, '02-qa-canon-workbench.png'),
+      fullPage: false,
+    });
+
+    // 3. Thread Detail Drawer showing Living Thread Synthesis + 1-Click Graduation to Working Space
+    await page.click('#mjc-hub-tab-knowledge-stream');
+    const timberDebateCard = page.locator('.mjc-stream-card', {
+      hasText: 'IBC 2027 Type IV-A/IV-B Exposed Mass Timber Ceiling Allowance',
+    });
+    await expect(timberDebateCard).toBeVisible();
+    await timberDebateCard.locator('.mjc-inspect-btn').click();
+    const detailDialog = page.locator('#mjc-detail-sheet-backdrop [role="dialog"]');
+    await expect(detailDialog).toBeVisible();
+
+    await page.click('#mjc-detail-synthesize-btn');
+    await expect(page.locator('#mjc-detail-synthesis-card')).toBeVisible();
+    await expect(page.locator('#mjc-detail-synthesis-card')).toContainText('Key Takeaways');
+    await expect(page.locator('#mjc-detail-synthesis-card')).toContainText('Arthur Pendelton, CBO');
+
+    await page.click('#mjc-detail-graduate-btn');
+    await expect(page.locator('#mjc-detail-promoted-space')).toBeVisible();
+    const graduatedSpaceId = (
+      await page.locator('#mjc-detail-promoted-space .mjc-promoted-space-banner__id').textContent()
+    )?.trim();
+    expect(graduatedSpaceId).toMatch(/^[0-9a-f-]{36}$/i);
+    await expect(page.locator('#mjc-detail-graduate-btn')).toBeDisabled();
+    await expect(page.locator('#mjc-detail-graduate-btn')).toContainText('Graduated to Working Space');
+
+    // Verify idempotent re-graduation returns the exact same Space ID without duplicating
+    const idempotentGrad = await page.evaluate(
+      (postId) =>
+        new Promise((resolve) => {
+          fetch('/api/harness/graphql', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              query: 'mutation GraduateCommunityThread($input: GraduateCommunityThreadInput!) { GraduateCommunityThread(input: $input) { Success PromotedToSpaceID } }',
+              variables: { input: { RootPostID: postId, TargetSpaceTypeCode: 'working-group', TargetSpaceName: 'IBC 2027 Mass Timber Working Group' } },
+            }),
+          })
+            .then((r) => r.json())
+            .then(resolve);
+        }),
+      'A7C40600-4E12-4B8F-9A10-000000000001',
+    );
+    expect(idempotentGrad?.GraduateCommunityThread?.PromotedToSpaceID).toBe(graduatedSpaceId);
+
+    await page.locator('#mjc-detail-promoted-space').scrollIntoViewIfNeeded();
+    const detailAxe = await new AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa']).analyze();
+    expect(detailAxe.violations.filter((v) => v.impact === 'critical' || v.impact === 'serious')).toEqual([]);
+    await page.screenshot({
+      path: join(MARKETING_SCREENSHOTS_DIR, '03-living-thread-synthesis-and-graduation.png'),
+      fullPage: false,
+    });
+    await page.keyboard.press('Escape');
+    await expect(page.locator('#mjc-detail-sheet-backdrop')).toBeHidden();
+
+    // 4. Embedding-Personalized Digest preview drawer + MJ Comms test-driver dispatch + HMAC Reply-by-Email token
+    await page.click('#mjc-header-digest-btn');
+    const digestDialog = page.locator('#mjc-digest-drawer-backdrop [role="dialog"]');
+    await expect(digestDialog).toBeVisible();
+    await expect(page.locator('#mjc-digest-items-list .mjc-digest-item-card').first()).toBeVisible();
+    await expect(page.locator('#mjc-digest-items-list .mjc-digest-score-chip').first()).toContainText('% match');
+    await expect(page.locator('#mjc-digest-items-list .mjc-digest-reason').first()).toContainText('Why this was picked for you:');
+    await page.click('#mjc-digest-send-test-btn');
+    await expect(page.locator('#mjc-digest-send-status')).toContainText('Community Test Email Driver');
+    const replyIndicatorText = (await page.locator('#mjc-digest-reply-indicator').textContent()) ?? '';
+    const replyMatch = replyIndicatorText.match(/reply\+[A-Za-z0-9_-]{16}\.[A-Za-z0-9_-]{32}@reply\.bizapps\.local/);
+    expect(replyMatch, `Expected HMAC reply address in: ${replyIndicatorText}`).toBeTruthy();
+
+    const digestAxe = await new AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa']).analyze();
+    expect(digestAxe.violations.filter((v) => v.impact === 'critical' || v.impact === 'serious')).toEqual([]);
+    await page.screenshot({
+      path: join(MARKETING_SCREENSHOTS_DIR, '04-personalized-digest-and-reply-by-email.png'),
+      fullPage: false,
+    });
+
+    // Verify real inbound Reply-by-Email persistence against the captured HMAC token
+    const archStateBeforeReply = await (await page.request.get(new URL('/api/harness/state', harnessUrl).toString())).json();
+    const inboundRes = await page.evaluate(
+      ([actionId, replyTo]) =>
+        window.__runGraphQLAction(actionId, [
+          { Name: 'ReplyToAddress', Value: replyTo, Type: 'Input' },
+          { Name: 'SenderEmail', Value: 'kenji.takahashi@agpa-guild.org', Type: 'Input' },
+          {
+            Name: 'RawBodyText',
+            Value: 'Confirmed from Seattle studio — PRG 320 adhesive test sheets uploaded.\n\nOn Thu wrote:\n> Digest quote',
+            Type: 'Input',
+          },
+        ]),
+      ['9A5B3D21-6C0F-4E8B-8D42-7F9C3E5A2B01', replyMatch[0]],
+    );
+    expect(inboundRes.Success).toBe(true);
+    const archStateAfterReply = await (await page.request.get(new URL('/api/harness/state', harnessUrl).toString())).json();
+    expect(archStateAfterReply.posts.length).toBe(archStateBeforeReply.posts.length + 1);
+
+    await page.keyboard.press('Escape');
+    await expect(page.locator('#mjc-digest-drawer-backdrop')).toBeHidden();
+
+    // 5. Quadratic Ideation Wallet with persisted voice-credit allocations
+    await page.click('#mjc-hub-tab-quadratic-ideation-wallet');
+    await expect(page.locator('#mjc-hub-panel-quadratic-ideation-wallet')).toBeVisible();
+    await expect(page.locator('#mjc-hub-panel-quadratic-ideation-wallet')).toContainText('2027 Guild Standards & Tooling Ideation');
+    await page.locator('#mjc-qv-slider-input').fill('49');
+    await page.dispatchEvent('#mjc-qv-slider-input', 'input');
+    await expect(page.locator('.mjc-qv-slider__meta')).toContainText('Effective votes: 7');
+    await expect(page.locator('.mjc-qv-slider__meta')).toContainText('Remaining budget: 35');
+
+    // Wait for PersistIdeaAllocationAtomic transaction to commit and assert persisted state in harness store + UI
+    await page.waitForFunction(() => window.__harnessPendingOps === 0);
+    await expect
+      .poll(async () => {
+        const snapshot = await (await page.request.get(new URL('/api/harness/state', harnessUrl).toString())).json();
+        const kenjiP32Rows = (snapshot.allocations ?? []).filter(
+          (a) =>
+            String(a.UserID).toLowerCase() === 'a7c40400-4e12-4b8f-9a10-000000000001' &&
+            String(a.IdeaPostID).toLowerCase() === 'a7c40600-4e12-4b8f-9a10-000000000032',
+        );
+        const ideaP32 = (snapshot.ideas ?? []).find(
+          (i) => String(i.ID).toLowerCase() === 'a7c40600-4e12-4b8f-9a10-000000000032',
+        );
+        return {
+          rowCount: kenjiP32Rows.length,
+          pointsAllocated: kenjiP32Rows[0]?.PointsAllocated ?? null,
+          quadraticVotes: kenjiP32Rows[0]?.QuadraticVotes ?? null,
+          totalPointsAllocated: ideaP32?.TotalPointsAllocated ?? null,
+          effectiveQuadraticVotes: ideaP32?.EffectiveQuadraticVotes ?? null,
+        };
+      })
+      .toEqual({
+        rowCount: 1,
+        pointsAllocated: 49,
+        quadraticVotes: 7,
+        totalPointsAllocated: 275,
+        effectiveQuadraticVotes: 51,
+      });
+
+    await expect(page.locator('.mjc-idea-card').first()).toContainText('Your allocation: 49 pts');
+    await expect(page.locator('.mjc-idea-card').first()).toContainText('275 pts');
+    const walletAxe = await new AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa']).analyze();
+    expect(walletAxe.violations.filter((v) => v.impact === 'critical' || v.impact === 'serious')).toEqual([]);
+    await page.screenshot({
+      path: join(MARKETING_SCREENSHOTS_DIR, '05-quadratic-ideation-wallet.png'),
+      fullPage: false,
+    });
+
+    expect(pageErrors).toEqual([]);
+    expect(consoleErrors).toEqual([]);
+  } finally {
+    await context.close();
+  }
 });

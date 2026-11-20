@@ -115,7 +115,8 @@ function sendJson(res, statusCode, payload) {
 
 /** Starts the real Angular 21 harness HTTP server and returns `{ url, close, fontAwesomeMode }`. */
 export async function StartHarnessServer() {
-  const html = BuildCommunityHubHarnessHtml();
+  const defaultHtml = BuildCommunityHubHarnessHtml('default');
+  const archHtml = BuildCommunityHubHarnessHtml('arch');
   const bundleBytes = await buildAngularBrowserBundle();
   const fontAwesomeRoot = ResolveFontAwesomeRoot();
   const fontAwesomeCssBytes = fontAwesomeRoot
@@ -129,6 +130,16 @@ export async function StartHarnessServer() {
       if (urlPath === '/api/harness/reset' && req.method === 'POST') {
         store.reset();
         sendJson(res, 200, { Success: true });
+        return;
+      }
+      if (urlPath === '/api/harness/load-arch-world' && req.method === 'POST') {
+        const loaded = store.loadArchWorld();
+        sendJson(res, 200, {
+          Success: true,
+          world: 'ARCH-WORLD',
+          source: loaded.source,
+          dbCounts: loaded.dbCounts,
+        });
         return;
       }
       if (urlPath === '/api/harness/faults' && req.method === 'POST') {
@@ -184,8 +195,9 @@ export async function StartHarnessServer() {
         return;
       }
       if (urlPath === '/' || urlPath === '/index.html') {
+        const isArchWorld = String(req.url ?? '').includes('world=arch');
         res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
-        res.end(html);
+        res.end(isArchWorld ? archHtml : defaultHtml);
         return;
       }
       if (urlPath === '/harness-bundle.js') {

@@ -103,12 +103,23 @@ window.__runtimeRegistrations = {
   },
 };
 
-const HARNESS_USER = new UserInfo(undefined, {
-  ID: '11111111-1111-4111-8111-111111111111',
-  Name: 'E2E Harness Member',
-  Email: 'member@bizapps-community.local',
-  UserRoles: [],
-});
+const worldMode = new URLSearchParams(window.location.search).get('world');
+const HARNESS_USER = new UserInfo(
+  undefined,
+  worldMode === 'arch'
+    ? {
+        ID: 'A7C40400-4E12-4B8F-9A10-000000000001',
+        Name: 'Dr. Kenji Takahashi, FAIA',
+        Email: 'kenji.takahashi@agpa-guild.org',
+        UserRoles: [],
+      }
+    : {
+        ID: '11111111-1111-4111-8111-111111111111',
+        Name: 'E2E Harness Member',
+        Email: 'member@bizapps-community.local',
+        UserRoles: [],
+      },
+);
 
 const SPACE_1 = '33333333-3333-4333-8333-000000000001';
 const SPACE_2 = '33333333-3333-4333-8333-000000000002';

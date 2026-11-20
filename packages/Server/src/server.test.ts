@@ -917,5 +917,496 @@ describe('@mj-biz-apps/community-server services and document blocks', () => {
       assert.equal(res.Success, false);
       assert.match(res.ErrorMessage ?? '', /question author or a forum moderator/i);
     });
+
+    it('ToggleCommunityPostReaction rejects unauthenticated or invalid PostID and toggles reactions cleanly', async () => {
+      const resolver = new CommunityGraduationResolver();
+      mock.method(resolver, 'GetUserFromPayload', () => null);
+      const unauthRes = await resolver.ToggleCommunityPostReaction(
+        { PostID: ROOT_POST_ID, ReactionType: 'Upvote' },
+        { userPayload: { email: '', userRecord: null, sessionId: '' } },
+      );
+      assert.equal(unauthRes.Success, false);
+      assert.match(unauthRes.ErrorMessage ?? '', /authenticated user/i);
+      mock.restoreAll();
+
+      const user = new UserInfo(undefined, { ID: USER_1 });
+      mock.method(resolver, 'GetUserFromPayload', () => user);
+      const badIdRes = await resolver.ToggleCommunityPostReaction(
+        { PostID: SQL_INJECTION, ReactionType: 'Upvote' },
+        { userPayload: { email: 'u@example.com', userRecord: user, sessionId: 's-1' } },
+      );
+      assert.equal(badIdRes.Success, false);
+      assert.match(badIdRes.ErrorMessage ?? '', /UUID/i);
+
+      // Toggle ON when no existing reaction exists
+      let saveCalls = 0;
+      let deleteCalls = 0;
+      mock.method(RunView.prototype, 'RunView', async () => ({ Success: true, Results: [] }));
+      mock.method(Metadata.prototype, 'GetEntityObject', async () => ({
+        PostID: '',
+        UserID: '',
+        ReactionKind: 'Upvote',
+        Save: async () => { saveCalls++; return true; },
+      }));
+      const toggleOn = await resolver.ToggleCommunityPostReaction(
+        { PostID: ROOT_POST_ID, ReactionType: 'Upvote' },
+        { userPayload: { email: 'u@example.com', userRecord: user, sessionId: 's-1' } },
+      );
+      assert.equal(toggleOn.Success, true);
+      assert.equal(toggleOn.Reacted, true);
+      assert.equal(saveCalls, 1);
+      mock.restoreAll();
+
+      // Toggle OFF when existing reaction exists
+      mock.method(resolver, 'GetUserFromPayload', () => user);
+      mock.method(RunView.prototype, 'RunView', async () => ({
+        Success: true,
+        Results: [{ ID: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa' }],
+      }));
+      mock.method(Metadata.prototype, 'GetEntityObject', async () => ({
+        Delete: async () => { deleteCalls++; return true; },
+      }));
+      const toggleOff = await resolver.ToggleCommunityPostReaction(
+        { PostID: ROOT_POST_ID, ReactionType: 'Upvote' },
+        { userPayload: { email: 'u@example.com', userRecord: user, sessionId: 's-1' } },
+      );
+      assert.equal(toggleOff.Success, true);
+      assert.equal(toggleOff.Reacted, false);
+      assert.equal(deleteCalls, 1);
+      mock.restoreAll();
+    });
+  });
+
+  describe('ThreadGraduationService — Idempotency, Transaction Atomicity & Permission Edge Cases', () => {
+    it('returns alreadyGraduated: true with zero writes when PromotedToSpaceID is already set on the root post', async () => {
+      const service = new ThreadGraduationService();
+      const user = new UserInfo(undefined, { ID: USER_1 });
+      const parentSpaceId = 'cccccccc-3333-4333-8333-333333333333';
+      const parentSpaceTypeId = 'dddddddd-4444-4444-8444-444444444444';
+      const roleTypeId = 'eeeeeeee-5555-4555-8555-555555555555';
+      let saveCalls = 0;
+
+      mock.method(Metadata.prototype, 'GetEntityObject', async (entityName: string) => {
+        if (entityName === 'MJ_BizApps_Community: Forum Posts') {
+          return {
+            ID: ROOT_POST_ID,
+            ParentPostID: null,
+            ForumID: FORUM_1_ID,
+            PromotedToSpaceID: EXISTING_SPACE_ID,
+            LinkedTaskID: null,
+            Save: async () => { saveCalls++; return true; },
+          };
+        }
+        if (entityName === 'MJ_BizApps_Community: Forums') {
+          return { ID: FORUM_1_ID, SpaceID: parentSpaceId, Save: async () => { saveCalls++; return true; } };
+        }
+        return { Save: async () => { saveCalls++; return true; } };
+      });
+
+      mock.method(RunView.prototype, 'RunView', async (query: { EntityName: string }) => {
+        if (query.EntityName === 'MJ_BizApps_Community: Forum Members') {
+          return { Success: true, Results: [{ ForumRoleTypeID: roleTypeId }] };
+        }
+        if (query.EntityName === 'MJ_BizApps_Community: Forum Role Types') {
+          return { Success: true, Results: [{ CanModerateQueue: false, CanPromoteToSpace: true }] };
+        }
+        if (query.EntityName === 'MJ_BizApps_Collaboration: Spaces') {
+          return { Success: true, Results: [{ ID: parentSpaceId, SpaceTypeID: parentSpaceTypeId }] };
+        }
+        if (query.EntityName === 'MJ_BizApps_Collaboration: Space Types') {
+          return {
+            Success: true,
+            Results: [{ ID: parentSpaceTypeId, Code: 'community', Configuration: JSON.stringify({ Children: { AllowedTypeCodes: ['working-group'] } }) }],
+          };
+        }
+        return { Success: true, Results: [] };
+      });
+
+      try {
+        const res = await service.GraduateThreadToSpace({
+          request: {
+            rootPostId: ROOT_POST_ID,
+            targetSpaceTypeCode: 'working-group',
+            targetSpaceName: 'Already Graduated WG',
+            seedInitialTaskTitle: 'Should Not Seed',
+            includeParticipantUserIds: [USER_1, USER_2],
+          },
+          contextUser: user,
+        });
+        assert.equal(res.alreadyGraduated, true);
+        assert.equal(res.promotedToSpaceId, EXISTING_SPACE_ID);
+        assert.equal(res.seededTaskId, null);
+        assert.equal(res.invitedParticipantCount, 0);
+        assert.equal(saveCalls, 0);
+      } finally {
+        mock.restoreAll();
+      }
+    });
+
+    it('recovers idempotently from an interrupted prior run where deterministic Space/Task/Members already exist', async () => {
+      const service = new ThreadGraduationService();
+      const user = new UserInfo(undefined, { ID: USER_1 });
+      const parentSpaceId = 'cccccccc-3333-4333-8333-333333333333';
+      const parentSpaceTypeId = 'dddddddd-4444-4444-8444-444444444444';
+      const roleTypeId = 'eeeeeeee-5555-4555-8555-555555555555';
+      const expectedSpaceId = BuildDeterministicGraduationUUID('space', ROOT_POST_ID);
+      const expectedTaskId = BuildDeterministicGraduationUUID('task', ROOT_POST_ID);
+      const txGroup = new InMemoryTransactionGroup();
+
+      let spaceSaves = 0;
+      let taskSaves = 0;
+      const savedMemberUserIds: string[] = [];
+      const rootPostState = {
+        ID: ROOT_POST_ID,
+        ParentPostID: null,
+        ForumID: FORUM_1_ID,
+        Title: 'Recovery Thread',
+        BodyMarkdown: 'Recovering partial run',
+        SummaryMarkdown: 'Existing summary',
+        PromotedToSpaceID: null as string | null,
+        LinkedTaskID: null as string | null,
+        Save: async () => true,
+      };
+
+      mock.method(Metadata.prototype, 'CreateTransactionGroup', async () => txGroup);
+      mock.method(Metadata.prototype, 'GetEntityObject', async (entityName: string) => {
+        if (entityName === 'MJ_BizApps_Community: Forum Posts') return rootPostState;
+        if (entityName === 'MJ_BizApps_Community: Forums') return { ID: FORUM_1_ID, SpaceID: parentSpaceId, Save: async () => true };
+        if (entityName === 'MJ_BizApps_Collaboration: Spaces') {
+          return { Save: async () => { spaceSaves++; return true; } };
+        }
+        if (entityName === 'MJ: Tasks') {
+          return { Save: async () => { taskSaves++; return true; } };
+        }
+        if (entityName === 'MJ_BizApps_Collaboration: Space Members') {
+          const rec = {
+            UserID: '',
+            Save: async () => { savedMemberUserIds.push(rec.UserID); return true; },
+          };
+          return rec;
+        }
+        return { Save: async () => true };
+      });
+
+      mock.method(RunView.prototype, 'RunView', async (query: { EntityName: string; ExtraFilter?: string }) => {
+        const filter = query.ExtraFilter ?? '';
+        if (query.EntityName === 'MJ_BizApps_Community: Forum Members') {
+          return { Success: true, Results: [{ ForumRoleTypeID: roleTypeId }] };
+        }
+        if (query.EntityName === 'MJ_BizApps_Community: Forum Role Types') {
+          return { Success: true, Results: [{ CanModerateQueue: false, CanPromoteToSpace: true }] };
+        }
+        if (query.EntityName === 'MJ_BizApps_Collaboration: Spaces') {
+          if (filter.includes(parentSpaceId)) {
+            return { Success: true, Results: [{ ID: parentSpaceId, SpaceTypeID: parentSpaceTypeId }] };
+          }
+          // Deterministic Space already exists from interrupted prior run
+          return { Success: true, Results: [{ ID: expectedSpaceId }] };
+        }
+        if (query.EntityName === 'MJ_BizApps_Collaboration: Space Types') {
+          if (filter.includes(parentSpaceTypeId)) {
+            return {
+              Success: true,
+              Results: [{ ID: parentSpaceTypeId, Code: 'community', Configuration: JSON.stringify({ Children: { AllowedTypeCodes: ['working-group'] } }) }],
+            };
+          }
+          return { Success: true, Results: [{ ID: 'st-wg' }] };
+        }
+        if (query.EntityName === 'MJ_BizApps_Collaboration: Space Role Types') {
+          return { Success: true, Results: [{ ID: 'srt-member' }] };
+        }
+        if (query.EntityName === 'MJ: Task Types') {
+          return { Success: true, Results: [{ ID: 'tt-1' }] };
+        }
+        if (query.EntityName === 'MJ: Tasks') {
+          // Deterministic Task already exists
+          return { Success: true, Results: [{ ID: expectedTaskId }] };
+        }
+        if (query.EntityName === 'MJ_BizApps_Collaboration: Space Members') {
+          // USER_1 already invited; USER_2 still missing
+          return { Success: true, Results: [{ UserID: USER_1 }] };
+        }
+        return { Success: true, Results: [] };
+      });
+
+      try {
+        const res = await service.GraduateThreadToSpace({
+          request: {
+            rootPostId: ROOT_POST_ID,
+            targetSpaceTypeCode: 'working-group',
+            targetSpaceName: 'Recovered WG',
+            seedInitialTaskTitle: 'Task 1',
+            includeParticipantUserIds: [USER_1, USER_2],
+          },
+          contextUser: user,
+        });
+        assert.equal(res.promotedToSpaceId, expectedSpaceId);
+        assert.equal(res.seededTaskId, expectedTaskId);
+        assert.equal(spaceSaves, 0, 'existing deterministic Space must not be re-created');
+        assert.equal(taskSaves, 0, 'existing deterministic Task must not be re-created');
+        assert.deepEqual(savedMemberUserIds, [USER_2], 'only missing participant USER_2 is invited');
+        assert.equal(rootPostState.PromotedToSpaceID, expectedSpaceId);
+        assert.equal(rootPostState.LinkedTaskID, expectedTaskId);
+        assert.equal(txGroup.submitCalls, 1);
+      } finally {
+        mock.restoreAll();
+      }
+    });
+
+    it('rolls back non-transactional Space, Task, and SpaceMember in reverse order on late failure', async () => {
+      const service = new ThreadGraduationService();
+      const user = new UserInfo(undefined, { ID: USER_1 });
+      const parentSpaceId = 'cccccccc-3333-4333-8333-333333333333';
+      const parentSpaceTypeId = 'dddddddd-4444-4444-8444-444444444444';
+      const roleTypeId = 'eeeeeeee-5555-4555-8555-555555555555';
+      const deleteOrder: string[] = [];
+
+      // Simulate environment without TransactionGroup support
+      mock.method(Metadata.prototype, 'CreateTransactionGroup', async () => {
+        throw new Error('No TransactionGroup');
+      });
+      mock.method(Metadata.prototype, 'GetEntityObject', async (entityName: string) => {
+        if (entityName === 'MJ_BizApps_Community: Forum Posts') {
+          return {
+            ID: ROOT_POST_ID,
+            ParentPostID: null,
+            ForumID: FORUM_1_ID,
+            Title: 'Rollback Thread',
+            BodyMarkdown: 'Body',
+            SummaryMarkdown: 'Summary',
+            PromotedToSpaceID: null,
+            LinkedTaskID: null,
+            Save: async () => false, // fails at final step
+          };
+        }
+        if (entityName === 'MJ_BizApps_Community: Forums') {
+          return { ID: FORUM_1_ID, SpaceID: parentSpaceId, Save: async () => true };
+        }
+        if (entityName === 'MJ_BizApps_Collaboration: Spaces') {
+          return {
+            Save: async () => true,
+            Delete: async () => { deleteOrder.push('space'); return true; },
+          };
+        }
+        if (entityName === 'MJ: Tasks') {
+          return {
+            Save: async () => true,
+            Delete: async () => { deleteOrder.push('task'); return true; },
+          };
+        }
+        if (entityName === 'MJ_BizApps_Collaboration: Space Members') {
+          return {
+            Save: async () => true,
+            Delete: async () => { deleteOrder.push('member'); return true; },
+          };
+        }
+        return { Save: async () => true };
+      });
+
+      mock.method(RunView.prototype, 'RunView', async (query: { EntityName: string; ExtraFilter?: string }) => {
+        const filter = query.ExtraFilter ?? '';
+        if (query.EntityName === 'MJ_BizApps_Community: Forum Members') {
+          return { Success: true, Results: [{ ForumRoleTypeID: roleTypeId }] };
+        }
+        if (query.EntityName === 'MJ_BizApps_Community: Forum Role Types') {
+          return { Success: true, Results: [{ CanModerateQueue: false, CanPromoteToSpace: true }] };
+        }
+        if (query.EntityName === 'MJ_BizApps_Collaboration: Spaces') {
+          return filter.includes(parentSpaceId)
+            ? { Success: true, Results: [{ ID: parentSpaceId, SpaceTypeID: parentSpaceTypeId }] }
+            : { Success: true, Results: [] };
+        }
+        if (query.EntityName === 'MJ_BizApps_Collaboration: Space Types') {
+          return filter.includes(parentSpaceTypeId)
+            ? { Success: true, Results: [{ ID: parentSpaceTypeId, Code: 'community', Configuration: JSON.stringify({ Children: { AllowedTypeCodes: ['working-group'] } }) }] }
+            : { Success: true, Results: [{ ID: 'st-wg' }] };
+        }
+        if (query.EntityName === 'MJ_BizApps_Collaboration: Space Role Types') {
+          return { Success: true, Results: [{ ID: 'srt-member' }] };
+        }
+        if (query.EntityName === 'MJ: Task Types') {
+          return { Success: true, Results: [{ ID: 'tt-1' }] };
+        }
+        return { Success: true, Results: [] };
+      });
+
+      try {
+        await assert.rejects(
+          () =>
+            service.GraduateThreadToSpace({
+              request: {
+                rootPostId: ROOT_POST_ID,
+                targetSpaceTypeCode: 'working-group',
+                targetSpaceName: 'Reverse Rollback Space',
+                seedInitialTaskTitle: 'Task 1',
+                includeParticipantUserIds: [USER_2],
+              },
+              contextUser: user,
+            }),
+          /Failed to persist graduation onto root Forum Post/,
+        );
+        assert.deepEqual(deleteOrder, ['member', 'task', 'space']);
+      } finally {
+        mock.restoreAll();
+      }
+    });
+
+    it('enforces server-side CanPromoteToSpace, root-only graduation, and author/moderator Canon promotion permissions', async () => {
+      const service = new ThreadGraduationService();
+      const user = new UserInfo(undefined, { ID: USER_1 });
+      const nonAuthorUser = new UserInfo(undefined, { ID: USER_2 });
+      const parentSpaceId = 'cccccccc-3333-4333-8333-333333333333';
+      const parentSpaceTypeId = 'dddddddd-4444-4444-8444-444444444444';
+      const roleTypeId = 'eeeeeeee-5555-4555-8555-555555555555';
+      let saveCalls = 0;
+
+      // 1. Reply post cannot be graduated
+      mock.method(Metadata.prototype, 'GetEntityObject', async () => ({
+        ID: ROOT_POST_ID,
+        ParentPostID: 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee',
+        ForumID: FORUM_1_ID,
+        Save: async () => { saveCalls++; return true; },
+      }));
+      await assert.rejects(
+        () =>
+          service.GraduateThreadToSpace({
+            request: {
+              rootPostId: ROOT_POST_ID,
+              targetSpaceTypeCode: 'working-group',
+              targetSpaceName: 'Reply Graduation',
+              includeParticipantUserIds: [],
+            },
+            contextUser: user,
+          }),
+        /only a root post may be graduated/i,
+      );
+      mock.restoreAll();
+
+      // 2. Member with CanModerateQueue=true but CanPromoteToSpace=false is rejected
+      mock.method(Metadata.prototype, 'GetEntityObject', async (entityName: string) => {
+        if (entityName === 'MJ_BizApps_Community: Forum Posts') {
+          return { ID: ROOT_POST_ID, ParentPostID: null, ForumID: FORUM_1_ID, PromotedToSpaceID: null, Save: async () => { saveCalls++; return true; } };
+        }
+        return { ID: FORUM_1_ID, SpaceID: parentSpaceId, Save: async () => { saveCalls++; return true; } };
+      });
+      mock.method(RunView.prototype, 'RunView', async (query: { EntityName: string }) => {
+        if (query.EntityName === 'MJ_BizApps_Community: Forum Members') {
+          return { Success: true, Results: [{ ForumRoleTypeID: roleTypeId }] };
+        }
+        if (query.EntityName === 'MJ_BizApps_Community: Forum Role Types') {
+          return { Success: true, Results: [{ CanModerateQueue: true, CanPromoteToSpace: false }] };
+        }
+        if (query.EntityName === 'MJ_BizApps_Collaboration: Spaces') {
+          return { Success: true, Results: [{ ID: parentSpaceId, SpaceTypeID: parentSpaceTypeId }] };
+        }
+        if (query.EntityName === 'MJ_BizApps_Collaboration: Space Types') {
+          return {
+            Success: true,
+            Results: [{ ID: parentSpaceTypeId, Code: 'community', Configuration: JSON.stringify({ Children: { AllowedTypeCodes: ['working-group'] } }) }],
+          };
+        }
+        return { Success: true, Results: [] };
+      });
+
+      await assert.rejects(
+        () =>
+          service.GraduateThreadToSpace({
+            request: {
+              rootPostId: ROOT_POST_ID,
+              targetSpaceTypeCode: 'working-group',
+              targetSpaceName: 'Denied WG',
+              includeParticipantUserIds: [],
+            },
+            contextUser: user,
+          }),
+        /CanPromoteToSpace/,
+      );
+      mock.restoreAll();
+
+      // 3. ApplyCanonPromotion: non-author, non-moderator is rejected with zero writes; author is allowed & idempotent
+      const txGroup = new InMemoryTransactionGroup();
+      mock.method(Metadata.prototype, 'CreateTransactionGroup', async () => txGroup);
+      mock.method(Metadata.prototype, 'GetEntityObject', async (entityName: string) => {
+        if (entityName === 'MJ_BizApps_Community: Forum Question Posts') {
+          return {
+            ID: QUESTION_POST_ID,
+            AcceptedAnswerPostID: ANSWER_POST_ID,
+            AICanonAnswerPostID: ANSWER_POST_ID,
+            Save: async () => { saveCalls++; return true; },
+          };
+        }
+        if (entityName === 'MJ_BizApps_Community: Forum Answer Posts') {
+          return {
+            ID: ANSWER_POST_ID,
+            QuestionPostID: QUESTION_POST_ID,
+            AIEpistemicStatus: 'Canon Verified',
+            IsAcceptedByAuthor: true,
+            Save: async () => { saveCalls++; return true; },
+          };
+        }
+        // AuthorUserID is USER_1
+        return { ID: QUESTION_POST_ID, ForumID: FORUM_1_ID, AuthorUserID: USER_1, Save: async () => { saveCalls++; return true; } };
+      });
+      mock.method(RunView.prototype, 'RunView', async (query: { EntityName: string }) => {
+        if (query.EntityName === 'MJ_BizApps_Community: Forum Members') {
+          return { Success: true, Results: [{ ForumRoleTypeID: roleTypeId }] };
+        }
+        if (query.EntityName === 'MJ_BizApps_Community: Forum Role Types') {
+          return { Success: true, Results: [{ CanModerateQueue: false, CanPromoteToSpace: false }] };
+        }
+        return { Success: true, Results: [] };
+      });
+
+      // Non-author non-moderator rejected
+      await assert.rejects(
+        () =>
+          service.ApplyCanonPromotion({
+            request: { questionPostId: QUESTION_POST_ID, canonAnswerPostId: ANSWER_POST_ID },
+            contextUser: nonAuthorUser,
+          }),
+        /Only the question author or a forum moderator/,
+      );
+
+      // Author (even without CanModerateQueue) succeeds idempotently with 0 transaction writes
+      const idempotentRes = await service.ApplyCanonPromotion({
+        request: { questionPostId: QUESTION_POST_ID, canonAnswerPostId: ANSWER_POST_ID },
+        contextUser: user,
+      });
+      assert.equal(idempotentRes.alreadyPromoted, true);
+      assert.equal(txGroup.submitCalls, 0);
+      assert.equal(saveCalls, 0);
+      mock.restoreAll();
+    });
+
+    it('ApplyCanonPromotion fails when TransactionGroup.Submit() returns false', async () => {
+      const service = new ThreadGraduationService();
+      const user = new UserInfo(undefined, { ID: USER_1 });
+      const failingTxGroup = new InMemoryTransactionGroup();
+      failingTxGroup.Submit = async () => false;
+
+      mock.method(Metadata.prototype, 'CreateTransactionGroup', async () => failingTxGroup);
+      mock.method(Metadata.prototype, 'GetEntityObject', async (entityName: string) => {
+        if (entityName === 'MJ_BizApps_Community: Forum Question Posts') {
+          return { ID: QUESTION_POST_ID, AcceptedAnswerPostID: null, AICanonAnswerPostID: null, Save: async () => true };
+        }
+        if (entityName === 'MJ_BizApps_Community: Forum Answer Posts') {
+          return { ID: ANSWER_POST_ID, QuestionPostID: QUESTION_POST_ID, AIEpistemicStatus: 'Unverified', IsAcceptedByAuthor: false, Save: async () => true };
+        }
+        return { ID: QUESTION_POST_ID, ForumID: FORUM_1_ID, AuthorUserID: USER_1, Save: async () => true };
+      });
+
+      try {
+        await assert.rejects(
+          () =>
+            service.ApplyCanonPromotion({
+              request: { questionPostId: QUESTION_POST_ID, canonAnswerPostId: ANSWER_POST_ID },
+              contextUser: user,
+            }),
+          /Transactional commit failed/,
+        );
+      } finally {
+        mock.restoreAll();
+      }
+    });
   });
 });

@@ -1807,6 +1807,156 @@ describe('@mj-biz-apps/community-core-entities-server Slice 1 Server BaseEntity 
         sub.unsubscribe();
       }
     });
+
+    it('enforces PostType PlacementRule (Root Only vs Reply Only), cross-forum reply rejection, and Locked forum writes', async () => {
+      // Reply Only post type cannot be created as a root post
+      const replyAsRoot = provider.createNewEntityInstance<ForumPostServerEntity>(
+        COMMUNITY_ENTITY_NAMES.ForumPosts,
+        user1,
+      )!;
+      replyAsRoot.ForumID = FORUM_OPEN_ID;
+      replyAsRoot.PostTypeID = POST_TYPE_REPLY_ID;
+      replyAsRoot.AuthorUserID = USER_1_ID;
+      replyAsRoot.Title = 'Reply as root';
+      replyAsRoot.BodyMarkdown = 'Must fail';
+      assert.equal(await replyAsRoot.Save(), false);
+      assert.match(replyAsRoot.LatestResult?.CompleteMessage ?? '', /only be used as a reply/i);
+
+      // Root Only post type cannot be created as a reply
+      const rootTypeAsReply = provider.createNewEntityInstance<ForumPostServerEntity>(
+        COMMUNITY_ENTITY_NAMES.ForumPosts,
+        user1,
+      )!;
+      rootTypeAsReply.ForumID = FORUM_OPEN_ID;
+      rootTypeAsReply.PostTypeID = POST_TYPE_DISCUSSION_ID;
+      rootTypeAsReply.ParentPostID = ROOT_POST_1_ID;
+      rootTypeAsReply.AuthorUserID = USER_1_ID;
+      rootTypeAsReply.BodyMarkdown = 'Root-only type used as reply';
+      assert.equal(await rootTypeAsReply.Save(), false);
+      assert.match(rootTypeAsReply.LatestResult?.CompleteMessage ?? '', /top-level root post/i);
+
+      // Cross-forum reply rejection (parent lives in FORUM_QA_2_ID, reply targets FORUM_OPEN_ID)
+      const crossForumReply = provider.createNewEntityInstance<ForumPostServerEntity>(
+        COMMUNITY_ENTITY_NAMES.ForumPosts,
+        user1,
+      )!;
+      crossForumReply.ForumID = FORUM_OPEN_ID;
+      crossForumReply.PostTypeID = POST_TYPE_REPLY_ID;
+      crossForumReply.ParentPostID = QUESTION_OTHER_FORUM_ID;
+      crossForumReply.AuthorUserID = USER_1_ID;
+      crossForumReply.BodyMarkdown = 'Cross-forum reply';
+      assert.equal(await crossForumReply.Save(), false);
+      assert.match(crossForumReply.LatestResult?.CompleteMessage ?? '', /same Forum/i);
+
+      // Locked forum rejects writes
+      const forumOpenRow = db.forums.find((f) => UUIDsEqual(f.ID, FORUM_OPEN_ID))!;
+      const prevStatus = forumOpenRow.Status;
+      forumOpenRow.Status = 'Locked';
+      try {
+        const lockedForumWrite = provider.createNewEntityInstance<ForumPostServerEntity>(
+          COMMUNITY_ENTITY_NAMES.ForumPosts,
+          modUser,
+        )!;
+        lockedForumWrite.ForumID = FORUM_OPEN_ID;
+        lockedForumWrite.PostTypeID = POST_TYPE_DISCUSSION_ID;
+        lockedForumWrite.AuthorUserID = USER_MOD_ID;
+        lockedForumWrite.Title = 'Write in locked forum';
+        lockedForumWrite.BodyMarkdown = 'Should fail';
+        assert.equal(await lockedForumWrite.Save(), false);
+        assert.match(lockedForumWrite.LatestResult?.CompleteMessage ?? '', /Locked/i);
+      } finally {
+        forumOpenRow.Status = prevStatus;
+      }
+    });
+
+    it('enforces ReadOnly replies, Moderated draft-to-publish coercion, moderator override on locked/pinned posts, and non-counted reply statuses', async () => {
+      // ReadOnly forum rejects regular member replies, allows moderator replies
+      const memberReplyRO = provider.createNewEntityInstance<ForumPostServerEntity>(
+        COMMUNITY_ENTITY_NAMES.ForumPosts,
+        user1,
+      )!;
+      memberReplyRO.ForumID = FORUM_RO_ID;
+      memberReplyRO.PostTypeID = POST_TYPE_REPLY_ID;
+      memberReplyRO.ParentPostID = ROOT_POST_1_ID;
+      memberReplyRO.AuthorUserID = USER_1_ID;
+      memberReplyRO.BodyMarkdown = 'Regular reply in ReadOnly';
+      assert.equal(await memberReplyRO.Save(), false);
+      assert.match(memberReplyRO.LatestResult?.CompleteMessage ?? '', /ReadOnly/);
+
+      // Moderator can create a root post in ReadOnly and pin/lock it
+      const modPinned = provider.createNewEntityInstance<ForumPostServerEntity>(
+        COMMUNITY_ENTITY_NAMES.ForumPosts,
+        modUser,
+      )!;
+      modPinned.ForumID = FORUM_OPEN_ID;
+      modPinned.PostTypeID = POST_TYPE_DISCUSSION_ID;
+      modPinned.AuthorUserID = USER_MOD_ID;
+      modPinned.Title = 'Moderator Pinned Post';
+      modPinned.BodyMarkdown = 'Pinned and locked';
+      modPinned.IsPinned = true;
+      modPinned.IsLocked = true;
+      assert.equal(await modPinned.Save(), true);
+
+      // Non-moderator cannot edit a locked post
+      const loadedLockedForUser = await provider.createEntityInstance<ForumPostServerEntity>(
+        COMMUNITY_ENTITY_NAMES.ForumPosts,
+        CompositeKey.FromID(LOCKED_ROOT_ID),
+        user1,
+      );
+      assert.ok(loadedLockedForUser);
+      loadedLockedForUser.BodyMarkdown = 'Unauthorized edit on locked post';
+      assert.equal(await loadedLockedForUser.Save(), false);
+      assert.match(loadedLockedForUser.LatestResult?.CompleteMessage ?? '', /locked and cannot be edited/i);
+
+      // Moderator CAN edit a locked post
+      const loadedLockedForMod = await provider.createEntityInstance<ForumPostServerEntity>(
+        COMMUNITY_ENTITY_NAMES.ForumPosts,
+        CompositeKey.FromID(LOCKED_ROOT_ID),
+        modUser,
+      );
+      assert.ok(loadedLockedForMod);
+      loadedLockedForMod.BodyMarkdown = 'Moderator edit on locked post';
+      assert.equal(await loadedLockedForMod.Save(), true);
+
+      // Moderated forum: Draft saves as Draft, then publishing Draft transitions to PendingModeration for member
+      const memberDraft = provider.createNewEntityInstance<ForumPostServerEntity>(
+        COMMUNITY_ENTITY_NAMES.ForumPosts,
+        user1,
+      )!;
+      memberDraft.ForumID = FORUM_MOD_ID;
+      memberDraft.PostTypeID = POST_TYPE_DISCUSSION_ID;
+      memberDraft.AuthorUserID = USER_1_ID;
+      memberDraft.Title = 'Draft post';
+      memberDraft.BodyMarkdown = 'Still drafting';
+      memberDraft.Status = 'Draft';
+      assert.equal(await memberDraft.Save(), true);
+      assert.equal(memberDraft.Status, 'Draft');
+
+      const reloadedDraft = await provider.createEntityInstance<ForumPostServerEntity>(
+        COMMUNITY_ENTITY_NAMES.ForumPosts,
+        CompositeKey.FromID(memberDraft.ID),
+        user1,
+      );
+      assert.ok(reloadedDraft);
+      reloadedDraft.Status = 'Published';
+      assert.equal(await reloadedDraft.Save(), true);
+      assert.equal(reloadedDraft.Status, 'PendingModeration');
+
+      // Draft replies do NOT increment root ReplyCount
+      const initialReplyCount = db.posts.find((p) => UUIDsEqual(p.ID, ROOT_POST_1_ID))!.ReplyCount;
+      const draftReply = provider.createNewEntityInstance<ForumPostServerEntity>(
+        COMMUNITY_ENTITY_NAMES.ForumPosts,
+        user1,
+      )!;
+      draftReply.ForumID = FORUM_OPEN_ID;
+      draftReply.PostTypeID = POST_TYPE_REPLY_ID;
+      draftReply.ParentPostID = ROOT_POST_1_ID;
+      draftReply.AuthorUserID = USER_1_ID;
+      draftReply.BodyMarkdown = 'Draft reply';
+      draftReply.Status = 'Draft';
+      assert.equal(await draftReply.Save(), true);
+      assert.equal(db.posts.find((p) => UUIDsEqual(p.ID, ROOT_POST_1_ID))!.ReplyCount, initialReplyCount);
+    });
   });
 
   describe('2. ForumAnswerPostServerEntity', () => {
@@ -1870,6 +2020,56 @@ describe('@mj-biz-apps/community-core-entities-server Slice 1 Server BaseEntity 
       // Delete answer1 -> counts recompute cleanly
       assert.equal(await answer1.Delete(), true);
       assert.equal(db.memberProfiles[0].AcceptedAnswerCount, 0);
+      assert.equal(db.memberProfiles[0].HelpfulAnswerCount, 1);
+    });
+
+    it('rejects non-moderator AI verification/Canon Verified, missing ContextCurrentUser, and allows moderator accept override', async () => {
+      // Missing ContextCurrentUser fails both ValidateAsync() and Save()
+      const noUserAnswer = provider.createNewEntityInstance<ForumAnswerPostServerEntity>(
+        COMMUNITY_ENTITY_NAMES.ForumAnswerPosts,
+      )!;
+      noUserAnswer.ID = ANSWER_1_ID;
+      noUserAnswer.QuestionPostID = QUESTION_1_ID;
+      const noUserVal = await noUserAnswer.ValidateAsync();
+      assert.equal(noUserVal.Success, false);
+      assert.match(noUserVal.Errors.map((e) => e.Message).join(' '), /ContextCurrentUser is required/);
+      assert.equal(await noUserAnswer.Save(), false);
+      assert.match(noUserAnswer.LatestResult?.CompleteMessage ?? '', /No user set|ContextCurrentUser is required/);
+
+      // Non-moderator cannot set IsVerifiedByModerator = true
+      const nonModVerify = provider.createNewEntityInstance<ForumAnswerPostServerEntity>(
+        COMMUNITY_ENTITY_NAMES.ForumAnswerPosts,
+        user1,
+      )!;
+      nonModVerify.ID = ANSWER_1_ID;
+      nonModVerify.QuestionPostID = QUESTION_1_ID;
+      nonModVerify.IsVerifiedByModerator = true;
+      assert.equal(await nonModVerify.Save(), false);
+      assert.match(nonModVerify.LatestResult?.CompleteMessage ?? '', /Only a moderator can verify answers/);
+
+      // Non-moderator cannot set AIEpistemicStatus = 'Canon Verified'
+      const nonModCanon = provider.createNewEntityInstance<ForumAnswerPostServerEntity>(
+        COMMUNITY_ENTITY_NAMES.ForumAnswerPosts,
+        user1,
+      )!;
+      nonModCanon.ID = ANSWER_1_ID;
+      nonModCanon.QuestionPostID = QUESTION_1_ID;
+      nonModCanon.AIEpistemicStatus = 'Canon Verified';
+      assert.equal(await nonModCanon.Save(), false);
+      assert.match(nonModCanon.LatestResult?.CompleteMessage ?? '', /Only a moderator can verify answers/);
+
+      // Moderator who is NOT the question author CAN accept & verify an answer
+      const modAcceptAndVerify = provider.createNewEntityInstance<ForumAnswerPostServerEntity>(
+        COMMUNITY_ENTITY_NAMES.ForumAnswerPosts,
+        modUser,
+      )!;
+      modAcceptAndVerify.ID = ANSWER_1_ID;
+      modAcceptAndVerify.QuestionPostID = QUESTION_1_ID;
+      modAcceptAndVerify.IsAcceptedByAuthor = true;
+      modAcceptAndVerify.IsVerifiedByModerator = true;
+      modAcceptAndVerify.AIEpistemicStatus = 'Canon Verified';
+      assert.equal(await modAcceptAndVerify.Save(), true);
+      assert.equal(db.memberProfiles[0].AcceptedAnswerCount, 1);
       assert.equal(db.memberProfiles[0].HelpfulAnswerCount, 1);
     });
   });
@@ -1941,6 +2141,56 @@ describe('@mj-biz-apps/community-core-entities-server Slice 1 Server BaseEntity 
       assert.equal(ideaAfterDelete.TotalPointsAllocated, 16);
       assert.equal(ideaAfterDelete.EffectiveQuadraticVotes, 4);
       assert.equal(ideaAfterDelete.UniqueBackerCount, 1);
+
+      assert.equal(await allocUser2.Delete(), true);
+      const ideaAfterAllDeleted = db.ideaPosts.find((i) => UUIDsEqual(i.ID, IDEA_1_ID))!;
+      assert.equal(ideaAfterAllDeleted.TotalPointsAllocated, 0);
+      assert.equal(ideaAfterAllDeleted.EffectiveQuadraticVotes, 0);
+      assert.equal(ideaAfterAllDeleted.UniqueBackerCount, 0);
+    });
+
+    it('rejects unauthenticated/mismatched UserID, non-positive PointsAllocated, and non-campaign forums', async () => {
+      const unauth = provider.createNewEntityInstance<ForumIdeaAllocationServerEntity>(
+        COMMUNITY_ENTITY_NAMES.ForumIdeaAllocations,
+      )!;
+      unauth.IdeaPostID = IDEA_1_ID;
+      unauth.UserID = USER_1_ID;
+      unauth.PointsAllocated = 4;
+      const unauthVal = await unauth.ValidateAsync();
+      assert.equal(unauthVal.Success, false);
+      assert.match(unauthVal.Errors.map((e) => e.Message).join(' '), /authenticated user/i);
+      assert.equal(await unauth.Save(), false);
+      assert.match(unauth.LatestResult?.CompleteMessage ?? '', /No user set|authenticated user/i);
+
+      const mismatchedUser = provider.createNewEntityInstance<ForumIdeaAllocationServerEntity>(
+        COMMUNITY_ENTITY_NAMES.ForumIdeaAllocations,
+        user1,
+      )!;
+      mismatchedUser.IdeaPostID = IDEA_1_ID;
+      mismatchedUser.UserID = USER_2_ID;
+      mismatchedUser.PointsAllocated = 4;
+      assert.equal(await mismatchedUser.Save(), false);
+      assert.match(mismatchedUser.LatestResult?.CompleteMessage ?? '', /match the authenticated user/i);
+
+      const zeroPoints = provider.createNewEntityInstance<ForumIdeaAllocationServerEntity>(
+        COMMUNITY_ENTITY_NAMES.ForumIdeaAllocations,
+        user1,
+      )!;
+      zeroPoints.IdeaPostID = IDEA_1_ID;
+      zeroPoints.UserID = USER_1_ID;
+      zeroPoints.PointsAllocated = 0;
+      assert.equal(await zeroPoints.Save(), false);
+      assert.match(zeroPoints.LatestResult?.CompleteMessage ?? '', /positive integer/i);
+
+      const nonCampaignPost = provider.createNewEntityInstance<ForumIdeaAllocationServerEntity>(
+        COMMUNITY_ENTITY_NAMES.ForumIdeaAllocations,
+        user1,
+      )!;
+      nonCampaignPost.IdeaPostID = ROOT_POST_1_ID;
+      nonCampaignPost.UserID = USER_1_ID;
+      nonCampaignPost.PointsAllocated = 4;
+      assert.equal(await nonCampaignPost.Save(), false);
+      assert.match(nonCampaignPost.LatestResult?.CompleteMessage ?? '', /Forum Idea Campaign/i);
     });
   });
 
@@ -1972,9 +2222,13 @@ describe('@mj-biz-apps/community-core-entities-server Slice 1 Server BaseEntity 
       // Delete expert reaction -> remaining weight 1.00 -> ReactionScore = 1
       assert.equal(await expertReaction.Delete(), true);
       assert.equal(db.posts.find((p) => UUIDsEqual(p.ID, ROOT_POST_1_ID))!.ReactionScore, 1);
+
+      // Delete last reaction -> ReactionScore returns to 0
+      assert.equal(await contribReaction.Delete(), true);
+      assert.equal(db.posts.find((p) => UUIDsEqual(p.ID, ROOT_POST_1_ID))!.ReactionScore, 0);
     });
 
-    it('rejects reactions from Muted members', async () => {
+    it('rejects reactions from Muted members, non-members in PrivateForum, and non-moderator ownership spoofing', async () => {
       const mutedReaction = provider.createNewEntityInstance<ForumPostReactionServerEntity>(COMMUNITY_ENTITY_NAMES.ForumPostReactions, mutedUser,
       )!;
       mutedReaction.PostID = ROOT_POST_1_ID;
@@ -1983,11 +2237,61 @@ describe('@mj-biz-apps/community-core-entities-server Slice 1 Server BaseEntity 
 
       assert.equal(await mutedReaction.Save(), false);
       assert.match(mutedReaction.LatestResult?.CompleteMessage ?? '', /Muted/);
+
+      // Non-moderator spoofing another user's reaction is rejected
+      const spoofedReaction = provider.createNewEntityInstance<ForumPostReactionServerEntity>(
+        COMMUNITY_ENTITY_NAMES.ForumPostReactions,
+        user1,
+      )!;
+      spoofedReaction.PostID = ROOT_POST_1_ID;
+      spoofedReaction.UserID = USER_2_ID;
+      spoofedReaction.ReactionKind = 'Upvote';
+      assert.equal(await spoofedReaction.Save(), false);
+      assert.match(spoofedReaction.LatestResult?.CompleteMessage ?? '', /Ownership mismatch/);
+
+      // Moderator CAN act on behalf of another active member and resolves target member's role weight
+      const modOnBehalf = provider.createNewEntityInstance<ForumPostReactionServerEntity>(
+        COMMUNITY_ENTITY_NAMES.ForumPostReactions,
+        modUser,
+      )!;
+      modOnBehalf.PostID = ROOT_POST_1_ID;
+      modOnBehalf.UserID = USER_2_ID;
+      modOnBehalf.ReactionKind = 'Helpful';
+      assert.equal(await modOnBehalf.Save(), true);
+      assert.equal(modOnBehalf.Weight, 1.25);
+
+      // Observer role gets Weight = 0
+      const observerReaction = provider.createNewEntityInstance<ForumPostReactionServerEntity>(
+        COMMUNITY_ENTITY_NAMES.ForumPostReactions,
+        observerUser,
+      )!;
+      observerReaction.PostID = ROOT_POST_1_ID;
+      observerReaction.UserID = observerUser.ID;
+      observerReaction.ReactionKind = 'Upvote';
+      assert.equal(await observerReaction.Save(), true);
+      assert.equal(observerReaction.Weight, 0);
+
+      // PrivateForum non-member rejected
+      const privatePostId = '88888888-8888-4888-8888-888888888899';
+      db.posts.push({
+        ...db.posts[0],
+        ID: privatePostId,
+        ForumID: FORUM_PRIVATE_ID,
+      });
+      const privateReaction = provider.createNewEntityInstance<ForumPostReactionServerEntity>(
+        COMMUNITY_ENTITY_NAMES.ForumPostReactions,
+        user1,
+      )!;
+      privateReaction.PostID = privatePostId;
+      privateReaction.UserID = USER_1_ID;
+      privateReaction.ReactionKind = 'Upvote';
+      assert.equal(await privateReaction.Save(), false);
+      assert.match(privateReaction.LatestResult?.CompleteMessage ?? '', /ForumMember/);
     });
   });
 
   describe('5. ForumPostTagServerEntity', () => {
-    it('validates ForumTopicTag.SpaceID matches post Forum.SpaceID and maintains ForumTopicTag.PostCount on Save/Delete', async () => {
+    it('validates ForumTopicTag.SpaceID matches post Forum.SpaceID and maintains ForumTopicTag.PostCount on Save, Update, and Delete', async () => {
       const wrongSpaceTag = provider.createNewEntityInstance<ForumPostTagServerEntity>(COMMUNITY_ENTITY_NAMES.ForumPostTags, user1,
       )!;
       wrongSpaceTag.PostID = ROOT_POST_1_ID;
@@ -1995,6 +2299,30 @@ describe('@mj-biz-apps/community-core-entities-server Slice 1 Server BaseEntity 
 
       assert.equal(await wrongSpaceTag.Save(), false);
       assert.match(wrongSpaceTag.LatestResult?.CompleteMessage ?? '', /SpaceID/i);
+
+      // Invalid/non-existent PostID or TopicTagID rejected
+      const missingTag = provider.createNewEntityInstance<ForumPostTagServerEntity>(
+        COMMUNITY_ENTITY_NAMES.ForumPostTags,
+        user1,
+      )!;
+      missingTag.PostID = ROOT_POST_1_ID;
+      missingTag.TopicTagID = '99999999-9999-4999-8999-999999999999';
+      assert.equal(await missingTag.Save(), false);
+      assert.match(missingTag.LatestResult?.CompleteMessage ?? '', /was not found/i);
+
+      const secondSpace1TagId = '99999999-9999-4999-8999-999999999903';
+      db.topicTags.push({
+        ID: secondSpace1TagId,
+        SpaceID: SPACE_1_ID,
+        ParentTagID: null,
+        TagID: null,
+        Slug: 'compliance',
+        Name: 'Compliance',
+        Description: null,
+        ColorHex: null,
+        IsOfficial: true,
+        PostCount: 0,
+      });
 
       const validTag1 = provider.createNewEntityInstance<ForumPostTagServerEntity>(COMMUNITY_ENTITY_NAMES.ForumPostTags, user1,
       )!;
@@ -2010,8 +2338,20 @@ describe('@mj-biz-apps/community-core-entities-server Slice 1 Server BaseEntity 
       assert.equal(await validTag2.Save(), true);
       assert.equal(db.topicTags.find((t) => UUIDsEqual(t.ID, TAG_SPACE_1_ID))!.PostCount, 2);
 
-      assert.equal(await validTag1.Delete(), true);
+      // Re-point validTag2 to secondSpace1TagId -> both old and new tag PostCounts stay accurate
+      const loadedTag2 = await provider.createEntityInstance<ForumPostTagServerEntity>(
+        COMMUNITY_ENTITY_NAMES.ForumPostTags,
+        CompositeKey.FromID(validTag2.ID),
+        user1,
+      );
+      assert.ok(loadedTag2);
+      loadedTag2.TopicTagID = secondSpace1TagId;
+      assert.equal(await loadedTag2.Save(), true);
       assert.equal(db.topicTags.find((t) => UUIDsEqual(t.ID, TAG_SPACE_1_ID))!.PostCount, 1);
+      assert.equal(db.topicTags.find((t) => UUIDsEqual(t.ID, secondSpace1TagId))!.PostCount, 1);
+
+      assert.equal(await validTag1.Delete(), true);
+      assert.equal(db.topicTags.find((t) => UUIDsEqual(t.ID, TAG_SPACE_1_ID))!.PostCount, 0);
     });
   });
 });

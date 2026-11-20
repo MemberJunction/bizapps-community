@@ -27,13 +27,15 @@
 <p align="center">
   <a href="#why-community">Why</a> &middot;
   <a href="#four-ideas">Four ideas</a> &middot;
+  <a href="#feature-showcase">Showcase</a> &middot;
   <a href="#built-for">Built for</a> &middot;
   <a href="#features">Features</a> &middot;
   <a href="#how-it-works">How it works</a> &middot;
   <a href="#extend-it">Extend it</a> &middot;
   <a href="#quality--verification">Quality</a> &middot;
   <a href="#roadmap">Roadmap</a> &middot;
-  <a href="#documentation">Docs</a>
+  <a href="docs/COMMUNITY_GUIDE.md">Feature Guide</a> &middot;
+  <a href="scripts/world/README.md">ARCH-WORLD</a>
 </p>
 
 ---
@@ -72,6 +74,32 @@ flowchart LR
    In legacy forums, high-energy discussions die inside a thread. Because **Community** is built directly on [**BizApps Collaboration**](https://github.com/MemberJunction/bizapps-collaboration), any forum thread can **graduate into a working Collaboration Space** (a task force, committee, or cohort) in one click—automatically inviting the thread's contributors as `SpaceMember` seats, mounting shared attachments into the Space Library (`SpaceItem`), and seeding initial `BizApps Tasks`.
 4. **Your inbox and your AI share the same context.**
    Members who live in email get a **personalized daily or weekly brief** ranked by their profile, tags, and peer affinity—with **zero-login reply-by-email** (`Reply-To: reply+<token>`). Meanwhile, every approved post and synthesis flows into `MJ: Content Item Chunks` and your organizational Canon (`MJ: Graph Concepts`), strictly bounded by `fnCollaborationAccess(@UserID)` and `agentMayQuote`.
+
+---
+
+## Feature Showcase
+
+Captured directly from the compiled Angular 21 `CommunityHubResource` running against the **American Guild of Practicing Architects (`ARCH-WORLD`)** showcase dataset with `0` console/page errors and `0` WCAG 2.1 AA violations. See the [**Feature & Architecture Showcase Guide (`docs/COMMUNITY_GUIDE.md`)**](docs/COMMUNITY_GUIDE.md) for deep architectural walkthroughs and Mermaid sequence diagrams.
+
+### 1. Knowledge Stream & Hybrid Semantic Ask-First Deflection
+![Knowledge Stream Overview and Ask-First Semantic Deflection Rail](docs/screenshots/01-knowledge-stream-overview.png)
+*3-column Knowledge Stream with dynamic Spaces & Topic Tags on the left, multi-turn discussions in the center, and real-time hybrid semantic Ask-First deflection (`0.65` cosine + `0.35` lexical/tag + epistemic boost) on the right.*
+
+### 2. Verified Q&A Canon Workbench (Epistemic Grading)
+![Verified Q&A Canon Workbench with Epistemic Grading Badges](docs/screenshots/02-qa-canon-workbench.png)
+*Dual human + AI epistemic answer grading (`Canon Verified` >= 0.85 vs. `Partially Outdated`), confidence rubric bars, single-accepted-answer server enforcement, and 1-click Canon promotion.*
+
+### 3. Living Thread Synthesis & Idempotent 1-Click Graduation
+![Thread Detail Drawer showing Living Thread Synthesis and 1-Click Working Space Graduation](docs/screenshots/03-living-thread-synthesis-and-graduation.png)
+*Slide-over Thread Detail Drawer distilling multi-turn debates into structured Key Takeaways, Open Questions, and `[n]` Contributor Citations, paired with idempotent 1-click graduation into a BizApps Collaboration Working Space.*
+
+### 4. Embedding-Personalized Digest & HMAC Reply-by-Email
+![Embedding-Personalized Digest Drawer with MJ Comms Test Driver and HMAC Reply-by-Email Token](docs/screenshots/04-personalized-digest-and-reply-by-email.png)
+*Per-member embedding-ranked brief with `"Why this was picked for you"` explanations, `UserInfoEngine.Instance` cadence persistence, MJ `CommunicationEngine` dispatch (`CommunityTestCommunicationProvider`), and RFC 5321 compact HMAC-SHA256 `Reply-To` tokens.*
+
+### 5. Quadratic Ideation Wallet ($\text{Cost} = \text{Votes}^2$)
+![Quadratic Ideation Wallet with Voice-Credit Allocations](docs/screenshots/05-quadratic-ideation-wallet.png)
+*100-point campaign-isolated priority wallets enforcing $\text{Cost} = \text{Votes}^2$ with refund-on-revote atomic `TransactionGroup` persistence.*
 
 ---
 
@@ -214,7 +242,8 @@ See [**Zero-CAC Higher Logic Wedge Specification (`.mj/specs/bizapps-community-z
 - **`CommunityHubResource`** (`@mj-biz-apps/community-ng`): the `Application.DefaultNavItems` `CommunityHubResource` driver — `@RegisterClass(BaseResourceComponent, 'CommunityHubResource')`, `OnPush`, wrapped in `<mj-page-layout>`, `NotifyLoadStarted` deferred out of `ngOnInit` via `queueMicrotask` — hosting the 4 Community Hub tabs (Knowledge Stream, Q&A Canon Workbench, Quadratic Ideation Wallet, Living Co-Authoring & Interactive Mini-Apps), the Ask-First and Quadratic Voting widgets, and a Digest PDF export button that calls `Community.ExportDigestPDF` via `GraphQLActionClient` (never `window.print()`).
 - **Dual Form Registration Parity**: all 25 entities retain an active, uncommented `@RegisterClass(BaseFormComponent, '<EntityName>')` class, verified by reading the compiled source (the real `@memberjunction/ng-shared` dependency chain needs an Angular-CLI bundler to resolve, which this repo's lightweight `node --test` runner does not have).
 - **`--mj-*` design tokens**: zero raw `#hex` / `rgb()` / `rgba()` / `hsl()` color literals across every `.ts`/`.html`/`.css` file in `@mj-biz-apps/community-ng` and `-ng-widgets` (outside CodeGen's own `generated/` output), enforced by a regex scan.
-- **Headless Playwright + axe-core WCAG 2.1 AA** (`e2e/community-hub.spec.mjs`, `pnpm run test:e2e`): drives a real Chromium browser through all 4 Hub tabs, keyboard navigation (arrow keys + Enter), the Ask-First widget, the Quadratic Voting slider (asserting `Cost = Votes^2` against the real `CommunityRules` math, not a re-implementation), and the Digest export button — asserting `0` page errors, `0` console errors, and `0` critical/serious WCAG 2.1 AA violations, with the report and a screenshot saved under `e2e/reports/` and `e2e/screenshots/`.
+- **Headless Playwright + axe-core WCAG 2.1 AA** (`e2e/community-hub.spec.mjs`, `pnpm run test:e2e`): drives a real Chromium browser through all 4 Hub tabs, keyboard navigation (arrow keys + Enter), the Ask-First widget, the Quadratic Voting slider (asserting `Cost = Votes^2` against the real `CommunityRules` math, not a re-implementation), the Digest export button, and the `ARCH-WORLD` 1440x900 marketing screenshot suite (`docs/screenshots/01-knowledge-stream-overview.png` through `05-quadratic-ideation-wallet.png`) — asserting `0` page errors, `0` console errors, and `0` critical/serious WCAG 2.1 AA violations, with reports and screenshots saved under `e2e/reports/`, `e2e/screenshots/`, and `docs/screenshots/`.
+- **Architect Association World Model (`ARCH-WORLD`, `scripts/world/`)**: persistent deterministic integration and smoke-test dataset modeled after `ORD-WORLD` ([`scripts/world/README.md`](scripts/world/README.md)). Seeds **26 AGPA members** across 9 personas, **4 Community Spaces** (including a `Private`/`Team`-band Principals council), **13 Forums** across all **6 `ForumType` codes**, **22 Topic Tags**, **68 Posts & multi-turn threads** across all **13 `PostType` codes**, and **25 Quadratic Ideation allocations** via idempotent natural-key loading (`LoadArchitectAssociationWorld`) and a deliberate no-op `TeardownArchitectAssociationWorld` so consecutive test cycles and live smoke inspections run repeatably without destructive cleanup.
 - **OpenApp v3 5-pillar readiness** (`scripts/openapp-readiness.mjs`, `pnpm run report:openapp-readiness`): `formParity`, `navParity`, `designTokens`, `seedDensity` (`scripts/seed-world.*`, `>= 25` records across 3 Collaboration Spaces), and the Playwright browser-smoke result above, consolidated into `e2e/reports/openapp-readiness-report.json`.
 - **Seed & rehearsal workflows**: `scripts/seed-world.sql` / `.pg.sql` / `.mjs` seed the 3 demo Collaboration Spaces (Customer Community Portal, Partner & ISV Enablement Network, Internal Engineering Guild) across every `ForumType` and `PostType`; `scripts/pg-finalize.mjs` patches the PostgreSQL migration conversion's known gaps (skipped triggers, boolean-literal casts).
 - **Zero downstream/sibling name leaks**: `node scripts/check-downstream-names.mjs` scans `packages/`, `metadata/`, and `migrations/` for a hardcoded `voting`/`issues`/`credentialing`/`sonar`/`accounting`-style name and exits non-zero if it finds one.
@@ -234,6 +263,8 @@ See [**Zero-CAC Higher Logic Wedge Specification (`.mj/specs/bizapps-community-z
 
 ## Documentation
 
+- [**Feature & Architecture Showcase Guide (`docs/COMMUNITY_GUIDE.md`)**](docs/COMMUNITY_GUIDE.md) — Comprehensive walkthrough of Personalized Digests, HMAC Reply-by-Email, Hybrid Ask-First Deflection, Epistemic Q&A Canon, Living Thread Synthesis, 1-Click Graduation, Quadratic Voting, and `ARCH-WORLD` quickstart commands with embedded screenshots and Mermaid diagrams.
+- [**Architect Association `ARCH-WORLD` World Model (`scripts/world/README.md`)**](scripts/world/README.md) — Entity graph, scale summary, natural-key idempotency contract, and persistent no-op teardown design for the American Guild of Practicing Architects (`ARCH-WORLD`) integration dataset.
 - [**Master Architecture & Full IsA Schema Plan (`plans/plan.md`)**](plans/plan.md) — Complete SQL DDL, Mermaid ERDs, access TVF, and 7-Wave implementation blueprint.
 - [**ForumType, PostType & Peer SpaceType Extensibility Plan (`docs/EXTENSIBILITY_PLAN.md`)**](docs/EXTENSIBILITY_PLAN.md) — Deep dive into `IsA` hard-FK subtype tables, 4-tier configuration cascade (`ForumOverridable`), per-forum roles, MJ Docs/Slides/Sheets integration, Interactive Component Artifacts, and peer Collaboration `SpaceType` interop.
 - [**3 Divergent Interactive UX Concepts (`docs/ux/community-3-divergent-ux-concepts.html`)**](docs/ux/community-3-divergent-ux-concepts.html) — Interactive HTML showcase comparing 3 divergent UX philosophies (*Calm Knowledge Stream*, *Adaptive Bento + Split Workbench*, and *AI Concierge Portal + Canon Atlas*) uniting Community, Committees, Core Collaboration, and Secure Messaging.

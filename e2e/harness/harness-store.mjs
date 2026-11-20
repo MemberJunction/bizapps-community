@@ -1,11 +1,17 @@
 import { randomUUID } from 'node:crypto';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import {
   COMMUNITY_ACTION_IDS,
 } from '../../packages/Core/dist/index.js';
+import {
+  DEFAULT_ARCH_WORLD_SQLITE_PATH,
+  LoadArchWorldStoreFromSqlite,
+  QueryArchWorldSqliteCounts,
+  SeedArchWorldSqliteSync,
+} from '../../scripts/world/arch-world-loader.mjs';
 import {
   BuildCommunityDigestPDF,
   ClearCompactReplyTokenRegistry,
@@ -563,6 +569,10 @@ function buildInitialState() {
     gqlCalls: [],
     actionCalls: [],
   };
+  stateObj.worldMode = 'default';
+  stateObj.currentUserId = C.HARNESS_USER_ID;
+  stateObj.replyPostTypeIds = new Set([C.PT_REPLY]);
+  stateObj.askFirstCandidateTypeIds = new Set([C.PT_ANSWER, C.PT_COLLAB_DOC, C.PT_DISCUSSION]);
   stateObj.posts = stateObj.posts.map((p) => ({
     VisibilityBand: 'Shared',
     IsLocked: false,
@@ -572,6 +582,137 @@ function buildInitialState() {
     ...p,
   }));
   return stateObj;
+}
+
+const ARCH_KENJI_USER_ID = 'A7C40400-4E12-4B8F-9A10-000000000001';
+
+function buildArchWorldState(options = {}) {
+  const sqliteFilePath =
+    options.sqliteFilePath ?? process.env.ARCH_WORLD_SQLITE_FILE ?? DEFAULT_ARCH_WORLD_SQLITE_PATH;
+  let persistedStore = existsSync(sqliteFilePath) ? LoadArchWorldStoreFromSqlite(sqliteFilePath) : null;
+  if (!persistedStore || persistedStore.spaces.size < 4 || persistedStore.users.size < 26) {
+    SeedArchWorldSqliteSync({ sqliteFilePath });
+    persistedStore = LoadArchWorldStoreFromSqlite(sqliteFilePath);
+  }
+  if (!persistedStore) {
+    throw new Error(`Failed to hydrate ARCH-WORLD state from persisted SQLite DB at ${sqliteFilePath}`);
+  }
+  const dbCounts = QueryArchWorldSqliteCounts(sqliteFilePath);
+  const base = buildInitialState();
+
+  const members = Array.from(persistedStore.users.values());
+  const spaces = Array.from(persistedStore.spaces.values());
+  const communitySpaces = Array.from(persistedStore.communitySpaces.values());
+  const forums = Array.from(persistedStore.forums.values());
+  const postTypes = Array.from(persistedStore.postTypes.values());
+  const topicTags = Array.from(persistedStore.topicTags.values());
+  const postTags = Array.from(persistedStore.postTags.values());
+  const postReactions = Array.from(persistedStore.postReactions.values());
+  const ideaCampaigns = Array.from(persistedStore.ideaCampaigns.values());
+  const posts = Array.from(persistedStore.posts.values());
+  const answerPosts = Array.from(persistedStore.answerPosts.values());
+  const ideaPosts = Array.from(persistedStore.ideaPosts.values());
+  const ideaAllocations = Array.from(persistedStore.ideaAllocations.values());
+  const interactivePosts = Array.from(persistedStore.interactivePosts.values());
+  const questionPosts = Array.from(persistedStore.questionPosts.values());
+  const memberProfiles = Array.from(persistedStore.memberProfiles.values());
+  const spaceRoleTypes = Array.from(persistedStore.spaceRoleTypes.values());
+  const spaceMembers = Array.from(persistedStore.spaceMembers.values());
+  const forumRoleTypes = Array.from(persistedStore.forumRoleTypes.values());
+  const forumMembers = Array.from(persistedStore.forumMembers.values());
+
+  const postTypeCodeById = new Map(postTypes.map((pt) => [pt.ID.toLowerCase(), pt.Code]));
+  const userNameById = new Map(members.map((m) => [m.ID.toLowerCase(), m.Name]));
+  const questionTitleById = new Map(
+    posts
+      .filter((p) => postTypeCodeById.get(String(p.PostTypeID).toLowerCase()) === 'question' && p.Title)
+      .map((p) => [p.ID.toLowerCase(), p.Title]),
+  );
+  const answerQuestionTitleById = new Map(
+    answerPosts.map((a) => [
+      a.ID.toLowerCase(),
+      questionTitleById.get(String(a.QuestionPostID).toLowerCase()) ?? 'Community Answer',
+    ]),
+  );
+  const tagCounts = new Map();
+  for (const pt of postTags) {
+    const key = String(pt.TopicTagID).toLowerCase();
+    tagCounts.set(key, (tagCounts.get(key) ?? 0) + 1);
+  }
+
+  return {
+    ...base,
+    worldMode: 'arch',
+    archWorldSource: 'sqlite',
+    archWorldSqlitePath: sqliteFilePath,
+    archWorldDbCounts: dbCounts,
+    currentUserId: ARCH_KENJI_USER_ID,
+    replyPostTypeIds: new Set([
+      'C8A17200-4E12-4B8F-9A10-100000000002', // reply
+      'C8A17200-4E12-4B8F-9A10-100000000003', // comment
+    ]),
+    askFirstCandidateTypeIds: new Set([
+      'C8A17200-4E12-4B8F-9A10-100000000005', // answer
+      'C8A17200-4E12-4B8F-9A10-100000000008', // collaborative-doc
+      'C8A17200-4E12-4B8F-9A10-100000000001', // discussion
+    ]),
+    users: members.map((m) => ({ ID: m.ID, Name: m.Name, Email: m.Email })),
+    spaces: spaces.map((s) => ({
+      ID: s.ID,
+      Name: s.Name,
+      Description: s.Description,
+      ParentID: s.ParentID,
+      InheritsMembership: s.InheritsMembership,
+      ClosedAt: s.ClosedAt,
+    })),
+    communitySpaces: communitySpaces.map((cs) => ({
+      ID: cs.ID,
+      Slug: cs.Slug,
+      CommunityKind: cs.CommunityKind,
+    })),
+    forums: forums.map((f) => ({ ...f })),
+    postTypes: postTypes.map((pt) => ({ ...pt })),
+    topicTags: topicTags.map((t) => ({
+      ...t,
+      PostCount: tagCounts.get(t.ID.toLowerCase()) ?? 1,
+    })),
+    postTags: postTags.map((pt) => ({ ...pt })),
+    reactions: postReactions.map((r) => ({ ...r, Weight: r.Weight ?? 1 })),
+    campaigns: ideaCampaigns.map((c) => ({ ...c })),
+    posts: posts.map((p) => ({
+      ...p,
+      Title: p.Title ?? answerQuestionTitleById.get(p.ID.toLowerCase()) ?? null,
+      AuthorUser: userNameById.get(String(p.AuthorUserID).toLowerCase()) ?? 'AGPA Member',
+      __mj_CreatedAt: p.CreatedAt ?? '2026-11-18T10:00:00.000Z',
+    })),
+    answers: answerPosts.map((a) => ({
+      ...a,
+      Title: answerQuestionTitleById.get(a.ID.toLowerCase()) ?? 'AGPA Canon Answer',
+    })),
+    ideas: ideaPosts.map((i) => ({ ...i })),
+    allocations: ideaAllocations.map((a) => ({ ...a })),
+    artifacts: posts
+      .filter((p) =>
+        ['collaborative-doc', 'collaborative-sheet', 'collaborative-deck'].includes(
+          postTypeCodeById.get(String(p.PostTypeID).toLowerCase()) ?? '',
+        ),
+      )
+      .map((p) => ({ ID: p.ID })),
+    forms: posts
+      .filter((p) => postTypeCodeById.get(String(p.PostTypeID).toLowerCase()) === 'poll-or-form')
+      .map((p) => ({ ID: p.ID })),
+    interactivePosts: interactivePosts.map((ip) => ({ ...ip })),
+    questions: questionPosts.map((q) => ({ ...q })),
+    communityMemberProfiles: memberProfiles.map((mp) => ({ ...mp })),
+    spaceRoles: spaceRoleTypes.map((sr) => ({ ...sr })),
+    spaceMembers: spaceMembers.map((sm) => ({ ...sm })),
+    forumRoleTypes: forumRoleTypes.map((fr) => ({ ...fr })),
+    forumMembers: forumMembers.map((fm) => ({ ...fm })),
+    communicationLogs: [],
+    userSettings: [],
+    gqlCalls: [],
+    actionCalls: [],
+  };
 }
 
 function parseInIds(extraFilter, columnName = 'ID') {
@@ -601,12 +742,15 @@ export function createHarnessStore() {
     disableCommunicationEngineProviders: false,
   };
 
-  const HARNESS_SERVER_USER = new UserInfo(undefined, {
-    ID: C.HARNESS_USER_ID,
-    Name: 'E2E Harness Member',
-    Email: 'member@bizapps-community.local',
-    UserRoles: [],
-  });
+  function getActiveUser() {
+    const row = state.users.find((u) => u.ID.toLowerCase() === state.currentUserId.toLowerCase());
+    return new UserInfo(undefined, {
+      ID: row?.ID ?? C.HARNESS_USER_ID,
+      Name: row?.Name ?? 'E2E Harness Member',
+      Email: row?.Email ?? 'member@bizapps-community.local',
+      UserRoles: [],
+    });
+  }
 
   function recomputePostRollups(postId) {
     if (!postId) return;
@@ -614,7 +758,7 @@ export function createHarnessStore() {
     const rootPost = state.posts.find((p) => p.ID.toLowerCase() === key);
     if (!rootPost) return;
     rootPost.ReplyCount = state.posts.filter(
-      (p) => p.RootPostID && p.RootPostID.toLowerCase() === key && p.PostTypeID === C.PT_REPLY,
+      (p) => p.RootPostID && p.RootPostID.toLowerCase() === key && state.replyPostTypeIds.has(p.PostTypeID),
     ).length;
     rootPost.ReactionScore = state.reactions
       .filter((r) => r.PostID.toLowerCase() === key)
@@ -753,12 +897,12 @@ export function createHarnessStore() {
       const idx = state.userSettings.findIndex(
         (s) =>
           s.ID.toLowerCase() === String(record.ID).toLowerCase() ||
-          (s.UserID.toLowerCase() === String(record.UserID ?? C.HARNESS_USER_ID).toLowerCase() &&
+          (s.UserID.toLowerCase() === String(record.UserID ?? state.currentUserId).toLowerCase() &&
             s.Setting === record.Setting),
       );
       const row = {
         ID: record.ID || randomUUID(),
-        UserID: record.UserID || C.HARNESS_USER_ID,
+        UserID: record.UserID || state.currentUserId,
         Setting: String(record.Setting ?? ''),
         Value: String(record.Value ?? ''),
       };
@@ -847,7 +991,9 @@ export function createHarnessStore() {
   function createStoreProvider() {
     return {
       ProviderType: ProviderType.Network,
-      CurrentUser: HARNESS_SERVER_USER,
+      get CurrentUser() {
+        return getActiveUser();
+      },
       Entities: [],
       EntityByName: () => undefined,
       async RunView(params) {
@@ -885,6 +1031,21 @@ export function createHarnessStore() {
       };
     },
 
+    loadArchWorld(options = {}) {
+      CommunityTestCommunicationProvider.ClearSentMessages();
+      ClearCompactReplyTokenRegistry();
+      state = buildArchWorldState(options);
+      faults = {
+        failSaveEntities: new Set(),
+        disableCommunicationEngineProviders: false,
+      };
+      return {
+        source: state.archWorldSource,
+        sqlitePath: state.archWorldSqlitePath,
+        dbCounts: state.archWorldDbCounts,
+      };
+    },
+
     setFaults(nextFaults = {}) {
       if (Array.isArray(nextFaults.failSaveEntities)) {
         faults.failSaveEntities = new Set(nextFaults.failSaveEntities);
@@ -904,6 +1065,9 @@ export function createHarnessStore() {
 
     getDebugSnapshot() {
       return {
+        worldMode: state.worldMode,
+        archWorldSource: state.archWorldSource ?? null,
+        archWorldDbCounts: state.archWorldDbCounts ?? null,
         spaces: state.spaces,
         communitySpaces: state.communitySpaces,
         forums: state.forums,
@@ -935,14 +1099,14 @@ export function createHarnessStore() {
 
     setUserSetting(key, value) {
       const idx = state.userSettings.findIndex(
-        (s) => s.UserID.toLowerCase() === C.HARNESS_USER_ID.toLowerCase() && s.Setting === key,
+        (s) => s.UserID.toLowerCase() === state.currentUserId.toLowerCase() && s.Setting === key,
       );
       if (idx >= 0) {
         state.userSettings[idx] = { ...state.userSettings[idx], Value: value };
       } else {
         state.userSettings.push({
           ID: randomUUID(),
-          UserID: C.HARNESS_USER_ID,
+          UserID: state.currentUserId,
           Setting: key,
           Value: value,
         });
@@ -974,7 +1138,7 @@ export function createHarnessStore() {
             rows = rows.filter((f) => f.ID.toLowerCase() === id.toLowerCase());
           } else if (spaceId) {
             rows = rows.filter((f) => f.SpaceID.toLowerCase() === spaceId.toLowerCase());
-          } else {
+          } else if (state.worldMode === 'default') {
             rows = rows.filter((f) => f.SpaceID.toLowerCase() !== C.SPACE_2.toLowerCase());
           }
           if (status) {
@@ -987,7 +1151,9 @@ export function createHarnessStore() {
           if (id) {
             return state.spaces.filter((s) => s.ID.toLowerCase() === id.toLowerCase());
           }
-          return state.spaces.filter((s) => s.ID.toLowerCase() !== C.SPACE_2.toLowerCase());
+          return state.worldMode === 'default'
+            ? state.spaces.filter((s) => s.ID.toLowerCase() !== C.SPACE_2.toLowerCase())
+            : state.spaces;
         }
         case 'MJ_BizApps_Collaboration: Space Role Types':
           return state.spaceRoles;
@@ -1038,7 +1204,9 @@ export function createHarnessStore() {
           if (id) {
             return state.communitySpaces.filter((s) => s.ID.toLowerCase() === id.toLowerCase());
           }
-          return state.communitySpaces.filter((s) => s.ID.toLowerCase() !== C.SPACE_2.toLowerCase());
+          return state.worldMode === 'default'
+            ? state.communitySpaces.filter((s) => s.ID.toLowerCase() !== C.SPACE_2.toLowerCase())
+            : state.communitySpaces;
         }
         case 'MJ_BizApps_Community: Post Types': {
           const code = parseEqFilter(extraFilter, 'Code');
@@ -1056,7 +1224,9 @@ export function createHarnessStore() {
           if (spaceId) {
             return state.topicTags.filter((t) => t.SpaceID.toLowerCase() === spaceId.toLowerCase());
           }
-          return state.topicTags.filter((t) => t.SpaceID.toLowerCase() !== C.SPACE_2.toLowerCase());
+          return state.worldMode === 'default'
+            ? state.topicTags.filter((t) => t.SpaceID.toLowerCase() !== C.SPACE_2.toLowerCase())
+            : state.topicTags;
         }
         case 'MJ_BizApps_Community: Forum Post Tags': {
           const postIds = parseInIds(extraFilter, 'PostID');
@@ -1089,7 +1259,7 @@ export function createHarnessStore() {
             rows = rows.filter((a) => a.QuestionPostID && questionIds.has(a.QuestionPostID.toLowerCase()));
           } else if (ids) {
             rows = rows.filter((a) => ids.has(a.ID.toLowerCase()));
-          } else {
+          } else if (state.worldMode === 'default') {
             rows = rows.filter((a) => !OTHER_SPACE_POST_ID_SET.has(a.ID.toLowerCase()));
           }
           if (extraFilter.includes('IsAcceptedByAuthor = 1')) {
@@ -1099,46 +1269,69 @@ export function createHarnessStore() {
         }
         case 'MJ_BizApps_Community: Forum Idea Campaigns': {
           const campaignIds = parseInIds(extraFilter, 'ID');
-          return campaignIds
-            ? state.campaigns.filter((c) => campaignIds.has(c.ID.toLowerCase()))
-            : state.campaigns.filter((c) => c.ID !== C.FORUM_OTHER_SPACE);
+          if (campaignIds) {
+            return state.campaigns.filter((c) => campaignIds.has(c.ID.toLowerCase()));
+          }
+          return state.worldMode === 'default'
+            ? state.campaigns.filter((c) => c.ID !== C.FORUM_OTHER_SPACE)
+            : state.campaigns;
         }
         case 'MJ_BizApps_Community: Forum Idea Posts': {
           const ids = parseInIds(extraFilter, 'ID');
-          return ids
-            ? state.ideas.filter((i) => ids.has(i.ID.toLowerCase()))
-            : state.ideas.filter((i) => !OTHER_SPACE_POST_ID_SET.has(i.ID.toLowerCase()));
+          if (ids) {
+            return state.ideas.filter((i) => ids.has(i.ID.toLowerCase()));
+          }
+          return state.worldMode === 'default'
+            ? state.ideas.filter((i) => !OTHER_SPACE_POST_ID_SET.has(i.ID.toLowerCase()))
+            : state.ideas;
         }
         case 'MJ_BizApps_Community: Forum Artifact Posts': {
           const ids = parseInIds(extraFilter, 'ID');
-          return ids
-            ? state.artifacts.filter((a) => ids.has(a.ID.toLowerCase()))
-            : state.artifacts.filter((a) => !OTHER_SPACE_POST_ID_SET.has(a.ID.toLowerCase()));
+          if (ids) {
+            return state.artifacts.filter((a) => ids.has(a.ID.toLowerCase()));
+          }
+          return state.worldMode === 'default'
+            ? state.artifacts.filter((a) => !OTHER_SPACE_POST_ID_SET.has(a.ID.toLowerCase()))
+            : state.artifacts;
         }
         case 'MJ_BizApps_Community: Forum Form Posts': {
           const ids = parseInIds(extraFilter, 'ID');
-          return ids
-            ? state.forms.filter((f) => ids.has(f.ID.toLowerCase()))
-            : state.forms.filter((f) => !OTHER_SPACE_POST_ID_SET.has(f.ID.toLowerCase()));
+          if (ids) {
+            return state.forms.filter((f) => ids.has(f.ID.toLowerCase()));
+          }
+          return state.worldMode === 'default'
+            ? state.forms.filter((f) => !OTHER_SPACE_POST_ID_SET.has(f.ID.toLowerCase()))
+            : state.forms;
         }
         case 'MJ_BizApps_Community: Forum Interactive Posts': {
           const ids = parseInIds(extraFilter, 'ID');
-          return ids
-            ? state.interactivePosts.filter((p) => ids.has(p.ID.toLowerCase()))
-            : state.interactivePosts.filter((p) => !OTHER_SPACE_POST_ID_SET.has(p.ID.toLowerCase()));
+          if (ids) {
+            return state.interactivePosts.filter((p) => ids.has(p.ID.toLowerCase()));
+          }
+          return state.worldMode === 'default'
+            ? state.interactivePosts.filter((p) => !OTHER_SPACE_POST_ID_SET.has(p.ID.toLowerCase()))
+            : state.interactivePosts;
         }
         case 'MJ_BizApps_Community: Forum Question Posts': {
           const ids = parseInIds(extraFilter, 'ID');
-          return ids
-            ? state.questions.filter((q) => ids.has(q.ID.toLowerCase()))
-            : state.questions.filter((q) => !OTHER_SPACE_POST_ID_SET.has(q.ID.toLowerCase()));
+          if (ids) {
+            return state.questions.filter((q) => ids.has(q.ID.toLowerCase()));
+          }
+          return state.worldMode === 'default'
+            ? state.questions.filter((q) => !OTHER_SPACE_POST_ID_SET.has(q.ID.toLowerCase()))
+            : state.questions;
         }
         case 'MJ_BizApps_Community: Forum Idea Allocations': {
+          let rows = state.allocations;
           const ideaId = parseEqFilter(extraFilter, 'IdeaPostID');
+          const userId = parseEqFilter(extraFilter, 'UserID');
           if (ideaId) {
-            return state.allocations.filter((a) => a.IdeaPostID.toLowerCase() === ideaId.toLowerCase());
+            rows = rows.filter((a) => a.IdeaPostID.toLowerCase() === ideaId.toLowerCase());
           }
-          return state.allocations;
+          if (userId) {
+            rows = rows.filter((a) => a.UserID.toLowerCase() === userId.toLowerCase());
+          }
+          return rows;
         }
         case 'MJ_BizApps_Community: Forum Posts': {
           let rows = state.posts;
@@ -1152,7 +1345,7 @@ export function createHarnessStore() {
 
           if (forumIds) {
             rows = rows.filter((p) => forumIds.has(String(p.ForumID).toLowerCase()));
-          } else if (!ids && !idEq && !rootIds && !rootEq) {
+          } else if (!ids && !idEq && !rootIds && !rootEq && state.worldMode === 'default') {
             rows = rows.filter((p) => !OTHER_SPACE_POST_ID_SET.has(p.ID.toLowerCase()));
           }
 
@@ -1174,7 +1367,7 @@ export function createHarnessStore() {
               (p) =>
                 p.RootPostID &&
                 rootIds.has(p.RootPostID.toLowerCase()) &&
-                p.PostTypeID === C.PT_REPLY &&
+                state.replyPostTypeIds.has(p.PostTypeID) &&
                 ['Published', 'Answered', 'Resolved'].includes(p.Status),
             );
           }
@@ -1183,11 +1376,14 @@ export function createHarnessStore() {
               (p) =>
                 p.RootPostID &&
                 p.RootPostID.toLowerCase() === rootEq.toLowerCase() &&
-                p.PostTypeID === C.PT_REPLY &&
+                state.replyPostTypeIds.has(p.PostTypeID) &&
                 ['Published', 'Answered', 'Resolved'].includes(p.Status),
             );
           }
           if (extraFilter.includes('RootPostID IS NULL')) {
+            if (state.worldMode === 'arch') {
+              return rows.filter((p) => p.RootPostID == null);
+            }
             return rows.filter(
               (p) =>
                 p.RootPostID == null &&
@@ -1443,9 +1639,10 @@ export function createHarnessStore() {
 
         const answerById = new Map(state.answers.map((a) => [a.ID.toLowerCase(), a]));
         const tagNamesById = new Map(state.topicTags.map((t) => [t.ID.toLowerCase(), t.Name]));
+        const userNameById = new Map(state.users.map((u) => [u.ID.toLowerCase(), u.Name]));
         const candidates = state.posts
-          .filter((p) => (!allowedSet || allowedSet.has(String(p.ForumID).toLowerCase())) && p.PostTypeID !== C.PT_REPLY)
-          .filter((p) => p.PostTypeID === C.PT_ANSWER || p.PostTypeID === C.PT_COLLAB_DOC || p.PostTypeID === C.PT_DISCUSSION)
+          .filter((p) => (!allowedSet || allowedSet.has(String(p.ForumID).toLowerCase())) && !state.replyPostTypeIds.has(p.PostTypeID))
+          .filter((p) => state.askFirstCandidateTypeIds.has(p.PostTypeID))
           .map((p) => {
             const answerMeta = answerById.get(p.ID.toLowerCase());
             const tags = state.postTags
@@ -1456,7 +1653,7 @@ export function createHarnessStore() {
               postId: p.ID,
               forumSlug: state.forums.find((f) => f.ID.toLowerCase() === p.ForumID.toLowerCase())?.Name ?? p.ForumID,
               title: p.Title ?? 'Community Thread',
-              authorDisplayName: 'E2E Harness Member',
+              authorDisplayName: userNameById.get(String(p.AuthorUserID ?? '').toLowerCase()) ?? 'Community Member',
               bodyMarkdown: p.BodyMarkdown ?? '',
               epistemicStatus: answerMeta?.AIEpistemicStatus ?? null,
               topicTags: tags,
@@ -1535,11 +1732,12 @@ export function createHarnessStore() {
             ResultData: null,
           };
         }
+        const userNameById = new Map(state.users.map((u) => [u.ID.toLowerCase(), u.Name]));
         const replies = state.posts
           .filter((p) => p.RootPostID && p.RootPostID.toLowerCase() === rootPost.ID.toLowerCase())
           .map((r) => ({
             postId: r.ID,
-            authorDisplayName: 'E2E Harness Member',
+            authorDisplayName: userNameById.get(String(r.AuthorUserID ?? '').toLowerCase()) ?? 'Community Member',
             bodyMarkdown: r.BodyMarkdown,
             isAccepted: false,
             isVerified: false,
@@ -1584,7 +1782,7 @@ export function createHarnessStore() {
           };
         }
 
-        const callerUserId = String(getParam('UserID') || C.HARNESS_USER_ID).trim();
+        const callerUserId = String(getParam('UserID') || state.currentUserId).trim();
         const userRow = state.users.find((u) => u.ID.toLowerCase() === callerUserId.toLowerCase());
         const effectiveUser = new UserInfo(undefined, {
           ID: callerUserId,

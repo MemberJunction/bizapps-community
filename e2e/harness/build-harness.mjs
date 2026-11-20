@@ -46,7 +46,11 @@ export function ResolveFontAwesomeRoot() {
  * shipped `@mj-biz-apps/community-ng` components reference `var(--mj-*)` exclusively.
  * FontAwesome icons are loaded via `/fontawesome/css/all.min.css` served from local assets.
  */
-export function BuildCommunityHubHarnessHtml() {
+export function BuildCommunityHubHarnessHtml(world = 'default') {
+  const mainLabel =
+    world === 'arch'
+      ? 'American Guild of Practicing Architects (AGPA) Community'
+      : 'Customer Success Community';
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -106,7 +110,7 @@ export function BuildCommunityHubHarnessHtml() {
 </style>
 </head>
 <body>
-  <main aria-label="Customer Success Community">
+  <main aria-label="${mainLabel}">
     <mjc-community-hub-resource></mjc-community-hub-resource>
   </main>
   <script type="module" src="/harness-bundle.js"></script>
