@@ -1,23 +1,32 @@
 #!/usr/bin/env node
 /**
- * Architect Association World Model (`ARCH-WORLD`) — Authoritative Entity Loader, Durable Store,
- * Cross-Process Persistence & Deterministic SQL/PG Seed Generator.
+ * Architect Association World Model (`ARCH-WORLD`) — Authoritative Entity Loader, Durable
+ * Relational SQLite Store (`node:sqlite` with `PRAGMA foreign_keys = ON`), Cross-Process
+ * Persistence & Deterministic SQL Server / PostgreSQL / SQLite Seed Generator.
  *
  * Supports:
  *  1. Authoritative MJ Entity / Database Provider Mode (`Metadata.GetEntityObject` + `ValidateAsync()` +
- *     `entity.Save()` + `RunView` natural-key lookups across all ServerEntity subclasses).
- *  2. Durable Cross-Process Persistent Backing Store (`.local-storage/arch-world-state.json`, or
- *     `options.persistenceFilePath` / `process.env.ARCH_WORLD_STATE_FILE`) so independent reads and
- *     subsequent processes observe the retained `ARCH-WORLD` state after `TeardownArchitectAssociationWorld()`.
- *  3. Idempotent SQL Server & PostgreSQL seed generation (`BuildArchitectAssociationWorldSql()`), and
- *     optional direct execution against `options.sqlPool` / `options.pgPool`.
+ *     `entity.Save()` + `RunView` natural-key lookups across all ServerEntity subclasses), backed by
+ *     an on-disk relational SQLite database (`.local-storage/arch-world.sqlite` with strict
+ *     `FOREIGN KEY` enforcement) and JSON snapshot (`.local-storage/arch-world-state.json`).
+ *  2. Complete 22-table FK-safe SQL generator (`BuildArchitectAssociationWorldSql(dialect, options)`)
+ *     for `'sqlserver'`, `'postgres'`, and `'sqlite'` (including all 26 `__mj.User` rows, 64
+ *     `SpaceMember` rows, 14 `ForumMember` rows, 26 `CommunityMemberProfile` rows, 10
+ *     `ForumSubscription` rows, all IsA subtype tables, and cyclic-FK-safe `AcceptedAnswerPostID`
+ *     updates), plus live SQL execution (`--apply-db` / `options.sqlPool` / `options.pgPool` /
+ *     `options.sqlExecutor`).
+ *  3. Cross-process verification (`--verify`) reading persisted relational SQLite tables with zero
+ *     shared memory and no re-seeding.
  *
  * Usage:
- *   node scripts/world/arch-world-loader.mjs [--load] [--verify] [--sql] [--pg-sql]
+ *   node scripts/world/arch-world-loader.mjs [--load] [--verify] [--sql] [--pg-sql] [--sqlite-sql]
+ *   node scripts/world/arch-world-loader.mjs --sql-out <path> [--dialect sqlserver|postgres|sqlite]
+ *   node scripts/world/arch-world-loader.mjs --apply-db [--dialect sqlserver|postgres]
  */
 import { existsSync, mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
+import { DatabaseSync } from 'node:sqlite';
 import { fileURLToPath } from 'node:url';
 import {
   ARCH_COMMUNITY_SPACES,
@@ -37,8 +46,17 @@ export const DEFAULT_ARCH_WORLD_PERSISTENCE_PATH = join(
   '.local-storage',
   'arch-world-state.json',
 );
+export const DEFAULT_ARCH_WORLD_SQLITE_PATH = join(
+  REPO_ROOT,
+  '.local-storage',
+  'arch-world.sqlite',
+);
 
 export const ARCH_TEST_ROLE_ID = 'A7C40000-4E12-4B8F-9A10-000000000001';
+export const ARCH_DEFAULT_ENVIRONMENT_ID = 'A7C40030-4E12-4B8F-9A10-000000000001';
+export const ARCH_DEFAULT_ARTIFACT_TYPE_ID = 'A7C40040-4E12-4B8F-9A10-000000000001';
+export const ARCH_INTERACTIVE_ARTIFACT_ID = 'A7C40910-4E12-4B8F-9A10-000000000001';
+export const ARCH_INTERACTIVE_ARTIFACT_VERSION_ID = 'A7C40920-4E12-4B8F-9A10-000000000001';
 
 const requireFromActions = createRequire(new URL('../../packages/Actions/package.json', import.meta.url));
 const {
@@ -80,6 +98,30 @@ function resolvePersistenceFilePath(options = {}) {
   return DEFAULT_ARCH_WORLD_PERSISTENCE_PATH;
 }
 
+export function resolveSqliteFilePath(options = {}) {
+  if (options.sqliteFilePath === null || options.sqliteFilePath === false) {
+    return null;
+  }
+  if (typeof options.sqliteFilePath === 'string' && options.sqliteFilePath.trim().length > 0) {
+    return options.sqliteFilePath.trim();
+  }
+  const fromEnv = process.env.ARCH_WORLD_SQLITE_FILE;
+  if (typeof fromEnv === 'string' && fromEnv.trim().length > 0) {
+    return fromEnv.trim();
+  }
+  if (options.persistenceFilePath === null || options.persistenceFilePath === false) {
+    return null;
+  }
+  if (typeof options.persistenceFilePath === 'string' && options.persistenceFilePath.trim().length > 0) {
+    return `${options.persistenceFilePath.trim().replace(/\.json$/i, '')}.sqlite`;
+  }
+  const stateEnv = process.env.ARCH_WORLD_STATE_FILE;
+  if (typeof stateEnv === 'string' && stateEnv.trim().length > 0) {
+    return `${stateEnv.trim().replace(/\.json$/i, '')}.sqlite`;
+  }
+  return DEFAULT_ARCH_WORLD_SQLITE_PATH;
+}
+
 function valuesEqual(va, vb) {
   if (va instanceof Date && vb instanceof Date) {
     return va.getTime() === vb.getTime();
@@ -107,6 +149,70 @@ function fieldsSubsetMatch(existing, desired, ignoredFields = new Set(), allowed
     }
   }
   return true;
+}
+
+function deriveMemberFields(member) {
+  const rawName = String(member?.Name ?? 'AGPA Member').trim();
+  const withoutTitle = rawName.replace(/^(Dr\.|Mr\.|Ms\.|Mrs\.)\s+/i, '').split(',')[0].trim();
+  const parts = withoutTitle.split(/\s+/).filter(Boolean);
+  const firstName = (member?.FirstName ?? parts[0] ?? 'AGPA').slice(0, 50);
+  const lastName = (member?.LastName ?? (parts.length > 1 ? parts.slice(1).join(' ') : 'Member')).slice(0, 50);
+  const isOwner = norm(member?.ID) === 'a7c40400-4e12-4b8f-9a10-000000000022';
+  return {
+    ID: member.ID,
+    Name: rawName.slice(0, 100),
+    FirstName: firstName,
+    LastName: lastName,
+    Email: String(member.Email ?? '').slice(0, 100),
+    Type: member?.Type === 'Owner' || isOwner ? 'Owner' : 'User',
+    IsActive: member?.IsActive !== false,
+  };
+}
+
+function normalizeSubscriptionDeliveryLevel(sub) {
+  const raw = sub?.DeliveryLevel ?? sub?.Cadence ?? 'Digest Only';
+  if (raw === 'Instant') return 'Every Post';
+  if (raw === 'Daily' || raw === 'Weekly') return 'Digest Only';
+  if (['Every Post', 'First Post Only', 'Digest Only', 'Muted'].includes(raw)) {
+    return raw;
+  }
+  return 'Digest Only';
+}
+
+function sortPostsTopologically(posts) {
+  const remaining = new Map(posts.map((p) => [norm(p.ID), p]));
+  const inserted = new Set();
+  const ordered = [];
+
+  const sortedCandidates = [...posts].sort(
+    (a, b) => (a.ReplyDepth ?? 0) - (b.ReplyDepth ?? 0) || String(a.ID).localeCompare(String(b.ID)),
+  );
+
+  let progress = true;
+  while (remaining.size > 0 && progress) {
+    progress = false;
+    for (const post of sortedCandidates) {
+      const idKey = norm(post.ID);
+      if (!remaining.has(idKey)) continue;
+      const rootKey = post.RootPostID ? norm(post.RootPostID) : null;
+      const parentKey = post.ParentPostID ? norm(post.ParentPostID) : null;
+      const rootReady = !rootKey || rootKey === idKey || inserted.has(rootKey) || !remaining.has(rootKey);
+      const parentReady = !parentKey || parentKey === idKey || inserted.has(parentKey) || !remaining.has(parentKey);
+      if (rootReady && parentReady) {
+        ordered.push(post);
+        inserted.add(idKey);
+        remaining.delete(idKey);
+        progress = true;
+      }
+    }
+  }
+
+  for (const post of sortedCandidates) {
+    if (remaining.has(norm(post.ID))) {
+      ordered.push(post);
+    }
+  }
+  return ordered;
 }
 
 /** Builds a `UserInfo` carrying the authoritative `ARCH_TEST_ROLE_ID` permission role. */
@@ -179,7 +285,7 @@ export function CreateEmptyArchWorldStore() {
 /** Serializes an `ARCH-WORLD` store to a deterministic JSON-compatible object. */
 export function SerializeArchWorldStore(store) {
   return {
-    schemaVersion: 'arch-world-store/v1',
+    schemaVersion: 'arch-world-store/v2',
     lastLoadedAt: store.lastLoadedAt,
     processedInboundMessageIds: Array.from(store.processedInboundMessageIds),
     users: Array.from(store.users.values()),
@@ -302,7 +408,7 @@ export function DeserializeArchWorldStore(payload) {
     indexStoreRow(
       store.postFlags,
       store.postFlagsByKey,
-      `${norm(row.PostID)}:${norm(row.ReporterUserID)}:${norm(row.ReasonCategory)}`,
+      `${norm(row.PostID)}:${norm(row.ReportedByUserID)}:${norm(row.ReasonCategory)}`,
       row,
     );
   }
@@ -312,13 +418,1010 @@ export function DeserializeArchWorldStore(payload) {
   return store;
 }
 
-/** Atomically writes the store snapshot to disk so separate processes see persisted `ARCH-WORLD` state. */
-export function SaveArchWorldStoreToDisk(store, persistenceFilePath = DEFAULT_ARCH_WORLD_PERSISTENCE_PATH) {
-  if (!persistenceFilePath) return;
-  mkdirSync(dirname(persistenceFilePath), { recursive: true });
-  const tmpPath = `${persistenceFilePath}.${process.pid}.${Date.now()}.tmp`;
-  writeFileSync(tmpPath, JSON.stringify(SerializeArchWorldStore(store), null, 2), 'utf8');
-  renameSync(tmpPath, persistenceFilePath);
+// ============================================================================
+// Relational SQLite Schema & Sync Layer (`node:sqlite` with PRAGMA foreign_keys = ON)
+// ============================================================================
+
+const SQLITE_SCHEMA_DDL = `
+PRAGMA foreign_keys = ON;
+
+CREATE TABLE IF NOT EXISTS "User" (
+  "ID" TEXT PRIMARY KEY,
+  "Name" TEXT NOT NULL,
+  "FirstName" TEXT NULL,
+  "LastName" TEXT NULL,
+  "Email" TEXT NOT NULL UNIQUE,
+  "Type" TEXT NOT NULL CHECK ("Type" IN ('User', 'Owner')),
+  "IsActive" INTEGER NOT NULL DEFAULT 1
+);
+
+CREATE TABLE IF NOT EXISTS "SpaceType" (
+  "ID" TEXT PRIMARY KEY,
+  "Code" TEXT NOT NULL UNIQUE,
+  "Name" TEXT NOT NULL,
+  "Configuration" TEXT NULL
+);
+
+CREATE TABLE IF NOT EXISTS "SpaceRoleType" (
+  "ID" TEXT PRIMARY KEY,
+  "Code" TEXT NOT NULL UNIQUE,
+  "Name" TEXT NOT NULL,
+  "CanSeeTeamBand" INTEGER NOT NULL DEFAULT 0,
+  "CanContribute" INTEGER NOT NULL DEFAULT 1,
+  "IsOwnerRole" INTEGER NOT NULL DEFAULT 0,
+  "CanPromoteBand" INTEGER NOT NULL DEFAULT 0,
+  "Level" INTEGER NOT NULL DEFAULT 100,
+  "IsActive" INTEGER NOT NULL DEFAULT 1
+);
+
+CREATE TABLE IF NOT EXISTS "Space" (
+  "ID" TEXT PRIMARY KEY,
+  "SpaceTypeID" TEXT NOT NULL REFERENCES "SpaceType"("ID"),
+  "ParentID" TEXT NULL REFERENCES "Space"("ID"),
+  "Slug" TEXT NULL,
+  "Name" TEXT NOT NULL,
+  "Description" TEXT NULL,
+  "OwnerID" TEXT NOT NULL REFERENCES "User"("ID"),
+  "InheritsMembership" INTEGER NOT NULL DEFAULT 0,
+  "AgentRetrieval" TEXT NOT NULL DEFAULT 'Included',
+  "StartedAt" TEXT NULL,
+  "ClosedAt" TEXT NULL,
+  "AllowParentAssignees" INTEGER NOT NULL DEFAULT 1
+);
+
+CREATE TABLE IF NOT EXISTS "SpaceMember" (
+  "ID" TEXT PRIMARY KEY,
+  "SpaceID" TEXT NOT NULL REFERENCES "Space"("ID"),
+  "UserID" TEXT NOT NULL REFERENCES "User"("ID"),
+  "SpaceRoleTypeID" TEXT NOT NULL REFERENCES "SpaceRoleType"("ID"),
+  "Band" TEXT NOT NULL DEFAULT 'Shared',
+  "Status" TEXT NOT NULL DEFAULT 'Active',
+  UNIQUE ("SpaceID", "UserID")
+);
+
+CREATE TABLE IF NOT EXISTS "CommunitySpace" (
+  "ID" TEXT PRIMARY KEY REFERENCES "Space"("ID"),
+  "Slug" TEXT NOT NULL UNIQUE,
+  "CommunityKind" TEXT NOT NULL CHECK ("CommunityKind" IN ('Association Wide', 'Special Interest Group', 'Product Community', 'Working Group', 'Other')),
+  "AnonymousReadMode" TEXT NOT NULL CHECK ("AnonymousReadMode" IN ('None', 'Teaser Only', 'Full Read')),
+  "AskFirstEnabled" INTEGER NOT NULL DEFAULT 1,
+  "DefaultDigestCadence" TEXT NOT NULL CHECK ("DefaultDigestCadence" IN ('Every Post', 'Daily Digest', 'Weekly Digest', 'Highlights Only', 'Muted'))
+);
+
+CREATE TABLE IF NOT EXISTS "ForumType" (
+  "ID" TEXT PRIMARY KEY,
+  "Code" TEXT NOT NULL UNIQUE,
+  "Name" TEXT NOT NULL UNIQUE,
+  "ServerDriverClass" TEXT NULL,
+  "UIDriverClass" TEXT NULL,
+  "ExtensionEntity" TEXT NULL,
+  "Configuration" TEXT NULL,
+  "Sequence" INTEGER NOT NULL DEFAULT 0,
+  "IsActive" INTEGER NOT NULL DEFAULT 1
+);
+
+CREATE TABLE IF NOT EXISTS "PostType" (
+  "ID" TEXT PRIMARY KEY,
+  "Code" TEXT NOT NULL UNIQUE,
+  "Name" TEXT NOT NULL UNIQUE,
+  "ServerDriverClass" TEXT NULL,
+  "UIDriverClass" TEXT NULL,
+  "ExtensionEntity" TEXT NULL,
+  "PlacementRule" TEXT NOT NULL CHECK ("PlacementRule" IN ('Root Only', 'Reply Only', 'Both')),
+  "AllowsNestedReplies" INTEGER NOT NULL DEFAULT 1,
+  "TriggersThreadSynthesis" INTEGER NOT NULL DEFAULT 1,
+  "IndexedInCorpus" INTEGER NOT NULL DEFAULT 1,
+  "Configuration" TEXT NULL,
+  "Sequence" INTEGER NOT NULL DEFAULT 0,
+  "IsActive" INTEGER NOT NULL DEFAULT 1
+);
+
+CREATE TABLE IF NOT EXISTS "ForumRoleType" (
+  "ID" TEXT PRIMARY KEY,
+  "Code" TEXT NOT NULL UNIQUE,
+  "Name" TEXT NOT NULL UNIQUE,
+  "CanConfigureForum" INTEGER NOT NULL DEFAULT 0,
+  "CanModerateQueue" INTEGER NOT NULL DEFAULT 0,
+  "CanPinOrLock" INTEGER NOT NULL DEFAULT 0,
+  "CanAcceptAnswers" INTEGER NOT NULL DEFAULT 0,
+  "CanVerifyCanon" INTEGER NOT NULL DEFAULT 0,
+  "CanPromoteToSpace" INTEGER NOT NULL DEFAULT 0,
+  "CanCreateRootPost" INTEGER NOT NULL DEFAULT 1,
+  "CanReply" INTEGER NOT NULL DEFAULT 1,
+  "CanCoEditDocs" INTEGER NOT NULL DEFAULT 0,
+  "VoteWeightMultiplier" REAL NOT NULL DEFAULT 1.0,
+  "IsActive" INTEGER NOT NULL DEFAULT 1
+);
+
+CREATE TABLE IF NOT EXISTS "Forum" (
+  "ID" TEXT PRIMARY KEY,
+  "SpaceID" TEXT NOT NULL REFERENCES "CommunitySpace"("ID"),
+  "ParentForumID" TEXT NULL REFERENCES "Forum"("ID"),
+  "ForumTypeID" TEXT NOT NULL REFERENCES "ForumType"("ID"),
+  "Slug" TEXT NOT NULL,
+  "Name" TEXT NOT NULL,
+  "Description" TEXT NULL,
+  "Icon" TEXT NULL,
+  "ColorHex" TEXT NULL,
+  "VisibilityBand" TEXT NOT NULL CHECK ("VisibilityBand" IN ('Shared', 'Team', 'PrivateForum')),
+  "AnonymousReadMode" TEXT NULL,
+  "InheritsSpaceMembers" INTEGER NOT NULL DEFAULT 1,
+  "PostingPolicy" TEXT NOT NULL CHECK ("PostingPolicy" IN ('Open', 'Moderated', 'ReadOnly')),
+  "InboundEmailAlias" TEXT NULL,
+  "Sequence" INTEGER NOT NULL DEFAULT 0,
+  "Status" TEXT NOT NULL CHECK ("Status" IN ('Active', 'Archived', 'Locked')),
+  "Configuration" TEXT NULL,
+  UNIQUE ("SpaceID", "Slug")
+);
+
+CREATE TABLE IF NOT EXISTS "ForumMember" (
+  "ID" TEXT PRIMARY KEY,
+  "ForumID" TEXT NOT NULL REFERENCES "Forum"("ID"),
+  "UserID" TEXT NOT NULL REFERENCES "User"("ID"),
+  "ForumRoleTypeID" TEXT NOT NULL REFERENCES "ForumRoleType"("ID"),
+  "Status" TEXT NOT NULL CHECK ("Status" IN ('Active', 'Invited', 'Muted', 'Removed')),
+  UNIQUE ("ForumID", "UserID")
+);
+
+CREATE TABLE IF NOT EXISTS "CommunityMemberProfile" (
+  "ID" TEXT PRIMARY KEY,
+  "SpaceID" TEXT NOT NULL REFERENCES "CommunitySpace"("ID"),
+  "UserID" TEXT NOT NULL REFERENCES "User"("ID"),
+  "PersonID" TEXT NULL,
+  "BioMarkdown" TEXT NULL,
+  "ExpertiseTagsJSON" TEXT NULL,
+  "HelpfulAnswerCount" INTEGER NOT NULL DEFAULT 0,
+  "AcceptedAnswerCount" INTEGER NOT NULL DEFAULT 0,
+  "ReputationScore" INTEGER NOT NULL DEFAULT 0,
+  "DigestCadence" TEXT NOT NULL CHECK ("DigestCadence" IN ('Every Post', 'Daily Digest', 'Weekly Digest', 'Highlights Only', 'Muted')),
+  "OpenToPeerMentoring" INTEGER NOT NULL DEFAULT 0,
+  UNIQUE ("SpaceID", "UserID")
+);
+
+CREATE TABLE IF NOT EXISTS "ForumTopicTag" (
+  "ID" TEXT PRIMARY KEY,
+  "SpaceID" TEXT NOT NULL REFERENCES "CommunitySpace"("ID"),
+  "ParentTagID" TEXT NULL REFERENCES "ForumTopicTag"("ID"),
+  "TagID" TEXT NULL,
+  "Slug" TEXT NOT NULL,
+  "Name" TEXT NOT NULL,
+  "Description" TEXT NULL,
+  "ColorHex" TEXT NULL,
+  "IsOfficial" INTEGER NOT NULL DEFAULT 0,
+  "PostCount" INTEGER NOT NULL DEFAULT 0,
+  UNIQUE ("SpaceID", "Slug")
+);
+
+CREATE TABLE IF NOT EXISTS "TaskType" (
+  "ID" TEXT PRIMARY KEY,
+  "Name" TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS "Task" (
+  "ID" TEXT PRIMARY KEY,
+  "Name" TEXT NOT NULL,
+  "Description" TEXT NULL,
+  "TypeID" TEXT NOT NULL REFERENCES "TaskType"("ID"),
+  "UserID" TEXT NULL REFERENCES "User"("ID")
+);
+
+CREATE TABLE IF NOT EXISTS "Environment" (
+  "ID" TEXT PRIMARY KEY,
+  "Name" TEXT NOT NULL,
+  "IsDefault" INTEGER NOT NULL DEFAULT 1
+);
+
+CREATE TABLE IF NOT EXISTS "ArtifactType" (
+  "ID" TEXT PRIMARY KEY,
+  "Name" TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS "Artifact" (
+  "ID" TEXT PRIMARY KEY,
+  "EnvironmentID" TEXT NOT NULL REFERENCES "Environment"("ID"),
+  "Name" TEXT NOT NULL,
+  "Description" TEXT NULL,
+  "TypeID" TEXT NOT NULL REFERENCES "ArtifactType"("ID"),
+  "UserID" TEXT NOT NULL REFERENCES "User"("ID"),
+  "Visibility" TEXT NOT NULL DEFAULT 'Always'
+);
+
+CREATE TABLE IF NOT EXISTS "ArtifactVersion" (
+  "ID" TEXT PRIMARY KEY,
+  "ArtifactID" TEXT NOT NULL REFERENCES "Artifact"("ID"),
+  "VersionNumber" INTEGER NOT NULL DEFAULT 1,
+  "UserID" TEXT NOT NULL REFERENCES "User"("ID"),
+  "ContentMode" TEXT NOT NULL DEFAULT 'Text',
+  "ForceToolsOnly" INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS "ForumPost" (
+  "ID" TEXT PRIMARY KEY,
+  "ForumID" TEXT NOT NULL REFERENCES "Forum"("ID"),
+  "PostTypeID" TEXT NOT NULL REFERENCES "PostType"("ID"),
+  "RootPostID" TEXT NULL REFERENCES "ForumPost"("ID"),
+  "ParentPostID" TEXT NULL REFERENCES "ForumPost"("ID"),
+  "ReplyDepth" INTEGER NOT NULL DEFAULT 0,
+  "AuthorUserID" TEXT NULL REFERENCES "User"("ID"),
+  "AuthorPersonID" TEXT NULL,
+  "AuthorAgentID" TEXT NULL,
+  "Title" TEXT NULL,
+  "Slug" TEXT NULL,
+  "BodyMarkdown" TEXT NOT NULL,
+  "SummaryMarkdown" TEXT NULL,
+  "SummaryGeneratedAt" TEXT NULL,
+  "SummaryReplyWatermark" INTEGER NOT NULL DEFAULT 0,
+  "VisibilityBand" TEXT NOT NULL CHECK ("VisibilityBand" IN ('Shared', 'Team')),
+  "Status" TEXT NOT NULL CHECK ("Status" IN ('Draft', 'PendingModeration', 'Published', 'Answered', 'Resolved', 'Archived', 'Redacted')),
+  "IsPinned" INTEGER NOT NULL DEFAULT 0,
+  "IsLocked" INTEGER NOT NULL DEFAULT 0,
+  "IsFeatured" INTEGER NOT NULL DEFAULT 0,
+  "ReplyCount" INTEGER NOT NULL DEFAULT 0,
+  "ParticipantCount" INTEGER NOT NULL DEFAULT 1,
+  "ReactionScore" INTEGER NOT NULL DEFAULT 0,
+  "ViewCount" INTEGER NOT NULL DEFAULT 0,
+  "LastActivityAt" TEXT NULL,
+  "CreatedAt" TEXT NULL,
+  "PromotedToSpaceID" TEXT NULL REFERENCES "Space"("ID"),
+  "LinkedTaskID" TEXT NULL REFERENCES "Task"("ID")
+);
+
+CREATE TABLE IF NOT EXISTS "ForumSubscription" (
+  "ID" TEXT PRIMARY KEY,
+  "UserID" TEXT NOT NULL REFERENCES "User"("ID"),
+  "ForumID" TEXT NULL REFERENCES "Forum"("ID"),
+  "RootPostID" TEXT NULL REFERENCES "ForumPost"("ID"),
+  "TopicTagID" TEXT NULL REFERENCES "ForumTopicTag"("ID"),
+  "DeliveryLevel" TEXT NOT NULL CHECK ("DeliveryLevel" IN ('Every Post', 'First Post Only', 'Digest Only', 'Muted'))
+);
+
+CREATE TABLE IF NOT EXISTS "ForumQuestionPost" (
+  "ID" TEXT PRIMARY KEY REFERENCES "ForumPost"("ID"),
+  "AcceptedAnswerPostID" TEXT NULL REFERENCES "ForumAnswerPost"("ID"),
+  "AICanonAnswerPostID" TEXT NULL REFERENCES "ForumAnswerPost"("ID"),
+  "BountyPoints" INTEGER NOT NULL DEFAULT 0,
+  "ResolvedAt" TEXT NULL
+);
+
+CREATE TABLE IF NOT EXISTS "ForumAnswerPost" (
+  "ID" TEXT PRIMARY KEY REFERENCES "ForumPost"("ID"),
+  "QuestionPostID" TEXT NOT NULL REFERENCES "ForumQuestionPost"("ID"),
+  "IsAcceptedByAuthor" INTEGER NOT NULL DEFAULT 0,
+  "IsVerifiedByModerator" INTEGER NOT NULL DEFAULT 0,
+  "VerifiedByUserID" TEXT NULL REFERENCES "User"("ID"),
+  "VerifiedAt" TEXT NULL,
+  "AIEpistemicStatus" TEXT NULL CHECK ("AIEpistemicStatus" IS NULL OR "AIEpistemicStatus" IN ('Canon Verified', 'Novel Insight', 'Partially Outdated', 'Conflicts With Canon')),
+  "AIConfidenceScore" REAL NULL,
+  "AIRationaleMarkdown" TEXT NULL,
+  "FreshnessReviewDueAt" TEXT NULL
+);
+
+CREATE TABLE IF NOT EXISTS "ForumIdeaCampaign" (
+  "ID" TEXT PRIMARY KEY REFERENCES "Forum"("ID"),
+  "DefaultBudgetPoints" INTEGER NOT NULL DEFAULT 100,
+  "AllocationMode" TEXT NOT NULL CHECK ("AllocationMode" IN ('Point Allocation', 'Quadratic')),
+  "MaxPointsPerIdea" INTEGER NULL,
+  "SubmissionsCloseAt" TEXT NULL,
+  "VotingClosesAt" TEXT NULL
+);
+
+CREATE TABLE IF NOT EXISTS "ForumIdeaPost" (
+  "ID" TEXT PRIMARY KEY REFERENCES "ForumPost"("ID"),
+  "IdeaStatus" TEXT NOT NULL CHECK ("IdeaStatus" IN ('Under Consideration', 'Planned', 'In Progress', 'Shipped', 'Declined')),
+  "TotalPointsAllocated" INTEGER NOT NULL DEFAULT 0,
+  "EffectiveQuadraticVotes" REAL NOT NULL DEFAULT 0,
+  "UniqueBackerCount" INTEGER NOT NULL DEFAULT 0,
+  "TargetReleaseOrQuarter" TEXT NULL,
+  "StatusRationaleMarkdown" TEXT NULL,
+  "MergedIntoIdeaPostID" TEXT NULL REFERENCES "ForumIdeaPost"("ID")
+);
+
+CREATE TABLE IF NOT EXISTS "ForumIdeaAllocation" (
+  "ID" TEXT PRIMARY KEY,
+  "IdeaPostID" TEXT NOT NULL REFERENCES "ForumIdeaPost"("ID"),
+  "UserID" TEXT NOT NULL REFERENCES "User"("ID"),
+  "PointsAllocated" INTEGER NOT NULL CHECK ("PointsAllocated" > 0),
+  "QuadraticVotes" REAL NOT NULL,
+  "RationaleComment" TEXT NULL,
+  UNIQUE ("IdeaPostID", "UserID")
+);
+
+CREATE TABLE IF NOT EXISTS "ForumCasePost" (
+  "ID" TEXT PRIMARY KEY REFERENCES "ForumPost"("ID"),
+  "SituationMarkdown" TEXT NOT NULL,
+  "ActionTakenMarkdown" TEXT NOT NULL,
+  "OutcomeMarkdown" TEXT NULL,
+  "IsAnonymized" INTEGER NOT NULL DEFAULT 0,
+  "AnonymizedAuthorAlias" TEXT NULL
+);
+
+CREATE TABLE IF NOT EXISTS "ForumAMAPost" (
+  "ID" TEXT PRIMARY KEY REFERENCES "ForumPost"("ID"),
+  "HostUserID" TEXT NOT NULL REFERENCES "User"("ID"),
+  "ScheduledStartAt" TEXT NOT NULL,
+  "ScheduledEndAt" TEXT NOT NULL,
+  "QuestionsOpenAt" TEXT NOT NULL,
+  "IsLiveNow" INTEGER NOT NULL DEFAULT 0,
+  "RecapMarkdown" TEXT NULL
+);
+
+CREATE TABLE IF NOT EXISTS "ForumInteractivePost" (
+  "ID" TEXT PRIMARY KEY REFERENCES "ForumPost"("ID"),
+  "ComponentArtifactID" TEXT NOT NULL REFERENCES "Artifact"("ID"),
+  "PinnedArtifactVersionID" TEXT NULL REFERENCES "ArtifactVersion"("ID"),
+  "ExperienceKind" TEXT NOT NULL CHECK ("ExperienceKind" IN ('Quiz', 'Trivia', 'Calculator', 'Simulation', 'Flashcards', 'Poll Game', 'Other')),
+  "ScoringMode" TEXT NOT NULL CHECK ("ScoringMode" IN ('Best Score', 'Fastest Time', 'Streak', 'Completion', 'None')),
+  "ShowLeaderboard" INTEGER NOT NULL DEFAULT 1,
+  "MaxAttemptsPerMember" INTEGER NULL,
+  "PlayCount" INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS "ForumInteractiveSession" (
+  "ID" TEXT PRIMARY KEY,
+  "InteractivePostID" TEXT NOT NULL REFERENCES "ForumInteractivePost"("ID"),
+  "ArtifactVersionID" TEXT NOT NULL REFERENCES "ArtifactVersion"("ID"),
+  "UserID" TEXT NOT NULL REFERENCES "User"("ID"),
+  "AttemptNumber" INTEGER NOT NULL DEFAULT 1,
+  "Score" REAL NULL,
+  "DurationSeconds" INTEGER NULL,
+  "Completed" INTEGER NOT NULL DEFAULT 0,
+  UNIQUE ("InteractivePostID", "UserID", "AttemptNumber")
+);
+
+CREATE TABLE IF NOT EXISTS "ForumPostTag" (
+  "ID" TEXT PRIMARY KEY,
+  "PostID" TEXT NOT NULL REFERENCES "ForumPost"("ID"),
+  "TopicTagID" TEXT NOT NULL REFERENCES "ForumTopicTag"("ID"),
+  "AssignedByAI" INTEGER NOT NULL DEFAULT 0,
+  UNIQUE ("PostID", "TopicTagID")
+);
+
+CREATE TABLE IF NOT EXISTS "ForumPostReaction" (
+  "ID" TEXT PRIMARY KEY,
+  "PostID" TEXT NOT NULL REFERENCES "ForumPost"("ID"),
+  "UserID" TEXT NOT NULL REFERENCES "User"("ID"),
+  "ReactionKind" TEXT NOT NULL CHECK ("ReactionKind" IN ('Upvote', 'Helpful', 'Insightful', 'Agree', 'Celebrate', 'Curious')),
+  "Weight" REAL NOT NULL DEFAULT 1.0,
+  UNIQUE ("PostID", "UserID", "ReactionKind")
+);
+
+CREATE TABLE IF NOT EXISTS "ForumPostFlag" (
+  "ID" TEXT PRIMARY KEY,
+  "PostID" TEXT NOT NULL REFERENCES "ForumPost"("ID"),
+  "ReportedByUserID" TEXT NULL REFERENCES "User"("ID"),
+  "ReasonCategory" TEXT NOT NULL CHECK ("ReasonCategory" IN ('Off Topic', 'Spam', 'Harassment', 'Outdated Advice', 'Needs Redaction', 'Other')),
+  "Status" TEXT NOT NULL CHECK ("Status" IN ('Open', 'Dismissed', 'ActionTaken')),
+  "ReasonDetails" TEXT NULL
+);
+
+CREATE TABLE IF NOT EXISTS "ArchWorldMeta" (
+  "Key" TEXT PRIMARY KEY,
+  "Value" TEXT NULL
+);
+`;
+
+const SQLITE_TABLE_SPECS = {
+  'MJ: Users': {
+    table: 'User',
+    storeKey: 'users',
+    columns: ['ID', 'Name', 'FirstName', 'LastName', 'Email', 'Type', 'IsActive'],
+    booleans: new Set(['IsActive']),
+  },
+  'MJ: Task Types': {
+    table: 'TaskType',
+    storeKey: 'taskTypes',
+    columns: ['ID', 'Name'],
+    booleans: new Set(),
+  },
+  'MJ: Tasks': {
+    table: 'Task',
+    storeKey: 'tasks',
+    columns: ['ID', 'Name', 'Description', 'TypeID', 'UserID'],
+    booleans: new Set(),
+  },
+  'MJ_BizApps_Collaboration: Space Types': {
+    table: 'SpaceType',
+    storeKey: 'spaceTypes',
+    columns: ['ID', 'Code', 'Name', 'Configuration'],
+    booleans: new Set(),
+  },
+  'MJ_BizApps_Collaboration: Space Role Types': {
+    table: 'SpaceRoleType',
+    storeKey: 'spaceRoleTypes',
+    columns: ['ID', 'Code', 'Name', 'CanSeeTeamBand', 'CanContribute', 'IsOwnerRole', 'CanPromoteBand', 'Level', 'IsActive'],
+    booleans: new Set(['CanSeeTeamBand', 'CanContribute', 'IsOwnerRole', 'CanPromoteBand', 'IsActive']),
+  },
+  'MJ_BizApps_Collaboration: Spaces': {
+    table: 'Space',
+    storeKey: 'spaces',
+    columns: ['ID', 'SpaceTypeID', 'ParentID', 'Slug', 'Name', 'Description', 'OwnerID', 'InheritsMembership', 'AgentRetrieval', 'StartedAt', 'ClosedAt', 'AllowParentAssignees'],
+    booleans: new Set(['InheritsMembership', 'AllowParentAssignees']),
+  },
+  'MJ_BizApps_Collaboration: Space Members': {
+    table: 'SpaceMember',
+    storeKey: 'spaceMembers',
+    columns: ['ID', 'SpaceID', 'UserID', 'SpaceRoleTypeID', 'Band', 'Status'],
+    booleans: new Set(),
+  },
+  [COMMUNITY_ENTITY_NAMES.CommunitySpaces]: {
+    table: 'CommunitySpace',
+    storeKey: 'communitySpaces',
+    columns: ['ID', 'Slug', 'CommunityKind', 'AnonymousReadMode', 'AskFirstEnabled', 'DefaultDigestCadence'],
+    booleans: new Set(['AskFirstEnabled']),
+  },
+  [COMMUNITY_ENTITY_NAMES.ForumTypes]: {
+    table: 'ForumType',
+    storeKey: 'forumTypes',
+    columns: ['ID', 'Code', 'Name', 'ServerDriverClass', 'UIDriverClass', 'ExtensionEntity', 'Configuration', 'Sequence', 'IsActive'],
+    booleans: new Set(['IsActive']),
+  },
+  [COMMUNITY_ENTITY_NAMES.PostTypes]: {
+    table: 'PostType',
+    storeKey: 'postTypes',
+    columns: ['ID', 'Code', 'Name', 'ServerDriverClass', 'UIDriverClass', 'ExtensionEntity', 'PlacementRule', 'AllowsNestedReplies', 'TriggersThreadSynthesis', 'IndexedInCorpus', 'Configuration', 'Sequence', 'IsActive'],
+    booleans: new Set(['AllowsNestedReplies', 'TriggersThreadSynthesis', 'IndexedInCorpus', 'IsActive']),
+  },
+  [COMMUNITY_ENTITY_NAMES.ForumRoleTypes]: {
+    table: 'ForumRoleType',
+    storeKey: 'forumRoleTypes',
+    columns: ['ID', 'Code', 'Name', 'CanConfigureForum', 'CanModerateQueue', 'CanPinOrLock', 'CanAcceptAnswers', 'CanVerifyCanon', 'CanPromoteToSpace', 'CanCreateRootPost', 'CanReply', 'CanCoEditDocs', 'VoteWeightMultiplier', 'IsActive'],
+    booleans: new Set(['CanConfigureForum', 'CanModerateQueue', 'CanPinOrLock', 'CanAcceptAnswers', 'CanVerifyCanon', 'CanPromoteToSpace', 'CanCreateRootPost', 'CanReply', 'CanCoEditDocs', 'IsActive']),
+  },
+  [COMMUNITY_ENTITY_NAMES.Forums]: {
+    table: 'Forum',
+    storeKey: 'forums',
+    columns: ['ID', 'SpaceID', 'ParentForumID', 'ForumTypeID', 'Slug', 'Name', 'Description', 'Icon', 'ColorHex', 'VisibilityBand', 'AnonymousReadMode', 'InheritsSpaceMembers', 'PostingPolicy', 'InboundEmailAlias', 'Sequence', 'Status', 'Configuration'],
+    booleans: new Set(['InheritsSpaceMembers']),
+  },
+  [COMMUNITY_ENTITY_NAMES.ForumIdeaCampaigns]: {
+    table: 'ForumIdeaCampaign',
+    storeKey: 'ideaCampaigns',
+    columns: ['ID', 'DefaultBudgetPoints', 'AllocationMode', 'MaxPointsPerIdea', 'SubmissionsCloseAt', 'VotingClosesAt'],
+    booleans: new Set(),
+  },
+  [COMMUNITY_ENTITY_NAMES.ForumMembers]: {
+    table: 'ForumMember',
+    storeKey: 'forumMembers',
+    columns: ['ID', 'ForumID', 'UserID', 'ForumRoleTypeID', 'Status'],
+    booleans: new Set(),
+  },
+  [COMMUNITY_ENTITY_NAMES.CommunityMemberProfiles]: {
+    table: 'CommunityMemberProfile',
+    storeKey: 'memberProfiles',
+    columns: ['ID', 'SpaceID', 'UserID', 'PersonID', 'BioMarkdown', 'ExpertiseTagsJSON', 'HelpfulAnswerCount', 'AcceptedAnswerCount', 'ReputationScore', 'DigestCadence', 'OpenToPeerMentoring'],
+    booleans: new Set(['OpenToPeerMentoring']),
+  },
+  [COMMUNITY_ENTITY_NAMES.ForumSubscriptions]: {
+    table: 'ForumSubscription',
+    storeKey: 'forumSubscriptions',
+    columns: ['ID', 'UserID', 'ForumID', 'RootPostID', 'TopicTagID', 'DeliveryLevel'],
+    booleans: new Set(),
+  },
+  [COMMUNITY_ENTITY_NAMES.ForumTopicTags]: {
+    table: 'ForumTopicTag',
+    storeKey: 'topicTags',
+    columns: ['ID', 'SpaceID', 'ParentTagID', 'TagID', 'Slug', 'Name', 'Description', 'ColorHex', 'IsOfficial', 'PostCount'],
+    booleans: new Set(['IsOfficial']),
+  },
+  [COMMUNITY_ENTITY_NAMES.ForumPosts]: {
+    table: 'ForumPost',
+    storeKey: 'posts',
+    columns: ['ID', 'ForumID', 'PostTypeID', 'RootPostID', 'ParentPostID', 'ReplyDepth', 'AuthorUserID', 'AuthorPersonID', 'AuthorAgentID', 'Title', 'Slug', 'BodyMarkdown', 'SummaryMarkdown', 'SummaryGeneratedAt', 'SummaryReplyWatermark', 'VisibilityBand', 'Status', 'IsPinned', 'IsLocked', 'IsFeatured', 'ReplyCount', 'ParticipantCount', 'ReactionScore', 'ViewCount', 'LastActivityAt', 'CreatedAt', 'PromotedToSpaceID', 'LinkedTaskID'],
+    booleans: new Set(['IsPinned', 'IsLocked', 'IsFeatured']),
+  },
+  [COMMUNITY_ENTITY_NAMES.ForumQuestionPosts]: {
+    table: 'ForumQuestionPost',
+    storeKey: 'questionPosts',
+    columns: ['ID', 'AcceptedAnswerPostID', 'AICanonAnswerPostID', 'BountyPoints', 'ResolvedAt'],
+    booleans: new Set(),
+  },
+  [COMMUNITY_ENTITY_NAMES.ForumAnswerPosts]: {
+    table: 'ForumAnswerPost',
+    storeKey: 'answerPosts',
+    columns: ['ID', 'QuestionPostID', 'IsAcceptedByAuthor', 'IsVerifiedByModerator', 'VerifiedByUserID', 'VerifiedAt', 'AIEpistemicStatus', 'AIConfidenceScore', 'AIRationaleMarkdown', 'FreshnessReviewDueAt'],
+    booleans: new Set(['IsAcceptedByAuthor', 'IsVerifiedByModerator']),
+  },
+  [COMMUNITY_ENTITY_NAMES.ForumIdeaPosts]: {
+    table: 'ForumIdeaPost',
+    storeKey: 'ideaPosts',
+    columns: ['ID', 'IdeaStatus', 'TotalPointsAllocated', 'EffectiveQuadraticVotes', 'UniqueBackerCount', 'TargetReleaseOrQuarter', 'StatusRationaleMarkdown', 'MergedIntoIdeaPostID'],
+    booleans: new Set(),
+  },
+  [COMMUNITY_ENTITY_NAMES.ForumIdeaAllocations]: {
+    table: 'ForumIdeaAllocation',
+    storeKey: 'ideaAllocations',
+    columns: ['ID', 'IdeaPostID', 'UserID', 'PointsAllocated', 'QuadraticVotes', 'RationaleComment'],
+    booleans: new Set(),
+  },
+  [COMMUNITY_ENTITY_NAMES.ForumCasePosts]: {
+    table: 'ForumCasePost',
+    storeKey: 'casePosts',
+    columns: ['ID', 'SituationMarkdown', 'ActionTakenMarkdown', 'OutcomeMarkdown', 'IsAnonymized', 'AnonymizedAuthorAlias'],
+    booleans: new Set(['IsAnonymized']),
+  },
+  [COMMUNITY_ENTITY_NAMES.ForumAMAPosts]: {
+    table: 'ForumAMAPost',
+    storeKey: 'amaPosts',
+    columns: ['ID', 'HostUserID', 'ScheduledStartAt', 'ScheduledEndAt', 'QuestionsOpenAt', 'IsLiveNow', 'RecapMarkdown'],
+    booleans: new Set(['IsLiveNow']),
+  },
+  [COMMUNITY_ENTITY_NAMES.ForumInteractivePosts]: {
+    table: 'ForumInteractivePost',
+    storeKey: 'interactivePosts',
+    columns: ['ID', 'ComponentArtifactID', 'PinnedArtifactVersionID', 'ExperienceKind', 'ScoringMode', 'ShowLeaderboard', 'MaxAttemptsPerMember', 'PlayCount'],
+    booleans: new Set(['ShowLeaderboard']),
+  },
+  [COMMUNITY_ENTITY_NAMES.ForumInteractiveSessions]: {
+    table: 'ForumInteractiveSession',
+    storeKey: 'interactiveSessions',
+    columns: ['ID', 'InteractivePostID', 'ArtifactVersionID', 'UserID', 'AttemptNumber', 'Score', 'DurationSeconds', 'Completed'],
+    booleans: new Set(['Completed']),
+  },
+  [COMMUNITY_ENTITY_NAMES.ForumPostTags]: {
+    table: 'ForumPostTag',
+    storeKey: 'postTags',
+    columns: ['ID', 'PostID', 'TopicTagID', 'AssignedByAI'],
+    booleans: new Set(['AssignedByAI']),
+  },
+  [COMMUNITY_ENTITY_NAMES.ForumPostReactions]: {
+    table: 'ForumPostReaction',
+    storeKey: 'postReactions',
+    columns: ['ID', 'PostID', 'UserID', 'ReactionKind', 'Weight'],
+    booleans: new Set(),
+  },
+  [COMMUNITY_ENTITY_NAMES.ForumPostFlags]: {
+    table: 'ForumPostFlag',
+    storeKey: 'postFlags',
+    columns: ['ID', 'PostID', 'ReportedByUserID', 'ReasonCategory', 'Status', 'ReasonDetails'],
+    booleans: new Set(),
+  },
+};
+
+function openSqliteDatabase(sqliteFilePath) {
+  if (!sqliteFilePath) return null;
+  mkdirSync(dirname(sqliteFilePath), { recursive: true });
+  const db = new DatabaseSync(sqliteFilePath);
+  EnsureArchWorldSqliteSchema(db);
+  return db;
+}
+
+/** Initializes the strict-FK SQLite schema for `ARCH-WORLD`. */
+export function EnsureArchWorldSqliteSchema(db) {
+  db.exec('PRAGMA journal_mode = WAL;');
+  db.exec('PRAGMA busy_timeout = 5000;');
+  db.exec(SQLITE_SCHEMA_DDL);
+  db.exec('PRAGMA foreign_keys = ON;');
+}
+
+function seedSqliteInteractiveSupportRows(db, ownerUserId) {
+  db.prepare(
+    'INSERT INTO "Environment" ("ID", "Name", "IsDefault") VALUES (?, ?, ?) ON CONFLICT("ID") DO NOTHING',
+  ).run(ARCH_DEFAULT_ENVIRONMENT_ID, 'Default', 1);
+  db.prepare(
+    'INSERT INTO "ArtifactType" ("ID", "Name") VALUES (?, ?) ON CONFLICT("ID") DO NOTHING',
+  ).run(ARCH_DEFAULT_ARTIFACT_TYPE_ID, 'Component');
+  db.prepare(
+    'INSERT INTO "Artifact" ("ID", "EnvironmentID", "Name", "Description", "TypeID", "UserID", "Visibility") VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT("ID") DO NOTHING',
+  ).run(
+    ARCH_INTERACTIVE_ARTIFACT_ID,
+    ARCH_DEFAULT_ENVIRONMENT_ID,
+    'IBC 2027 Mass Timber Readiness Challenge',
+    'Interactive AGPA Type IV-A/B/C readiness quiz component.',
+    ARCH_DEFAULT_ARTIFACT_TYPE_ID,
+    ownerUserId,
+    'Always',
+  );
+  db.prepare(
+    'INSERT INTO "ArtifactVersion" ("ID", "ArtifactID", "VersionNumber", "UserID", "ContentMode", "ForceToolsOnly") VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT("ID") DO NOTHING',
+  ).run(ARCH_INTERACTIVE_ARTIFACT_VERSION_ID, ARCH_INTERACTIVE_ARTIFACT_ID, 1, ownerUserId, 'Text', 0);
+}
+
+function toSqliteBindValue(val, isBool) {
+  if (val === undefined || val === null) return null;
+  if (isBool || typeof val === 'boolean') return val ? 1 : 0;
+  if (val instanceof Date) return val.toISOString();
+  if (typeof val === 'object') return JSON.stringify(val);
+  return val;
+}
+
+function fromSqliteRow(row, booleanCols) {
+  const out = {};
+  for (const [key, val] of Object.entries(row)) {
+    out[key] = booleanCols.has(key) && val !== null && val !== undefined ? Boolean(val) : val;
+  }
+  return out;
+}
+
+function normalizeRowForSqlite(entityName, rawRow) {
+  const row = { ...rawRow };
+  if (entityName === 'MJ: Users') {
+    const derived = deriveMemberFields(row);
+    return { ...row, ...derived };
+  }
+  if (entityName === 'MJ_BizApps_Collaboration: Spaces') {
+    return {
+      ...row,
+      AgentRetrieval: row.AgentRetrieval ?? 'Included',
+      InheritsMembership: row.InheritsMembership ?? false,
+      AllowParentAssignees: row.AllowParentAssignees ?? true,
+    };
+  }
+  if (entityName === COMMUNITY_ENTITY_NAMES.CommunitySpaces) {
+    return {
+      ...row,
+      CommunityKind: row.CommunityKind ?? 'Association Wide',
+      AnonymousReadMode: row.AnonymousReadMode ?? 'Teaser Only',
+      AskFirstEnabled: row.AskFirstEnabled ?? true,
+      DefaultDigestCadence: row.DefaultDigestCadence ?? 'Daily Digest',
+    };
+  }
+  if (entityName === COMMUNITY_ENTITY_NAMES.ForumTypes) {
+    return {
+      ...row,
+      Sequence: row.Sequence ?? 0,
+      IsActive: row.IsActive ?? true,
+    };
+  }
+  if (entityName === COMMUNITY_ENTITY_NAMES.PostTypes) {
+    return {
+      ...row,
+      Name: row.Name ?? row.Code,
+      PlacementRule: row.PlacementRule ?? 'Both',
+      AllowsNestedReplies: row.AllowsNestedReplies ?? true,
+      TriggersThreadSynthesis: row.TriggersThreadSynthesis ?? true,
+      IndexedInCorpus: row.IndexedInCorpus ?? true,
+      Sequence: row.Sequence ?? 0,
+      IsActive: row.IsActive ?? true,
+    };
+  }
+  if (entityName === COMMUNITY_ENTITY_NAMES.ForumRoleTypes) {
+    return {
+      ...row,
+      CanConfigureForum: row.CanConfigureForum ?? false,
+      CanModerateQueue: row.CanModerateQueue ?? false,
+      CanPinOrLock: row.CanPinOrLock ?? false,
+      CanAcceptAnswers: row.CanAcceptAnswers ?? false,
+      CanVerifyCanon: row.CanVerifyCanon ?? false,
+      CanPromoteToSpace: row.CanPromoteToSpace ?? false,
+      CanCreateRootPost: row.CanCreateRootPost ?? true,
+      CanReply: row.CanReply ?? true,
+      CanCoEditDocs: row.CanCoEditDocs ?? false,
+      VoteWeightMultiplier: row.VoteWeightMultiplier ?? 1.0,
+      IsActive: row.IsActive ?? true,
+    };
+  }
+  if (entityName === COMMUNITY_ENTITY_NAMES.Forums) {
+    return {
+      ...row,
+      VisibilityBand: row.VisibilityBand ?? 'Shared',
+      InheritsSpaceMembers: row.InheritsSpaceMembers ?? true,
+      PostingPolicy: row.PostingPolicy ?? 'Open',
+      Sequence: row.Sequence ?? 0,
+      Status: row.Status ?? 'Active',
+    };
+  }
+  if (entityName === COMMUNITY_ENTITY_NAMES.ForumMembers) {
+    return {
+      ...row,
+      Status: row.Status ?? 'Active',
+    };
+  }
+  if (entityName === COMMUNITY_ENTITY_NAMES.CommunityMemberProfiles) {
+    return {
+      ...row,
+      BioMarkdown: row.BioMarkdown ?? row.Bio ?? null,
+      HelpfulAnswerCount: row.HelpfulAnswerCount ?? 0,
+      AcceptedAnswerCount: row.AcceptedAnswerCount ?? 0,
+      ReputationScore: row.ReputationScore ?? 0,
+      DigestCadence: row.DigestCadence ?? 'Daily Digest',
+      OpenToPeerMentoring: Boolean(row.OpenToPeerMentoring),
+    };
+  }
+  if (entityName === COMMUNITY_ENTITY_NAMES.ForumSubscriptions) {
+    return {
+      ...row,
+      DeliveryLevel: normalizeSubscriptionDeliveryLevel(row),
+    };
+  }
+  if (entityName === COMMUNITY_ENTITY_NAMES.ForumTopicTags) {
+    return {
+      ...row,
+      IsOfficial: row.IsOfficial ?? false,
+      PostCount: row.PostCount ?? 0,
+    };
+  }
+  if (entityName === COMMUNITY_ENTITY_NAMES.ForumPosts) {
+    return {
+      ...row,
+      ReplyDepth: row.ReplyDepth ?? 0,
+      SummaryReplyWatermark: row.SummaryReplyWatermark ?? 0,
+      VisibilityBand: row.VisibilityBand ?? 'Shared',
+      Status: row.Status ?? 'Published',
+      IsPinned: row.IsPinned ?? false,
+      IsLocked: row.IsLocked ?? false,
+      IsFeatured: row.IsFeatured ?? false,
+      ReplyCount: row.ReplyCount ?? 0,
+      ParticipantCount: row.ParticipantCount ?? 1,
+      ReactionScore: row.ReactionScore ?? 0,
+      ViewCount: row.ViewCount ?? 0,
+    };
+  }
+  if (entityName === COMMUNITY_ENTITY_NAMES.ForumQuestionPosts) {
+    return {
+      ...row,
+      BountyPoints: row.BountyPoints ?? 0,
+    };
+  }
+  if (entityName === COMMUNITY_ENTITY_NAMES.ForumAnswerPosts) {
+    return {
+      ...row,
+      IsAcceptedByAuthor: row.IsAcceptedByAuthor ?? false,
+      IsVerifiedByModerator: row.IsVerifiedByModerator ?? false,
+    };
+  }
+  if (entityName === COMMUNITY_ENTITY_NAMES.ForumIdeaCampaigns) {
+    return {
+      ...row,
+      DefaultBudgetPoints: row.DefaultBudgetPoints ?? 100,
+      AllocationMode: row.AllocationMode ?? 'Point Allocation',
+    };
+  }
+  if (entityName === COMMUNITY_ENTITY_NAMES.ForumIdeaPosts) {
+    return {
+      ...row,
+      IdeaStatus: row.IdeaStatus ?? 'Under Consideration',
+      TotalPointsAllocated: row.TotalPointsAllocated ?? 0,
+      EffectiveQuadraticVotes: row.EffectiveQuadraticVotes ?? 0,
+      UniqueBackerCount: row.UniqueBackerCount ?? 0,
+    };
+  }
+  if (entityName === COMMUNITY_ENTITY_NAMES.ForumCasePosts) {
+    return {
+      ...row,
+      IsAnonymized: row.IsAnonymized ?? false,
+    };
+  }
+  if (entityName === COMMUNITY_ENTITY_NAMES.ForumAMAPosts) {
+    return {
+      ...row,
+      IsLiveNow: row.IsLiveNow ?? false,
+    };
+  }
+  if (entityName === COMMUNITY_ENTITY_NAMES.ForumInteractivePosts) {
+    return {
+      ...row,
+      ComponentArtifactID: row.ComponentArtifactID ?? ARCH_INTERACTIVE_ARTIFACT_ID,
+      PinnedArtifactVersionID: row.PinnedArtifactVersionID ?? ARCH_INTERACTIVE_ARTIFACT_VERSION_ID,
+      ExperienceKind: row.ExperienceKind ?? 'Quiz',
+      ScoringMode: row.ScoringMode ?? 'Best Score',
+      ShowLeaderboard: row.ShowLeaderboard ?? true,
+      PlayCount: row.PlayCount ?? 0,
+    };
+  }
+  if (entityName === COMMUNITY_ENTITY_NAMES.ForumInteractiveSessions) {
+    return {
+      ...row,
+      ArtifactVersionID: row.ArtifactVersionID ?? ARCH_INTERACTIVE_ARTIFACT_VERSION_ID,
+      AttemptNumber: row.AttemptNumber ?? 1,
+      Completed: row.Completed ?? false,
+    };
+  }
+  if (entityName === COMMUNITY_ENTITY_NAMES.ForumPostTags) {
+    return {
+      ...row,
+      AssignedByAI: row.AssignedByAI ?? false,
+    };
+  }
+  if (entityName === COMMUNITY_ENTITY_NAMES.ForumPostReactions) {
+    return {
+      ...row,
+      ReactionKind: row.ReactionKind ?? 'Upvote',
+      Weight: row.Weight ?? 1.0,
+    };
+  }
+  if (entityName === COMMUNITY_ENTITY_NAMES.ForumPostFlags) {
+    return {
+      ...row,
+      ReportedByUserID: row.ReportedByUserID ?? row.ReporterUserID ?? null,
+      ReasonDetails: row.ReasonDetails ?? row.Notes ?? null,
+      Status: row.Status ?? 'Open',
+    };
+  }
+  return row;
+}
+
+function upsertRowToSqlite(db, entityName, rawRow) {
+  if (!db) return;
+  const spec = SQLITE_TABLE_SPECS[entityName];
+  if (!spec) return;
+
+  const normalized = normalizeRowForSqlite(entityName, rawRow);
+  if (entityName === COMMUNITY_ENTITY_NAMES.ForumInteractivePosts && normalized.ID) {
+    const ownerRow = db.prepare('SELECT "ID" FROM "User" LIMIT 1').get();
+    if (ownerRow?.ID) {
+      seedSqliteInteractiveSupportRows(db, ownerRow.ID);
+    }
+  }
+  if (entityName === 'MJ: Tasks' && normalized.TypeID) {
+    db.prepare('INSERT INTO "TaskType" ("ID", "Name") VALUES (?, ?) ON CONFLICT("ID") DO NOTHING').run(
+      normalized.TypeID,
+      'Community Action Item',
+    );
+  }
+
+  const cols = spec.columns;
+  const colList = cols.map((c) => `"${c}"`).join(', ');
+  const placeholders = cols.map(() => '?').join(', ');
+  const updates = cols
+    .filter((c) => c !== 'ID')
+    .map((c) => `"${c}" = excluded."${c}"`)
+    .join(', ');
+  const sql = updates
+    ? `INSERT INTO "${spec.table}" (${colList}) VALUES (${placeholders}) ON CONFLICT("ID") DO UPDATE SET ${updates}`
+    : `INSERT INTO "${spec.table}" (${colList}) VALUES (${placeholders}) ON CONFLICT("ID") DO NOTHING`;
+  const params = cols.map((c) => toSqliteBindValue(normalized[c], spec.booleans.has(c)));
+  db.prepare(sql).run(...params);
+}
+
+function deleteRowFromSqlite(db, entityName, id) {
+  if (!db || !id) return;
+  const spec = SQLITE_TABLE_SPECS[entityName];
+  if (!spec) return;
+  db.prepare(`DELETE FROM "${spec.table}" WHERE lower("ID") = lower(?)`).run(String(id));
+}
+
+function saveMetaToSqlite(db, store) {
+  if (!db) return;
+  const stmt = db.prepare(
+    'INSERT INTO "ArchWorldMeta" ("Key", "Value") VALUES (?, ?) ON CONFLICT("Key") DO UPDATE SET "Value" = excluded."Value"',
+  );
+  stmt.run('lastLoadedAt', store.lastLoadedAt ?? null);
+  stmt.run('processedInboundMessageIds', JSON.stringify(Array.from(store.processedInboundMessageIds)));
+}
+
+/** Synchronizes an entire `ArchWorldStore` into an on-disk SQLite relational database. */
+export function SaveArchWorldStoreToSqlite(store, sqliteFilePath = DEFAULT_ARCH_WORLD_SQLITE_PATH) {
+  if (!sqliteFilePath) return;
+  const db = openSqliteDatabase(sqliteFilePath);
+  try {
+    db.exec('BEGIN IMMEDIATE;');
+    try {
+      for (const row of store.taskTypes.values()) upsertRowToSqlite(db, 'MJ: Task Types', row);
+      for (const row of store.spaceTypes.values()) upsertRowToSqlite(db, 'MJ_BizApps_Collaboration: Space Types', row);
+      for (const row of store.spaceRoleTypes.values()) upsertRowToSqlite(db, 'MJ_BizApps_Collaboration: Space Role Types', row);
+      for (const row of store.forumTypes.values()) upsertRowToSqlite(db, COMMUNITY_ENTITY_NAMES.ForumTypes, row);
+      for (const row of store.postTypes.values()) upsertRowToSqlite(db, COMMUNITY_ENTITY_NAMES.PostTypes, row);
+      for (const row of store.forumRoleTypes.values()) upsertRowToSqlite(db, COMMUNITY_ENTITY_NAMES.ForumRoleTypes, row);
+      for (const row of store.users.values()) upsertRowToSqlite(db, 'MJ: Users', row);
+      for (const row of store.spaces.values()) upsertRowToSqlite(db, 'MJ_BizApps_Collaboration: Spaces', row);
+      for (const row of store.spaceMembers.values()) upsertRowToSqlite(db, 'MJ_BizApps_Collaboration: Space Members', row);
+      for (const row of store.communitySpaces.values()) upsertRowToSqlite(db, COMMUNITY_ENTITY_NAMES.CommunitySpaces, row);
+      for (const row of store.forums.values()) upsertRowToSqlite(db, COMMUNITY_ENTITY_NAMES.Forums, row);
+      for (const row of store.ideaCampaigns.values()) upsertRowToSqlite(db, COMMUNITY_ENTITY_NAMES.ForumIdeaCampaigns, row);
+      for (const row of store.forumMembers.values()) upsertRowToSqlite(db, COMMUNITY_ENTITY_NAMES.ForumMembers, row);
+      for (const row of store.memberProfiles.values()) upsertRowToSqlite(db, COMMUNITY_ENTITY_NAMES.CommunityMemberProfiles, row);
+      for (const row of store.topicTags.values()) upsertRowToSqlite(db, COMMUNITY_ENTITY_NAMES.ForumTopicTags, row);
+      for (const row of store.tasks.values()) upsertRowToSqlite(db, 'MJ: Tasks', row);
+      for (const row of sortPostsTopologically(Array.from(store.posts.values()))) {
+        upsertRowToSqlite(db, COMMUNITY_ENTITY_NAMES.ForumPosts, row);
+      }
+      for (const row of store.forumSubscriptions.values()) upsertRowToSqlite(db, COMMUNITY_ENTITY_NAMES.ForumSubscriptions, row);
+      for (const row of store.questionPosts.values()) {
+        upsertRowToSqlite(db, COMMUNITY_ENTITY_NAMES.ForumQuestionPosts, {
+          ...row,
+          AcceptedAnswerPostID: null,
+          AICanonAnswerPostID: null,
+        });
+      }
+      for (const row of store.answerPosts.values()) upsertRowToSqlite(db, COMMUNITY_ENTITY_NAMES.ForumAnswerPosts, row);
+      for (const row of store.questionPosts.values()) upsertRowToSqlite(db, COMMUNITY_ENTITY_NAMES.ForumQuestionPosts, row);
+      for (const row of store.ideaPosts.values()) upsertRowToSqlite(db, COMMUNITY_ENTITY_NAMES.ForumIdeaPosts, row);
+      for (const row of store.ideaAllocations.values()) upsertRowToSqlite(db, COMMUNITY_ENTITY_NAMES.ForumIdeaAllocations, row);
+      for (const row of store.casePosts.values()) upsertRowToSqlite(db, COMMUNITY_ENTITY_NAMES.ForumCasePosts, row);
+      for (const row of store.amaPosts.values()) upsertRowToSqlite(db, COMMUNITY_ENTITY_NAMES.ForumAMAPosts, row);
+      for (const row of store.interactivePosts.values()) upsertRowToSqlite(db, COMMUNITY_ENTITY_NAMES.ForumInteractivePosts, row);
+      for (const row of store.interactiveSessions.values()) upsertRowToSqlite(db, COMMUNITY_ENTITY_NAMES.ForumInteractiveSessions, row);
+      for (const row of store.postTags.values()) upsertRowToSqlite(db, COMMUNITY_ENTITY_NAMES.ForumPostTags, row);
+      for (const row of store.postReactions.values()) upsertRowToSqlite(db, COMMUNITY_ENTITY_NAMES.ForumPostReactions, row);
+      for (const row of store.postFlags.values()) upsertRowToSqlite(db, COMMUNITY_ENTITY_NAMES.ForumPostFlags, row);
+      saveMetaToSqlite(db, store);
+      db.exec('COMMIT;');
+    } catch (err) {
+      db.exec('ROLLBACK;');
+      throw err;
+    }
+  } finally {
+    db.close();
+  }
+}
+
+/** Loads a brand-new `ArchWorldStore` directly from the relational SQLite database file, or `null` if absent. */
+export function LoadArchWorldStoreFromSqlite(sqliteFilePath = DEFAULT_ARCH_WORLD_SQLITE_PATH) {
+  if (!sqliteFilePath || !existsSync(sqliteFilePath)) {
+    return null;
+  }
+  const db = openSqliteDatabase(sqliteFilePath);
+  try {
+    const payload = {};
+    for (const spec of Object.values(SQLITE_TABLE_SPECS)) {
+      const rows = db.prepare(`SELECT * FROM "${spec.table}"`).all();
+      payload[spec.storeKey] = rows.map((r) => fromSqliteRow(r, spec.booleans));
+    }
+    const metaRows = db.prepare('SELECT "Key", "Value" FROM "ArchWorldMeta"').all();
+    for (const m of metaRows) {
+      if (m.Key === 'lastLoadedAt') payload.lastLoadedAt = m.Value;
+      if (m.Key === 'processedInboundMessageIds' && m.Value) {
+        payload.processedInboundMessageIds = JSON.parse(m.Value);
+      }
+    }
+    if ((payload.users?.length ?? 0) === 0 && (payload.spaces?.length ?? 0) === 0) {
+      return null;
+    }
+    return DeserializeArchWorldStore(payload);
+  } finally {
+    db.close();
+  }
+}
+
+/** Returns exact SQLite `SELECT COUNT(*)` totals across all 22+ relational `ARCH-WORLD` tables. */
+export function QueryArchWorldSqliteCounts(sqliteFilePathOrDb = DEFAULT_ARCH_WORLD_SQLITE_PATH) {
+  const ownsDb = typeof sqliteFilePathOrDb === 'string';
+  if (ownsDb && !existsSync(sqliteFilePathOrDb)) {
+    throw new Error(`SQLite database does not exist at ${sqliteFilePathOrDb}`);
+  }
+  const db = ownsDb ? openSqliteDatabase(sqliteFilePathOrDb) : sqliteFilePathOrDb;
+  const tables = [
+    'User',
+    'Space',
+    'SpaceMember',
+    'CommunitySpace',
+    'ForumType',
+    'PostType',
+    'ForumRoleType',
+    'Forum',
+    'ForumMember',
+    'CommunityMemberProfile',
+    'ForumSubscription',
+    'ForumTopicTag',
+    'ForumPost',
+    'ForumQuestionPost',
+    'ForumAnswerPost',
+    'ForumIdeaCampaign',
+    'ForumIdeaPost',
+    'ForumIdeaAllocation',
+    'ForumCasePost',
+    'ForumAMAPost',
+    'ForumInteractivePost',
+    'ForumInteractiveSession',
+    'ForumPostTag',
+    'ForumPostReaction',
+    'ForumPostFlag',
+    'Task',
+  ];
+  try {
+    const counts = {};
+    for (const table of tables) {
+      const row = db.prepare(`SELECT COUNT(*) AS cnt FROM "${table}"`).get();
+      counts[table] = Number(row?.cnt ?? 0);
+    }
+    return counts;
+  } finally {
+    if (ownsDb) db.close();
+  }
+}
+
+/** Atomically writes the store snapshot to disk (and SQLite when configured) so separate processes see persisted `ARCH-WORLD` state. */
+export function SaveArchWorldStoreToDisk(store, persistenceFilePath = DEFAULT_ARCH_WORLD_PERSISTENCE_PATH, options = {}) {
+  if (persistenceFilePath) {
+    mkdirSync(dirname(persistenceFilePath), { recursive: true });
+    const tmpPath = `${persistenceFilePath}.${process.pid}.${Date.now()}.tmp`;
+    writeFileSync(tmpPath, JSON.stringify(SerializeArchWorldStore(store), null, 2), 'utf8');
+    renameSync(tmpPath, persistenceFilePath);
+  }
+  const sqliteFilePath = resolveSqliteFilePath({ persistenceFilePath, ...options });
+  if (sqliteFilePath && options.syncSqlite !== false) {
+    SaveArchWorldStoreToSqlite(store, sqliteFilePath);
+  }
 }
 
 /** Loads a brand-new `ARCH-WORLD` store instance from the on-disk persistence file, or `null` if absent. */
@@ -330,32 +1433,46 @@ export function LoadArchWorldStoreFromDisk(persistenceFilePath = DEFAULT_ARCH_WO
   return DeserializeArchWorldStore(JSON.parse(raw));
 }
 
-/** Opens an independent store instance hydrated from the persisted backing store (never auto-seeding). */
+/** Opens an independent store instance hydrated from the persisted SQLite DB (or JSON snapshot fallback), never auto-seeding. */
 export function OpenPersistedArchWorldStore(options = {}) {
+  const sqlitePath = resolveSqliteFilePath(options);
   const filePath = resolvePersistenceFilePath(options);
-  const loaded = LoadArchWorldStoreFromDisk(filePath);
-  if (!loaded) {
-    if (options.createIfMissing) {
-      return CreateEmptyArchWorldStore();
-    }
-    throw new Error(`Persisted ARCH-WORLD backing store does not exist at ${filePath}`);
+  const fromSqlite = sqlitePath ? LoadArchWorldStoreFromSqlite(sqlitePath) : null;
+  if (fromSqlite) {
+    return fromSqlite;
   }
-  return loaded;
+  const loaded = LoadArchWorldStoreFromDisk(filePath);
+  if (loaded) {
+    return loaded;
+  }
+  if (options.createIfMissing) {
+    return CreateEmptyArchWorldStore();
+  }
+  throw new Error(`Persisted ARCH-WORLD backing store does not exist at ${sqlitePath ?? filePath}`);
 }
 
-/** Deletes the on-disk backing store file (invoked only by explicit reset, never by teardown). */
-export function ClearPersistedArchWorldStore(persistenceFilePath = DEFAULT_ARCH_WORLD_PERSISTENCE_PATH) {
+/** Deletes the on-disk backing store files (invoked only by explicit reset, never by teardown). */
+export function ClearPersistedArchWorldStore(persistenceFilePath = DEFAULT_ARCH_WORLD_PERSISTENCE_PATH, sqliteFilePath = undefined) {
   if (persistenceFilePath && existsSync(persistenceFilePath)) {
     unlinkSync(persistenceFilePath);
   }
+  const resolvedSqlite = sqliteFilePath === undefined ? resolveSqliteFilePath({ persistenceFilePath }) : sqliteFilePath;
+  if (resolvedSqlite) {
+    for (const suffix of ['', '-wal', '-shm']) {
+      const target = `${resolvedSqlite}${suffix}`;
+      if (existsSync(target)) unlinkSync(target);
+    }
+  }
 }
 
-/** Returns the shared persistent `ARCH-WORLD` store (hydrating from disk if available). */
+/** Returns the shared persistent `ARCH-WORLD` store (hydrating from SQLite/disk if available). */
 export function GetSharedArchWorldStore(options = {}) {
   if (!sharedStore) {
+    const sqlitePath = resolveSqliteFilePath(options);
     const filePath = resolvePersistenceFilePath(options);
-    const fromDisk = options.fromDisk !== false ? LoadArchWorldStoreFromDisk(filePath) : null;
-    sharedStore = fromDisk ?? CreateEmptyArchWorldStore();
+    const fromSqlite = options.fromDisk !== false && sqlitePath ? LoadArchWorldStoreFromSqlite(sqlitePath) : null;
+    const fromDisk = !fromSqlite && options.fromDisk !== false ? LoadArchWorldStoreFromDisk(filePath) : null;
+    sharedStore = fromSqlite ?? fromDisk ?? CreateEmptyArchWorldStore();
   }
   return sharedStore;
 }
@@ -365,7 +1482,8 @@ export function ResetSharedArchWorldStore(options = {}) {
   sharedStore = CreateEmptyArchWorldStore();
   if (options.clearPersistence !== false) {
     const filePath = resolvePersistenceFilePath(options);
-    ClearPersistedArchWorldStore(filePath);
+    const sqlitePath = resolveSqliteFilePath(options);
+    ClearPersistedArchWorldStore(filePath, sqlitePath);
   }
   return sharedStore;
 }
@@ -433,7 +1551,7 @@ function buildEntityInfo(entityName, fieldNames) {
 }
 
 const ARCH_ENTITY_INFOS = {
-  'MJ: Users': buildEntityInfo('MJ: Users', ['ID', 'Name', 'Email']),
+  'MJ: Users': buildEntityInfo('MJ: Users', ['ID', 'Name', 'FirstName', 'LastName', 'Email', 'Type', 'IsActive']),
   'MJ: Tasks': buildEntityInfo('MJ: Tasks', ['ID', 'Name', 'Description', 'TypeID', 'UserID']),
   'MJ: Task Types': buildEntityInfo('MJ: Task Types', ['ID', 'Name']),
   'MJ_BizApps_Collaboration: Space Types': buildEntityInfo('MJ_BizApps_Collaboration: Space Types', [
@@ -444,7 +1562,7 @@ const ARCH_ENTITY_INFOS = {
   ]),
   'MJ_BizApps_Collaboration: Spaces': buildEntityInfo('MJ_BizApps_Collaboration: Spaces', [
     'ID', 'SpaceTypeID', 'ParentID', 'Slug', 'Name', 'Description', 'OwnerID', 'InheritsMembership',
-    'AgentRetrieval', 'StartedAt', 'ClosedAt',
+    'AgentRetrieval', 'StartedAt', 'ClosedAt', 'AllowParentAssignees',
   ]),
   'MJ_BizApps_Collaboration: Space Members': buildEntityInfo('MJ_BizApps_Collaboration: Space Members', [
     'ID', 'SpaceID', 'UserID', 'SpaceRoleTypeID', 'Band', 'Status',
@@ -483,7 +1601,7 @@ const ARCH_ENTITY_INFOS = {
     ],
   ),
   [COMMUNITY_ENTITY_NAMES.ForumSubscriptions]: buildEntityInfo(COMMUNITY_ENTITY_NAMES.ForumSubscriptions, [
-    'ID', 'ForumID', 'UserID', 'Cadence',
+    'ID', 'UserID', 'ForumID', 'RootPostID', 'TopicTagID', 'DeliveryLevel',
   ]),
   [COMMUNITY_ENTITY_NAMES.ForumTopicTags]: buildEntityInfo(COMMUNITY_ENTITY_NAMES.ForumTopicTags, [
     'ID', 'SpaceID', 'ParentTagID', 'TagID', 'Slug', 'Name', 'Description', 'ColorHex', 'IsOfficial', 'PostCount',
@@ -513,11 +1631,12 @@ const ARCH_ENTITY_INFOS = {
     'ID', 'HostUserID', 'ScheduledStartAt', 'ScheduledEndAt', 'QuestionsOpenAt', 'IsLiveNow', 'RecapMarkdown',
   ]),
   [COMMUNITY_ENTITY_NAMES.ForumInteractivePosts]: buildEntityInfo(COMMUNITY_ENTITY_NAMES.ForumInteractivePosts, [
-    'ID', 'ExperienceKind', 'ScoringMode', 'ShowLeaderboard', 'MaxAttemptsPerMember', 'PlayCount',
+    'ID', 'ComponentArtifactID', 'PinnedArtifactVersionID', 'ExperienceKind', 'ScoringMode', 'ShowLeaderboard',
+    'MaxAttemptsPerMember', 'PlayCount',
   ]),
   [COMMUNITY_ENTITY_NAMES.ForumInteractiveSessions]: buildEntityInfo(
     COMMUNITY_ENTITY_NAMES.ForumInteractiveSessions,
-    ['ID', 'InteractivePostID', 'UserID', 'AttemptNumber', 'Score', 'DurationSeconds', 'Completed'],
+    ['ID', 'InteractivePostID', 'ArtifactVersionID', 'UserID', 'AttemptNumber', 'Score', 'DurationSeconds', 'Completed'],
   ),
   [COMMUNITY_ENTITY_NAMES.ForumPostTags]: buildEntityInfo(COMMUNITY_ENTITY_NAMES.ForumPostTags, [
     'ID', 'PostID', 'TopicTagID', 'AssignedByAI',
@@ -529,7 +1648,7 @@ const ARCH_ENTITY_INFOS = {
     'ID', 'PostID', 'UserID', 'ReactionKind', 'Weight',
   ]),
   [COMMUNITY_ENTITY_NAMES.ForumPostFlags]: buildEntityInfo(COMMUNITY_ENTITY_NAMES.ForumPostFlags, [
-    'ID', 'PostID', 'ReporterUserID', 'ReasonCategory', 'Status', 'Notes',
+    'ID', 'PostID', 'ReportedByUserID', 'ReasonCategory', 'Status', 'ReasonDetails',
   ]),
 };
 
@@ -549,8 +1668,7 @@ function parseSqlEq(filter, fieldName) {
   return match ? match[1].trim().toLowerCase() : null;
 }
 
-function queryStoreRows(store, entityName, filter = '') {
-  const userNameById = new Map(Array.from(store.users.values()).map((u) => [norm(u.ID), u.Name]));
+function filterStoreRows(rows, entityName, filter = '', userNameById = new Map()) {
   const idEq = parseSqlEq(filter, 'ID');
   const idIn = parseSqlInList(filter, 'ID');
   const spaceIdEq = parseSqlEq(filter, 'SpaceID');
@@ -563,115 +1681,115 @@ function queryStoreRows(store, entityName, filter = '') {
 
   switch (entityName) {
     case 'MJ: Users': {
-      let rows = Array.from(store.users.values());
-      if (idEq) rows = rows.filter((u) => norm(u.ID) === idEq);
-      if (idIn) rows = rows.filter((u) => idIn.includes(norm(u.ID)));
-      if (emailEq) rows = rows.filter((u) => norm(u.Email) === emailEq);
-      return rows.map((u) => ({ ID: u.ID, Name: u.Name, Email: u.Email }));
+      let out = rows;
+      if (idEq) out = out.filter((u) => norm(u.ID) === idEq);
+      if (idIn) out = out.filter((u) => idIn.includes(norm(u.ID)));
+      if (emailEq) out = out.filter((u) => norm(u.Email) === emailEq);
+      return out.map((u) => ({ ...u }));
     }
     case 'MJ_BizApps_Collaboration: Spaces': {
-      let rows = Array.from(store.spaces.values());
-      if (idEq) rows = rows.filter((s) => norm(s.ID) === idEq);
-      if (slugEq) rows = rows.filter((s) => norm(s.Slug) === slugEq);
-      return rows.map((s) => ({ ...s }));
+      let out = rows;
+      if (idEq) out = out.filter((s) => norm(s.ID) === idEq);
+      if (slugEq) out = out.filter((s) => norm(s.Slug) === slugEq);
+      return out.map((s) => ({ ...s }));
     }
     case 'MJ_BizApps_Collaboration: Space Types': {
-      let rows = Array.from(store.spaceTypes.values());
-      if (idEq) rows = rows.filter((t) => norm(t.ID) === idEq);
-      if (codeEq) rows = rows.filter((t) => norm(t.Code) === codeEq);
-      return rows.map((r) => ({ ...r }));
+      let out = rows;
+      if (idEq) out = out.filter((t) => norm(t.ID) === idEq);
+      if (codeEq) out = out.filter((t) => norm(t.Code) === codeEq);
+      return out.map((r) => ({ ...r }));
     }
     case 'MJ_BizApps_Collaboration: Space Role Types': {
       const nameIn = parseSqlInList(filter, 'Name');
-      let rows = Array.from(store.spaceRoleTypes.values());
-      if (idEq) rows = rows.filter((r) => norm(r.ID) === idEq);
-      if (/IsActive\s*=\s*1/i.test(filter)) rows = rows.filter((r) => r.IsActive !== false);
-      if (/IsOwnerRole\s*=\s*0/i.test(filter)) rows = rows.filter((r) => !r.IsOwnerRole);
-      if (/CanPromoteBand\s*=\s*0/i.test(filter)) rows = rows.filter((r) => !r.CanPromoteBand);
-      if (nameIn) rows = rows.filter((r) => nameIn.includes(norm(r.Name)));
+      let out = rows;
+      if (idEq) out = out.filter((r) => norm(r.ID) === idEq);
+      if (/IsActive\s*=\s*1/i.test(filter)) out = out.filter((r) => r.IsActive !== false);
+      if (/IsOwnerRole\s*=\s*0/i.test(filter)) out = out.filter((r) => !r.IsOwnerRole);
+      if (/CanPromoteBand\s*=\s*0/i.test(filter)) out = out.filter((r) => !r.CanPromoteBand);
+      if (nameIn) out = out.filter((r) => nameIn.includes(norm(r.Name)));
       if (/Code\s+NOT\s+IN/i.test(filter)) {
-        rows = rows.filter((r) => norm(r.Code) !== 'admin' && norm(r.Code) !== 'owner');
+        out = out.filter((r) => norm(r.Code) !== 'admin' && norm(r.Code) !== 'owner');
       }
-      return rows.map((r) => ({ ...r }));
+      return out.map((r) => ({ ...r }));
     }
     case 'MJ_BizApps_Collaboration: Space Members': {
-      let rows = Array.from(store.spaceMembers.values());
-      if (idEq) rows = rows.filter((m) => norm(m.ID) === idEq);
-      if (userIdEq) rows = rows.filter((m) => norm(m.UserID) === userIdEq);
-      if (spaceIdEq) rows = rows.filter((m) => norm(m.SpaceID) === spaceIdEq);
-      return rows.map((r) => ({ ...r }));
+      let out = rows;
+      if (idEq) out = out.filter((m) => norm(m.ID) === idEq);
+      if (userIdEq) out = out.filter((m) => norm(m.UserID) === userIdEq);
+      if (spaceIdEq) out = out.filter((m) => norm(m.SpaceID) === spaceIdEq);
+      return out.map((r) => ({ ...r }));
     }
     case COMMUNITY_ENTITY_NAMES.CommunitySpaces: {
-      let rows = Array.from(store.communitySpaces.values());
-      if (idEq) rows = rows.filter((s) => norm(s.ID) === idEq);
-      if (slugEq) rows = rows.filter((s) => norm(s.Slug) === slugEq);
-      return rows.map((r) => ({ ...r }));
+      let out = rows;
+      if (idEq) out = out.filter((s) => norm(s.ID) === idEq);
+      if (slugEq) out = out.filter((s) => norm(s.Slug) === slugEq);
+      return out.map((r) => ({ ...r }));
     }
     case COMMUNITY_ENTITY_NAMES.ForumRoleTypes: {
-      let rows = Array.from(store.forumRoleTypes.values());
-      if (idEq) rows = rows.filter((r) => norm(r.ID) === idEq);
-      if (codeEq) rows = rows.filter((r) => norm(r.Code) === codeEq);
-      return rows.map((r) => ({ ...r }));
+      let out = rows;
+      if (idEq) out = out.filter((r) => norm(r.ID) === idEq);
+      if (codeEq) out = out.filter((r) => norm(r.Code) === codeEq);
+      return out.map((r) => ({ ...r }));
     }
     case COMMUNITY_ENTITY_NAMES.PostTypes: {
-      let rows = Array.from(store.postTypes.values());
-      if (idEq) rows = rows.filter((p) => norm(p.ID) === idEq);
-      if (codeEq) rows = rows.filter((p) => norm(p.Code) === codeEq);
-      return rows.map((r) => ({ ...r }));
+      let out = rows;
+      if (idEq) out = out.filter((p) => norm(p.ID) === idEq);
+      if (codeEq) out = out.filter((p) => norm(p.Code) === codeEq);
+      return out.map((r) => ({ ...r }));
     }
     case COMMUNITY_ENTITY_NAMES.ForumTypes: {
-      let rows = Array.from(store.forumTypes.values());
-      if (idEq) rows = rows.filter((t) => norm(t.ID) === idEq);
-      if (codeEq) rows = rows.filter((t) => norm(t.Code) === codeEq);
-      return rows.map((r) => ({ ...r }));
+      let out = rows;
+      if (idEq) out = out.filter((t) => norm(t.ID) === idEq);
+      if (codeEq) out = out.filter((t) => norm(t.Code) === codeEq);
+      return out.map((r) => ({ ...r }));
     }
     case COMMUNITY_ENTITY_NAMES.Forums: {
       const activeOnly = /Status\s*=\s*'Active'/i.test(filter);
-      let rows = Array.from(store.forums.values());
-      if (activeOnly) rows = rows.filter((f) => f.Status === 'Active');
-      if (idEq) rows = rows.filter((f) => norm(f.ID) === idEq);
-      if (idIn) rows = rows.filter((f) => idIn.includes(norm(f.ID)));
-      if (spaceIdEq) rows = rows.filter((f) => norm(f.SpaceID) === spaceIdEq);
-      if (slugEq) rows = rows.filter((f) => norm(f.Slug) === slugEq);
-      return rows.map((r) => ({ ...r }));
+      let out = rows;
+      if (activeOnly) out = out.filter((f) => f.Status === 'Active');
+      if (idEq) out = out.filter((f) => norm(f.ID) === idEq);
+      if (idIn) out = out.filter((f) => idIn.includes(norm(f.ID)));
+      if (spaceIdEq) out = out.filter((f) => norm(f.SpaceID) === spaceIdEq);
+      if (slugEq) out = out.filter((f) => norm(f.Slug) === slugEq);
+      return out.map((r) => ({ ...r }));
     }
     case COMMUNITY_ENTITY_NAMES.ForumIdeaCampaigns: {
-      let rows = Array.from(store.ideaCampaigns.values());
-      if (idEq) rows = rows.filter((c) => norm(c.ID) === idEq);
-      if (idIn) rows = rows.filter((c) => idIn.includes(norm(c.ID)));
-      return rows.map((r) => ({ ...r }));
+      let out = rows;
+      if (idEq) out = out.filter((c) => norm(c.ID) === idEq);
+      if (idIn) out = out.filter((c) => idIn.includes(norm(c.ID)));
+      return out.map((r) => ({ ...r }));
     }
     case COMMUNITY_ENTITY_NAMES.ForumMembers: {
       const activeOnly = /Status\s*=\s*'Active'/i.test(filter);
-      let rows = Array.from(store.forumMembers.values());
-      if (idEq) rows = rows.filter((m) => norm(m.ID) === idEq);
-      if (forumIdEq) rows = rows.filter((m) => norm(m.ForumID) === forumIdEq);
-      if (forumIdIn) rows = rows.filter((m) => forumIdIn.includes(norm(m.ForumID)));
-      if (userIdEq) rows = rows.filter((m) => norm(m.UserID) === userIdEq);
-      if (activeOnly) rows = rows.filter((m) => m.Status === 'Active');
-      return rows.map((r) => ({ ...r }));
+      let out = rows;
+      if (idEq) out = out.filter((m) => norm(m.ID) === idEq);
+      if (forumIdEq) out = out.filter((m) => norm(m.ForumID) === forumIdEq);
+      if (forumIdIn) out = out.filter((m) => forumIdIn.includes(norm(m.ForumID)));
+      if (userIdEq) out = out.filter((m) => norm(m.UserID) === userIdEq);
+      if (activeOnly) out = out.filter((m) => m.Status === 'Active');
+      return out.map((r) => ({ ...r }));
     }
     case COMMUNITY_ENTITY_NAMES.CommunityMemberProfiles: {
-      let rows = Array.from(store.memberProfiles.values());
-      if (idEq) rows = rows.filter((p) => norm(p.ID) === idEq);
-      if (spaceIdEq) rows = rows.filter((p) => norm(p.SpaceID) === spaceIdEq);
-      if (userIdEq) rows = rows.filter((p) => norm(p.UserID) === userIdEq);
-      return rows.map((r) => ({ ...r }));
+      let out = rows;
+      if (idEq) out = out.filter((p) => norm(p.ID) === idEq);
+      if (spaceIdEq) out = out.filter((p) => norm(p.SpaceID) === spaceIdEq);
+      if (userIdEq) out = out.filter((p) => norm(p.UserID) === userIdEq);
+      return out.map((r) => ({ ...r }));
     }
     case COMMUNITY_ENTITY_NAMES.ForumSubscriptions: {
-      let rows = Array.from(store.forumSubscriptions.values());
-      if (idEq) rows = rows.filter((s) => norm(s.ID) === idEq);
-      if (forumIdEq) rows = rows.filter((s) => norm(s.ForumID) === forumIdEq);
-      if (userIdEq) rows = rows.filter((s) => norm(s.UserID) === userIdEq);
-      return rows.map((r) => ({ ...r }));
+      let out = rows;
+      if (idEq) out = out.filter((s) => norm(s.ID) === idEq);
+      if (forumIdEq) out = out.filter((s) => norm(s.ForumID) === forumIdEq);
+      if (userIdEq) out = out.filter((s) => norm(s.UserID) === userIdEq);
+      return out.map((r) => ({ ...r }));
     }
     case COMMUNITY_ENTITY_NAMES.ForumTopicTags: {
-      let rows = Array.from(store.topicTags.values());
-      if (idEq) rows = rows.filter((t) => norm(t.ID) === idEq);
-      if (idIn) rows = rows.filter((t) => idIn.includes(norm(t.ID)));
-      if (spaceIdEq) rows = rows.filter((t) => norm(t.SpaceID) === spaceIdEq);
-      if (slugEq) rows = rows.filter((t) => norm(t.Slug) === slugEq);
-      return rows.map((r) => ({ ...r }));
+      let out = rows;
+      if (idEq) out = out.filter((t) => norm(t.ID) === idEq);
+      if (idIn) out = out.filter((t) => idIn.includes(norm(t.ID)));
+      if (spaceIdEq) out = out.filter((t) => norm(t.SpaceID) === spaceIdEq);
+      if (slugEq) out = out.filter((t) => norm(t.Slug) === slugEq);
+      return out.map((r) => ({ ...r }));
     }
     case COMMUNITY_ENTITY_NAMES.ForumPosts: {
       const rootIdEq = parseSqlEq(filter, 'RootPostID');
@@ -680,121 +1798,144 @@ function queryStoreRows(store, entityName, filter = '') {
       const statusEq = parseSqlEq(filter, 'Status');
       const statusIn = parseSqlInList(filter, 'Status');
 
-      let rows = Array.from(store.posts.values());
-      if (idEq) rows = rows.filter((p) => norm(p.ID) === idEq);
-      if (idIn) rows = rows.filter((p) => idIn.includes(norm(p.ID)));
-      if (rootIdEq) rows = rows.filter((p) => norm(p.RootPostID) === rootIdEq);
-      if (forumIdEq) rows = rows.filter((p) => norm(p.ForumID) === forumIdEq);
-      if (forumIdIn) rows = rows.filter((p) => forumIdIn.includes(norm(p.ForumID)));
-      if (authorEq) rows = rows.filter((p) => norm(p.AuthorUserID) === authorEq);
-      if (slugEq) rows = rows.filter((p) => norm(p.Slug) === slugEq);
-      if (rootNullOnly) rows = rows.filter((p) => p.RootPostID === null);
-      if (statusEq) rows = rows.filter((p) => norm(p.Status) === statusEq);
-      if (statusIn) rows = rows.filter((p) => statusIn.includes(norm(p.Status)));
+      let out = rows;
+      if (idEq) out = out.filter((p) => norm(p.ID) === idEq);
+      if (idIn) out = out.filter((p) => idIn.includes(norm(p.ID)));
+      if (rootIdEq) out = out.filter((p) => norm(p.RootPostID) === rootIdEq);
+      if (forumIdEq) out = out.filter((p) => norm(p.ForumID) === forumIdEq);
+      if (forumIdIn) out = out.filter((p) => forumIdIn.includes(norm(p.ForumID)));
+      if (authorEq) out = out.filter((p) => norm(p.AuthorUserID) === authorEq);
+      if (slugEq) out = out.filter((p) => norm(p.Slug) === slugEq);
+      if (rootNullOnly) out = out.filter((p) => p.RootPostID === null || p.RootPostID === undefined);
+      if (statusEq) out = out.filter((p) => norm(p.Status) === statusEq);
+      if (statusIn) out = out.filter((p) => statusIn.includes(norm(p.Status)));
 
-      return rows.map((p) => ({
+      return out.map((p) => ({
         ...p,
-        AuthorUser: userNameById.get(norm(p.AuthorUserID)) ?? p.AuthorUserID,
-        __mj_CreatedAt: p.CreatedAt,
+        AuthorUser: p.AuthorUser ?? userNameById.get(norm(p.AuthorUserID)) ?? p.AuthorUserID,
+        __mj_CreatedAt: p.CreatedAt ?? p.__mj_CreatedAt,
       }));
     }
     case COMMUNITY_ENTITY_NAMES.ForumQuestionPosts: {
-      let rows = Array.from(store.questionPosts.values());
-      if (idEq) rows = rows.filter((q) => norm(q.ID) === idEq);
-      if (idIn) rows = rows.filter((q) => idIn.includes(norm(q.ID)));
-      return rows.map((r) => ({ ...r }));
+      let out = rows;
+      if (idEq) out = out.filter((q) => norm(q.ID) === idEq);
+      if (idIn) out = out.filter((q) => idIn.includes(norm(q.ID)));
+      return out.map((r) => ({ ...r }));
     }
     case COMMUNITY_ENTITY_NAMES.ForumAnswerPosts: {
       const qEq = parseSqlEq(filter, 'QuestionPostID');
       const qIn = parseSqlInList(filter, 'QuestionPostID');
       const acceptedOnly = /IsAcceptedByAuthor\s*=\s*1/i.test(filter);
-      let rows = Array.from(store.answerPosts.values());
-      if (idEq) rows = rows.filter((a) => norm(a.ID) === idEq);
-      if (idIn) rows = rows.filter((a) => idIn.includes(norm(a.ID)));
-      if (qEq) rows = rows.filter((a) => norm(a.QuestionPostID) === qEq);
-      if (qIn) rows = rows.filter((a) => qIn.includes(norm(a.QuestionPostID)));
-      if (acceptedOnly) rows = rows.filter((a) => Boolean(a.IsAcceptedByAuthor));
-      return rows.map((r) => ({ ...r }));
+      let out = rows;
+      if (idEq) out = out.filter((a) => norm(a.ID) === idEq);
+      if (idIn) out = out.filter((a) => idIn.includes(norm(a.ID)));
+      if (qEq) out = out.filter((a) => norm(a.QuestionPostID) === qEq);
+      if (qIn) out = out.filter((a) => qIn.includes(norm(a.QuestionPostID)));
+      if (acceptedOnly) out = out.filter((a) => Boolean(a.IsAcceptedByAuthor));
+      return out.map((r) => ({ ...r }));
     }
     case COMMUNITY_ENTITY_NAMES.ForumIdeaPosts: {
-      let rows = Array.from(store.ideaPosts.values());
-      if (idEq) rows = rows.filter((i) => norm(i.ID) === idEq);
-      if (idIn) rows = rows.filter((i) => idIn.includes(norm(i.ID)));
-      return rows.map((r) => ({ ...r }));
+      let out = rows;
+      if (idEq) out = out.filter((i) => norm(i.ID) === idEq);
+      if (idIn) out = out.filter((i) => idIn.includes(norm(i.ID)));
+      return out.map((r) => ({ ...r }));
     }
     case COMMUNITY_ENTITY_NAMES.ForumIdeaAllocations: {
       const ideaEq = parseSqlEq(filter, 'IdeaPostID');
       const ideaIn = parseSqlInList(filter, 'IdeaPostID');
-      let rows = Array.from(store.ideaAllocations.values());
-      if (idEq) rows = rows.filter((a) => norm(a.ID) === idEq);
-      if (userIdEq) rows = rows.filter((a) => norm(a.UserID) === userIdEq);
-      if (ideaEq) rows = rows.filter((a) => norm(a.IdeaPostID) === ideaEq);
-      if (ideaIn) rows = rows.filter((a) => ideaIn.includes(norm(a.IdeaPostID)));
-      return rows.map((r) => ({ ...r }));
+      let out = rows;
+      if (idEq) out = out.filter((a) => norm(a.ID) === idEq);
+      if (userIdEq) out = out.filter((a) => norm(a.UserID) === userIdEq);
+      if (ideaEq) out = out.filter((a) => norm(a.IdeaPostID) === ideaEq);
+      if (ideaIn) out = out.filter((a) => ideaIn.includes(norm(a.IdeaPostID)));
+      return out.map((r) => ({ ...r }));
     }
     case COMMUNITY_ENTITY_NAMES.ForumCasePosts: {
-      let rows = Array.from(store.casePosts.values());
-      if (idEq) rows = rows.filter((c) => norm(c.ID) === idEq);
-      return rows.map((r) => ({ ...r }));
+      let out = rows;
+      if (idEq) out = out.filter((c) => norm(c.ID) === idEq);
+      return out.map((r) => ({ ...r }));
     }
     case COMMUNITY_ENTITY_NAMES.ForumAMAPosts: {
-      let rows = Array.from(store.amaPosts.values());
-      if (idEq) rows = rows.filter((a) => norm(a.ID) === idEq);
-      return rows.map((r) => ({ ...r }));
+      let out = rows;
+      if (idEq) out = out.filter((a) => norm(a.ID) === idEq);
+      return out.map((r) => ({ ...r }));
     }
     case COMMUNITY_ENTITY_NAMES.ForumInteractivePosts: {
-      let rows = Array.from(store.interactivePosts.values());
-      if (idEq) rows = rows.filter((ip) => norm(ip.ID) === idEq);
-      return rows.map((r) => ({ ...r }));
+      let out = rows;
+      if (idEq) out = out.filter((ip) => norm(ip.ID) === idEq);
+      return out.map((r) => ({ ...r }));
     }
     case COMMUNITY_ENTITY_NAMES.ForumInteractiveSessions: {
       const interEq = parseSqlEq(filter, 'InteractivePostID');
-      let rows = Array.from(store.interactiveSessions.values());
-      if (idEq) rows = rows.filter((s) => norm(s.ID) === idEq);
-      if (interEq) rows = rows.filter((s) => norm(s.InteractivePostID) === interEq);
-      if (userIdEq) rows = rows.filter((s) => norm(s.UserID) === userIdEq);
-      return rows.map((r) => ({ ...r }));
+      let out = rows;
+      if (idEq) out = out.filter((s) => norm(s.ID) === idEq);
+      if (interEq) out = out.filter((s) => norm(s.InteractivePostID) === interEq);
+      if (userIdEq) out = out.filter((s) => norm(s.UserID) === userIdEq);
+      return out.map((r) => ({ ...r }));
     }
     case COMMUNITY_ENTITY_NAMES.ForumPostTags: {
       const postEq = parseSqlEq(filter, 'PostID');
       const postIdIn = parseSqlInList(filter, 'PostID');
       const topicTagEq = parseSqlEq(filter, 'TopicTagID');
-      let rows = Array.from(store.postTags.values());
-      if (idEq) rows = rows.filter((pt) => norm(pt.ID) === idEq);
-      if (postEq) rows = rows.filter((pt) => norm(pt.PostID) === postEq);
-      if (postIdIn) rows = rows.filter((pt) => postIdIn.includes(norm(pt.PostID)));
-      if (topicTagEq) rows = rows.filter((pt) => norm(pt.TopicTagID) === topicTagEq);
-      return rows.map((r) => ({ ...r }));
+      let out = rows;
+      if (idEq) out = out.filter((pt) => norm(pt.ID) === idEq);
+      if (postEq) out = out.filter((pt) => norm(pt.PostID) === postEq);
+      if (postIdIn) out = out.filter((pt) => postIdIn.includes(norm(pt.PostID)));
+      if (topicTagEq) out = out.filter((pt) => norm(pt.TopicTagID) === topicTagEq);
+      return out.map((r) => ({ ...r }));
     }
     case COMMUNITY_ENTITY_NAMES.ForumPostReactions: {
       const postEq = parseSqlEq(filter, 'PostID');
       const kindEq = parseSqlEq(filter, 'ReactionKind');
-      let rows = Array.from(store.postReactions.values());
-      if (idEq) rows = rows.filter((r) => norm(r.ID) === idEq);
-      if (postEq) rows = rows.filter((r) => norm(r.PostID) === postEq);
-      if (userIdEq) rows = rows.filter((r) => norm(r.UserID) === userIdEq);
-      if (kindEq) rows = rows.filter((r) => norm(r.ReactionKind) === kindEq);
-      return rows.map((r) => ({ ...r, __mj_CreatedAt: '2026-11-18T12:00:00.000Z' }));
+      let out = rows;
+      if (idEq) out = out.filter((r) => norm(r.ID) === idEq);
+      if (postEq) out = out.filter((r) => norm(r.PostID) === postEq);
+      if (userIdEq) out = out.filter((r) => norm(r.UserID) === userIdEq);
+      if (kindEq) out = out.filter((r) => norm(r.ReactionKind) === kindEq);
+      return out.map((r) => ({ ...r, __mj_CreatedAt: '2026-11-18T12:00:00.000Z' }));
     }
     case COMMUNITY_ENTITY_NAMES.ForumPostFlags: {
       const postEq = parseSqlEq(filter, 'PostID');
-      const reporterEq = parseSqlEq(filter, 'ReporterUserID');
-      let rows = Array.from(store.postFlags.values());
-      if (idEq) rows = rows.filter((f) => norm(f.ID) === idEq);
-      if (postEq) rows = rows.filter((f) => norm(f.PostID) === postEq);
-      if (reporterEq) rows = rows.filter((f) => norm(f.ReporterUserID) === reporterEq);
-      return rows.map((r) => ({ ...r }));
+      const reporterEq = parseSqlEq(filter, 'ReportedByUserID');
+      let out = rows;
+      if (idEq) out = out.filter((f) => norm(f.ID) === idEq);
+      if (postEq) out = out.filter((f) => norm(f.PostID) === postEq);
+      if (reporterEq) out = out.filter((f) => norm(f.ReportedByUserID) === reporterEq);
+      return out.map((r) => ({ ...r }));
     }
     case 'MJ: Task Types':
-      return Array.from(store.taskTypes.values()).map((r) => ({ ...r }));
-    case 'MJ: Tasks': {
-      let rows = Array.from(store.tasks.values());
-      if (idEq) rows = rows.filter((t) => norm(t.ID) === idEq);
       return rows.map((r) => ({ ...r }));
+    case 'MJ: Tasks': {
+      let out = rows;
+      if (idEq) out = out.filter((t) => norm(t.ID) === idEq);
+      return out.map((r) => ({ ...r }));
     }
     default:
       return [];
   }
+}
+
+function queryStoreRows(store, entityName, filter = '') {
+  const userNameById = new Map(Array.from(store.users.values()).map((u) => [norm(u.ID), u.Name]));
+  const spec = SQLITE_TABLE_SPECS[entityName];
+  if (!spec || !store[spec.storeKey]) return [];
+  const rows = Array.from(store[spec.storeKey].values());
+  return filterStoreRows(rows, entityName, filter, userNameById);
+}
+
+function querySqliteRows(db, entityName, filter = '') {
+  const spec = SQLITE_TABLE_SPECS[entityName];
+  if (!spec) return [];
+  if (entityName === COMMUNITY_ENTITY_NAMES.ForumPosts) {
+    const rawRows = db
+      .prepare('SELECT p.*, u."Name" AS "AuthorUser" FROM "ForumPost" p LEFT JOIN "User" u ON lower(u."ID") = lower(p."AuthorUserID")')
+      .all();
+    const mapped = rawRows.map((r) => fromSqliteRow(r, spec.booleans));
+    return filterStoreRows(mapped, entityName, filter);
+  }
+  const rawRows = db.prepare(`SELECT * FROM "${spec.table}"`).all();
+  const mapped = rawRows.map((r) => fromSqliteRow(r, spec.booleans));
+  return filterStoreRows(mapped, entityName, filter);
 }
 
 function getEntityStoreTarget(store, entityName) {
@@ -903,7 +2044,7 @@ function getEntityStoreTarget(store, entityName) {
       return {
         map: store.postFlags,
         indexMap: store.postFlagsByKey,
-        naturalKey: (r) => `${norm(r.PostID)}:${norm(r.ReporterUserID)}:${norm(r.ReasonCategory)}`,
+        naturalKey: (r) => `${norm(r.PostID)}:${norm(r.ReportedByUserID)}:${norm(r.ReasonCategory)}`,
       };
     default:
       return null;
@@ -937,6 +2078,9 @@ class ArchWorldTransactionGroup extends TransactionGroupBase {
       for (const key of Object.keys(this.provider.store)) {
         this.provider.store[key] = restored[key];
       }
+      if (this.provider.sqliteFilePath) {
+        SaveArchWorldStoreToSqlite(this.provider.store, this.provider.sqliteFilePath);
+      }
       this.snapshot = null;
     }
   }
@@ -966,8 +2110,11 @@ class ArchWorldTransactionGroup extends TransactionGroupBase {
 
   async CommitGroupTransaction() {
     this.snapshot = null;
-    if (this.provider.persistenceFilePath) {
-      SaveArchWorldStoreToDisk(this.provider.store, this.provider.persistenceFilePath);
+    if (this.provider.persistenceFilePath || this.provider.sqliteFilePath) {
+      SaveArchWorldStoreToDisk(this.provider.store, this.provider.persistenceFilePath, {
+        sqliteFilePath: this.provider.sqliteFilePath,
+        syncSqlite: false,
+      });
     }
   }
 }
@@ -976,13 +2123,15 @@ class ArchWorldTransactionGroup extends TransactionGroupBase {
  * Authoritative MJ `IEntityDataProvider` + `IRunViewProvider` for `ARCH-WORLD`.
  * Instantiates real `BaseEntity` / `*ServerEntity` subclasses (`ForumPostServerEntity`,
  * `ForumAnswerPostServerEntity`, `ForumIdeaAllocationServerEntity`, `ForumPostReactionServerEntity`,
- * `ForumPostTagServerEntity`), enforces `ValidateAsync()`, and persists to both `store` and the
- * durable cross-process backing file.
+ * `ForumPostTagServerEntity`), enforces `ValidateAsync()`, synchronizes every write to the
+ * relational SQLite database (`PRAGMA foreign_keys = ON;`), and queries SQLite on `RunView()`.
  */
 export class ArchWorldEntityProvider {
   constructor(store, options = {}) {
     this.store = store;
     this.persistenceFilePath = resolvePersistenceFilePath(options);
+    this.sqliteFilePath = resolveSqliteFilePath(options);
+    this.sqliteDb = this.sqliteFilePath ? openSqliteDatabase(this.sqliteFilePath) : null;
     this.ProviderType = ProviderType.Network;
     this.Entities = Object.values(ARCH_ENTITY_INFOS);
     this._currentUser =
@@ -1007,6 +2156,13 @@ export class ArchWorldEntityProvider {
     this._currentUser = user;
   }
 
+  CloseSqlite() {
+    if (this.sqliteDb) {
+      this.sqliteDb.close();
+      this.sqliteDb = null;
+    }
+  }
+
   EntityByName(entityName) {
     return ARCH_ENTITY_INFOS[entityName];
   }
@@ -1024,7 +2180,9 @@ export class ArchWorldEntityProvider {
   }
 
   async RunView(params) {
-    const rows = queryStoreRows(this.store, params.EntityName, params.ExtraFilter ?? '');
+    const rows = this.sqliteDb
+      ? querySqliteRows(this.sqliteDb, params.EntityName, params.ExtraFilter ?? '')
+      : queryStoreRows(this.store, params.EntityName, params.ExtraFilter ?? '');
     const maxRows = params.MaxRows ?? rows.length;
     const sliced = rows.slice(0, maxRows);
     return {
@@ -1044,8 +2202,19 @@ export class ArchWorldEntityProvider {
 
   async Load(entity, compositeKey) {
     const id = String(compositeKey?.GetValueByFieldName?.('ID') ?? '');
-    const target = getEntityStoreTarget(this.store, entity.EntityInfo.Name);
-    if (!target || !id) return {};
+    const entityName = entity.EntityInfo.Name;
+    if (!id) return {};
+    if (this.sqliteDb) {
+      const spec = SQLITE_TABLE_SPECS[entityName];
+      if (spec) {
+        const row = this.sqliteDb
+          .prepare(`SELECT * FROM "${spec.table}" WHERE lower("ID") = lower(?)`)
+          .get(id);
+        if (row) return fromSqliteRow(row, spec.booleans);
+      }
+    }
+    const target = getEntityStoreTarget(this.store, entityName);
+    if (!target) return {};
     const existing = target.map.get(norm(id));
     return existing ? { ...existing } : {};
   }
@@ -1067,15 +2236,22 @@ export class ArchWorldEntityProvider {
     const idKey = norm(row.ID);
     const prev = target.map.get(idKey);
     const merged = prev ? { ...prev, ...row } : row;
-    target.map.set(idKey, merged);
 
+    if (this.sqliteDb) {
+      upsertRowToSqlite(this.sqliteDb, entityName, merged);
+    }
+
+    target.map.set(idKey, merged);
     if (target.indexMap && target.naturalKey) {
       target.indexMap.set(target.naturalKey(merged), idKey);
     }
 
     this.saveCount += 1;
     if (!internalOpts.skipDiskFlush && !this.suspendDiskFlush && this.persistenceFilePath) {
-      SaveArchWorldStoreToDisk(this.store, this.persistenceFilePath);
+      SaveArchWorldStoreToDisk(this.store, this.persistenceFilePath, {
+        sqliteFilePath: this.sqliteFilePath,
+        syncSqlite: false,
+      });
     }
     return { ...merged };
   }
@@ -1086,12 +2262,18 @@ export class ArchWorldEntityProvider {
     if (!target) return true;
     const idKey = norm(entity.ID);
     const existing = target.map.get(idKey);
+    if (this.sqliteDb) {
+      deleteRowFromSqlite(this.sqliteDb, entityName, entity.ID);
+    }
     target.map.delete(idKey);
     if (existing && target.indexMap && target.naturalKey) {
       target.indexMap.delete(target.naturalKey(existing));
     }
-    if (this.persistenceFilePath) {
-      SaveArchWorldStoreToDisk(this.store, this.persistenceFilePath);
+    if (!this.suspendDiskFlush && this.persistenceFilePath) {
+      SaveArchWorldStoreToDisk(this.store, this.persistenceFilePath, {
+        sqliteFilePath: this.sqliteFilePath,
+        syncSqlite: false,
+      });
     }
     return true;
   }
@@ -1125,8 +2307,20 @@ export class ArchWorldEntityProvider {
 
     if (loadKey) {
       const id = String(loadKey.GetValueByFieldName('ID') ?? '');
-      const target = getEntityStoreTarget(this.store, entityName);
-      const row = target ? target.map.get(norm(id)) : null;
+      let row = null;
+      if (this.sqliteDb) {
+        const spec = SQLITE_TABLE_SPECS[entityName];
+        if (spec) {
+          const dbRow = this.sqliteDb
+            .prepare(`SELECT * FROM "${spec.table}" WHERE lower("ID") = lower(?)`)
+            .get(id);
+          if (dbRow) row = fromSqliteRow(dbRow, spec.booleans);
+        }
+      }
+      if (!row) {
+        const target = getEntityStoreTarget(this.store, entityName);
+        row = target ? target.map.get(norm(id)) : null;
+      }
       if (!row) return null;
       await instance.LoadFromData({ ...row });
     } else {
@@ -1139,7 +2333,7 @@ export class ArchWorldEntityProvider {
 
 /**
  * Creates a brand-new `ArchWorldEntityProvider` backed exclusively by the on-disk persisted
- * `ARCH-WORLD` state (zero shared in-memory `Map` references).
+ * relational SQLite database (and JSON snapshot fallback) with zero shared in-memory `Map` references.
  */
 export function CreatePersistedArchWorldProvider(options = {}) {
   const store = OpenPersistedArchWorldStore(options);
@@ -1166,7 +2360,7 @@ export function EnsureArchWorldServerEntitiesLoaded(dataset = GetArchWorldDatase
     postTypes: dataset.postTypes.map((pt) => ({
       ID: pt.ID,
       Code: pt.Code,
-      Name: pt.Code,
+      Name: pt.Name ?? pt.Code,
       Description: null,
       Icon: null,
       ServerDriverClass: pt.ServerDriverClass ?? null,
@@ -1177,7 +2371,7 @@ export function EnsureArchWorldServerEntitiesLoaded(dataset = GetArchWorldDatase
       TriggersThreadSynthesis: true,
       IndexedInCorpus: true,
       Configuration: null,
-      Sequence: 10,
+      Sequence: pt.Sequence ?? 10,
       IsActive: true,
     })),
     forumRoleTypes: dataset.forumRoleTypes.map((fr) => ({
@@ -1203,168 +2397,485 @@ function escapePg(value) {
   return `'${String(value).replace(/'/g, "''")}'`;
 }
 
-/**
- * Generates deterministic, idempotent SQL Server and PostgreSQL seed scripts for `ARCH-WORLD`
- * following `scripts/seed-world.sql` and `scripts/seed-world.pg.sql` conventions.
- */
-export function BuildArchitectAssociationWorldSql(dataset = GetArchWorldDataset()) {
-  const mssqlLines = [
+function escapeSqlite(value) {
+  if (value === null || value === undefined) return 'NULL';
+  if (typeof value === 'boolean') return value ? '1' : '0';
+  if (typeof value === 'number') return String(value);
+  return `'${String(value).replace(/'/g, "''")}'`;
+}
+
+function buildSqlServerScript(dataset) {
+  const lines = [
     '-- =============================================================================',
     '--  ARCH-WORLD (American Guild of Practicing Architects) Seed Script (SQL Server)',
-    '--  Idempotent natural-key / ID upserts with IdeaPost aggregate recomputation.',
+    '--  Complete 22-table FK-safe idempotent upserts in topological dependency order.',
     '-- =============================================================================',
     'SET NOCOUNT ON;',
     '',
   ];
-  const pgLines = [
-    '-- =============================================================================',
-    '--  ARCH-WORLD (American Guild of Practicing Architects) Seed Script (PostgreSQL)',
-    '--  Idempotent natural-key / ID upserts with IdeaPost aggregate recomputation.',
-    '-- =============================================================================',
-    'SET search_path TO __mj_BizAppsCommunity, public;',
-    '',
-  ];
 
-  // Spaces & CommunitySpaces
+  // 1. __mj.User (all 26 ARCH_MEMBERS)
+  for (const member of dataset.Members) {
+    const u = deriveMemberFields(member);
+    lines.push(
+      `IF NOT EXISTS (SELECT 1 FROM [__mj].[User] WHERE [ID] = '${u.ID}')`,
+      `    INSERT INTO [__mj].[User] ([ID], [Name], [FirstName], [LastName], [Email], [Type], [IsActive])`,
+      `    VALUES ('${u.ID}', ${escapeSql(u.Name)}, ${escapeSql(u.FirstName)}, ${escapeSql(u.LastName)}, ${escapeSql(u.Email)}, ${escapeSql(u.Type)}, ${escapeSql(u.IsActive)});`,
+      `ELSE`,
+      `    UPDATE [__mj].[User] SET [Name] = ${escapeSql(u.Name)}, [FirstName] = ${escapeSql(u.FirstName)}, [LastName] = ${escapeSql(u.LastName)}, [Email] = ${escapeSql(u.Email)}, [Type] = ${escapeSql(u.Type)}, [IsActive] = ${escapeSql(u.IsActive)} WHERE [ID] = '${u.ID}';`,
+    );
+  }
+
+  // 2. __mj_BizAppsCollaboration.Space (4 spaces)
+  const ownerId = dataset.Members[21].ID;
   for (const space of dataset.Spaces) {
-    mssqlLines.push(
+    lines.push(
       `IF NOT EXISTS (SELECT 1 FROM [__mj_BizAppsCollaboration].[Space] WHERE [ID] = '${space.ID}')`,
-      `    INSERT INTO [__mj_BizAppsCollaboration].[Space] ([ID], [SpaceTypeID], [Name], [Description], [OwnerID], [InheritsMembership], [AgentRetrieval], [StartedAt])`,
-      `    VALUES ('${space.ID}', '${space.SpaceTypeID}', ${escapeSql(space.Name)}, ${escapeSql(space.Description)}, '${dataset.Members[21].ID}', ${escapeSql(space.InheritsMembership)}, N'Included', SYSDATETIMEOFFSET());`,
+      `    INSERT INTO [__mj_BizAppsCollaboration].[Space] ([ID], [SpaceTypeID], [Name], [Description], [OwnerID], [InheritsMembership], [AgentRetrieval], [StartedAt], [AllowParentAssignees])`,
+      `    VALUES ('${space.ID}', '${space.SpaceTypeID}', ${escapeSql(space.Name)}, ${escapeSql(space.Description)}, '${ownerId}', ${escapeSql(space.InheritsMembership)}, N'Included', SYSDATETIMEOFFSET(), 1);`,
+      `ELSE`,
+      `    UPDATE [__mj_BizAppsCollaboration].[Space] SET [Name] = ${escapeSql(space.Name)}, [Description] = ${escapeSql(space.Description)}, [OwnerID] = '${ownerId}', [InheritsMembership] = ${escapeSql(space.InheritsMembership)} WHERE [ID] = '${space.ID}';`,
+    );
+  }
+
+  // 3. __mj_BizAppsCollaboration.SpaceMember (64 memberships)
+  for (const sm of dataset.SpaceMembers) {
+    lines.push(
+      `IF NOT EXISTS (SELECT 1 FROM [__mj_BizAppsCollaboration].[SpaceMember] WHERE [ID] = '${sm.ID}')`,
+      `    INSERT INTO [__mj_BizAppsCollaboration].[SpaceMember] ([ID], [SpaceID], [UserID], [SpaceRoleTypeID], [Band], [Status])`,
+      `    VALUES ('${sm.ID}', '${sm.SpaceID}', '${sm.UserID}', '${sm.SpaceRoleTypeID}', ${escapeSql(sm.Band)}, ${escapeSql(sm.Status)});`,
+      `ELSE`,
+      `    UPDATE [__mj_BizAppsCollaboration].[SpaceMember] SET [SpaceRoleTypeID] = '${sm.SpaceRoleTypeID}', [Band] = ${escapeSql(sm.Band)}, [Status] = ${escapeSql(sm.Status)} WHERE [ID] = '${sm.ID}';`,
+    );
+  }
+
+  // 4. __mj_BizAppsCommunity.CommunitySpace (4 community spaces)
+  for (const space of dataset.Spaces) {
+    lines.push(
       `IF NOT EXISTS (SELECT 1 FROM [__mj_BizAppsCommunity].[CommunitySpace] WHERE [ID] = '${space.ID}')`,
       `    INSERT INTO [__mj_BizAppsCommunity].[CommunitySpace] ([ID], [Slug], [CommunityKind], [AnonymousReadMode], [AskFirstEnabled], [DefaultDigestCadence])`,
       `    VALUES ('${space.ID}', ${escapeSql(space.Slug)}, ${escapeSql(space.CommunityKind)}, ${escapeSql(space.AnonymousReadMode)}, ${escapeSql(space.AskFirstEnabled)}, ${escapeSql(space.DefaultDigestCadence)});`,
-    );
-    pgLines.push(
-      `INSERT INTO __mj_BizAppsCollaboration."Space" ("ID", "SpaceTypeID", "Name", "Description", "OwnerID", "InheritsMembership", "AgentRetrieval", "StartedAt")`,
-      `VALUES ('${space.ID}', '${space.SpaceTypeID}', ${escapePg(space.Name)}, ${escapePg(space.Description)}, '${dataset.Members[21].ID}', ${escapePg(space.InheritsMembership)}, 'Included', CURRENT_TIMESTAMP) ON CONFLICT ("ID") DO NOTHING;`,
-      `INSERT INTO "CommunitySpace" ("ID", "Slug", "CommunityKind", "AnonymousReadMode", "AskFirstEnabled", "DefaultDigestCadence")`,
-      `VALUES ('${space.ID}', ${escapePg(space.Slug)}, ${escapePg(space.CommunityKind)}, ${escapePg(space.AnonymousReadMode)}, ${escapePg(space.AskFirstEnabled)}, ${escapePg(space.DefaultDigestCadence)}) ON CONFLICT ("ID") DO NOTHING;`,
+      `ELSE`,
+      `    UPDATE [__mj_BizAppsCommunity].[CommunitySpace] SET [Slug] = ${escapeSql(space.Slug)}, [CommunityKind] = ${escapeSql(space.CommunityKind)}, [AnonymousReadMode] = ${escapeSql(space.AnonymousReadMode)}, [AskFirstEnabled] = ${escapeSql(space.AskFirstEnabled)}, [DefaultDigestCadence] = ${escapeSql(space.DefaultDigestCadence)} WHERE [ID] = '${space.ID}';`,
     );
   }
 
-  // Forums & IdeaCampaigns
+  // 5. ForumType (6), PostType (13), ForumRoleType (7)
+  dataset.forumTypes.forEach((ft, idx) => {
+    lines.push(
+      `IF NOT EXISTS (SELECT 1 FROM [__mj_BizAppsCommunity].[ForumType] WHERE [ID] = '${ft.ID}')`,
+      `    INSERT INTO [__mj_BizAppsCommunity].[ForumType] ([ID], [Code], [Name], [ServerDriverClass], [Sequence], [IsActive])`,
+      `    VALUES ('${ft.ID}', ${escapeSql(ft.Code)}, ${escapeSql(ft.Name)}, ${escapeSql(ft.ServerDriverClass ?? null)}, ${(idx + 1) * 10}, 1);`,
+    );
+  });
+  dataset.postTypes.forEach((pt, idx) => {
+    lines.push(
+      `IF NOT EXISTS (SELECT 1 FROM [__mj_BizAppsCommunity].[PostType] WHERE [ID] = '${pt.ID}')`,
+      `    INSERT INTO [__mj_BizAppsCommunity].[PostType] ([ID], [Code], [Name], [ServerDriverClass], [PlacementRule], [AllowsNestedReplies], [Sequence], [IsActive])`,
+      `    VALUES ('${pt.ID}', ${escapeSql(pt.Code)}, ${escapeSql(pt.Name ?? pt.Code)}, ${escapeSql(pt.ServerDriverClass ?? null)}, ${escapeSql(pt.PlacementRule)}, ${escapeSql(pt.AllowsNestedReplies)}, ${pt.Sequence ?? (idx + 1) * 10}, 1);`,
+    );
+  });
+  dataset.forumRoleTypes.forEach((fr, idx) => {
+    lines.push(
+      `IF NOT EXISTS (SELECT 1 FROM [__mj_BizAppsCommunity].[ForumRoleType] WHERE [ID] = '${fr.ID}')`,
+      `    INSERT INTO [__mj_BizAppsCommunity].[ForumRoleType] ([ID], [Code], [Name], [CanConfigureForum], [CanModerateQueue], [CanPinOrLock], [CanAcceptAnswers], [CanVerifyCanon], [CanPromoteToSpace], [CanCreateRootPost], [CanReply], [CanCoEditDocs], [VoteWeightMultiplier], [Sequence], [IsActive])`,
+      `    VALUES ('${fr.ID}', ${escapeSql(fr.Code)}, ${escapeSql(fr.Name)}, ${escapeSql(fr.CanConfigureForum)}, ${escapeSql(fr.CanModerateQueue)}, ${escapeSql(fr.CanPinOrLock)}, ${escapeSql(fr.CanAcceptAnswers)}, ${escapeSql(fr.CanVerifyCanon)}, ${escapeSql(fr.CanPromoteToSpace)}, ${escapeSql(fr.CanCreateRootPost)}, ${escapeSql(fr.CanReply)}, ${escapeSql(fr.CanCoEditDocs)}, ${fr.VoteWeightMultiplier}, ${(idx + 1) * 10}, ${escapeSql(fr.IsActive)});`,
+    );
+  });
+
+  // 6. Forum (13 forums)
   for (const forum of dataset.Forums) {
-    mssqlLines.push(
+    lines.push(
       `IF NOT EXISTS (SELECT 1 FROM [__mj_BizAppsCommunity].[Forum] WHERE [ID] = '${forum.ID}')`,
       `    INSERT INTO [__mj_BizAppsCommunity].[Forum] ([ID], [SpaceID], [ForumTypeID], [Slug], [Name], [Description], [VisibilityBand], [PostingPolicy], [InheritsSpaceMembers], [Sequence], [Status])`,
       `    VALUES ('${forum.ID}', '${forum.SpaceID}', '${forum.ForumTypeID}', ${escapeSql(forum.Slug)}, ${escapeSql(forum.Name)}, ${escapeSql(forum.Description)}, ${escapeSql(forum.VisibilityBand)}, ${escapeSql(forum.PostingPolicy)}, ${escapeSql(forum.InheritsSpaceMembers)}, ${forum.Sequence}, ${escapeSql(forum.Status)});`,
-    );
-    pgLines.push(
-      `INSERT INTO "Forum" ("ID", "SpaceID", "ForumTypeID", "Slug", "Name", "Description", "VisibilityBand", "PostingPolicy", "InheritsSpaceMembers", "Sequence", "Status")`,
-      `VALUES ('${forum.ID}', '${forum.SpaceID}', '${forum.ForumTypeID}', ${escapePg(forum.Slug)}, ${escapePg(forum.Name)}, ${escapePg(forum.Description)}, ${escapePg(forum.VisibilityBand)}, ${escapePg(forum.PostingPolicy)}, ${escapePg(forum.InheritsSpaceMembers)}, ${forum.Sequence}, ${escapePg(forum.Status)}) ON CONFLICT ("ID") DO NOTHING;`,
+      `ELSE`,
+      `    UPDATE [__mj_BizAppsCommunity].[Forum] SET [Name] = ${escapeSql(forum.Name)}, [Description] = ${escapeSql(forum.Description)}, [VisibilityBand] = ${escapeSql(forum.VisibilityBand)}, [PostingPolicy] = ${escapeSql(forum.PostingPolicy)}, [Status] = ${escapeSql(forum.Status)} WHERE [ID] = '${forum.ID}';`,
     );
   }
 
+  // 7. ForumMember (14 memberships)
+  for (const fm of dataset.ForumMembers) {
+    lines.push(
+      `IF NOT EXISTS (SELECT 1 FROM [__mj_BizAppsCommunity].[ForumMember] WHERE [ID] = '${fm.ID}')`,
+      `    INSERT INTO [__mj_BizAppsCommunity].[ForumMember] ([ID], [ForumID], [UserID], [ForumRoleTypeID], [Status])`,
+      `    VALUES ('${fm.ID}', '${fm.ForumID}', '${fm.UserID}', '${fm.ForumRoleTypeID}', ${escapeSql(fm.Status)});`,
+      `ELSE`,
+      `    UPDATE [__mj_BizAppsCommunity].[ForumMember] SET [ForumRoleTypeID] = '${fm.ForumRoleTypeID}', [Status] = ${escapeSql(fm.Status)} WHERE [ID] = '${fm.ID}';`,
+    );
+  }
+
+  // 8. CommunityMemberProfile (26 profiles)
+  for (const p of dataset.MemberProfiles) {
+    lines.push(
+      `IF NOT EXISTS (SELECT 1 FROM [__mj_BizAppsCommunity].[CommunityMemberProfile] WHERE [ID] = '${p.ID}')`,
+      `    INSERT INTO [__mj_BizAppsCommunity].[CommunityMemberProfile] ([ID], [SpaceID], [UserID], [BioMarkdown], [ExpertiseTagsJSON], [HelpfulAnswerCount], [AcceptedAnswerCount], [ReputationScore], [DigestCadence], [OpenToPeerMentoring])`,
+      `    VALUES ('${p.ID}', '${p.SpaceID}', '${p.UserID}', ${escapeSql(p.BioMarkdown ?? p.Bio)}, ${escapeSql(p.ExpertiseTagsJSON)}, ${p.HelpfulAnswerCount}, ${p.AcceptedAnswerCount}, ${p.ReputationScore}, ${escapeSql(p.DigestCadence)}, ${escapeSql(Boolean(p.OpenToPeerMentoring))});`,
+      `ELSE`,
+      `    UPDATE [__mj_BizAppsCommunity].[CommunityMemberProfile] SET [BioMarkdown] = ${escapeSql(p.BioMarkdown ?? p.Bio)}, [ExpertiseTagsJSON] = ${escapeSql(p.ExpertiseTagsJSON)}, [ReputationScore] = ${p.ReputationScore}, [DigestCadence] = ${escapeSql(p.DigestCadence)} WHERE [ID] = '${p.ID}';`,
+    );
+  }
+
+  // 9. ForumSubscription (10 subscriptions)
+  for (const sub of dataset.ForumSubscriptions) {
+    const level = normalizeSubscriptionDeliveryLevel(sub);
+    lines.push(
+      `IF NOT EXISTS (SELECT 1 FROM [__mj_BizAppsCommunity].[ForumSubscription] WHERE [ID] = '${sub.ID}')`,
+      `    INSERT INTO [__mj_BizAppsCommunity].[ForumSubscription] ([ID], [UserID], [ForumID], [DeliveryLevel])`,
+      `    VALUES ('${sub.ID}', '${sub.UserID}', '${sub.ForumID}', ${escapeSql(level)});`,
+      `ELSE`,
+      `    UPDATE [__mj_BizAppsCommunity].[ForumSubscription] SET [DeliveryLevel] = ${escapeSql(level)} WHERE [ID] = '${sub.ID}';`,
+    );
+  }
+
+  // 10. ForumTopicTag (22 space-local tags)
+  for (const tag of dataset.TopicTags) {
+    lines.push(
+      `IF NOT EXISTS (SELECT 1 FROM [__mj_BizAppsCommunity].[ForumTopicTag] WHERE [ID] = '${tag.ID}')`,
+      `    INSERT INTO [__mj_BizAppsCommunity].[ForumTopicTag] ([ID], [SpaceID], [Slug], [Name], [IsOfficial])`,
+      `    VALUES ('${tag.ID}', '${tag.SpaceID}', ${escapeSql(tag.Slug)}, ${escapeSql(tag.Name)}, ${escapeSql(tag.IsOfficial)});`,
+      `ELSE`,
+      `    UPDATE [__mj_BizAppsCommunity].[ForumTopicTag] SET [Name] = ${escapeSql(tag.Name)}, [IsOfficial] = ${escapeSql(tag.IsOfficial)} WHERE [ID] = '${tag.ID}';`,
+    );
+  }
+
+  // 11. ForumPost (68 posts in topological order)
+  for (const post of sortPostsTopologically(dataset.Posts)) {
+    lines.push(
+      `IF NOT EXISTS (SELECT 1 FROM [__mj_BizAppsCommunity].[ForumPost] WHERE [ID] = '${post.ID}')`,
+      `    INSERT INTO [__mj_BizAppsCommunity].[ForumPost] ([ID], [ForumID], [PostTypeID], [RootPostID], [ParentPostID], [ReplyDepth], [AuthorUserID], [Title], [Slug], [BodyMarkdown], [SummaryMarkdown], [VisibilityBand], [Status], [IsPinned], [IsLocked], [IsFeatured], [ReplyCount], [ParticipantCount], [ReactionScore], [ViewCount])`,
+      `    VALUES ('${post.ID}', '${post.ForumID}', '${post.PostTypeID}', ${post.RootPostID ? `'${post.RootPostID}'` : 'NULL'}, ${post.ParentPostID ? `'${post.ParentPostID}'` : 'NULL'}, ${post.ReplyDepth ?? 0}, '${post.AuthorUserID}', ${escapeSql(post.Title)}, ${escapeSql(post.Slug)}, ${escapeSql(post.BodyMarkdown)}, ${escapeSql(post.SummaryMarkdown)}, ${escapeSql(post.VisibilityBand)}, ${escapeSql(post.Status)}, ${escapeSql(post.IsPinned)}, ${escapeSql(post.IsLocked)}, ${escapeSql(post.IsFeatured)}, ${post.ReplyCount ?? 0}, ${post.ParticipantCount ?? 1}, ${post.ReactionScore ?? 0}, ${post.ViewCount ?? 0});`,
+    );
+  }
+
+  // 12. ForumQuestionPost (cyclic-FK-safe: insert with AcceptedAnswerPostID = NULL first)
+  for (const q of dataset.QuestionPosts) {
+    lines.push(
+      `IF NOT EXISTS (SELECT 1 FROM [__mj_BizAppsCommunity].[ForumQuestionPost] WHERE [ID] = '${q.ID}')`,
+      `    INSERT INTO [__mj_BizAppsCommunity].[ForumQuestionPost] ([ID], [AcceptedAnswerPostID], [AICanonAnswerPostID], [BountyPoints], [ResolvedAt])`,
+      `    VALUES ('${q.ID}', NULL, NULL, ${q.BountyPoints ?? 0}, ${escapeSql(q.ResolvedAt ?? null)});`,
+    );
+  }
+
+  // 13. ForumAnswerPost (7 answers) + cyclic-FK-safe AcceptedAnswerPostID linkage
+  for (const a of dataset.AnswerPosts) {
+    lines.push(
+      `IF NOT EXISTS (SELECT 1 FROM [__mj_BizAppsCommunity].[ForumAnswerPost] WHERE [ID] = '${a.ID}')`,
+      `    INSERT INTO [__mj_BizAppsCommunity].[ForumAnswerPost] ([ID], [QuestionPostID], [IsAcceptedByAuthor], [IsVerifiedByModerator], [VerifiedByUserID], [AIEpistemicStatus], [AIConfidenceScore])`,
+      `    VALUES ('${a.ID}', '${a.QuestionPostID}', ${escapeSql(a.IsAcceptedByAuthor)}, ${escapeSql(a.IsVerifiedByModerator)}, ${a.VerifiedByUserID ? `'${a.VerifiedByUserID}'` : 'NULL'}, ${escapeSql(a.AIEpistemicStatus)}, ${a.AIConfidenceScore});`,
+      `ELSE`,
+      `    UPDATE [__mj_BizAppsCommunity].[ForumAnswerPost] SET [IsAcceptedByAuthor] = ${escapeSql(a.IsAcceptedByAuthor)}, [IsVerifiedByModerator] = ${escapeSql(a.IsVerifiedByModerator)}, [AIEpistemicStatus] = ${escapeSql(a.AIEpistemicStatus)}, [AIConfidenceScore] = ${a.AIConfidenceScore} WHERE [ID] = '${a.ID}';`,
+    );
+  }
+  for (const q of dataset.QuestionPosts) {
+    lines.push(
+      `UPDATE [__mj_BizAppsCommunity].[ForumQuestionPost]`,
+      `SET [AcceptedAnswerPostID] = ${q.AcceptedAnswerPostID ? `'${q.AcceptedAnswerPostID}'` : 'NULL'}, [AICanonAnswerPostID] = ${q.AICanonAnswerPostID ? `'${q.AICanonAnswerPostID}'` : 'NULL'}, [BountyPoints] = ${q.BountyPoints ?? 0}, [ResolvedAt] = ${escapeSql(q.ResolvedAt ?? null)}`,
+      `WHERE [ID] = '${q.ID}';`,
+    );
+  }
+
+  // 14. ForumIdeaCampaign (1 campaign)
   for (const camp of dataset.IdeaCampaigns) {
-    mssqlLines.push(
+    lines.push(
       `IF NOT EXISTS (SELECT 1 FROM [__mj_BizAppsCommunity].[ForumIdeaCampaign] WHERE [ID] = '${camp.ID}')`,
       `    INSERT INTO [__mj_BizAppsCommunity].[ForumIdeaCampaign] ([ID], [DefaultBudgetPoints], [AllocationMode], [MaxPointsPerIdea])`,
       `    VALUES ('${camp.ID}', ${camp.DefaultBudgetPoints}, ${escapeSql(camp.AllocationMode)}, ${camp.MaxPointsPerIdea});`,
     );
-    pgLines.push(
-      `INSERT INTO "ForumIdeaCampaign" ("ID", "DefaultBudgetPoints", "AllocationMode", "MaxPointsPerIdea")`,
-      `VALUES ('${camp.ID}', ${camp.DefaultBudgetPoints}, ${escapePg(camp.AllocationMode)}, ${camp.MaxPointsPerIdea}) ON CONFLICT ("ID") DO NOTHING;`,
-    );
   }
 
-  // Topic Tags
-  for (const tag of dataset.TopicTags) {
-    mssqlLines.push(
-      `IF NOT EXISTS (SELECT 1 FROM [__mj_BizAppsCommunity].[ForumTopicTag] WHERE [ID] = '${tag.ID}')`,
-      `    INSERT INTO [__mj_BizAppsCommunity].[ForumTopicTag] ([ID], [SpaceID], [Slug], [Name], [IsOfficial])`,
-      `    VALUES ('${tag.ID}', '${tag.SpaceID}', ${escapeSql(tag.Slug)}, ${escapeSql(tag.Name)}, ${escapeSql(tag.IsOfficial)});`,
-    );
-    pgLines.push(
-      `INSERT INTO "ForumTopicTag" ("ID", "SpaceID", "Slug", "Name", "IsOfficial")`,
-      `VALUES ('${tag.ID}', '${tag.SpaceID}', ${escapePg(tag.Slug)}, ${escapePg(tag.Name)}, ${escapePg(tag.IsOfficial)}) ON CONFLICT ("ID") DO NOTHING;`,
-    );
-  }
-
-  // Posts (ReplyDepth order)
-  const sortedPosts = [...dataset.Posts].sort((a, b) => (a.ReplyDepth ?? 0) - (b.ReplyDepth ?? 0));
-  for (const post of sortedPosts) {
-    mssqlLines.push(
-      `IF NOT EXISTS (SELECT 1 FROM [__mj_BizAppsCommunity].[ForumPost] WHERE [ID] = '${post.ID}')`,
-      `    INSERT INTO [__mj_BizAppsCommunity].[ForumPost] ([ID], [ForumID], [PostTypeID], [RootPostID], [ParentPostID], [ReplyDepth], [AuthorUserID], [Title], [Slug], [BodyMarkdown], [VisibilityBand], [Status], [IsPinned], [IsLocked], [IsFeatured])`,
-      `    VALUES ('${post.ID}', '${post.ForumID}', '${post.PostTypeID}', ${post.RootPostID ? `'${post.RootPostID}'` : 'NULL'}, ${post.ParentPostID ? `'${post.ParentPostID}'` : 'NULL'}, ${post.ReplyDepth ?? 0}, '${post.AuthorUserID}', ${escapeSql(post.Title)}, ${escapeSql(post.Slug)}, ${escapeSql(post.BodyMarkdown)}, ${escapeSql(post.VisibilityBand)}, ${escapeSql(post.Status)}, ${escapeSql(post.IsPinned)}, ${escapeSql(post.IsLocked)}, ${escapeSql(post.IsFeatured)});`,
-    );
-    pgLines.push(
-      `INSERT INTO "ForumPost" ("ID", "ForumID", "PostTypeID", "RootPostID", "ParentPostID", "ReplyDepth", "AuthorUserID", "Title", "Slug", "BodyMarkdown", "VisibilityBand", "Status", "IsPinned", "IsLocked", "IsFeatured")`,
-      `VALUES ('${post.ID}', '${post.ForumID}', '${post.PostTypeID}', ${post.RootPostID ? `'${post.RootPostID}'` : 'NULL'}, ${post.ParentPostID ? `'${post.ParentPostID}'` : 'NULL'}, ${post.ReplyDepth ?? 0}, '${post.AuthorUserID}', ${escapePg(post.Title)}, ${escapePg(post.Slug)}, ${escapePg(post.BodyMarkdown)}, ${escapePg(post.VisibilityBand)}, ${escapePg(post.Status)}, ${escapePg(post.IsPinned)}, ${escapePg(post.IsLocked)}, ${escapePg(post.IsFeatured)}) ON CONFLICT ("ID") DO NOTHING;`,
-    );
-  }
-
-  // Question, Answer, Idea, Case, AMA subtypes
-  for (const q of dataset.QuestionPosts) {
-    mssqlLines.push(
-      `IF NOT EXISTS (SELECT 1 FROM [__mj_BizAppsCommunity].[ForumQuestionPost] WHERE [ID] = '${q.ID}')`,
-      `    INSERT INTO [__mj_BizAppsCommunity].[ForumQuestionPost] ([ID], [AcceptedAnswerPostID], [AICanonAnswerPostID], [BountyPoints])`,
-      `    VALUES ('${q.ID}', ${q.AcceptedAnswerPostID ? `'${q.AcceptedAnswerPostID}'` : 'NULL'}, ${q.AICanonAnswerPostID ? `'${q.AICanonAnswerPostID}'` : 'NULL'}, ${q.BountyPoints ?? 0});`,
-    );
-    pgLines.push(
-      `INSERT INTO "ForumQuestionPost" ("ID", "AcceptedAnswerPostID", "AICanonAnswerPostID", "BountyPoints")`,
-      `VALUES ('${q.ID}', ${q.AcceptedAnswerPostID ? `'${q.AcceptedAnswerPostID}'` : 'NULL'}, ${q.AICanonAnswerPostID ? `'${q.AICanonAnswerPostID}'` : 'NULL'}, ${q.BountyPoints ?? 0}) ON CONFLICT ("ID") DO NOTHING;`,
-    );
-  }
-
-  for (const a of dataset.AnswerPosts) {
-    mssqlLines.push(
-      `IF NOT EXISTS (SELECT 1 FROM [__mj_BizAppsCommunity].[ForumAnswerPost] WHERE [ID] = '${a.ID}')`,
-      `    INSERT INTO [__mj_BizAppsCommunity].[ForumAnswerPost] ([ID], [QuestionPostID], [IsAcceptedByAuthor], [IsVerifiedByModerator], [AIEpistemicStatus], [AIConfidenceScore])`,
-      `    VALUES ('${a.ID}', '${a.QuestionPostID}', ${escapeSql(a.IsAcceptedByAuthor)}, ${escapeSql(a.IsVerifiedByModerator)}, ${escapeSql(a.AIEpistemicStatus)}, ${a.AIConfidenceScore});`,
-    );
-    pgLines.push(
-      `INSERT INTO "ForumAnswerPost" ("ID", "QuestionPostID", "IsAcceptedByAuthor", "IsVerifiedByModerator", "AIEpistemicStatus", "AIConfidenceScore")`,
-      `VALUES ('${a.ID}', '${a.QuestionPostID}', ${escapePg(a.IsAcceptedByAuthor)}, ${escapePg(a.IsVerifiedByModerator)}, ${escapePg(a.AIEpistemicStatus)}, ${a.AIConfidenceScore}) ON CONFLICT ("ID") DO NOTHING;`,
-    );
-  }
-
+  // 15. ForumIdeaPost (5 idea posts)
   for (const idea of dataset.IdeaPosts) {
-    mssqlLines.push(
+    lines.push(
       `IF NOT EXISTS (SELECT 1 FROM [__mj_BizAppsCommunity].[ForumIdeaPost] WHERE [ID] = '${idea.ID}')`,
       `    INSERT INTO [__mj_BizAppsCommunity].[ForumIdeaPost] ([ID], [IdeaStatus], [TotalPointsAllocated], [EffectiveQuadraticVotes], [UniqueBackerCount], [TargetReleaseOrQuarter])`,
       `    VALUES ('${idea.ID}', ${escapeSql(idea.IdeaStatus)}, 0, 0.0, 0, ${escapeSql(idea.TargetReleaseOrQuarter)});`,
     );
-    pgLines.push(
-      `INSERT INTO "ForumIdeaPost" ("ID", "IdeaStatus", "TotalPointsAllocated", "EffectiveQuadraticVotes", "UniqueBackerCount", "TargetReleaseOrQuarter")`,
-      `VALUES ('${idea.ID}', ${escapePg(idea.IdeaStatus)}, 0, 0.0, 0, ${escapePg(idea.TargetReleaseOrQuarter)}) ON CONFLICT ("ID") DO NOTHING;`,
-    );
   }
 
-  // Space-scoped PostTags
-  for (const pt of dataset.PostTags) {
-    mssqlLines.push(
-      `IF NOT EXISTS (SELECT 1 FROM [__mj_BizAppsCommunity].[ForumPostTag] WHERE [ID] = '${pt.ID}')`,
-      `    INSERT INTO [__mj_BizAppsCommunity].[ForumPostTag] ([ID], [PostID], [TopicTagID]) VALUES ('${pt.ID}', '${pt.PostID}', '${pt.TopicTagID}');`,
-    );
-    pgLines.push(
-      `INSERT INTO "ForumPostTag" ("ID", "PostID", "TopicTagID") VALUES ('${pt.ID}', '${pt.PostID}', '${pt.TopicTagID}') ON CONFLICT ("ID") DO NOTHING;`,
-    );
-  }
-
-  // Idea Allocations + Aggregate Recomputation
+  // 16. ForumIdeaAllocation (25 allocations) + aggregate recomputation
   for (const alloc of dataset.IdeaAllocations) {
-    mssqlLines.push(
+    lines.push(
       `IF NOT EXISTS (SELECT 1 FROM [__mj_BizAppsCommunity].[ForumIdeaAllocation] WHERE [ID] = '${alloc.ID}')`,
       `    INSERT INTO [__mj_BizAppsCommunity].[ForumIdeaAllocation] ([ID], [IdeaPostID], [UserID], [PointsAllocated], [QuadraticVotes])`,
       `    VALUES ('${alloc.ID}', '${alloc.IdeaPostID}', '${alloc.UserID}', ${alloc.PointsAllocated}, ${alloc.QuadraticVotes});`,
     );
-    pgLines.push(
-      `INSERT INTO "ForumIdeaAllocation" ("ID", "IdeaPostID", "UserID", "PointsAllocated", "QuadraticVotes")`,
-      `VALUES ('${alloc.ID}', '${alloc.IdeaPostID}', '${alloc.UserID}', ${alloc.PointsAllocated}, ${alloc.QuadraticVotes}) ON CONFLICT ("ID") DO NOTHING;`,
-    );
   }
-
   for (const idea of dataset.IdeaPosts) {
-    mssqlLines.push(
+    lines.push(
       `UPDATE [__mj_BizAppsCommunity].[ForumIdeaPost]`,
       `SET [TotalPointsAllocated] = ISNULL(agg.[TotalPts], 0), [EffectiveQuadraticVotes] = ISNULL(agg.[TotalVotes], 0.0), [UniqueBackerCount] = ISNULL(agg.[Backers], 0)`,
       `FROM [__mj_BizAppsCommunity].[ForumIdeaPost] ip`,
       `OUTER APPLY (SELECT SUM([PointsAllocated]) AS [TotalPts], SUM([QuadraticVotes]) AS [TotalVotes], COUNT(*) AS [Backers] FROM [__mj_BizAppsCommunity].[ForumIdeaAllocation] WHERE [IdeaPostID] = '${idea.ID}') agg`,
       `WHERE ip.[ID] = '${idea.ID}';`,
     );
-    pgLines.push(
+  }
+
+  // 17. ForumCasePost (2 case posts)
+  for (const c of dataset.CasePosts) {
+    lines.push(
+      `IF NOT EXISTS (SELECT 1 FROM [__mj_BizAppsCommunity].[ForumCasePost] WHERE [ID] = '${c.ID}')`,
+      `    INSERT INTO [__mj_BizAppsCommunity].[ForumCasePost] ([ID], [SituationMarkdown], [ActionTakenMarkdown], [OutcomeMarkdown], [IsAnonymized], [AnonymizedAuthorAlias])`,
+      `    VALUES ('${c.ID}', ${escapeSql(c.SituationMarkdown)}, ${escapeSql(c.ActionTakenMarkdown)}, ${escapeSql(c.OutcomeMarkdown)}, ${escapeSql(c.IsAnonymized)}, ${escapeSql(c.AnonymizedAuthorAlias)});`,
+    );
+  }
+
+  // 18. ForumAMAPost (2 AMA posts)
+  for (const ama of dataset.AMAPosts) {
+    lines.push(
+      `IF NOT EXISTS (SELECT 1 FROM [__mj_BizAppsCommunity].[ForumAMAPost] WHERE [ID] = '${ama.ID}')`,
+      `    INSERT INTO [__mj_BizAppsCommunity].[ForumAMAPost] ([ID], [HostUserID], [ScheduledStartAt], [ScheduledEndAt], [QuestionsOpenAt], [IsLiveNow], [RecapMarkdown])`,
+      `    VALUES ('${ama.ID}', '${ama.HostUserID}', ${escapeSql(ama.ScheduledStartAt)}, ${escapeSql(ama.ScheduledEndAt)}, ${escapeSql(ama.QuestionsOpenAt)}, ${escapeSql(ama.IsLiveNow)}, ${escapeSql(ama.RecapMarkdown)});`,
+    );
+  }
+
+  // 19-20. ForumInteractivePost (1) & ForumInteractiveSession (6) — resolve core Environment & ArtifactType
+  lines.push(
+    'DECLARE @ArchEnvID UNIQUEIDENTIFIER;',
+    'SELECT TOP 1 @ArchEnvID = [ID] FROM [__mj].[Environment] WHERE [IsDefault] = 1;',
+    'IF @ArchEnvID IS NULL SELECT TOP 1 @ArchEnvID = [ID] FROM [__mj].[Environment] ORDER BY [__mj_CreatedAt] ASC;',
+    'DECLARE @ArchArtifactTypeID UNIQUEIDENTIFIER;',
+    'SELECT TOP 1 @ArchArtifactTypeID = [ID] FROM [__mj].[ArtifactType] ORDER BY [__mj_CreatedAt] ASC;',
+    'IF @ArchEnvID IS NOT NULL AND @ArchArtifactTypeID IS NOT NULL',
+    'BEGIN',
+    `    IF NOT EXISTS (SELECT 1 FROM [__mj].[Artifact] WHERE [ID] = '${ARCH_INTERACTIVE_ARTIFACT_ID}')`,
+    `        INSERT INTO [__mj].[Artifact] ([ID], [EnvironmentID], [Name], [Description], [TypeID], [UserID], [__mj_CreatedAt], [__mj_UpdatedAt], [Visibility])`,
+    `        VALUES ('${ARCH_INTERACTIVE_ARTIFACT_ID}', @ArchEnvID, N'IBC 2027 Mass Timber Readiness Challenge', N'Interactive AGPA Type IV-A/B/C readiness quiz component.', @ArchArtifactTypeID, '${ownerId}', SYSDATETIMEOFFSET(), SYSDATETIMEOFFSET(), N'Always');`,
+    `    IF NOT EXISTS (SELECT 1 FROM [__mj].[ArtifactVersion] WHERE [ID] = '${ARCH_INTERACTIVE_ARTIFACT_VERSION_ID}')`,
+    `        INSERT INTO [__mj].[ArtifactVersion] ([ID], [ArtifactID], [VersionNumber], [UserID], [__mj_CreatedAt], [__mj_UpdatedAt], [ContentMode], [ForceToolsOnly])`,
+    `        VALUES ('${ARCH_INTERACTIVE_ARTIFACT_VERSION_ID}', '${ARCH_INTERACTIVE_ARTIFACT_ID}', 1, '${ownerId}', SYSDATETIMEOFFSET(), SYSDATETIMEOFFSET(), N'Text', 0);`,
+  );
+  for (const inter of dataset.InteractivePosts) {
+    lines.push(
+      `    IF NOT EXISTS (SELECT 1 FROM [__mj_BizAppsCommunity].[ForumInteractivePost] WHERE [ID] = '${inter.ID}')`,
+      `        INSERT INTO [__mj_BizAppsCommunity].[ForumInteractivePost] ([ID], [ComponentArtifactID], [PinnedArtifactVersionID], [ExperienceKind], [ScoringMode], [ShowLeaderboard], [MaxAttemptsPerMember], [PlayCount])`,
+      `        VALUES ('${inter.ID}', '${ARCH_INTERACTIVE_ARTIFACT_ID}', '${ARCH_INTERACTIVE_ARTIFACT_VERSION_ID}', ${escapeSql(inter.ExperienceKind)}, ${escapeSql(inter.ScoringMode)}, ${escapeSql(inter.ShowLeaderboard)}, ${inter.MaxAttemptsPerMember ?? 'NULL'}, ${inter.PlayCount ?? 0});`,
+    );
+  }
+  for (const sess of dataset.InteractiveSessions) {
+    lines.push(
+      `    IF NOT EXISTS (SELECT 1 FROM [__mj_BizAppsCommunity].[ForumInteractiveSession] WHERE [ID] = '${sess.ID}')`,
+      `        INSERT INTO [__mj_BizAppsCommunity].[ForumInteractiveSession] ([ID], [InteractivePostID], [ArtifactVersionID], [UserID], [AttemptNumber], [Score], [DurationSeconds], [Completed])`,
+      `        VALUES ('${sess.ID}', '${sess.InteractivePostID}', '${ARCH_INTERACTIVE_ARTIFACT_VERSION_ID}', '${sess.UserID}', ${sess.AttemptNumber}, ${sess.Score}, ${sess.DurationSeconds}, ${escapeSql(sess.Completed)});`,
+    );
+  }
+  lines.push('END;');
+
+  // 21. ForumPostTag (38 post tags)
+  for (const pt of dataset.PostTags) {
+    lines.push(
+      `IF NOT EXISTS (SELECT 1 FROM [__mj_BizAppsCommunity].[ForumPostTag] WHERE [ID] = '${pt.ID}')`,
+      `    INSERT INTO [__mj_BizAppsCommunity].[ForumPostTag] ([ID], [PostID], [TopicTagID]) VALUES ('${pt.ID}', '${pt.PostID}', '${pt.TopicTagID}');`,
+    );
+  }
+
+  // 22. ForumPostReaction (10 reactions) & ForumPostFlag (2 flags)
+  for (const rx of dataset.PostReactions) {
+    lines.push(
+      `IF NOT EXISTS (SELECT 1 FROM [__mj_BizAppsCommunity].[ForumPostReaction] WHERE [ID] = '${rx.ID}')`,
+      `    INSERT INTO [__mj_BizAppsCommunity].[ForumPostReaction] ([ID], [PostID], [UserID], [ReactionKind], [Weight])`,
+      `    VALUES ('${rx.ID}', '${rx.PostID}', '${rx.UserID}', ${escapeSql(rx.ReactionKind)}, ${rx.Weight ?? 1.0});`,
+    );
+  }
+  for (const flag of dataset.PostFlags) {
+    const reportedBy = flag.ReportedByUserID ?? flag.ReporterUserID;
+    const reasonDetails = flag.ReasonDetails ?? flag.Notes ?? null;
+    lines.push(
+      `IF NOT EXISTS (SELECT 1 FROM [__mj_BizAppsCommunity].[ForumPostFlag] WHERE [ID] = '${flag.ID}')`,
+      `    INSERT INTO [__mj_BizAppsCommunity].[ForumPostFlag] ([ID], [PostID], [ReportedByUserID], [ReasonCategory], [Status], [ReasonDetails])`,
+      `    VALUES ('${flag.ID}', '${flag.PostID}', ${reportedBy ? `'${reportedBy}'` : 'NULL'}, ${escapeSql(flag.ReasonCategory)}, ${escapeSql(flag.Status)}, ${escapeSql(reasonDetails)});`,
+      `ELSE`,
+      `    UPDATE [__mj_BizAppsCommunity].[ForumPostFlag] SET [Status] = ${escapeSql(flag.Status)}, [ReasonDetails] = ${escapeSql(reasonDetails)} WHERE [ID] = '${flag.ID}';`,
+    );
+  }
+
+  return lines.join('\n');
+}
+
+function buildPostgresScript(dataset) {
+  const ownerId = dataset.Members[21].ID;
+  const lines = [
+    '-- =============================================================================',
+    '--  ARCH-WORLD (American Guild of Practicing Architects) Seed Script (PostgreSQL)',
+    '--  Complete 22-table FK-safe idempotent upserts in topological dependency order.',
+    '-- =============================================================================',
+    'SET search_path TO __mj_BizAppsCommunity, public;',
+    '',
+    'DO $$',
+    'DECLARE',
+    '    v_default_environment_id UUID;',
+    '    v_any_artifact_type_id UUID;',
+    'BEGIN',
+  ];
+
+  // 1. __mj."User" (all 26 ARCH_MEMBERS)
+  for (const member of dataset.Members) {
+    const u = deriveMemberFields(member);
+    lines.push(
+      `INSERT INTO __mj."User" ("ID", "Name", "FirstName", "LastName", "Email", "Type", "IsActive")`,
+      `VALUES ('${u.ID}', ${escapePg(u.Name)}, ${escapePg(u.FirstName)}, ${escapePg(u.LastName)}, ${escapePg(u.Email)}, ${escapePg(u.Type)}, ${escapePg(u.IsActive)})`,
+      `ON CONFLICT ("ID") DO UPDATE SET "Name" = EXCLUDED."Name", "FirstName" = EXCLUDED."FirstName", "LastName" = EXCLUDED."LastName", "Email" = EXCLUDED."Email", "Type" = EXCLUDED."Type", "IsActive" = EXCLUDED."IsActive";`,
+    );
+  }
+
+  // 2. __mj_BizAppsCollaboration."Space" (4 spaces)
+  for (const space of dataset.Spaces) {
+    lines.push(
+      `INSERT INTO __mj_BizAppsCollaboration."Space" ("ID", "SpaceTypeID", "Name", "Description", "OwnerID", "InheritsMembership", "AgentRetrieval", "StartedAt", "AllowParentAssignees")`,
+      `VALUES ('${space.ID}', '${space.SpaceTypeID}', ${escapePg(space.Name)}, ${escapePg(space.Description)}, '${ownerId}', ${escapePg(space.InheritsMembership)}, 'Included', CURRENT_TIMESTAMP, TRUE)`,
+      `ON CONFLICT ("ID") DO UPDATE SET "Name" = EXCLUDED."Name", "Description" = EXCLUDED."Description", "OwnerID" = EXCLUDED."OwnerID", "InheritsMembership" = EXCLUDED."InheritsMembership";`,
+    );
+  }
+
+  // 3. __mj_BizAppsCollaboration."SpaceMember" (64 memberships)
+  for (const sm of dataset.SpaceMembers) {
+    lines.push(
+      `INSERT INTO __mj_BizAppsCollaboration."SpaceMember" ("ID", "SpaceID", "UserID", "SpaceRoleTypeID", "Band", "Status")`,
+      `VALUES ('${sm.ID}', '${sm.SpaceID}', '${sm.UserID}', '${sm.SpaceRoleTypeID}', ${escapePg(sm.Band)}, ${escapePg(sm.Status)})`,
+      `ON CONFLICT ("ID") DO UPDATE SET "SpaceRoleTypeID" = EXCLUDED."SpaceRoleTypeID", "Band" = EXCLUDED."Band", "Status" = EXCLUDED."Status";`,
+    );
+  }
+
+  // 4. "CommunitySpace" (4 community spaces)
+  for (const space of dataset.Spaces) {
+    lines.push(
+      `INSERT INTO "CommunitySpace" ("ID", "Slug", "CommunityKind", "AnonymousReadMode", "AskFirstEnabled", "DefaultDigestCadence")`,
+      `VALUES ('${space.ID}', ${escapePg(space.Slug)}, ${escapePg(space.CommunityKind)}, ${escapePg(space.AnonymousReadMode)}, ${escapePg(space.AskFirstEnabled)}, ${escapePg(space.DefaultDigestCadence)})`,
+      `ON CONFLICT ("ID") DO UPDATE SET "Slug" = EXCLUDED."Slug", "CommunityKind" = EXCLUDED."CommunityKind", "AnonymousReadMode" = EXCLUDED."AnonymousReadMode", "AskFirstEnabled" = EXCLUDED."AskFirstEnabled", "DefaultDigestCadence" = EXCLUDED."DefaultDigestCadence";`,
+    );
+  }
+
+  // 5. "ForumType" (6), "PostType" (13), "ForumRoleType" (7)
+  dataset.forumTypes.forEach((ft, idx) => {
+    lines.push(
+      `INSERT INTO "ForumType" ("ID", "Code", "Name", "ServerDriverClass", "Sequence", "IsActive")`,
+      `VALUES ('${ft.ID}', ${escapePg(ft.Code)}, ${escapePg(ft.Name)}, ${escapePg(ft.ServerDriverClass ?? null)}, ${(idx + 1) * 10}, TRUE)`,
+      `ON CONFLICT ("ID") DO UPDATE SET "Name" = EXCLUDED."Name", "ServerDriverClass" = EXCLUDED."ServerDriverClass", "IsActive" = EXCLUDED."IsActive";`,
+    );
+  });
+  dataset.postTypes.forEach((pt, idx) => {
+    lines.push(
+      `INSERT INTO "PostType" ("ID", "Code", "Name", "ServerDriverClass", "PlacementRule", "AllowsNestedReplies", "Sequence", "IsActive")`,
+      `VALUES ('${pt.ID}', ${escapePg(pt.Code)}, ${escapePg(pt.Name ?? pt.Code)}, ${escapePg(pt.ServerDriverClass ?? null)}, ${escapePg(pt.PlacementRule)}, ${escapePg(pt.AllowsNestedReplies)}, ${pt.Sequence ?? (idx + 1) * 10}, TRUE)`,
+      `ON CONFLICT ("ID") DO UPDATE SET "Name" = EXCLUDED."Name", "ServerDriverClass" = EXCLUDED."ServerDriverClass", "PlacementRule" = EXCLUDED."PlacementRule", "AllowsNestedReplies" = EXCLUDED."AllowsNestedReplies";`,
+    );
+  });
+  dataset.forumRoleTypes.forEach((fr, idx) => {
+    lines.push(
+      `INSERT INTO "ForumRoleType" ("ID", "Code", "Name", "CanConfigureForum", "CanModerateQueue", "CanPinOrLock", "CanAcceptAnswers", "CanVerifyCanon", "CanPromoteToSpace", "CanCreateRootPost", "CanReply", "CanCoEditDocs", "VoteWeightMultiplier", "Sequence", "IsActive")`,
+      `VALUES ('${fr.ID}', ${escapePg(fr.Code)}, ${escapePg(fr.Name)}, ${escapePg(fr.CanConfigureForum)}, ${escapePg(fr.CanModerateQueue)}, ${escapePg(fr.CanPinOrLock)}, ${escapePg(fr.CanAcceptAnswers)}, ${escapePg(fr.CanVerifyCanon)}, ${escapePg(fr.CanPromoteToSpace)}, ${escapePg(fr.CanCreateRootPost)}, ${escapePg(fr.CanReply)}, ${escapePg(fr.CanCoEditDocs)}, ${fr.VoteWeightMultiplier}, ${(idx + 1) * 10}, ${escapePg(fr.IsActive)})`,
+      `ON CONFLICT ("ID") DO UPDATE SET "Name" = EXCLUDED."Name", "IsActive" = EXCLUDED."IsActive";`,
+    );
+  });
+
+  // 6. "Forum" (13 forums)
+  for (const forum of dataset.Forums) {
+    lines.push(
+      `INSERT INTO "Forum" ("ID", "SpaceID", "ForumTypeID", "Slug", "Name", "Description", "VisibilityBand", "PostingPolicy", "InheritsSpaceMembers", "Sequence", "Status")`,
+      `VALUES ('${forum.ID}', '${forum.SpaceID}', '${forum.ForumTypeID}', ${escapePg(forum.Slug)}, ${escapePg(forum.Name)}, ${escapePg(forum.Description)}, ${escapePg(forum.VisibilityBand)}, ${escapePg(forum.PostingPolicy)}, ${escapePg(forum.InheritsSpaceMembers)}, ${forum.Sequence}, ${escapePg(forum.Status)})`,
+      `ON CONFLICT ("ID") DO UPDATE SET "Name" = EXCLUDED."Name", "Description" = EXCLUDED."Description", "VisibilityBand" = EXCLUDED."VisibilityBand", "PostingPolicy" = EXCLUDED."PostingPolicy", "Status" = EXCLUDED."Status";`,
+    );
+  }
+
+  // 7. "ForumMember" (14 memberships)
+  for (const fm of dataset.ForumMembers) {
+    lines.push(
+      `INSERT INTO "ForumMember" ("ID", "ForumID", "UserID", "ForumRoleTypeID", "Status")`,
+      `VALUES ('${fm.ID}', '${fm.ForumID}', '${fm.UserID}', '${fm.ForumRoleTypeID}', ${escapePg(fm.Status)})`,
+      `ON CONFLICT ("ID") DO UPDATE SET "ForumRoleTypeID" = EXCLUDED."ForumRoleTypeID", "Status" = EXCLUDED."Status";`,
+    );
+  }
+
+  // 8. "CommunityMemberProfile" (26 profiles)
+  for (const p of dataset.MemberProfiles) {
+    lines.push(
+      `INSERT INTO "CommunityMemberProfile" ("ID", "SpaceID", "UserID", "BioMarkdown", "ExpertiseTagsJSON", "HelpfulAnswerCount", "AcceptedAnswerCount", "ReputationScore", "DigestCadence", "OpenToPeerMentoring")`,
+      `VALUES ('${p.ID}', '${p.SpaceID}', '${p.UserID}', ${escapePg(p.BioMarkdown ?? p.Bio)}, ${escapePg(p.ExpertiseTagsJSON)}, ${p.HelpfulAnswerCount}, ${p.AcceptedAnswerCount}, ${p.ReputationScore}, ${escapePg(p.DigestCadence)}, ${escapePg(Boolean(p.OpenToPeerMentoring))})`,
+      `ON CONFLICT ("ID") DO UPDATE SET "BioMarkdown" = EXCLUDED."BioMarkdown", "ExpertiseTagsJSON" = EXCLUDED."ExpertiseTagsJSON", "ReputationScore" = EXCLUDED."ReputationScore", "DigestCadence" = EXCLUDED."DigestCadence";`,
+    );
+  }
+
+  // 9. "ForumSubscription" (10 subscriptions)
+  for (const sub of dataset.ForumSubscriptions) {
+    const level = normalizeSubscriptionDeliveryLevel(sub);
+    lines.push(
+      `INSERT INTO "ForumSubscription" ("ID", "UserID", "ForumID", "DeliveryLevel")`,
+      `VALUES ('${sub.ID}', '${sub.UserID}', '${sub.ForumID}', ${escapePg(level)})`,
+      `ON CONFLICT ("ID") DO UPDATE SET "DeliveryLevel" = EXCLUDED."DeliveryLevel";`,
+    );
+  }
+
+  // 10. "ForumTopicTag" (22 space-local tags)
+  for (const tag of dataset.TopicTags) {
+    lines.push(
+      `INSERT INTO "ForumTopicTag" ("ID", "SpaceID", "Slug", "Name", "IsOfficial")`,
+      `VALUES ('${tag.ID}', '${tag.SpaceID}', ${escapePg(tag.Slug)}, ${escapePg(tag.Name)}, ${escapePg(tag.IsOfficial)})`,
+      `ON CONFLICT ("ID") DO UPDATE SET "Name" = EXCLUDED."Name", "IsOfficial" = EXCLUDED."IsOfficial";`,
+    );
+  }
+
+  // 11. "ForumPost" (68 posts in topological order)
+  for (const post of sortPostsTopologically(dataset.Posts)) {
+    lines.push(
+      `INSERT INTO "ForumPost" ("ID", "ForumID", "PostTypeID", "RootPostID", "ParentPostID", "ReplyDepth", "AuthorUserID", "Title", "Slug", "BodyMarkdown", "SummaryMarkdown", "VisibilityBand", "Status", "IsPinned", "IsLocked", "IsFeatured", "ReplyCount", "ParticipantCount", "ReactionScore", "ViewCount")`,
+      `VALUES ('${post.ID}', '${post.ForumID}', '${post.PostTypeID}', ${post.RootPostID ? `'${post.RootPostID}'` : 'NULL'}, ${post.ParentPostID ? `'${post.ParentPostID}'` : 'NULL'}, ${post.ReplyDepth ?? 0}, '${post.AuthorUserID}', ${escapePg(post.Title)}, ${escapePg(post.Slug)}, ${escapePg(post.BodyMarkdown)}, ${escapePg(post.SummaryMarkdown)}, ${escapePg(post.VisibilityBand)}, ${escapePg(post.Status)}, ${escapePg(post.IsPinned)}, ${escapePg(post.IsLocked)}, ${escapePg(post.IsFeatured)}, ${post.ReplyCount ?? 0}, ${post.ParticipantCount ?? 1}, ${post.ReactionScore ?? 0}, ${post.ViewCount ?? 0})`,
+      `ON CONFLICT ("ID") DO UPDATE SET "Title" = EXCLUDED."Title", "BodyMarkdown" = EXCLUDED."BodyMarkdown", "Status" = EXCLUDED."Status", "IsPinned" = EXCLUDED."IsPinned", "IsLocked" = EXCLUDED."IsLocked", "IsFeatured" = EXCLUDED."IsFeatured";`,
+    );
+  }
+
+  // 12. "ForumQuestionPost" (cyclic-FK-safe: insert with AcceptedAnswerPostID = NULL first)
+  for (const q of dataset.QuestionPosts) {
+    lines.push(
+      `INSERT INTO "ForumQuestionPost" ("ID", "AcceptedAnswerPostID", "AICanonAnswerPostID", "BountyPoints", "ResolvedAt")`,
+      `VALUES ('${q.ID}', NULL, NULL, ${q.BountyPoints ?? 0}, ${escapePg(q.ResolvedAt ?? null)})`,
+      `ON CONFLICT ("ID") DO UPDATE SET "BountyPoints" = EXCLUDED."BountyPoints", "ResolvedAt" = EXCLUDED."ResolvedAt";`,
+    );
+  }
+
+  // 13. "ForumAnswerPost" (7 answers) + cyclic-FK-safe AcceptedAnswerPostID linkage
+  for (const a of dataset.AnswerPosts) {
+    lines.push(
+      `INSERT INTO "ForumAnswerPost" ("ID", "QuestionPostID", "IsAcceptedByAuthor", "IsVerifiedByModerator", "VerifiedByUserID", "AIEpistemicStatus", "AIConfidenceScore")`,
+      `VALUES ('${a.ID}', '${a.QuestionPostID}', ${escapePg(a.IsAcceptedByAuthor)}, ${escapePg(a.IsVerifiedByModerator)}, ${a.VerifiedByUserID ? `'${a.VerifiedByUserID}'` : 'NULL'}, ${escapePg(a.AIEpistemicStatus)}, ${a.AIConfidenceScore})`,
+      `ON CONFLICT ("ID") DO UPDATE SET "IsAcceptedByAuthor" = EXCLUDED."IsAcceptedByAuthor", "IsVerifiedByModerator" = EXCLUDED."IsVerifiedByModerator", "AIEpistemicStatus" = EXCLUDED."AIEpistemicStatus", "AIConfidenceScore" = EXCLUDED."AIConfidenceScore";`,
+    );
+  }
+  for (const q of dataset.QuestionPosts) {
+    lines.push(
+      `UPDATE "ForumQuestionPost"`,
+      `SET "AcceptedAnswerPostID" = ${q.AcceptedAnswerPostID ? `'${q.AcceptedAnswerPostID}'` : 'NULL'}, "AICanonAnswerPostID" = ${q.AICanonAnswerPostID ? `'${q.AICanonAnswerPostID}'` : 'NULL'}, "ResolvedAt" = ${escapePg(q.ResolvedAt ?? null)}`,
+      `WHERE "ID" = '${q.ID}';`,
+    );
+  }
+
+  // 14. "ForumIdeaCampaign"
+  for (const camp of dataset.IdeaCampaigns) {
+    lines.push(
+      `INSERT INTO "ForumIdeaCampaign" ("ID", "DefaultBudgetPoints", "AllocationMode", "MaxPointsPerIdea")`,
+      `VALUES ('${camp.ID}', ${camp.DefaultBudgetPoints}, ${escapePg(camp.AllocationMode)}, ${camp.MaxPointsPerIdea})`,
+      `ON CONFLICT ("ID") DO UPDATE SET "DefaultBudgetPoints" = EXCLUDED."DefaultBudgetPoints", "AllocationMode" = EXCLUDED."AllocationMode", "MaxPointsPerIdea" = EXCLUDED."MaxPointsPerIdea";`,
+    );
+  }
+
+  // 15. "ForumIdeaPost"
+  for (const idea of dataset.IdeaPosts) {
+    lines.push(
+      `INSERT INTO "ForumIdeaPost" ("ID", "IdeaStatus", "TotalPointsAllocated", "EffectiveQuadraticVotes", "UniqueBackerCount", "TargetReleaseOrQuarter")`,
+      `VALUES ('${idea.ID}', ${escapePg(idea.IdeaStatus)}, 0, 0.0, 0, ${escapePg(idea.TargetReleaseOrQuarter)})`,
+      `ON CONFLICT ("ID") DO UPDATE SET "IdeaStatus" = EXCLUDED."IdeaStatus", "TargetReleaseOrQuarter" = EXCLUDED."TargetReleaseOrQuarter";`,
+    );
+  }
+
+  // 16. "ForumIdeaAllocation" + aggregate recomputation
+  for (const alloc of dataset.IdeaAllocations) {
+    lines.push(
+      `INSERT INTO "ForumIdeaAllocation" ("ID", "IdeaPostID", "UserID", "PointsAllocated", "QuadraticVotes")`,
+      `VALUES ('${alloc.ID}', '${alloc.IdeaPostID}', '${alloc.UserID}', ${alloc.PointsAllocated}, ${alloc.QuadraticVotes})`,
+      `ON CONFLICT ("ID") DO UPDATE SET "PointsAllocated" = EXCLUDED."PointsAllocated", "QuadraticVotes" = EXCLUDED."QuadraticVotes";`,
+    );
+  }
+  for (const idea of dataset.IdeaPosts) {
+    lines.push(
       `UPDATE "ForumIdeaPost" AS ip`,
       `SET "TotalPointsAllocated" = totals.total_points, "EffectiveQuadraticVotes" = totals.total_votes, "UniqueBackerCount" = totals.backer_count`,
       `FROM (SELECT COALESCE(SUM("PointsAllocated"), 0) AS total_points, COALESCE(SUM("QuadraticVotes"), 0.0) AS total_votes, COUNT(*) AS backer_count FROM "ForumIdeaAllocation" WHERE "IdeaPostID" = '${idea.ID}') AS totals`,
@@ -1372,10 +2883,407 @@ export function BuildArchitectAssociationWorldSql(dataset = GetArchWorldDataset(
     );
   }
 
+  // 17. "ForumCasePost"
+  for (const c of dataset.CasePosts) {
+    lines.push(
+      `INSERT INTO "ForumCasePost" ("ID", "SituationMarkdown", "ActionTakenMarkdown", "OutcomeMarkdown", "IsAnonymized", "AnonymizedAuthorAlias")`,
+      `VALUES ('${c.ID}', ${escapePg(c.SituationMarkdown)}, ${escapePg(c.ActionTakenMarkdown)}, ${escapePg(c.OutcomeMarkdown)}, ${escapePg(c.IsAnonymized)}, ${escapePg(c.AnonymizedAuthorAlias)})`,
+      `ON CONFLICT ("ID") DO UPDATE SET "SituationMarkdown" = EXCLUDED."SituationMarkdown", "ActionTakenMarkdown" = EXCLUDED."ActionTakenMarkdown", "OutcomeMarkdown" = EXCLUDED."OutcomeMarkdown";`,
+    );
+  }
+
+  // 18. "ForumAMAPost"
+  for (const ama of dataset.AMAPosts) {
+    lines.push(
+      `INSERT INTO "ForumAMAPost" ("ID", "HostUserID", "ScheduledStartAt", "ScheduledEndAt", "QuestionsOpenAt", "IsLiveNow", "RecapMarkdown")`,
+      `VALUES ('${ama.ID}', '${ama.HostUserID}', ${escapePg(ama.ScheduledStartAt)}, ${escapePg(ama.ScheduledEndAt)}, ${escapePg(ama.QuestionsOpenAt)}, ${escapePg(ama.IsLiveNow)}, ${escapePg(ama.RecapMarkdown)})`,
+      `ON CONFLICT ("ID") DO UPDATE SET "IsLiveNow" = EXCLUDED."IsLiveNow", "RecapMarkdown" = EXCLUDED."RecapMarkdown";`,
+    );
+  }
+
+  // 19-20. "ForumInteractivePost" & "ForumInteractiveSession"
+  lines.push(
+    'SELECT "ID" INTO v_default_environment_id FROM __mj."Environment" WHERE "IsDefault" = TRUE LIMIT 1;',
+    'IF v_default_environment_id IS NULL THEN',
+    '    SELECT "ID" INTO v_default_environment_id FROM __mj."Environment" ORDER BY "__mj_CreatedAt" ASC LIMIT 1;',
+    'END IF;',
+    'SELECT "ID" INTO v_any_artifact_type_id FROM __mj."ArtifactType" ORDER BY "__mj_CreatedAt" ASC LIMIT 1;',
+    'IF v_default_environment_id IS NOT NULL AND v_any_artifact_type_id IS NOT NULL THEN',
+    `    INSERT INTO __mj."Artifact" ("ID", "EnvironmentID", "Name", "Description", "TypeID", "UserID", "Visibility")`,
+    `    VALUES ('${ARCH_INTERACTIVE_ARTIFACT_ID}', v_default_environment_id, 'IBC 2027 Mass Timber Readiness Challenge', 'Interactive AGPA Type IV-A/B/C readiness quiz component.', v_any_artifact_type_id, '${ownerId}', 'Always') ON CONFLICT ("ID") DO NOTHING;`,
+    `    INSERT INTO __mj."ArtifactVersion" ("ID", "ArtifactID", "VersionNumber", "UserID", "ContentMode", "ForceToolsOnly")`,
+    `    VALUES ('${ARCH_INTERACTIVE_ARTIFACT_VERSION_ID}', '${ARCH_INTERACTIVE_ARTIFACT_ID}', 1, '${ownerId}', 'Text', FALSE) ON CONFLICT ("ID") DO NOTHING;`,
+  );
+  for (const inter of dataset.InteractivePosts) {
+    lines.push(
+      `    INSERT INTO "ForumInteractivePost" ("ID", "ComponentArtifactID", "PinnedArtifactVersionID", "ExperienceKind", "ScoringMode", "ShowLeaderboard", "MaxAttemptsPerMember", "PlayCount")`,
+      `    VALUES ('${inter.ID}', '${ARCH_INTERACTIVE_ARTIFACT_ID}', '${ARCH_INTERACTIVE_ARTIFACT_VERSION_ID}', ${escapePg(inter.ExperienceKind)}, ${escapePg(inter.ScoringMode)}, ${escapePg(inter.ShowLeaderboard)}, ${inter.MaxAttemptsPerMember ?? 'NULL'}, ${inter.PlayCount ?? 0})`,
+      `    ON CONFLICT ("ID") DO UPDATE SET "PlayCount" = EXCLUDED."PlayCount";`,
+    );
+  }
+  for (const sess of dataset.InteractiveSessions) {
+    lines.push(
+      `    INSERT INTO "ForumInteractiveSession" ("ID", "InteractivePostID", "ArtifactVersionID", "UserID", "AttemptNumber", "Score", "DurationSeconds", "Completed")`,
+      `    VALUES ('${sess.ID}', '${sess.InteractivePostID}', '${ARCH_INTERACTIVE_ARTIFACT_VERSION_ID}', '${sess.UserID}', ${sess.AttemptNumber}, ${sess.Score}, ${sess.DurationSeconds}, ${escapePg(sess.Completed)})`,
+      `    ON CONFLICT ("ID") DO UPDATE SET "Score" = EXCLUDED."Score", "DurationSeconds" = EXCLUDED."DurationSeconds", "Completed" = EXCLUDED."Completed";`,
+    );
+  }
+  lines.push('END IF;');
+
+  // 21. "ForumPostTag"
+  for (const pt of dataset.PostTags) {
+    lines.push(
+      `INSERT INTO "ForumPostTag" ("ID", "PostID", "TopicTagID") VALUES ('${pt.ID}', '${pt.PostID}', '${pt.TopicTagID}') ON CONFLICT ("ID") DO NOTHING;`,
+    );
+  }
+
+  // 22. "ForumPostReaction" & "ForumPostFlag"
+  for (const rx of dataset.PostReactions) {
+    lines.push(
+      `INSERT INTO "ForumPostReaction" ("ID", "PostID", "UserID", "ReactionKind", "Weight")`,
+      `VALUES ('${rx.ID}', '${rx.PostID}', '${rx.UserID}', ${escapePg(rx.ReactionKind)}, ${rx.Weight ?? 1.0})`,
+      `ON CONFLICT ("ID") DO UPDATE SET "Weight" = EXCLUDED."Weight";`,
+    );
+  }
+  for (const flag of dataset.PostFlags) {
+    const reportedBy = flag.ReportedByUserID ?? flag.ReporterUserID;
+    const reasonDetails = flag.ReasonDetails ?? flag.Notes ?? null;
+    lines.push(
+      `INSERT INTO "ForumPostFlag" ("ID", "PostID", "ReportedByUserID", "ReasonCategory", "Status", "ReasonDetails")`,
+      `VALUES ('${flag.ID}', '${flag.PostID}', ${reportedBy ? `'${reportedBy}'` : 'NULL'}, ${escapePg(flag.ReasonCategory)}, ${escapePg(flag.Status)}, ${escapePg(reasonDetails)})`,
+      `ON CONFLICT ("ID") DO UPDATE SET "Status" = EXCLUDED."Status", "ReasonDetails" = EXCLUDED."ReasonDetails";`,
+    );
+  }
+
+  lines.push('END $$;');
+  return lines.join('\n');
+}
+
+function buildSqliteScript(dataset) {
+  const ownerId = dataset.Members[21].ID;
+  const lines = [
+    '-- =============================================================================',
+    '--  ARCH-WORLD (American Guild of Practicing Architects) Seed Script (SQLite)',
+    '--  Complete 22-table FK-safe idempotent upserts under PRAGMA foreign_keys = ON.',
+    '-- =============================================================================',
+    'PRAGMA foreign_keys = ON;',
+    '',
+  ];
+
+  // Reference types required for strict FK enforcement in standalone SQLite
+  for (const st of dataset.spaceTypes) {
+    lines.push(
+      `INSERT INTO "SpaceType" ("ID", "Code", "Name", "Configuration") VALUES ('${st.ID}', ${escapeSqlite(st.Code)}, ${escapeSqlite(st.Name)}, ${escapeSqlite(st.Configuration)}) ON CONFLICT("ID") DO UPDATE SET "Name" = excluded."Name";`,
+    );
+  }
+  for (const srt of dataset.spaceRoleTypes) {
+    lines.push(
+      `INSERT INTO "SpaceRoleType" ("ID", "Code", "Name", "CanSeeTeamBand", "CanContribute", "IsOwnerRole", "CanPromoteBand", "Level", "IsActive") VALUES ('${srt.ID}', ${escapeSqlite(srt.Code)}, ${escapeSqlite(srt.Name)}, ${escapeSqlite(srt.CanSeeTeamBand)}, ${escapeSqlite(srt.CanContribute)}, ${escapeSqlite(srt.IsOwnerRole)}, ${escapeSqlite(srt.CanPromoteBand)}, ${srt.Level}, ${escapeSqlite(srt.IsActive)}) ON CONFLICT("ID") DO UPDATE SET "Name" = excluded."Name";`,
+    );
+  }
+  lines.push(
+    `INSERT INTO "TaskType" ("ID", "Name") VALUES ('${ARCH_TASK_TYPE_ID}', 'Community Action Item') ON CONFLICT("ID") DO NOTHING;`,
+    `INSERT INTO "Environment" ("ID", "Name", "IsDefault") VALUES ('${ARCH_DEFAULT_ENVIRONMENT_ID}', 'Default', 1) ON CONFLICT("ID") DO NOTHING;`,
+    `INSERT INTO "ArtifactType" ("ID", "Name") VALUES ('${ARCH_DEFAULT_ARTIFACT_TYPE_ID}', 'Component') ON CONFLICT("ID") DO NOTHING;`,
+  );
+
+  // 1. User (26)
+  for (const member of dataset.Members) {
+    const u = deriveMemberFields(member);
+    lines.push(
+      `INSERT INTO "User" ("ID", "Name", "FirstName", "LastName", "Email", "Type", "IsActive") VALUES ('${u.ID}', ${escapeSqlite(u.Name)}, ${escapeSqlite(u.FirstName)}, ${escapeSqlite(u.LastName)}, ${escapeSqlite(u.Email)}, ${escapeSqlite(u.Type)}, ${escapeSqlite(u.IsActive)}) ON CONFLICT("ID") DO UPDATE SET "Name" = excluded."Name", "FirstName" = excluded."FirstName", "LastName" = excluded."LastName", "Email" = excluded."Email", "Type" = excluded."Type", "IsActive" = excluded."IsActive";`,
+    );
+  }
+
+  // Interactive support Artifact & ArtifactVersion (after User exists)
+  lines.push(
+    `INSERT INTO "Artifact" ("ID", "EnvironmentID", "Name", "Description", "TypeID", "UserID", "Visibility") VALUES ('${ARCH_INTERACTIVE_ARTIFACT_ID}', '${ARCH_DEFAULT_ENVIRONMENT_ID}', 'IBC 2027 Mass Timber Readiness Challenge', 'Interactive AGPA Type IV-A/B/C readiness quiz component.', '${ARCH_DEFAULT_ARTIFACT_TYPE_ID}', '${ownerId}', 'Always') ON CONFLICT("ID") DO NOTHING;`,
+    `INSERT INTO "ArtifactVersion" ("ID", "ArtifactID", "VersionNumber", "UserID", "ContentMode", "ForceToolsOnly") VALUES ('${ARCH_INTERACTIVE_ARTIFACT_VERSION_ID}', '${ARCH_INTERACTIVE_ARTIFACT_ID}', 1, '${ownerId}', 'Text', 0) ON CONFLICT("ID") DO NOTHING;`,
+  );
+
+  // 2. Space (4)
+  for (const space of dataset.Spaces) {
+    lines.push(
+      `INSERT INTO "Space" ("ID", "SpaceTypeID", "Slug", "Name", "Description", "OwnerID", "InheritsMembership", "AgentRetrieval", "AllowParentAssignees") VALUES ('${space.ID}', '${space.SpaceTypeID}', ${escapeSqlite(space.Slug)}, ${escapeSqlite(space.Name)}, ${escapeSqlite(space.Description)}, '${ownerId}', ${escapeSqlite(space.InheritsMembership)}, 'Included', 1) ON CONFLICT("ID") DO UPDATE SET "Name" = excluded."Name", "Description" = excluded."Description", "OwnerID" = excluded."OwnerID";`,
+    );
+  }
+
+  // 3. SpaceMember (64)
+  for (const sm of dataset.SpaceMembers) {
+    lines.push(
+      `INSERT INTO "SpaceMember" ("ID", "SpaceID", "UserID", "SpaceRoleTypeID", "Band", "Status") VALUES ('${sm.ID}', '${sm.SpaceID}', '${sm.UserID}', '${sm.SpaceRoleTypeID}', ${escapeSqlite(sm.Band)}, ${escapeSqlite(sm.Status)}) ON CONFLICT("ID") DO UPDATE SET "SpaceRoleTypeID" = excluded."SpaceRoleTypeID", "Band" = excluded."Band", "Status" = excluded."Status";`,
+    );
+  }
+
+  // 4. CommunitySpace (4)
+  for (const space of dataset.Spaces) {
+    lines.push(
+      `INSERT INTO "CommunitySpace" ("ID", "Slug", "CommunityKind", "AnonymousReadMode", "AskFirstEnabled", "DefaultDigestCadence") VALUES ('${space.ID}', ${escapeSqlite(space.Slug)}, ${escapeSqlite(space.CommunityKind)}, ${escapeSqlite(space.AnonymousReadMode)}, ${escapeSqlite(space.AskFirstEnabled)}, ${escapeSqlite(space.DefaultDigestCadence)}) ON CONFLICT("ID") DO UPDATE SET "CommunityKind" = excluded."CommunityKind", "AnonymousReadMode" = excluded."AnonymousReadMode", "AskFirstEnabled" = excluded."AskFirstEnabled", "DefaultDigestCadence" = excluded."DefaultDigestCadence";`,
+    );
+  }
+
+  // 5. ForumType (6), PostType (13), ForumRoleType (7)
+  dataset.forumTypes.forEach((ft, idx) => {
+    lines.push(
+      `INSERT INTO "ForumType" ("ID", "Code", "Name", "ServerDriverClass", "Sequence", "IsActive") VALUES ('${ft.ID}', ${escapeSqlite(ft.Code)}, ${escapeSqlite(ft.Name)}, ${escapeSqlite(ft.ServerDriverClass ?? null)}, ${(idx + 1) * 10}, 1) ON CONFLICT("ID") DO UPDATE SET "Name" = excluded."Name";`,
+    );
+  });
+  dataset.postTypes.forEach((pt, idx) => {
+    lines.push(
+      `INSERT INTO "PostType" ("ID", "Code", "Name", "ServerDriverClass", "PlacementRule", "AllowsNestedReplies", "Sequence", "IsActive") VALUES ('${pt.ID}', ${escapeSqlite(pt.Code)}, ${escapeSqlite(pt.Name ?? pt.Code)}, ${escapeSqlite(pt.ServerDriverClass ?? null)}, ${escapeSqlite(pt.PlacementRule)}, ${escapeSqlite(pt.AllowsNestedReplies)}, ${pt.Sequence ?? (idx + 1) * 10}, 1) ON CONFLICT("ID") DO UPDATE SET "Name" = excluded."Name";`,
+    );
+  });
+  dataset.forumRoleTypes.forEach((fr) => {
+    lines.push(
+      `INSERT INTO "ForumRoleType" ("ID", "Code", "Name", "CanConfigureForum", "CanModerateQueue", "CanPinOrLock", "CanAcceptAnswers", "CanVerifyCanon", "CanPromoteToSpace", "CanCreateRootPost", "CanReply", "CanCoEditDocs", "VoteWeightMultiplier", "IsActive") VALUES ('${fr.ID}', ${escapeSqlite(fr.Code)}, ${escapeSqlite(fr.Name)}, ${escapeSqlite(fr.CanConfigureForum)}, ${escapeSqlite(fr.CanModerateQueue)}, ${escapeSqlite(fr.CanPinOrLock)}, ${escapeSqlite(fr.CanAcceptAnswers)}, ${escapeSqlite(fr.CanVerifyCanon)}, ${escapeSqlite(fr.CanPromoteToSpace)}, ${escapeSqlite(fr.CanCreateRootPost)}, ${escapeSqlite(fr.CanReply)}, ${escapeSqlite(fr.CanCoEditDocs)}, ${fr.VoteWeightMultiplier}, ${escapeSqlite(fr.IsActive)}) ON CONFLICT("ID") DO UPDATE SET "Name" = excluded."Name";`,
+    );
+  });
+
+  // 6. Forum (13)
+  for (const forum of dataset.Forums) {
+    lines.push(
+      `INSERT INTO "Forum" ("ID", "SpaceID", "ForumTypeID", "Slug", "Name", "Description", "VisibilityBand", "PostingPolicy", "InheritsSpaceMembers", "Sequence", "Status") VALUES ('${forum.ID}', '${forum.SpaceID}', '${forum.ForumTypeID}', ${escapeSqlite(forum.Slug)}, ${escapeSqlite(forum.Name)}, ${escapeSqlite(forum.Description)}, ${escapeSqlite(forum.VisibilityBand)}, ${escapeSqlite(forum.PostingPolicy)}, ${escapeSqlite(forum.InheritsSpaceMembers)}, ${forum.Sequence}, ${escapeSqlite(forum.Status)}) ON CONFLICT("ID") DO UPDATE SET "Name" = excluded."Name", "VisibilityBand" = excluded."VisibilityBand", "PostingPolicy" = excluded."PostingPolicy", "Status" = excluded."Status";`,
+    );
+  }
+
+  // 7. ForumMember (14)
+  for (const fm of dataset.ForumMembers) {
+    lines.push(
+      `INSERT INTO "ForumMember" ("ID", "ForumID", "UserID", "ForumRoleTypeID", "Status") VALUES ('${fm.ID}', '${fm.ForumID}', '${fm.UserID}', '${fm.ForumRoleTypeID}', ${escapeSqlite(fm.Status)}) ON CONFLICT("ID") DO UPDATE SET "ForumRoleTypeID" = excluded."ForumRoleTypeID", "Status" = excluded."Status";`,
+    );
+  }
+
+  // 8. CommunityMemberProfile (26)
+  for (const p of dataset.MemberProfiles) {
+    lines.push(
+      `INSERT INTO "CommunityMemberProfile" ("ID", "SpaceID", "UserID", "BioMarkdown", "ExpertiseTagsJSON", "HelpfulAnswerCount", "AcceptedAnswerCount", "ReputationScore", "DigestCadence", "OpenToPeerMentoring") VALUES ('${p.ID}', '${p.SpaceID}', '${p.UserID}', ${escapeSqlite(p.BioMarkdown ?? p.Bio)}, ${escapeSqlite(p.ExpertiseTagsJSON)}, ${p.HelpfulAnswerCount}, ${p.AcceptedAnswerCount}, ${p.ReputationScore}, ${escapeSqlite(p.DigestCadence)}, ${escapeSqlite(Boolean(p.OpenToPeerMentoring))}) ON CONFLICT("ID") DO UPDATE SET "BioMarkdown" = excluded."BioMarkdown", "ReputationScore" = excluded."ReputationScore", "DigestCadence" = excluded."DigestCadence";`,
+    );
+  }
+
+  // 9. ForumTopicTag (22)
+  for (const tag of dataset.TopicTags) {
+    lines.push(
+      `INSERT INTO "ForumTopicTag" ("ID", "SpaceID", "Slug", "Name", "IsOfficial") VALUES ('${tag.ID}', '${tag.SpaceID}', ${escapeSqlite(tag.Slug)}, ${escapeSqlite(tag.Name)}, ${escapeSqlite(tag.IsOfficial)}) ON CONFLICT("ID") DO UPDATE SET "Name" = excluded."Name", "IsOfficial" = excluded."IsOfficial";`,
+    );
+  }
+
+  // 10. ForumPost (68 topological)
+  for (const post of sortPostsTopologically(dataset.Posts)) {
+    lines.push(
+      `INSERT INTO "ForumPost" ("ID", "ForumID", "PostTypeID", "RootPostID", "ParentPostID", "ReplyDepth", "AuthorUserID", "Title", "Slug", "BodyMarkdown", "SummaryMarkdown", "VisibilityBand", "Status", "IsPinned", "IsLocked", "IsFeatured", "ReplyCount", "ParticipantCount", "ReactionScore", "ViewCount", "LastActivityAt", "CreatedAt") VALUES ('${post.ID}', '${post.ForumID}', '${post.PostTypeID}', ${post.RootPostID ? `'${post.RootPostID}'` : 'NULL'}, ${post.ParentPostID ? `'${post.ParentPostID}'` : 'NULL'}, ${post.ReplyDepth ?? 0}, '${post.AuthorUserID}', ${escapeSqlite(post.Title)}, ${escapeSqlite(post.Slug)}, ${escapeSqlite(post.BodyMarkdown)}, ${escapeSqlite(post.SummaryMarkdown)}, ${escapeSqlite(post.VisibilityBand)}, ${escapeSqlite(post.Status)}, ${escapeSqlite(post.IsPinned)}, ${escapeSqlite(post.IsLocked)}, ${escapeSqlite(post.IsFeatured)}, ${post.ReplyCount ?? 0}, ${post.ParticipantCount ?? 1}, ${post.ReactionScore ?? 0}, ${post.ViewCount ?? 0}, ${escapeSqlite(post.LastActivityAt ?? null)}, ${escapeSqlite(post.CreatedAt ?? null)}) ON CONFLICT("ID") DO UPDATE SET "Title" = excluded."Title", "BodyMarkdown" = excluded."BodyMarkdown", "Status" = excluded."Status";`,
+    );
+  }
+
+  // 11. ForumSubscription (10)
+  for (const sub of dataset.ForumSubscriptions) {
+    const level = normalizeSubscriptionDeliveryLevel(sub);
+    lines.push(
+      `INSERT INTO "ForumSubscription" ("ID", "UserID", "ForumID", "DeliveryLevel") VALUES ('${sub.ID}', '${sub.UserID}', '${sub.ForumID}', ${escapeSqlite(level)}) ON CONFLICT("ID") DO UPDATE SET "DeliveryLevel" = excluded."DeliveryLevel";`,
+    );
+  }
+
+  // 12. ForumQuestionPost (cyclic-FK-safe: NULL AcceptedAnswerPostID first)
+  for (const q of dataset.QuestionPosts) {
+    lines.push(
+      `INSERT INTO "ForumQuestionPost" ("ID", "AcceptedAnswerPostID", "AICanonAnswerPostID", "BountyPoints", "ResolvedAt") VALUES ('${q.ID}', NULL, NULL, ${q.BountyPoints ?? 0}, ${escapeSqlite(q.ResolvedAt ?? null)}) ON CONFLICT("ID") DO UPDATE SET "BountyPoints" = excluded."BountyPoints", "ResolvedAt" = excluded."ResolvedAt";`,
+    );
+  }
+
+  // 13. ForumAnswerPost (7) + cyclic-FK-safe AcceptedAnswerPostID UPDATE
+  for (const a of dataset.AnswerPosts) {
+    lines.push(
+      `INSERT INTO "ForumAnswerPost" ("ID", "QuestionPostID", "IsAcceptedByAuthor", "IsVerifiedByModerator", "VerifiedByUserID", "AIEpistemicStatus", "AIConfidenceScore") VALUES ('${a.ID}', '${a.QuestionPostID}', ${escapeSqlite(a.IsAcceptedByAuthor)}, ${escapeSqlite(a.IsVerifiedByModerator)}, ${a.VerifiedByUserID ? `'${a.VerifiedByUserID}'` : 'NULL'}, ${escapeSqlite(a.AIEpistemicStatus)}, ${a.AIConfidenceScore}) ON CONFLICT("ID") DO UPDATE SET "IsAcceptedByAuthor" = excluded."IsAcceptedByAuthor", "IsVerifiedByModerator" = excluded."IsVerifiedByModerator", "AIEpistemicStatus" = excluded."AIEpistemicStatus", "AIConfidenceScore" = excluded."AIConfidenceScore";`,
+    );
+  }
+  for (const q of dataset.QuestionPosts) {
+    lines.push(
+      `UPDATE "ForumQuestionPost" SET "AcceptedAnswerPostID" = ${q.AcceptedAnswerPostID ? `'${q.AcceptedAnswerPostID}'` : 'NULL'}, "AICanonAnswerPostID" = ${q.AICanonAnswerPostID ? `'${q.AICanonAnswerPostID}'` : 'NULL'}, "ResolvedAt" = ${escapeSqlite(q.ResolvedAt ?? null)} WHERE "ID" = '${q.ID}';`,
+    );
+  }
+
+  // 14. ForumIdeaCampaign (1)
+  for (const camp of dataset.IdeaCampaigns) {
+    lines.push(
+      `INSERT INTO "ForumIdeaCampaign" ("ID", "DefaultBudgetPoints", "AllocationMode", "MaxPointsPerIdea") VALUES ('${camp.ID}', ${camp.DefaultBudgetPoints}, ${escapeSqlite(camp.AllocationMode)}, ${camp.MaxPointsPerIdea}) ON CONFLICT("ID") DO UPDATE SET "DefaultBudgetPoints" = excluded."DefaultBudgetPoints", "AllocationMode" = excluded."AllocationMode", "MaxPointsPerIdea" = excluded."MaxPointsPerIdea";`,
+    );
+  }
+
+  // 15. ForumIdeaPost (5)
+  for (const idea of dataset.IdeaPosts) {
+    lines.push(
+      `INSERT INTO "ForumIdeaPost" ("ID", "IdeaStatus", "TotalPointsAllocated", "EffectiveQuadraticVotes", "UniqueBackerCount", "TargetReleaseOrQuarter") VALUES ('${idea.ID}', ${escapeSqlite(idea.IdeaStatus)}, 0, 0.0, 0, ${escapeSqlite(idea.TargetReleaseOrQuarter)}) ON CONFLICT("ID") DO UPDATE SET "IdeaStatus" = excluded."IdeaStatus", "TargetReleaseOrQuarter" = excluded."TargetReleaseOrQuarter";`,
+    );
+  }
+
+  // 16. ForumIdeaAllocation (25) + recompute
+  for (const alloc of dataset.IdeaAllocations) {
+    lines.push(
+      `INSERT INTO "ForumIdeaAllocation" ("ID", "IdeaPostID", "UserID", "PointsAllocated", "QuadraticVotes") VALUES ('${alloc.ID}', '${alloc.IdeaPostID}', '${alloc.UserID}', ${alloc.PointsAllocated}, ${alloc.QuadraticVotes}) ON CONFLICT("ID") DO UPDATE SET "PointsAllocated" = excluded."PointsAllocated", "QuadraticVotes" = excluded."QuadraticVotes";`,
+    );
+  }
+  for (const idea of dataset.IdeaPosts) {
+    lines.push(
+      `UPDATE "ForumIdeaPost" SET "TotalPointsAllocated" = COALESCE((SELECT SUM("PointsAllocated") FROM "ForumIdeaAllocation" WHERE "IdeaPostID" = '${idea.ID}'), 0), "EffectiveQuadraticVotes" = COALESCE((SELECT SUM("QuadraticVotes") FROM "ForumIdeaAllocation" WHERE "IdeaPostID" = '${idea.ID}'), 0.0), "UniqueBackerCount" = (SELECT COUNT(*) FROM "ForumIdeaAllocation" WHERE "IdeaPostID" = '${idea.ID}') WHERE "ID" = '${idea.ID}';`,
+    );
+  }
+
+  // 17. ForumCasePost (2)
+  for (const c of dataset.CasePosts) {
+    lines.push(
+      `INSERT INTO "ForumCasePost" ("ID", "SituationMarkdown", "ActionTakenMarkdown", "OutcomeMarkdown", "IsAnonymized", "AnonymizedAuthorAlias") VALUES ('${c.ID}', ${escapeSqlite(c.SituationMarkdown)}, ${escapeSqlite(c.ActionTakenMarkdown)}, ${escapeSqlite(c.OutcomeMarkdown)}, ${escapeSqlite(c.IsAnonymized)}, ${escapeSqlite(c.AnonymizedAuthorAlias)}) ON CONFLICT("ID") DO UPDATE SET "SituationMarkdown" = excluded."SituationMarkdown", "ActionTakenMarkdown" = excluded."ActionTakenMarkdown", "OutcomeMarkdown" = excluded."OutcomeMarkdown";`,
+    );
+  }
+
+  // 18. ForumAMAPost (2)
+  for (const ama of dataset.AMAPosts) {
+    lines.push(
+      `INSERT INTO "ForumAMAPost" ("ID", "HostUserID", "ScheduledStartAt", "ScheduledEndAt", "QuestionsOpenAt", "IsLiveNow", "RecapMarkdown") VALUES ('${ama.ID}', '${ama.HostUserID}', ${escapeSqlite(ama.ScheduledStartAt)}, ${escapeSqlite(ama.ScheduledEndAt)}, ${escapeSqlite(ama.QuestionsOpenAt)}, ${escapeSqlite(ama.IsLiveNow)}, ${escapeSqlite(ama.RecapMarkdown)}) ON CONFLICT("ID") DO UPDATE SET "IsLiveNow" = excluded."IsLiveNow", "RecapMarkdown" = excluded."RecapMarkdown";`,
+    );
+  }
+
+  // 19-20. ForumInteractivePost (1) & ForumInteractiveSession (6)
+  for (const inter of dataset.InteractivePosts) {
+    lines.push(
+      `INSERT INTO "ForumInteractivePost" ("ID", "ComponentArtifactID", "PinnedArtifactVersionID", "ExperienceKind", "ScoringMode", "ShowLeaderboard", "MaxAttemptsPerMember", "PlayCount") VALUES ('${inter.ID}', '${ARCH_INTERACTIVE_ARTIFACT_ID}', '${ARCH_INTERACTIVE_ARTIFACT_VERSION_ID}', ${escapeSqlite(inter.ExperienceKind)}, ${escapeSqlite(inter.ScoringMode)}, ${escapeSqlite(inter.ShowLeaderboard)}, ${inter.MaxAttemptsPerMember ?? 'NULL'}, ${inter.PlayCount ?? 0}) ON CONFLICT("ID") DO UPDATE SET "PlayCount" = excluded."PlayCount";`,
+    );
+  }
+  for (const sess of dataset.InteractiveSessions) {
+    lines.push(
+      `INSERT INTO "ForumInteractiveSession" ("ID", "InteractivePostID", "ArtifactVersionID", "UserID", "AttemptNumber", "Score", "DurationSeconds", "Completed") VALUES ('${sess.ID}', '${sess.InteractivePostID}', '${ARCH_INTERACTIVE_ARTIFACT_VERSION_ID}', '${sess.UserID}', ${sess.AttemptNumber}, ${sess.Score}, ${sess.DurationSeconds}, ${escapeSqlite(sess.Completed)}) ON CONFLICT("ID") DO UPDATE SET "Score" = excluded."Score", "DurationSeconds" = excluded."DurationSeconds", "Completed" = excluded."Completed";`,
+    );
+  }
+
+  // 21. ForumPostTag (38)
+  for (const pt of dataset.PostTags) {
+    lines.push(
+      `INSERT INTO "ForumPostTag" ("ID", "PostID", "TopicTagID", "AssignedByAI") VALUES ('${pt.ID}', '${pt.PostID}', '${pt.TopicTagID}', 0) ON CONFLICT("ID") DO NOTHING;`,
+    );
+  }
+
+  // 22. ForumPostReaction (10) & ForumPostFlag (2)
+  for (const rx of dataset.PostReactions) {
+    lines.push(
+      `INSERT INTO "ForumPostReaction" ("ID", "PostID", "UserID", "ReactionKind", "Weight") VALUES ('${rx.ID}', '${rx.PostID}', '${rx.UserID}', ${escapeSqlite(rx.ReactionKind)}, ${rx.Weight ?? 1.0}) ON CONFLICT("ID") DO UPDATE SET "Weight" = excluded."Weight";`,
+    );
+  }
+  for (const flag of dataset.PostFlags) {
+    const reportedBy = flag.ReportedByUserID ?? flag.ReporterUserID;
+    const reasonDetails = flag.ReasonDetails ?? flag.Notes ?? null;
+    lines.push(
+      `INSERT INTO "ForumPostFlag" ("ID", "PostID", "ReportedByUserID", "ReasonCategory", "Status", "ReasonDetails") VALUES ('${flag.ID}', '${flag.PostID}', ${reportedBy ? `'${reportedBy}'` : 'NULL'}, ${escapeSqlite(flag.ReasonCategory)}, ${escapeSqlite(flag.Status)}, ${escapeSqlite(reasonDetails)}) ON CONFLICT("ID") DO UPDATE SET "Status" = excluded."Status", "ReasonDetails" = excluded."ReasonDetails";`,
+    );
+  }
+
+  return lines.join('\n');
+}
+
+/**
+ * Generates deterministic, idempotent 22-table SQL seed scripts for `ARCH-WORLD` in strict FK
+ * dependency order.
+ *
+ * Calling conventions:
+ *  - `BuildArchitectAssociationWorldSql('sqlserver' | 'postgres' | 'sqlite', options)` -> SQL string
+ *  - `BuildArchitectAssociationWorldSql(datasetOrOptions)` -> `{ sqlServer, postgres, sqlite }`
+ */
+export function BuildArchitectAssociationWorldSql(dialectOrDataset = undefined, options = {}) {
+  if (typeof dialectOrDataset === 'string') {
+    const d = dialectOrDataset.trim().toLowerCase();
+    const dataset = options.dataset ?? GetArchWorldDataset();
+    if (d === 'sqlserver' || d === 'mssql' || d === 'tsql') {
+      return buildSqlServerScript(dataset);
+    }
+    if (d === 'postgres' || d === 'postgresql' || d === 'pg') {
+      return buildPostgresScript(dataset);
+    }
+    if (d === 'sqlite') {
+      return buildSqliteScript(dataset);
+    }
+    throw new Error(`Unsupported SQL dialect "${dialectOrDataset}". Expected 'sqlserver', 'postgres', or 'sqlite'.`);
+  }
+
+  const dataset =
+    dialectOrDataset && Array.isArray(dialectOrDataset.Members)
+      ? dialectOrDataset
+      : dialectOrDataset?.dataset ?? options.dataset ?? GetArchWorldDataset();
+
   return {
-    sqlServer: mssqlLines.join('\n'),
-    postgres: pgLines.join('\n'),
+    sqlServer: buildSqlServerScript(dataset),
+    postgres: buildPostgresScript(dataset),
+    sqlite: buildSqliteScript(dataset),
   };
+}
+
+/**
+ * Synchronously creates (if absent) and seeds the relational SQLite database under `PRAGMA foreign_keys = ON;`,
+ * returning `{ sqliteFilePath, counts }`.
+ */
+export function SeedArchWorldSqliteSync(options = {}) {
+  const dataset = options.dataset ?? GetArchWorldDataset();
+  const sqliteFilePath = resolveSqliteFilePath(options) ?? DEFAULT_ARCH_WORLD_SQLITE_PATH;
+  const sql = BuildArchitectAssociationWorldSql('sqlite', { dataset });
+  const db = openSqliteDatabase(sqliteFilePath);
+  try {
+    db.exec('BEGIN IMMEDIATE;');
+    try {
+      db.exec(sql);
+      db.exec('COMMIT;');
+    } catch (err) {
+      db.exec('ROLLBACK;');
+      throw err;
+    }
+    return {
+      dialect: 'sqlite',
+      sqliteFilePath,
+      counts: QueryArchWorldSqliteCounts(db),
+    };
+  } finally {
+    db.close();
+  }
+}
+
+/**
+ * Executes the generated 22-table `ARCH-WORLD` SQL script against a relational SQL database:
+ *  - `'sqlite'`: creates/opens `options.sqliteFilePath` via `node:sqlite` (`DatabaseSync` with
+ *    `PRAGMA foreign_keys = ON;`), executes `BuildArchitectAssociationWorldSql('sqlite')` in a
+ *    transaction, and returns verified row counts across all tables.
+ *  - `'sqlserver'` / `'postgres'`: executes via `options.sqlExecutor`, `options.sqlPool`, or
+ *    `options.pgPool`.
+ */
+export async function ExecuteArchitectAssociationWorldSql(options = {}) {
+  const dialect = String(options.dialect ?? 'sqlite').trim().toLowerCase();
+  const dataset = options.dataset ?? GetArchWorldDataset();
+
+  if (dialect === 'sqlite') {
+    return SeedArchWorldSqliteSync({ ...options, dataset });
+  }
+
+  if (dialect === 'sqlserver' || dialect === 'mssql') {
+    const sql = BuildArchitectAssociationWorldSql('sqlserver', { dataset });
+    if (typeof options.sqlExecutor === 'function') {
+      await options.sqlExecutor(sql, 'sqlserver');
+      return { dialect: 'sqlserver', executed: true };
+    }
+    if (options.sqlPool && typeof options.sqlPool.request === 'function') {
+      await options.sqlPool.request().batch(sql);
+      return { dialect: 'sqlserver', executed: true };
+    }
+    throw new Error('No SQL Server sqlPool or sqlExecutor was provided.');
+  }
+
+  if (dialect === 'postgres' || dialect === 'postgresql' || dialect === 'pg') {
+    const sql = BuildArchitectAssociationWorldSql('postgres', { dataset });
+    if (typeof options.sqlExecutor === 'function') {
+      await options.sqlExecutor(sql, 'postgres');
+      return { dialect: 'postgres', executed: true };
+    }
+    if (options.pgPool && typeof options.pgPool.query === 'function') {
+      await options.pgPool.query(sql);
+      return { dialect: 'postgres', executed: true };
+    }
+    throw new Error('No PostgreSQL pgPool or sqlExecutor was provided.');
+  }
+
+  throw new Error(`Unsupported dialect "${dialect}" for ExecuteArchitectAssociationWorldSql.`);
 }
 
 function escapeFilterValue(value) {
@@ -1490,13 +3398,15 @@ async function upsertViaEntityProvider({
 /**
  * Idempotent natural-key loader for the American Guild of Practicing Architects (`ARCH-WORLD`) dataset.
  * Executes every entity through `RunView` natural-key lookup + `Metadata.GetEntityObject(...)` +
- * `ValidateAsync()` + `entity.Save()`, and persists the world to the durable cross-process backing store.
+ * `ValidateAsync()` + `entity.Save()`, persists all 22+ relational tables to SQLite (`PRAGMA foreign_keys = ON`)
+ * and JSON snapshot, and optionally applies the SQL script to a live SQL Server / PostgreSQL connection.
  */
 export async function LoadArchitectAssociationWorld(options = {}) {
   const dataset = options.dataset ?? GetArchWorldDataset();
   EnsureArchWorldServerEntitiesLoaded(dataset);
 
   const persistenceFilePath = resolvePersistenceFilePath(options);
+  const sqliteFilePath = resolveSqliteFilePath(options);
   const store = options.store ?? GetSharedArchWorldStore(options);
 
   const userById = new Map(dataset.Members.map((m) => [norm(m.ID), MakeArchUserInfo(m)]));
@@ -1521,21 +3431,26 @@ export async function LoadArchitectAssociationWorld(options = {}) {
     }
   }
 
-  // Optional direct SQL / PG execution when an external database pool is passed
-  if (options.sqlPool || options.pgPool) {
-    const sqlScripts = BuildArchitectAssociationWorldSql(dataset);
-    if (options.sqlPool && typeof options.sqlPool.request === 'function') {
-      await options.sqlPool.request().batch(sqlScripts.sqlServer);
-    }
-    if (options.pgPool && typeof options.pgPool.query === 'function') {
-      await options.pgPool.query(sqlScripts.postgres);
-    }
+  // Optional direct SQL Server / PostgreSQL execution when an external pool or sqlExecutor is passed
+  if (options.sqlPool) {
+    await ExecuteArchitectAssociationWorldSql({ dialect: 'sqlserver', dataset, sqlPool: options.sqlPool });
+  }
+  if (options.pgPool) {
+    await ExecuteArchitectAssociationWorldSql({ dialect: 'postgres', dataset, pgPool: options.pgPool });
+  }
+  if (options.sqlExecutor) {
+    await ExecuteArchitectAssociationWorldSql({
+      dialect: options.dialect ?? 'sqlserver',
+      dataset,
+      sqlExecutor: options.sqlExecutor,
+    });
   }
 
   const prevMetadataProvider = Metadata.Provider;
   const prevRunViewProvider = RunView.Provider;
   const provider = options.provider ?? new ArchWorldEntityProvider(store, {
     persistenceFilePath,
+    sqliteFilePath,
     currentUser: defaultAdminUser,
   });
 
@@ -1555,6 +3470,18 @@ export async function LoadArchitectAssociationWorld(options = {}) {
 
   try {
     // 1. Reference catalogs
+    for (const row of Array.from(store.taskTypes.values())) {
+      await upsertViaEntityProvider({
+        metadata,
+        runView,
+        entityName: 'MJ: Task Types',
+        naturalFilter: `ID = '${escapeFilterValue(row.ID)}'`,
+        desiredData: row,
+        contextUser: defaultAdminUser,
+        counters,
+        validatedCounter,
+      });
+    }
     for (const row of dataset.spaceTypes) {
       await upsertViaEntityProvider({
         metadata,
@@ -1597,7 +3524,7 @@ export async function LoadArchitectAssociationWorld(options = {}) {
         runView,
         entityName: COMMUNITY_ENTITY_NAMES.PostTypes,
         naturalFilter: `ID = '${escapeFilterValue(row.ID)}'`,
-        desiredData: row,
+        desiredData: { Name: row.Code, ...row },
         contextUser: defaultAdminUser,
         counters,
         validatedCounter,
@@ -1618,12 +3545,13 @@ export async function LoadArchitectAssociationWorld(options = {}) {
 
     // 2. Members (`MJ: Users`, natural key: Email)
     for (const member of dataset.Members) {
+      const derived = deriveMemberFields(member);
       await upsertViaEntityProvider({
         metadata,
         runView,
         entityName: 'MJ: Users',
-        naturalFilter: `Email = '${escapeFilterValue(member.Email)}'`,
-        desiredData: member,
+        naturalFilter: `Email = '${escapeFilterValue(derived.Email)}'`,
+        desiredData: derived,
         contextUser: defaultAdminUser,
         counters,
         validatedCounter,
@@ -1631,13 +3559,19 @@ export async function LoadArchitectAssociationWorld(options = {}) {
     }
 
     // 3. Collaboration Spaces & CommunitySpaces (natural key: Slug)
+    const ownerId = dataset.Members[21].ID;
     for (const space of dataset.Spaces) {
       await upsertViaEntityProvider({
         metadata,
         runView,
         entityName: 'MJ_BizApps_Collaboration: Spaces',
         naturalFilter: `Slug = '${escapeFilterValue(space.Slug)}'`,
-        desiredData: space,
+        desiredData: {
+          ...space,
+          OwnerID: ownerId,
+          AgentRetrieval: 'Included',
+          AllowParentAssignees: true,
+        },
         contextUser: defaultAdminUser,
         counters,
         validatedCounter,
@@ -1701,7 +3635,7 @@ export async function LoadArchitectAssociationWorld(options = {}) {
       });
     }
 
-    // 6. Forum Members, Member Profiles & Forum Subscriptions
+    // 6. Forum Members, Member Profiles & Topic Tags (needed before ForumSubscriptions)
     for (const fm of dataset.ForumMembers) {
       await upsertViaEntityProvider({
         metadata,
@@ -1720,7 +3654,11 @@ export async function LoadArchitectAssociationWorld(options = {}) {
         runView,
         entityName: COMMUNITY_ENTITY_NAMES.CommunityMemberProfiles,
         naturalFilter: `SpaceID = '${escapeFilterValue(profile.SpaceID)}' AND UserID = '${escapeFilterValue(profile.UserID)}'`,
-        desiredData: profile,
+        desiredData: {
+          ...profile,
+          BioMarkdown: profile.BioMarkdown ?? profile.Bio,
+          OpenToPeerMentoring: Boolean(profile.OpenToPeerMentoring),
+        },
         contextUser: defaultAdminUser,
         ignoredCompareFields: new Set(['HelpfulAnswerCount', 'AcceptedAnswerCount']),
         counters,
@@ -1733,7 +3671,10 @@ export async function LoadArchitectAssociationWorld(options = {}) {
         runView,
         entityName: COMMUNITY_ENTITY_NAMES.ForumSubscriptions,
         naturalFilter: `ForumID = '${escapeFilterValue(sub.ForumID)}' AND UserID = '${escapeFilterValue(sub.UserID)}'`,
-        desiredData: sub,
+        desiredData: {
+          ...sub,
+          DeliveryLevel: normalizeSubscriptionDeliveryLevel(sub),
+        },
         contextUser: defaultAdminUser,
         counters,
         validatedCounter,
@@ -1755,8 +3696,8 @@ export async function LoadArchitectAssociationWorld(options = {}) {
       });
     }
 
-    // 8. Posts in ReplyDepth order via ForumPostServerEntity (root posts first so FK references resolve)
-    const sortedPosts = [...dataset.Posts].sort((a, b) => (a.ReplyDepth ?? 0) - (b.ReplyDepth ?? 0));
+    // 8. Posts in topological order via ForumPostServerEntity (root posts first so FK references resolve)
+    const sortedPosts = sortPostsTopologically(dataset.Posts);
     const postPreserveFields = new Set([
       'SummaryMarkdown',
       'SummaryGeneratedAt',
@@ -1790,18 +3731,30 @@ export async function LoadArchitectAssociationWorld(options = {}) {
       });
     }
 
-    // 9. Post Subtypes (Question, Answer via ForumAnswerPostServerEntity, Idea, Case, AMA, Interactive)
+    // 9. Post Subtypes (cyclic-FK-safe: insert ForumQuestionPost with AcceptedAnswerPostID=NULL first,
+    //    then ForumAnswerPost, then link AcceptedAnswerPostID & AICanonAnswerPostID on ForumQuestionPost)
     for (const q of dataset.QuestionPosts) {
-      await upsertViaEntityProvider({
-        metadata,
-        runView,
-        entityName: COMMUNITY_ENTITY_NAMES.ForumQuestionPosts,
-        naturalFilter: `ID = '${escapeFilterValue(q.ID)}'`,
-        desiredData: q,
-        contextUser: defaultAdminUser,
-        counters,
-        validatedCounter,
-      });
+      const checkRes = await runView.RunView(
+        {
+          EntityName: COMMUNITY_ENTITY_NAMES.ForumQuestionPosts,
+          ExtraFilter: `ID = '${escapeFilterValue(q.ID)}'`,
+          ResultType: 'simple',
+          MaxRows: 1,
+        },
+        defaultAdminUser,
+      );
+      if (!checkRes?.Results?.[0]) {
+        await upsertViaEntityProvider({
+          metadata,
+          runView,
+          entityName: COMMUNITY_ENTITY_NAMES.ForumQuestionPosts,
+          naturalFilter: `ID = '${escapeFilterValue(q.ID)}'`,
+          desiredData: { ...q, AcceptedAnswerPostID: null, AICanonAnswerPostID: null },
+          contextUser: defaultAdminUser,
+          counters,
+          validatedCounter,
+        });
+      }
     }
     const postForumMap = new Map(dataset.Posts.map((p) => [norm(p.ID), p.ForumID]));
     for (const a of dataset.AnswerPosts) {
@@ -1818,6 +3771,19 @@ export async function LoadArchitectAssociationWorld(options = {}) {
         validatedCounter,
       });
     }
+    for (const q of dataset.QuestionPosts) {
+      await upsertViaEntityProvider({
+        metadata,
+        runView,
+        entityName: COMMUNITY_ENTITY_NAMES.ForumQuestionPosts,
+        naturalFilter: `ID = '${escapeFilterValue(q.ID)}'`,
+        desiredData: q,
+        contextUser: defaultAdminUser,
+        counters,
+        validatedCounter,
+      });
+    }
+
     for (const idea of dataset.IdeaPosts) {
       await upsertViaEntityProvider({
         metadata,
@@ -1865,7 +3831,11 @@ export async function LoadArchitectAssociationWorld(options = {}) {
         runView,
         entityName: COMMUNITY_ENTITY_NAMES.ForumInteractivePosts,
         naturalFilter: `ID = '${escapeFilterValue(inter.ID)}'`,
-        desiredData: inter,
+        desiredData: {
+          ...inter,
+          ComponentArtifactID: ARCH_INTERACTIVE_ARTIFACT_ID,
+          PinnedArtifactVersionID: ARCH_INTERACTIVE_ARTIFACT_VERSION_ID,
+        },
         contextUser: defaultAdminUser,
         counters,
         validatedCounter,
@@ -1912,7 +3882,10 @@ export async function LoadArchitectAssociationWorld(options = {}) {
         runView,
         entityName: COMMUNITY_ENTITY_NAMES.ForumInteractiveSessions,
         naturalFilter: `ID = '${escapeFilterValue(sess.ID)}'`,
-        desiredData: sess,
+        desiredData: {
+          ...sess,
+          ArtifactVersionID: ARCH_INTERACTIVE_ARTIFACT_VERSION_ID,
+        },
         contextUser: sessUser,
         counters,
         validatedCounter,
@@ -1938,7 +3911,11 @@ export async function LoadArchitectAssociationWorld(options = {}) {
         runView,
         entityName: COMMUNITY_ENTITY_NAMES.ForumPostFlags,
         naturalFilter: `ID = '${escapeFilterValue(flag.ID)}'`,
-        desiredData: flag,
+        desiredData: {
+          ...flag,
+          ReportedByUserID: flag.ReportedByUserID ?? flag.ReporterUserID ?? null,
+          ReasonDetails: flag.ReasonDetails ?? flag.Notes ?? null,
+        },
         contextUser: defaultAdminUser,
         counters,
         validatedCounter,
@@ -1946,8 +3923,14 @@ export async function LoadArchitectAssociationWorld(options = {}) {
     }
 
     store.lastLoadedAt = options.now ? new Date(options.now).toISOString() : new Date().toISOString();
+    if (provider.sqliteDb) {
+      saveMetaToSqlite(provider.sqliteDb, store);
+    }
     if (persistenceFilePath && options.persist !== false) {
-      SaveArchWorldStoreToDisk(store, persistenceFilePath);
+      SaveArchWorldStoreToDisk(store, persistenceFilePath, {
+        sqliteFilePath,
+        syncSqlite: false,
+      });
     }
 
     const summary = CountArchWorldStoreRecords(store);
@@ -1955,8 +3938,10 @@ export async function LoadArchitectAssociationWorld(options = {}) {
     return {
       store,
       provider,
-      mode: usingCustomMetadata ? 'external-provider' : 'entity-provider-persisted',
+      mode: usingCustomMetadata ? 'external-provider' : 'entity-provider-sqlite-persisted',
       persistenceFilePath,
+      sqliteFilePath,
+      sqliteCounts: sqliteFilePath && existsSync(sqliteFilePath) ? QueryArchWorldSqliteCounts(sqliteFilePath) : null,
       counts: summary.counts,
       totalRecords: summary.totalRecords,
       createdCount: counters.createdCount,
@@ -1968,6 +3953,9 @@ export async function LoadArchitectAssociationWorld(options = {}) {
     };
   } finally {
     provider.suspendDiskFlush = prevSuspendFlush;
+    if (!options.provider && !options.keepProviderActive) {
+      provider.CloseSqlite();
+    }
     if (!usingCustomMetadata && !options.keepProviderActive) {
       Metadata.Provider = prevMetadataProvider;
       RunView.Provider = prevRunViewProvider;
@@ -1977,17 +3965,20 @@ export async function LoadArchitectAssociationWorld(options = {}) {
 
 /**
  * Deliberate no-op teardown for `ARCH-WORLD` (mirroring `bizapps-orders` `ORD-WORLD`).
- * Preserves all seeded AGPA records in both the store and the durable backing file on disk so
+ * Preserves all seeded AGPA records in the store, relational SQLite DB, and JSON snapshot so
  * independent readers, Explorer UI checks, and Playwright visual capture run against persisted data.
  */
 export function TeardownArchitectAssociationWorld(options = {}) {
   const store = options.store ?? GetSharedArchWorldStore(options);
   const persistenceFilePath = resolvePersistenceFilePath(options);
+  const sqliteFilePath = resolveSqliteFilePath(options);
   const summary = CountArchWorldStoreRecords(store);
   return {
     preserved: true,
     persistenceFilePath,
-    persistedOnDisk: Boolean(persistenceFilePath && existsSync(persistenceFilePath)),
+    sqliteFilePath,
+    persistedOnDisk: Boolean((sqliteFilePath && existsSync(sqliteFilePath)) || (persistenceFilePath && existsSync(persistenceFilePath))),
+    sqlitePersistedOnDisk: Boolean(sqliteFilePath && existsSync(sqliteFilePath)),
     reason:
       'ARCH-WORLD teardown is deliberately a no-op so the American Guild of Practicing Architects dataset persists for live smoke testing, Explorer exploration, and Playwright visual capture.',
     counts: summary.counts,
@@ -1998,7 +3989,7 @@ export function TeardownArchitectAssociationWorld(options = {}) {
 /**
  * Creates a real-store-backed RunView & Metadata harness for `@mj-biz-apps/community-actions` and
  * `@mj-biz-apps/community-server` services so every action, entity, and graduation service reads from
- * and persists back to `store` (and flushes to the durable backing store when configured).
+ * and persists back to `store` and the relational SQLite database.
  */
 export function CreateArchWorldRuntimeBridge(store, options = {}) {
   const provider = new ArchWorldEntityProvider(store, options);
@@ -2039,9 +4030,12 @@ export function CreateArchWorldRuntimeBridge(store, options = {}) {
         const wrapper = {
           ...existing,
           Save: async () => {
-            store.posts.set(norm(wrapper.ID), { ...existing, ...wrapper });
+            const updated = { ...existing, ...wrapper };
+            delete updated.Save;
+            store.posts.set(norm(wrapper.ID), updated);
+            upsertRowToSqlite(provider.sqliteDb, COMMUNITY_ENTITY_NAMES.ForumPosts, updated);
             if (provider.persistenceFilePath) {
-              SaveArchWorldStoreToDisk(store, provider.persistenceFilePath);
+              SaveArchWorldStoreToDisk(store, provider.persistenceFilePath, { syncSqlite: false });
             }
             return true;
           },
@@ -2084,16 +4078,18 @@ export function CreateArchWorldRuntimeBridge(store, options = {}) {
           const clean = { ...record };
           delete clean.Save;
           store.posts.set(norm(clean.ID), clean);
+          upsertRowToSqlite(provider.sqliteDb, COMMUNITY_ENTITY_NAMES.ForumPosts, clean);
           if (clean.RootPostID) {
             const root = store.posts.get(norm(clean.RootPostID));
             if (root) {
               root.ReplyCount = Array.from(store.posts.values()).filter(
                 (p) => norm(p.RootPostID) === norm(root.ID),
               ).length;
+              upsertRowToSqlite(provider.sqliteDb, COMMUNITY_ENTITY_NAMES.ForumPosts, root);
             }
           }
           if (provider.persistenceFilePath) {
-            SaveArchWorldStoreToDisk(store, provider.persistenceFilePath);
+            SaveArchWorldStoreToDisk(store, provider.persistenceFilePath, { syncSqlite: false });
           }
           return true;
         },
@@ -2120,6 +4116,7 @@ export function CreateArchWorldRuntimeBridge(store, options = {}) {
         StartedAt: null,
         ClosedAt: null,
         Slug: '',
+        AllowParentAssignees: true,
         Save: async () => {
           const clean = { ...spaceRecord };
           delete clean.Save;
@@ -2129,15 +4126,17 @@ export function CreateArchWorldRuntimeBridge(store, options = {}) {
           }
           store.spaces.set(norm(clean.ID), clean);
           store.spacesBySlug.set(norm(clean.Slug), norm(clean.ID));
+          upsertRowToSqlite(provider.sqliteDb, 'MJ_BizApps_Collaboration: Spaces', clean);
           if (provider.persistenceFilePath) {
-            SaveArchWorldStoreToDisk(store, provider.persistenceFilePath);
+            SaveArchWorldStoreToDisk(store, provider.persistenceFilePath, { syncSqlite: false });
           }
           return true;
         },
         Delete: async () => {
           store.spaces.delete(norm(spaceRecord.ID));
+          deleteRowFromSqlite(provider.sqliteDb, 'MJ_BizApps_Collaboration: Spaces', spaceRecord.ID);
           if (provider.persistenceFilePath) {
-            SaveArchWorldStoreToDisk(store, provider.persistenceFilePath);
+            SaveArchWorldStoreToDisk(store, provider.persistenceFilePath, { syncSqlite: false });
           }
           return true;
         },
@@ -2158,8 +4157,9 @@ export function CreateArchWorldRuntimeBridge(store, options = {}) {
           delete clean.Save;
           delete clean.TransactionGroup;
           store.tasks.set(norm(clean.ID), clean);
+          upsertRowToSqlite(provider.sqliteDb, 'MJ: Tasks', clean);
           if (provider.persistenceFilePath) {
-            SaveArchWorldStoreToDisk(store, provider.persistenceFilePath);
+            SaveArchWorldStoreToDisk(store, provider.persistenceFilePath, { syncSqlite: false });
           }
           return true;
         },
@@ -2183,8 +4183,9 @@ export function CreateArchWorldRuntimeBridge(store, options = {}) {
           const natKey = `${norm(clean.SpaceID)}:${norm(clean.UserID)}`;
           store.spaceMembers.set(norm(clean.ID), clean);
           store.spaceMembersByKey.set(natKey, norm(clean.ID));
+          upsertRowToSqlite(provider.sqliteDb, 'MJ_BizApps_Collaboration: Space Members', clean);
           if (provider.persistenceFilePath) {
-            SaveArchWorldStoreToDisk(store, provider.persistenceFilePath);
+            SaveArchWorldStoreToDisk(store, provider.persistenceFilePath, { syncSqlite: false });
           }
           return true;
         },
@@ -2202,32 +4203,111 @@ export function CreateArchWorldRuntimeBridge(store, options = {}) {
   };
 }
 
+function parseCliArgs(argv) {
+  const flags = new Set();
+  const values = {};
+  for (let i = 0; i < argv.length; i += 1) {
+    const arg = argv[i];
+    if (arg.startsWith('--sql-out=')) {
+      values.sqlOut = arg.slice('--sql-out='.length);
+    } else if (arg === '--sql-out' && argv[i + 1]) {
+      values.sqlOut = argv[i + 1];
+      i += 1;
+    } else if (arg.startsWith('--dialect=')) {
+      values.dialect = arg.slice('--dialect='.length);
+    } else if (arg === '--dialect' && argv[i + 1]) {
+      values.dialect = argv[i + 1];
+      i += 1;
+    } else {
+      flags.add(arg);
+    }
+  }
+  return { flags, values };
+}
+
 export { ARCH_COMMUNITY_SPACES, ARCH_FORUMS, ARCH_FORUM_TYPES, ARCH_POST_TYPES };
 
 if (import.meta.url === `file://${process.argv[1]}`) {
-  const args = new Set(process.argv.slice(2));
-  if (args.has('--sql')) {
-    console.log(BuildArchitectAssociationWorldSql().sqlServer);
-  } else if (args.has('--pg-sql')) {
-    console.log(BuildArchitectAssociationWorldSql().postgres);
-  } else if (args.has('--verify')) {
+  const { flags, values } = parseCliArgs(process.argv.slice(2));
+  if (flags.has('--sql')) {
+    console.log(BuildArchitectAssociationWorldSql('sqlserver'));
+  } else if (flags.has('--pg-sql')) {
+    console.log(BuildArchitectAssociationWorldSql('postgres'));
+  } else if (flags.has('--sqlite-sql')) {
+    console.log(BuildArchitectAssociationWorldSql('sqlite'));
+  } else if (values.sqlOut) {
+    const inferredDialect =
+      values.dialect ??
+      (values.sqlOut.endsWith('.pg.sql')
+        ? 'postgres'
+        : values.sqlOut.endsWith('.sqlite.sql')
+          ? 'sqlite'
+          : 'sqlserver');
+    const sqlText = BuildArchitectAssociationWorldSql(inferredDialect);
+    mkdirSync(dirname(values.sqlOut), { recursive: true });
+    writeFileSync(values.sqlOut, sqlText, 'utf8');
+    console.log(`[arch-world-loader] Wrote ${inferredDialect} SQL seed (${sqlText.length} bytes) to ${values.sqlOut}`);
+  } else if (flags.has('--verify')) {
+    const sqlitePath = resolveSqliteFilePath();
+    const sqliteCounts = sqlitePath && existsSync(sqlitePath) ? QueryArchWorldSqliteCounts(sqlitePath) : null;
+    if (!sqliteCounts) {
+      throw new Error(`Expected persisted SQLite database at ${sqlitePath} during --verify.`);
+    }
     const provider = CreatePersistedArchWorldProvider();
-    const rv = new RunView(provider);
-    const [collabSpaces, communitySpaces, forums, posts, tags, allocs] = await Promise.all([
-      rv.RunView({ EntityName: 'MJ_BizApps_Collaboration: Spaces', ResultType: 'simple' }, provider.CurrentUser),
-      rv.RunView({ EntityName: COMMUNITY_ENTITY_NAMES.CommunitySpaces, ResultType: 'simple' }, provider.CurrentUser),
-      rv.RunView({ EntityName: COMMUNITY_ENTITY_NAMES.Forums, ResultType: 'simple' }, provider.CurrentUser),
-      rv.RunView({ EntityName: COMMUNITY_ENTITY_NAMES.ForumPosts, ResultType: 'simple' }, provider.CurrentUser),
-      rv.RunView({ EntityName: COMMUNITY_ENTITY_NAMES.ForumTopicTags, ResultType: 'simple' }, provider.CurrentUser),
-      rv.RunView({ EntityName: COMMUNITY_ENTITY_NAMES.ForumIdeaAllocations, ResultType: 'simple' }, provider.CurrentUser),
-    ]);
-    console.log(
-      `[arch-world-loader] Verified persisted state: Spaces=${collabSpaces.Results.length}, CommunitySpaces=${communitySpaces.Results.length}, Forums=${forums.Results.length}, Posts=${posts.Results.length}, TopicTags=${tags.Results.length}, IdeaAllocations=${allocs.Results.length}`,
-    );
+    try {
+      const rv = new RunView(provider);
+      const [users, collabSpaces, communitySpaces, forums, posts, tags, allocs] = await Promise.all([
+        rv.RunView({ EntityName: 'MJ: Users', ResultType: 'simple' }, provider.CurrentUser),
+        rv.RunView({ EntityName: 'MJ_BizApps_Collaboration: Spaces', ResultType: 'simple' }, provider.CurrentUser),
+        rv.RunView({ EntityName: COMMUNITY_ENTITY_NAMES.CommunitySpaces, ResultType: 'simple' }, provider.CurrentUser),
+        rv.RunView({ EntityName: COMMUNITY_ENTITY_NAMES.Forums, ResultType: 'simple' }, provider.CurrentUser),
+        rv.RunView({ EntityName: COMMUNITY_ENTITY_NAMES.ForumPosts, ResultType: 'simple' }, provider.CurrentUser),
+        rv.RunView({ EntityName: COMMUNITY_ENTITY_NAMES.ForumTopicTags, ResultType: 'simple' }, provider.CurrentUser),
+        rv.RunView({ EntityName: COMMUNITY_ENTITY_NAMES.ForumIdeaAllocations, ResultType: 'simple' }, provider.CurrentUser),
+      ]);
+      console.log(
+        `[arch-world-loader] Verified persisted SQLite state: Users=${users.Results.length}, Spaces=${collabSpaces.Results.length}, SpaceMembers=${sqliteCounts.SpaceMember}, CommunitySpaces=${communitySpaces.Results.length}, Forums=${forums.Results.length}, ForumMembers=${sqliteCounts.ForumMember}, MemberProfiles=${sqliteCounts.CommunityMemberProfile}, ForumSubscriptions=${sqliteCounts.ForumSubscription}, Posts=${posts.Results.length}, TopicTags=${tags.Results.length}, IdeaAllocations=${allocs.Results.length}, CasePosts=${sqliteCounts.ForumCasePost}, AMAPosts=${sqliteCounts.ForumAMAPost}, InteractivePosts=${sqliteCounts.ForumInteractivePost}, InteractiveSessions=${sqliteCounts.ForumInteractiveSession}, PostReactions=${sqliteCounts.ForumPostReaction}, PostFlags=${sqliteCounts.ForumPostFlag}`,
+      );
+    } finally {
+      provider.CloseSqlite();
+    }
+  } else if (flags.has('--apply-db')) {
+    const targetDialect = (values.dialect ?? (process.env.ARCH_WORLD_PG_URL ? 'postgres' : 'sqlserver')).toLowerCase();
+    if (targetDialect === 'sqlite') {
+      const res = await ExecuteArchitectAssociationWorldSql({ dialect: 'sqlite' });
+      console.log(`[arch-world-loader] Applied SQLite relational seed at ${res.sqliteFilePath}: ${JSON.stringify(res.counts)}`);
+    } else if (targetDialect === 'postgres' || targetDialect === 'postgresql' || targetDialect === 'pg') {
+      const pgUrl = process.env.ARCH_WORLD_PG_URL ?? process.env.DATABASE_URL;
+      if (!pgUrl) {
+        throw new Error('Set ARCH_WORLD_PG_URL (or DATABASE_URL) or pass --dialect sqlite to --apply-db.');
+      }
+      const { Client } = await import('pg');
+      const client = new Client({ connectionString: pgUrl });
+      await client.connect();
+      try {
+        await ExecuteArchitectAssociationWorldSql({ dialect: 'postgres', pgPool: client });
+        console.log('[arch-world-loader] Applied PostgreSQL ARCH-WORLD 22-table seed cleanly.');
+      } finally {
+        await client.end();
+      }
+    } else {
+      const mssqlConn = process.env.ARCH_WORLD_MSSQL_URL;
+      if (!mssqlConn) {
+        throw new Error('Set ARCH_WORLD_MSSQL_URL or pass --dialect sqlite to --apply-db.');
+      }
+      const mssql = await import('mssql');
+      const pool = await mssql.default.connect(mssqlConn);
+      try {
+        await ExecuteArchitectAssociationWorldSql({ dialect: 'sqlserver', sqlPool: pool });
+        console.log('[arch-world-loader] Applied SQL Server ARCH-WORLD 22-table seed cleanly.');
+      } finally {
+        await pool.close();
+      }
+    }
   } else {
     const res = await LoadArchitectAssociationWorld();
     console.log(
-      `[arch-world-loader] Loaded ARCH-WORLD (${res.mode}): totalRecords=${res.totalRecords}, created=${res.createdCount}, updated=${res.updatedCount}, unchanged=${res.unchangedCount}, validated=${res.validatedEntityCount}, idempotent=${res.idempotent}`,
+      `[arch-world-loader] Loaded ARCH-WORLD (${res.mode}): totalRecords=${res.totalRecords}, created=${res.createdCount}, updated=${res.updatedCount}, unchanged=${res.unchangedCount}, validated=${res.validatedEntityCount}, idempotent=${res.idempotent}, sqlite=${res.sqliteFilePath}`,
     );
   }
 }

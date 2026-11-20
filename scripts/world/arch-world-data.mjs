@@ -47,19 +47,19 @@ export const ARCH_FORUM_TYPES = [
 
 /** Canonical PostType catalog matching metadata/post-types/.post-types.json. */
 export const ARCH_POST_TYPES = [
-  { ID: 'C8A17200-4E12-4B8F-9A10-100000000001', Code: 'discussion', PlacementRule: 'Root Only', AllowsNestedReplies: true, ServerDriverClass: null },
-  { ID: 'C8A17200-4E12-4B8F-9A10-100000000002', Code: 'reply', PlacementRule: 'Reply Only', AllowsNestedReplies: true, ServerDriverClass: null },
-  { ID: 'C8A17200-4E12-4B8F-9A10-100000000003', Code: 'comment', PlacementRule: 'Reply Only', AllowsNestedReplies: false, ServerDriverClass: null },
-  { ID: 'C8A17200-4E12-4B8F-9A10-100000000004', Code: 'question', PlacementRule: 'Root Only', AllowsNestedReplies: true, ServerDriverClass: 'QuestionPostServerDriver' },
-  { ID: 'C8A17200-4E12-4B8F-9A10-100000000005', Code: 'answer', PlacementRule: 'Reply Only', AllowsNestedReplies: true, ServerDriverClass: 'AnswerPostServerDriver' },
-  { ID: 'C8A17200-4E12-4B8F-9A10-100000000006', Code: 'idea-proposal', PlacementRule: 'Root Only', AllowsNestedReplies: true, ServerDriverClass: 'IdeaPostServerDriver' },
-  { ID: 'C8A17200-4E12-4B8F-9A10-100000000007', Code: 'poll-or-form', PlacementRule: 'Both', AllowsNestedReplies: true, ServerDriverClass: 'FormPostServerDriver' },
-  { ID: 'C8A17200-4E12-4B8F-9A10-100000000008', Code: 'collaborative-doc', PlacementRule: 'Both', AllowsNestedReplies: true, ServerDriverClass: 'ArtifactPostServerDriver' },
-  { ID: 'C8A17200-4E12-4B8F-9A10-100000000009', Code: 'collaborative-sheet', PlacementRule: 'Both', AllowsNestedReplies: true, ServerDriverClass: 'ArtifactPostServerDriver' },
-  { ID: 'C8A17200-4E12-4B8F-9A10-100000000010', Code: 'collaborative-deck', PlacementRule: 'Both', AllowsNestedReplies: true, ServerDriverClass: 'ArtifactPostServerDriver' },
-  { ID: 'C8A17200-4E12-4B8F-9A10-100000000011', Code: 'case-review', PlacementRule: 'Root Only', AllowsNestedReplies: true, ServerDriverClass: 'CasePostServerDriver' },
-  { ID: 'C8A17200-4E12-4B8F-9A10-100000000012', Code: 'live-ama', PlacementRule: 'Root Only', AllowsNestedReplies: true, ServerDriverClass: 'AMAPostServerDriver' },
-  { ID: 'C8A17200-4E12-4B8F-9A10-100000000013', Code: 'interactive-experience', PlacementRule: 'Both', AllowsNestedReplies: true, ServerDriverClass: 'InteractivePostServerDriver' },
+  { ID: 'C8A17200-4E12-4B8F-9A10-100000000001', Code: 'discussion', Name: 'Discussion', PlacementRule: 'Root Only', AllowsNestedReplies: true, ServerDriverClass: null, Sequence: 10 },
+  { ID: 'C8A17200-4E12-4B8F-9A10-100000000002', Code: 'reply', Name: 'Reply', PlacementRule: 'Reply Only', AllowsNestedReplies: true, ServerDriverClass: null, Sequence: 20 },
+  { ID: 'C8A17200-4E12-4B8F-9A10-100000000003', Code: 'comment', Name: 'Comment', PlacementRule: 'Reply Only', AllowsNestedReplies: false, ServerDriverClass: null, Sequence: 30 },
+  { ID: 'C8A17200-4E12-4B8F-9A10-100000000004', Code: 'question', Name: 'Question', PlacementRule: 'Root Only', AllowsNestedReplies: true, ServerDriverClass: 'QuestionPostServerDriver', Sequence: 40 },
+  { ID: 'C8A17200-4E12-4B8F-9A10-100000000005', Code: 'answer', Name: 'Answer', PlacementRule: 'Reply Only', AllowsNestedReplies: true, ServerDriverClass: 'AnswerPostServerDriver', Sequence: 50 },
+  { ID: 'C8A17200-4E12-4B8F-9A10-100000000006', Code: 'idea-proposal', Name: 'Idea Proposal', PlacementRule: 'Root Only', AllowsNestedReplies: true, ServerDriverClass: 'IdeaPostServerDriver', Sequence: 60 },
+  { ID: 'C8A17200-4E12-4B8F-9A10-100000000007', Code: 'poll-or-form', Name: 'Poll or Form', PlacementRule: 'Both', AllowsNestedReplies: true, ServerDriverClass: 'FormPostServerDriver', Sequence: 70 },
+  { ID: 'C8A17200-4E12-4B8F-9A10-100000000008', Code: 'collaborative-doc', Name: 'Collaborative Document', PlacementRule: 'Both', AllowsNestedReplies: true, ServerDriverClass: 'ArtifactPostServerDriver', Sequence: 80 },
+  { ID: 'C8A17200-4E12-4B8F-9A10-100000000009', Code: 'collaborative-sheet', Name: 'Collaborative Spreadsheet', PlacementRule: 'Both', AllowsNestedReplies: true, ServerDriverClass: 'ArtifactPostServerDriver', Sequence: 90 },
+  { ID: 'C8A17200-4E12-4B8F-9A10-100000000010', Code: 'collaborative-deck', Name: 'Collaborative Presentation', PlacementRule: 'Both', AllowsNestedReplies: true, ServerDriverClass: 'ArtifactPostServerDriver', Sequence: 100 },
+  { ID: 'C8A17200-4E12-4B8F-9A10-100000000011', Code: 'case-review', Name: 'Peer Case Review', PlacementRule: 'Root Only', AllowsNestedReplies: true, ServerDriverClass: 'CasePostServerDriver', Sequence: 110 },
+  { ID: 'C8A17200-4E12-4B8F-9A10-100000000012', Code: 'live-ama', Name: 'Live AMA / Town Hall', PlacementRule: 'Root Only', AllowsNestedReplies: true, ServerDriverClass: 'AMAPostServerDriver', Sequence: 120 },
+  { ID: 'C8A17200-4E12-4B8F-9A10-100000000013', Code: 'interactive-experience', Name: 'Interactive Experience / Mini-App', PlacementRule: 'Both', AllowsNestedReplies: true, ServerDriverClass: 'InteractivePostServerDriver', Sequence: 130 },
 ];
 
 /** Canonical ForumRoleType catalog matching metadata/forum-role-types/.forum-role-types.json. */
@@ -981,26 +981,27 @@ export const ARCH_MEMBER_PROFILES = ARCH_MEMBERS.map((m, idx) => ({
           ? 'A7C40100-4E12-4B8F-9A10-000000000004'
           : 'A7C40100-4E12-4B8F-9A10-000000000001',
   UserID: m.ID,
-  Bio: m.Bio,
+  BioMarkdown: m.Bio,
   ExpertiseTagsJSON: JSON.stringify(m.Specialties),
   DigestCadence: m.DigestCadence,
   HelpfulAnswerCount: Math.floor(m.ReputationScore / 45),
   AcceptedAnswerCount: Math.floor(m.ReputationScore / 150),
   ReputationScore: m.ReputationScore,
+  OpenToPeerMentoring: m.Persona === 'Moderator' || m.Persona === 'Principal',
 }));
 
-/** Forum subscriptions across AGPA members. */
+/** Forum subscriptions across AGPA members (DeliveryLevel matches CK_ForumSubscription_DeliveryLevel). */
 export const ARCH_FORUM_SUBSCRIPTIONS = [
-  { ID: 'A7C40550-4E12-4B8F-9A10-000000000001', ForumID: 'A7C40200-4E12-4B8F-9A10-000000000005', UserID: 'A7C40400-4E12-4B8F-9A10-000000000001', Cadence: 'Instant' },
-  { ID: 'A7C40550-4E12-4B8F-9A10-000000000002', ForumID: 'A7C40200-4E12-4B8F-9A10-000000000002', UserID: 'A7C40400-4E12-4B8F-9A10-000000000001', Cadence: 'Daily' },
-  { ID: 'A7C40550-4E12-4B8F-9A10-000000000003', ForumID: 'A7C40200-4E12-4B8F-9A10-000000000011', UserID: 'A7C40400-4E12-4B8F-9A10-000000000002', Cadence: 'Instant' },
-  { ID: 'A7C40550-4E12-4B8F-9A10-000000000004', ForumID: 'A7C40200-4E12-4B8F-9A10-000000000012', UserID: 'A7C40400-4E12-4B8F-9A10-000000000002', Cadence: 'Daily' },
-  { ID: 'A7C40550-4E12-4B8F-9A10-000000000005', ForumID: 'A7C40200-4E12-4B8F-9A10-000000000006', UserID: 'A7C40400-4E12-4B8F-9A10-000000000005', Cadence: 'Instant' },
-  { ID: 'A7C40550-4E12-4B8F-9A10-000000000006', ForumID: 'A7C40200-4E12-4B8F-9A10-000000000007', UserID: 'A7C40400-4E12-4B8F-9A10-000000000005', Cadence: 'Weekly' },
-  { ID: 'A7C40550-4E12-4B8F-9A10-000000000007', ForumID: 'A7C40200-4E12-4B8F-9A10-000000000009', UserID: 'A7C40400-4E12-4B8F-9A10-000000000015', Cadence: 'Daily' },
-  { ID: 'A7C40550-4E12-4B8F-9A10-000000000008', ForumID: 'A7C40200-4E12-4B8F-9A10-000000000010', UserID: 'A7C40400-4E12-4B8F-9A10-000000000015', Cadence: 'Daily' },
-  { ID: 'A7C40550-4E12-4B8F-9A10-000000000009', ForumID: 'A7C40200-4E12-4B8F-9A10-000000000003', UserID: 'A7C40400-4E12-4B8F-9A10-000000000022', Cadence: 'Daily' },
-  { ID: 'A7C40550-4E12-4B8F-9A10-000000000010', ForumID: 'A7C40200-4E12-4B8F-9A10-000000000001', UserID: 'A7C40400-4E12-4B8F-9A10-000000000025', Cadence: 'Daily' },
+  { ID: 'A7C40550-4E12-4B8F-9A10-000000000001', ForumID: 'A7C40200-4E12-4B8F-9A10-000000000005', UserID: 'A7C40400-4E12-4B8F-9A10-000000000001', DeliveryLevel: 'Every Post' },
+  { ID: 'A7C40550-4E12-4B8F-9A10-000000000002', ForumID: 'A7C40200-4E12-4B8F-9A10-000000000002', UserID: 'A7C40400-4E12-4B8F-9A10-000000000001', DeliveryLevel: 'Digest Only' },
+  { ID: 'A7C40550-4E12-4B8F-9A10-000000000003', ForumID: 'A7C40200-4E12-4B8F-9A10-000000000011', UserID: 'A7C40400-4E12-4B8F-9A10-000000000002', DeliveryLevel: 'Every Post' },
+  { ID: 'A7C40550-4E12-4B8F-9A10-000000000004', ForumID: 'A7C40200-4E12-4B8F-9A10-000000000012', UserID: 'A7C40400-4E12-4B8F-9A10-000000000002', DeliveryLevel: 'Digest Only' },
+  { ID: 'A7C40550-4E12-4B8F-9A10-000000000005', ForumID: 'A7C40200-4E12-4B8F-9A10-000000000006', UserID: 'A7C40400-4E12-4B8F-9A10-000000000005', DeliveryLevel: 'Every Post' },
+  { ID: 'A7C40550-4E12-4B8F-9A10-000000000006', ForumID: 'A7C40200-4E12-4B8F-9A10-000000000007', UserID: 'A7C40400-4E12-4B8F-9A10-000000000005', DeliveryLevel: 'Digest Only' },
+  { ID: 'A7C40550-4E12-4B8F-9A10-000000000007', ForumID: 'A7C40200-4E12-4B8F-9A10-000000000009', UserID: 'A7C40400-4E12-4B8F-9A10-000000000015', DeliveryLevel: 'Digest Only' },
+  { ID: 'A7C40550-4E12-4B8F-9A10-000000000008', ForumID: 'A7C40200-4E12-4B8F-9A10-000000000010', UserID: 'A7C40400-4E12-4B8F-9A10-000000000015', DeliveryLevel: 'First Post Only' },
+  { ID: 'A7C40550-4E12-4B8F-9A10-000000000009', ForumID: 'A7C40200-4E12-4B8F-9A10-000000000003', UserID: 'A7C40400-4E12-4B8F-9A10-000000000022', DeliveryLevel: 'Digest Only' },
+  { ID: 'A7C40550-4E12-4B8F-9A10-000000000010', ForumID: 'A7C40200-4E12-4B8F-9A10-000000000001', UserID: 'A7C40400-4E12-4B8F-9A10-000000000025', DeliveryLevel: 'Digest Only' },
 ];
 
 const POST_TYPE_ID_BY_CODE = Object.fromEntries(ARCH_POST_TYPES.map((p) => [p.Code, p.ID]));
@@ -1891,18 +1892,18 @@ export const ARCH_POST_FLAGS = [
   {
     ID: 'A7C40900-4E12-4B8F-9A10-000000000001',
     PostID: P(9),
-    ReporterUserID: U(18),
-    ReasonCategory: 'Outdated Code Reference',
-    Status: 'Reviewed',
-    Notes: 'Flagged 3-ply unrated CLT suggestion for epistemic review; superseded by Canon Verified PRG 320 answer.',
+    ReportedByUserID: U(18),
+    ReasonCategory: 'Outdated Advice',
+    Status: 'ActionTaken',
+    ReasonDetails: 'Flagged 3-ply unrated CLT suggestion for epistemic review; superseded by Canon Verified PRG 320 answer.',
   },
   {
     ID: 'A7C40900-4E12-4B8F-9A10-000000000002',
     PostID: P(13),
-    ReporterUserID: U(5),
-    ReasonCategory: 'Incomplete Thermal Detail',
+    ReportedByUserID: U(5),
+    ReasonCategory: 'Other',
     Status: 'Open',
-    Notes: 'Needs PHIUS psi-value disclaimer before practitioners apply in Climate Zone 5+.',
+    ReasonDetails: 'Needs PHIUS psi-value thermal bridge disclaimer before practitioners apply in Climate Zone 5+.',
   },
 ];
 
