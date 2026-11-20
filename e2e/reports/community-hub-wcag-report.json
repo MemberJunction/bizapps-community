@@ -1,7 +1,7 @@
 {
   "schemaVersion": "sf-e2e/v1",
-  "evaluatedAtIso": "2026-11-20T23:24:38.328Z",
-  "harnessUrl": "http://127.0.0.1:63231/",
+  "evaluatedAtIso": "2026-11-20T23:51:28.746Z",
+  "harnessUrl": "http://127.0.0.1:64618/",
   "fontAwesomeMode": "local-package",
   "fontAwesomeLoaded": true,
   "runtimeClassFactoryRegistrationsVerified": 26,
@@ -22,6 +22,14 @@
   "livingSynthesisCitationsVerified": true,
   "qaCanonWorkbenchExercised": true,
   "mediaLibraryExercised": true,
+  "attachmentVisualStatesVerified": {
+    "inlineGallery": "e2e/screenshots/attachments-01-inline-gallery.png",
+    "lightboxModal": "e2e/screenshots/attachments-02-lightbox-modal.png",
+    "artifactFullPreview": "e2e/screenshots/attachments-03-artifact-full-preview.png",
+    "composerPicker": "e2e/screenshots/attachments-04-composer-picker.png",
+    "mediaLibrary": "e2e/screenshots/community-attachments-and-media-library.png",
+    "largeFileRoundTripVerified": true
+  },
   "persistentReloadVerified": true,
   "livingCoAuthoringExercised": true,
   "inlineFormExercised": true,
@@ -68,6 +76,10 @@
     "e2e/screenshots/06-living-co-authoring.png",
     "e2e/screenshots/07-collaboration-embedded.png",
     "e2e/screenshots/08-personalized-digest-preview.png",
+    "e2e/screenshots/attachments-01-inline-gallery.png",
+    "e2e/screenshots/attachments-02-lightbox-modal.png",
+    "e2e/screenshots/attachments-03-artifact-full-preview.png",
+    "e2e/screenshots/attachments-04-composer-picker.png",
     "e2e/screenshots/community-attachments-and-media-library.png",
     "e2e/screenshots/community-hub.png"
   ]

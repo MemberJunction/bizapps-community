@@ -34,7 +34,7 @@
     },
     "browserSmoke": {
       "passed": true,
-      "summary": "Chromium smoke passed across all 5 required tab(s) (evaluated 2026-11-20T23:24:38.328Z) with 0 pageErrors, 0 consoleErrors, 0 WCAG violations",
+      "summary": "Chromium smoke passed across all 5 required tab(s) (evaluated 2026-11-20T23:51:28.746Z) with 0 pageErrors, 0 consoleErrors, 0 WCAG violations",
       "checkedCount": 5,
       "violationCount": 0,
       "violations": []
