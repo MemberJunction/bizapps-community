@@ -54,6 +54,7 @@ const FILE_ID_1 = 'ffffffff-1111-4111-8111-111111111111';
 const FILE_ID_2 = 'ffffffff-2222-4222-8222-222222222222';
 const FILE_ID_3 = 'ffffffff-3333-4333-8333-333333333333';
 const FILE_ID_4 = 'ffffffff-4444-4444-8444-444444444444';
+const FILE_ID_5 = 'ffffffff-5555-4555-8555-555555555555';
 const ENTITY_ARTIFACTS_ID = '99999999-1111-4111-8111-111111111111';
 const ENTITY_FILES_ID = '99999999-2222-4222-8222-222222222222';
 
@@ -296,11 +297,54 @@ function buildMockWorld(options: MockWorldOptions = {}) {
       ContentSizeBytes: 120,
     },
   ];
-  const files = [
-    { ID: FILE_ID_1, Name: 'architecture.png', ContentType: 'image/png' },
-    { ID: FILE_ID_2, Name: 'walkthrough.mp4', ContentType: 'video/mp4' },
-    { ID: FILE_ID_3, Name: 'podcast-note.mp3', ContentType: 'audio/mpeg' },
-    { ID: FILE_ID_4, Name: 'handbook.pdf', ContentType: 'application/pdf' },
+  const files: Array<{
+    ID: string;
+    Name: string;
+    ContentType: string | null;
+    Size?: number | null;
+    DownloadURL?: string | null;
+    Status?: string | null;
+  }> = [
+    {
+      ID: FILE_ID_1,
+      Name: 'architecture.png',
+      ContentType: 'image/png',
+      Size: 4096,
+      DownloadURL: 'https://cdn.example.com/architecture.png',
+      Status: 'Uploaded',
+    },
+    {
+      ID: FILE_ID_2,
+      Name: 'walkthrough.mp4',
+      ContentType: 'video/mp4',
+      Size: 65536,
+      DownloadURL: 'https://cdn.example.com/walkthrough.mp4',
+      Status: 'Uploaded',
+    },
+    {
+      ID: FILE_ID_3,
+      Name: 'podcast-note.mp3',
+      ContentType: 'audio/mpeg',
+      Size: 32768,
+      DownloadURL: 'https://cdn.example.com/podcast-note.mp3',
+      Status: 'Uploaded',
+    },
+    {
+      ID: FILE_ID_4,
+      Name: 'handbook.pdf',
+      ContentType: 'application/pdf',
+      Size: 8192,
+      DownloadURL: 'https://cdn.example.com/handbook.pdf',
+      Status: 'Uploaded',
+    },
+    {
+      ID: FILE_ID_5,
+      Name: 'alternate-diagram.png',
+      ContentType: 'image/png',
+      Size: 2048,
+      DownloadURL: 'https://cdn.example.com/alternate-diagram.png',
+      Status: 'Uploaded',
+    },
   ];
 
   mock.method(Metadata.prototype, 'EntityByName', (name: string) => {
@@ -746,7 +790,7 @@ function buildMockWorld(options: MockWorldOptions = {}) {
     },
   );
 
-  return { spaceItems, attachments, artifactPosts, artifacts, artifactVersions };
+  return { spaceItems, attachments, artifactPosts, artifacts, artifactVersions, files };
 }
 
 describe('@mj-biz-apps/community-server media/artifact attachments & SpaceItem library indexing', () => {
@@ -1401,11 +1445,11 @@ describe('@mj-biz-apps/community-server media/artifact attachments & SpaceItem l
             attachments: [
               {
                 kind: 'image',
-                fileId: FILE_ID_2,
+                fileId: FILE_ID_5,
                 fileName: 'wrong.png',
                 mimeType: 'image/png',
-                sizeBytes: 1024,
-                url: 'https://cdn.example.com/wrong.png',
+                sizeBytes: 2048,
+                url: 'https://cdn.example.com/alternate-diagram.png',
                 existingSpaceItemId: teamSiId,
               },
             ],
@@ -1704,6 +1748,197 @@ describe('@mj-biz-apps/community-server media/artifact attachments & SpaceItem l
           }),
         /Rollback compensation failure/,
       );
+    } finally {
+      mock.restoreAll();
+    }
+  });
+
+  it('CR-1, CR-4 & CR-6: rejects blob:/attachments.local URLs, validates MJ: Files & ArtifactVersion bindings strictly, and round-trip hydrates > 1.5 MiB data URLs', async () => {
+    const world = buildMockWorld();
+    try {
+      const svc = new CommunityAttachmentServerService();
+      const sharedMember = makeUser(SHARED_USER_ID, 'Shared Member');
+
+      // 1. Rejects blob: and attachments.local URLs at persistence boundary
+      await assert.rejects(
+        () =>
+          svc.PersistPostAttachments({
+            postId: SHARED_POST_ID,
+            contextUser: sharedMember,
+            attachments: [
+              {
+                kind: 'image',
+                fileName: 'temp.png',
+                mimeType: 'image/png',
+                sizeBytes: 2048,
+                url: 'blob:https://community.example.com/11111111-1111-4111-8111-111111111111',
+              },
+            ],
+          }),
+        /Temporary or placeholder URLs/,
+      );
+
+      await assert.rejects(
+        () =>
+          svc.PersistPostAttachments({
+            postId: SHARED_POST_ID,
+            contextUser: sharedMember,
+            attachments: [
+              {
+                kind: 'image',
+                fileName: 'placeholder.png',
+                mimeType: 'image/png',
+                sizeBytes: 2048,
+                url: 'https://attachments.local/placeholder.png',
+              },
+            ],
+          }),
+        /Temporary or placeholder URLs/,
+      );
+
+      // 2. Rejects MJ: Files + artifactVersionId when ArtifactVersion.FileID is null
+      const nullFileVerId = 'ffff1111-0000-4000-8000-000000000951';
+      world.artifactVersions.push({
+        ID: nullFileVerId,
+        ArtifactID: ARTIFACT_ID,
+        VersionNumber: 1,
+        Name: 'unbound.png',
+        ContentMode: 'File',
+        Content: 'https://cdn.example.com/unbound.png',
+        FileID: null,
+        FileName: 'unbound.png',
+        MimeType: 'image/png',
+        ContentSizeBytes: 2048,
+      });
+      await assert.rejects(
+        () =>
+          svc.PersistPostAttachments({
+            postId: SHARED_POST_ID,
+            contextUser: sharedMember,
+            attachments: [
+              {
+                kind: 'image',
+                fileId: FILE_ID_1,
+                artifactVersionId: nullFileVerId,
+                fileName: 'unbound.png',
+                mimeType: 'image/png',
+                sizeBytes: 2048,
+              },
+            ],
+          }),
+        /null or invalid FileID/,
+      );
+
+      // 3. Rejects MJ: Files-only target missing authoritative size or URL (never trusts caller size/url)
+      const fileNoSizeId = 'ffffffff-6666-4666-8666-666666666666';
+      world.files.push({
+        ID: fileNoSizeId,
+        Name: 'missing-size.png',
+        ContentType: 'image/png',
+        Size: null,
+        DownloadURL: null,
+        Status: 'Uploaded',
+      });
+      await assert.rejects(
+        () =>
+          svc.PersistPostAttachments({
+            postId: SHARED_POST_ID,
+            contextUser: sharedMember,
+            attachments: [
+              {
+                kind: 'image',
+                fileId: fileNoSizeId,
+                fileName: 'spoofed.png',
+                mimeType: 'image/png',
+                sizeBytes: 1234,
+                url: 'https://cdn.example.com/spoofed.png',
+              },
+            ],
+          }),
+        /missing a valid positive authoritative byte size/,
+      );
+
+      // 4. Rejects ArtifactVersion with ContentSizeBytes: null and non-computable https:// Content
+      const noSizeVerId = 'ffff1111-0000-4000-8000-000000000952';
+      world.artifactVersions.push({
+        ID: noSizeVerId,
+        ArtifactID: ARTIFACT_ID,
+        VersionNumber: 2,
+        Name: 'missing-size-ver.png',
+        ContentMode: 'File',
+        Content: 'https://cdn.example.com/missing-size-ver.png',
+        FileID: FILE_ID_1,
+        FileName: 'missing-size-ver.png',
+        MimeType: 'image/png',
+        ContentSizeBytes: null,
+      });
+      await assert.rejects(
+        () =>
+          svc.PersistPostAttachments({
+            postId: SHARED_POST_ID,
+            contextUser: sharedMember,
+            attachments: [
+              {
+                kind: 'image',
+                fileId: FILE_ID_1,
+                artifactVersionId: noSizeVerId,
+                fileName: 'missing-size-ver.png',
+                mimeType: 'image/png',
+                sizeBytes: 1024,
+              },
+            ],
+          }),
+        /missing a valid positive authoritative ContentSizeBytes/,
+      );
+
+      // 5. Round-trip uploads & cold-hydrates BOTH a small PNG AND a > 1.5 MiB (1.6 MiB) PNG data URL byte-for-byte
+      const smallDataUrl = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
+      const largeBytes = Buffer.alloc(1_600_000);
+      for (let i = 0; i < largeBytes.length; i += 1) {
+        largeBytes[i] = (i * 17) & 0xff;
+      }
+      const largeDataUrl = `data:image/png;base64,${largeBytes.toString('base64')}`;
+
+      const persisted = await svc.PersistPostAttachments({
+        postId: SHARED_POST_ID,
+        contextUser: sharedMember,
+        attachments: [
+          {
+            kind: 'image',
+            fileName: 'small-proof.png',
+            mimeType: 'image/png',
+            sizeBytes: 68,
+            url: smallDataUrl,
+            caption: 'Small proof',
+            sequence: 1,
+          },
+          {
+            kind: 'image',
+            fileName: 'large-blueprint.png',
+            mimeType: 'image/png',
+            sizeBytes: largeBytes.length,
+            url: largeDataUrl,
+            caption: 'Large 1.6 MB blueprint',
+            sequence: 2,
+            featureInLibrary: true,
+          },
+        ],
+      });
+      assert.equal(persisted.length, 2);
+
+      const hydrated = await svc.QueryPostAttachments({
+        postId: SHARED_POST_ID,
+        contextUser: sharedMember,
+      });
+      assert.equal(hydrated.length, 2);
+      if (hydrated[0].kind === 'image' && hydrated[1].kind === 'image') {
+        assert.equal(hydrated[0].url, smallDataUrl);
+        assert.equal(hydrated[0].caption, 'Small proof');
+        assert.equal(hydrated[1].url, largeDataUrl);
+        assert.equal(hydrated[1].sizeBytes, 1_600_000);
+        assert.equal(hydrated[1].caption, 'Large 1.6 MB blueprint');
+        assert.equal(hydrated[1].featureInLibrary, true);
+      }
     } finally {
       mock.restoreAll();
     }

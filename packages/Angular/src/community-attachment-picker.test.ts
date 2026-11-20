@@ -19,6 +19,7 @@ import {
   MoveDraftAttachment,
   PICKER_HELPER_LIBRARY_COPY,
   PersistPostAttachmentsFromClient,
+  ReadBrowserFilePreviewUrl,
   RemoveDraftAttachment,
   ResolveComposerAttachmentEntryType,
   SyncDraftsForEntryTypeChange,
@@ -884,5 +885,187 @@ describe('Slice 3 — CommunityAttachmentPickerComponent Architecture, Tokens & 
     assert.match(hubHtml, /<mjc-attachment-picker[\s\S]*detailReplyAttachments/);
     // Inline quick reply composer inside expanded feed threads
     assert.match(streamHtml, /<mjc-attachment-picker[\s\S]*getInlineReplyAttachments\(item\.id\)/);
+  });
+});
+
+describe('CR-1 & CR-6 — Durable Byte Reader (> 1.5 MiB up to 10 MiB) & Rejecting blob:/attachments.local URLs', () => {
+  it('reads both small and > 1,500,000-byte files into exact durable data: URLs without blob:/attachments.local fallbacks', async () => {
+    const smallBytes = Uint8Array.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x01, 0x02, 0x03]);
+    const smallFile = new File([smallBytes], 'small.png', { type: 'image/png' });
+    const smallDataUrl = await ReadBrowserFilePreviewUrl(smallFile, 'image', 'image/png');
+    assert.equal(smallDataUrl, `data:image/png;base64,${Buffer.from(smallBytes).toString('base64')}`);
+
+    const largeBytes = new Uint8Array(1_600_000);
+    for (let i = 0; i < largeBytes.length; i += 1) {
+      largeBytes[i] = (i * 31) & 0xff;
+    }
+    const largeFile = new File([largeBytes], 'large-blueprint.png', { type: 'image/png' });
+    const largeDataUrl = await ReadBrowserFilePreviewUrl(largeFile, 'image', 'image/png');
+    assert.ok(largeDataUrl.startsWith('data:image/png;base64,'));
+    assert.equal(largeDataUrl.startsWith('blob:'), false);
+    assert.equal(largeDataUrl.includes('attachments.local'), false);
+
+    const decoded = Buffer.from(largeDataUrl.slice('data:image/png;base64,'.length), 'base64');
+    assert.equal(decoded.length, 1_600_000);
+    assert.equal(Buffer.compare(decoded, Buffer.from(largeBytes)), 0);
+
+    const largeDraft = CreateDraftFileAttachment({
+      fileName: 'large-blueprint.png',
+      mimeType: 'image/png',
+      sizeBytes: largeBytes.length,
+      url: largeDataUrl,
+      entryType: 'post',
+      sequence: 1,
+    });
+    assert.ok(largeDraft.draft);
+    assert.equal(largeDraft.draft.url, largeDataUrl);
+
+    const savedVersions: MJArtifactVersionEntityLike[] = [];
+    const persistRes = await PersistPostAttachmentsFromClient({
+      postId: POST_UUID,
+      spaceId: SPACE_UUID,
+      drafts: [largeDraft.draft],
+      isOfflineDemoMode: false,
+      currentUserId: USER_UUID,
+      resolveEntityId: async (name) => (name === 'MJ: Artifacts' ? ARTIFACTS_ENTITY_UUID : FILES_ENTITY_UUID),
+      resolveArtifactTypeId: async () => '11111111-1111-4111-8111-000000000099',
+      createArtifactEntity: async () => ({
+        ID: 'dddd0000-0000-4000-8000-000000000901',
+        Name: '',
+        Description: null,
+        TypeID: '',
+        UserID: '',
+        Visibility: 'System Only',
+        Save: async () => true,
+      }),
+      createArtifactVersionEntity: async () => {
+        const ver: MJArtifactVersionEntityLike = {
+          ID: 'eeee0000-0000-4000-8000-000000000901',
+          ArtifactID: '',
+          VersionNumber: 1,
+          Name: null,
+          UserID: '',
+          ContentMode: 'File',
+          Content: null,
+          FileID: null,
+          FileName: null,
+          MimeType: null,
+          ContentSizeBytes: null,
+          Save: async () => {
+            savedVersions.push(ver);
+            return true;
+          },
+        };
+        return ver;
+      },
+      createSpaceItemEntity: async () => ({
+        ID: 'aaaa0000-0000-4000-8000-000000000901',
+        SpaceID: '',
+        EntityID: '',
+        RecordID: '',
+        Band: 'Shared',
+        PromotedAt: null,
+        PromotedByUserID: null,
+        Folder: null,
+        ArtifactVersionID: null,
+        Save: async () => true,
+      }),
+      createForumPostAttachmentEntity: async () => ({
+        ID: 'bbbb0000-0000-4000-8000-000000000901',
+        PostID: '',
+        SpaceItemID: '',
+        Caption: null,
+        Sequence: 0,
+        Save: async () => true,
+      }),
+    });
+    assert.equal(persistRes.success, true);
+    assert.equal(savedVersions.length, 1);
+    assert.equal(savedVersions[0].Content, largeDataUrl);
+    assert.equal(savedVersions[0].ContentSizeBytes, 1_600_000);
+  });
+
+  it('rejects visibly when FileReader errors (never fabricating blob: or attachments.local) and blocks blob:/attachments.local at persistence', async () => {
+    const originalFileReader = globalThis.FileReader;
+    class FailingFileReader {
+      public result: string | ArrayBuffer | null = null;
+      public onload: (() => void) | null = null;
+      public onerror: (() => void) | null = null;
+      public onabort: (() => void) | null = null;
+      public readAsDataURL(): void {
+        queueMicrotask(() => {
+          this.onerror?.();
+        });
+      }
+    }
+    Reflect.set(globalThis, 'FileReader', FailingFileReader);
+    try {
+      const f = new File([new Uint8Array([1, 2, 3])], 'broken.png', { type: 'image/png' });
+      await assert.rejects(() => ReadBrowserFilePreviewUrl(f, 'image', 'image/png'), /Failed to read/);
+    } finally {
+      Reflect.set(globalThis, 'FileReader', originalFileReader);
+    }
+
+    // CreateDraftFileAttachment rejects blob: and attachments.local
+    const blobDraft = CreateDraftFileAttachment({
+      fileName: 'temp.png',
+      mimeType: 'image/png',
+      sizeBytes: 1024,
+      url: 'blob:https://community.example.com/1111',
+      entryType: 'post',
+      sequence: 1,
+    });
+    assert.ok(blobDraft.error);
+    assert.equal(blobDraft.draft, undefined);
+
+    const localDraft = CreateDraftFileAttachment({
+      fileName: 'placeholder.png',
+      mimeType: 'image/png',
+      sizeBytes: 1024,
+      url: 'https://attachments.local/placeholder.png',
+      entryType: 'post',
+      sequence: 1,
+    });
+    assert.ok(localDraft.error);
+
+    // PersistPostAttachmentsFromClient rejects forged blob: or attachments.local drafts with zero writes
+    let writeCount = 0;
+    const forgedRes = await PersistPostAttachmentsFromClient({
+      postId: POST_UUID,
+      spaceId: SPACE_UUID,
+      drafts: [
+        {
+          draftId: 'forged-1',
+          kind: 'image',
+          fileName: 'forged.png',
+          mimeType: 'image/png',
+          sizeBytes: 2048,
+          url: 'blob:https://community.example.com/forged',
+          previewUrl: null,
+          caption: '',
+          sequence: 1,
+          featureInLibrary: false,
+          featureInLibraryOverridden: false,
+          folder: 'Post Media',
+          formattedSize: '2 KB',
+          iconClass: 'fa-solid fa-image',
+          typeLabel: 'Image',
+        },
+      ],
+      isOfflineDemoMode: false,
+      currentUserId: USER_UUID,
+      resolveEntityId: async () => ARTIFACTS_ENTITY_UUID,
+      resolveArtifactTypeId: async () => '11111111-1111-4111-8111-000000000099',
+      createArtifactEntity: async () => {
+        writeCount += 1;
+        return null;
+      },
+      createArtifactVersionEntity: async () => null,
+      createSpaceItemEntity: async () => null,
+      createForumPostAttachmentEntity: async () => null,
+    });
+    assert.equal(forgedRes.success, false);
+    assert.equal(writeCount, 0);
+    assert.match(forgedRes.errorMessage ?? '', /blob:|placeholder/i);
   });
 });

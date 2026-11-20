@@ -21,6 +21,36 @@ const TAB_KEYS = [
   'media-library',
 ];
 
+function crc32(buf) {
+  let c = 0xffffffff;
+  for (let i = 0; i < buf.length; i += 1) {
+    c ^= buf[i];
+    for (let k = 0; k < 8; k += 1) {
+      c = (c & 1) ? (0xedb88320 ^ (c >>> 1)) : (c >>> 1);
+    }
+  }
+  return (c ^ 0xffffffff) >>> 0;
+}
+
+function buildValidLargePngBuffer(targetBytes) {
+  const basePng = Buffer.from(
+    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==',
+    'base64',
+  );
+  const iend = basePng.subarray(basePng.length - 12);
+  const prefix = basePng.subarray(0, basePng.length - 12);
+  const textPayloadSize = Math.max(8, targetBytes - basePng.length - 12);
+  const keyword = Buffer.from('Comment\0', 'ascii');
+  const filler = Buffer.alloc(Math.max(0, textPayloadSize - keyword.length), 0x41);
+  const chunkData = Buffer.concat([keyword, filler]);
+  const chunkType = Buffer.from('tEXt', 'ascii');
+  const lenBuf = Buffer.alloc(4);
+  lenBuf.writeUInt32BE(chunkData.length, 0);
+  const crcBuf = Buffer.alloc(4);
+  crcBuf.writeUInt32BE(crc32(Buffer.concat([chunkType, chunkData])), 0);
+  return Buffer.concat([prefix, lenBuf, chunkType, chunkData, crcBuf, iend]);
+}
+
 /** @type {{ url: string, fontAwesomeMode: string, close: () => Promise<void> }} */
 let harness;
 /** @type {string} */
@@ -600,15 +630,26 @@ test('Real Angular 21 Community Hub: 26 ClassFactory registrations, 4 tabs, PDF 
     hasText: 'Zero-Downtime API Key Rotation Playbook',
   });
   await expect(carouselCard).toBeVisible();
+  await carouselCard.scrollIntoViewIfNeeded();
   await expect(carouselCard.locator('.mjc-att-counter-pill')).toContainText('1 / 3');
   await carouselCard.getByRole('button', { name: 'Next slide' }).click();
   await expect(carouselCard.locator('.mjc-att-counter-pill')).toContainText('2 / 3');
   await carouselCard.getByRole('button', { name: 'Previous slide' }).click();
   await expect(carouselCard.locator('.mjc-att-counter-pill')).toContainText('1 / 3');
 
-  // Open image lightbox from carousel, verify dialog, dismiss with Escape
+  // Capture inline gallery / carousel + embedded artifact card visual state
+  await page.screenshot({
+    path: join(SCREENSHOTS_DIR, 'attachments-01-inline-gallery.png'),
+    fullPage: false,
+  });
+
+  // Open image lightbox from carousel, verify dialog, capture screenshot, dismiss with Escape
   await carouselCard.getByRole('button', { name: /Open slide 1 in lightbox/ }).click();
   await expect(page.locator('.mjc-att-modal-dialog--lightbox')).toBeVisible();
+  await page.screenshot({
+    path: join(SCREENSHOTS_DIR, 'attachments-02-lightbox-modal.png'),
+    fullPage: false,
+  });
   await page.keyboard.press('Escape');
   await expect(page.locator('.mjc-att-modal-dialog--lightbox')).toBeHidden();
 
@@ -619,6 +660,21 @@ test('Real Angular 21 Community Hub: 26 ClassFactory registrations, 4 tabs, PDF 
   await expect(inlineArtifactIframe).toHaveAttribute('sandbox', 'allow-scripts');
   await carouselCard.getByRole('button', { name: /^Hide Preview$/ }).click();
 
+  // Open expanded full MJ Artifact preview modal, verify sandboxed full iframe, capture screenshot, dismiss with Escape
+  await carouselCard.getByRole('button', { name: /Full Preview/i }).first().click();
+  const artifactFullModal = page.locator('.mjc-att-modal-dialog--artifact');
+  await expect(artifactFullModal).toBeVisible();
+  await expect(artifactFullModal.locator('iframe.mjc-att-artifact-iframe--full')).toHaveAttribute(
+    'sandbox',
+    'allow-scripts',
+  );
+  await page.screenshot({
+    path: join(SCREENSHOTS_DIR, 'attachments-03-artifact-full-preview.png'),
+    fullPage: false,
+  });
+  await page.keyboard.press('Escape');
+  await expect(artifactFullModal).toBeHidden();
+
   // Verify Video + Multi-track Audio Switcher on Read Replica Architecture card
   const mediaPostCard = page.locator('.mjc-stream-card', {
     hasText: 'Multi-Region GraphQL Read Replica Architecture',
@@ -628,8 +684,17 @@ test('Real Angular 21 Community Hub: 26 ClassFactory registrations, 4 tabs, PDF 
   await mediaPostCard.getByRole('button', { name: 'Next audio track' }).click();
   await expect(mediaPostCard.locator('.mjc-att-audio-card--multi .mjc-att-counter-pill')).toContainText('Track 2 of 2');
 
-  // Create a new post with an attached PNG image + embedded MJ Artifact via + New Post modal,
-  // then verify inline quick reply + Full-Page Thread View reply attachments and cold reload hydration!
+  // Create a new post with BOTH a small PNG AND a > 1.5 MiB (1.6 MB) PNG + embedded MJ Artifact via + New Post modal,
+  // then verify inline quick reply + Full-Page Thread View reply attachments and exact byte-for-byte cold reload hydration!
+  const smallPngBuffer = Buffer.from(
+    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==',
+    'base64',
+  );
+  const largePngBuffer = buildValidLargePngBuffer(1_600_000);
+  expect(largePngBuffer.byteLength).toBe(1_600_000);
+  const expectedSmallDataUrl = `data:image/png;base64,${smallPngBuffer.toString('base64')}`;
+  const expectedLargeDataUrl = `data:image/png;base64,${largePngBuffer.toString('base64')}`;
+
   const preAttachState = await (await page.request.get(new URL('/api/harness/state', harnessUrl).toString())).json();
   const spaceItemCountBefore = preAttachState.spaceItems.length;
   const attachmentCountBefore = preAttachState.forumPostAttachments.length;
@@ -638,22 +703,36 @@ test('Real Angular 21 Community Hub: 26 ClassFactory registrations, 4 tabs, PDF 
   await page.click('#mjc-header-ask-share-btn');
   await page.selectOption('#mjc-ask-share-type', 'Discussion Post');
   await page.fill('#mjc-ask-share-title-input', 'Media & Artifact Integration Verification');
-  await page.fill('#mjc-ask-share-body-input', 'Verifying uploaded PNG image and embedded OpenTelemetry MJ Artifact.');
+  await page.fill('#mjc-ask-share-body-input', 'Verifying small + >1.5MB PNG uploads and embedded OpenTelemetry MJ Artifact.');
   await page
     .locator('#mjc-ask-share-modal-backdrop input[type="file"]')
-    .setInputFiles({
-      name: 'cutover-proof.png',
-      mimeType: 'image/png',
-      buffer: Buffer.from(
-        'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==',
-        'base64',
-      ),
-    });
+    .setInputFiles([
+      {
+        name: 'cutover-proof.png',
+        mimeType: 'image/png',
+        buffer: smallPngBuffer,
+      },
+      {
+        name: 'large-blueprint.png',
+        mimeType: 'image/png',
+        buffer: largePngBuffer,
+      },
+    ]);
   await expect(page.locator('#mjc-ask-share-modal-backdrop .mjc-picker-drafts')).toContainText('cutover-proof.png');
+  await expect(page.locator('#mjc-ask-share-modal-backdrop .mjc-picker-drafts')).toContainText('large-blueprint.png');
   await page
     .locator('#mjc-ask-share-modal-backdrop .mjc-picker-chip__caption')
-    .first()
+    .nth(0)
     .fill('Cutover verification diagram');
+  await page
+    .locator('#mjc-ask-share-modal-backdrop .mjc-picker-chip__caption')
+    .nth(1)
+    .fill('Large 1.6 MB blueprint');
+  await page
+    .locator('#mjc-ask-share-modal-backdrop .mjc-picker-chip')
+    .nth(1)
+    .locator('.mjc-picker-toggle input[type="checkbox"]')
+    .check();
 
   await page.locator('#mjc-ask-share-modal-backdrop button', { hasText: 'Embed MJ Artifact' }).click();
   await page.locator('#mjc-ask-share-modal-backdrop .mjc-picker-popover__search').fill('OpenTelemetry');
@@ -661,6 +740,12 @@ test('Real Angular 21 Community Hub: 26 ClassFactory registrations, 4 tabs, PDF 
   await expect(page.locator('#mjc-ask-share-modal-backdrop .mjc-picker-drafts')).toContainText(
     'OpenTelemetry Webhook Retry Span Schema',
   );
+
+  // Capture composer attachment picker visual state
+  await page.screenshot({
+    path: join(SCREENSHOTS_DIR, 'attachments-04-composer-picker.png'),
+    fullPage: false,
+  });
 
   await page.click('#mjc-ask-share-submit-btn');
   await expect(page.locator('#mjc-ask-share-modal-backdrop')).toBeHidden();
@@ -673,23 +758,49 @@ test('Real Angular 21 Community Hub: 26 ClassFactory registrations, 4 tabs, PDF 
   await expect(mediaVerifiedCard.locator('mjc-attachment-gallery')).toContainText('OpenTelemetry Webhook Retry Span Schema');
 
   const postAttachState = await (await page.request.get(new URL('/api/harness/state', harnessUrl).toString())).json();
-  expect(postAttachState.spaceItems.length).toBe(spaceItemCountBefore + 2);
-  expect(postAttachState.forumPostAttachments.length).toBe(attachmentCountBefore + 2);
-  expect(postAttachState.mjArtifactVersions.length).toBe(artifactVersionCountBefore + 1);
+  expect(postAttachState.spaceItems.length).toBe(spaceItemCountBefore + 3);
+  expect(postAttachState.forumPostAttachments.length).toBe(attachmentCountBefore + 3);
+  expect(postAttachState.mjArtifactVersions.length).toBe(artifactVersionCountBefore + 2);
   const createdMediaPost = postAttachState.posts.find(
     (p) => p.Title === 'Media & Artifact Integration Verification',
   );
   expect(createdMediaPost).toBeTruthy();
-  const uploadedFileVersion = postAttachState.mjArtifactVersions.find(
+
+  const uploadedSmallVersion = postAttachState.mjArtifactVersions.find(
     (v) => v.FileName === 'cutover-proof.png' && v.ContentMode === 'File',
   );
-  expect(uploadedFileVersion).toBeTruthy();
-  expect(uploadedFileVersion.Content).toMatch(/^data:image\/png;base64,/);
-  const uploadedSpaceItem = postAttachState.spaceItems.find(
-    (si) => si.ArtifactVersionID && si.ArtifactVersionID.toLowerCase() === uploadedFileVersion.ID.toLowerCase(),
+  expect(uploadedSmallVersion).toBeTruthy();
+  expect(uploadedSmallVersion.Content).toBe(expectedSmallDataUrl);
+
+  const uploadedLargeVersion = postAttachState.mjArtifactVersions.find(
+    (v) => v.FileName === 'large-blueprint.png' && v.ContentMode === 'File',
   );
-  expect(uploadedSpaceItem).toBeTruthy();
-  expect(uploadedSpaceItem.RecordID.toLowerCase()).not.toBe(`id|${createdMediaPost.ID.toLowerCase()}`);
+  expect(uploadedLargeVersion).toBeTruthy();
+  expect(uploadedLargeVersion.Content).toBe(expectedLargeDataUrl);
+  expect(uploadedLargeVersion.ContentSizeBytes).toBe(1_600_000);
+  expect(String(uploadedLargeVersion.Content)).not.toMatch(/^blob:|attachments\.local/);
+
+  const uploadedLargeSpaceItem = postAttachState.spaceItems.find(
+    (si) => si.ArtifactVersionID && si.ArtifactVersionID.toLowerCase() === uploadedLargeVersion.ID.toLowerCase(),
+  );
+  expect(uploadedLargeSpaceItem).toBeTruthy();
+  expect(uploadedLargeSpaceItem.Folder).toBe('Library');
+  expect(uploadedLargeSpaceItem.RecordID.toLowerCase()).not.toBe(`id|${createdMediaPost.ID.toLowerCase()}`);
+
+  const uploadedSmallSpaceItem = postAttachState.spaceItems.find(
+    (si) => si.ArtifactVersionID && si.ArtifactVersionID.toLowerCase() === uploadedSmallVersion.ID.toLowerCase(),
+  );
+  expect(uploadedSmallSpaceItem).toBeTruthy();
+  expect(uploadedSmallSpaceItem.Folder).toBe('Post Media');
+
+  const createdPostAttachments = postAttachState.forumPostAttachments
+    .filter((a) => a.PostID.toLowerCase() === createdMediaPost.ID.toLowerCase())
+    .sort((a, b) => a.Sequence - b.Sequence);
+  expect(createdPostAttachments.map((a) => [a.Sequence, a.Caption])).toEqual([
+    [1, 'Cutover verification diagram'],
+    [2, 'Large 1.6 MB blueprint'],
+    [3, null],
+  ]);
 
   // Inline quick reply composer with an uploaded PNG attachment
   await mediaVerifiedCard.locator('.mjc-expand-btn').click();
@@ -699,10 +810,7 @@ test('Real Angular 21 Community Hub: 26 ClassFactory registrations, 4 tabs, PDF 
   await inlineReplyForm.locator('input[type="file"]').setInputFiles({
     name: 'inline-reply-proof.png',
     mimeType: 'image/png',
-    buffer: Buffer.from(
-      'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==',
-      'base64',
-    ),
+    buffer: smallPngBuffer,
   });
   await expect(inlineReplyForm.locator('.mjc-picker-drafts')).toContainText('inline-reply-proof.png');
   await inlineReplyForm.locator('.mjc-picker-chip__caption').first().fill('Inline reply evidence');
@@ -731,7 +839,7 @@ test('Real Angular 21 Community Hub: 26 ClassFactory registrations, 4 tabs, PDF 
   await page.keyboard.press('Escape');
   await expect(mediaThreadView).toBeHidden();
 
-  // COLD RELOAD: verify post + inline reply + full-thread reply attachments and uploaded data URLs hydrate from persisted entities!
+  // COLD RELOAD: verify small + 1.6 MB uploaded data URLs (exact byte-for-byte), captions, sequence, and library flags hydrate cleanly!
   await page.reload();
   await page.waitForFunction(() => window.__harnessReady === true);
 
@@ -739,18 +847,27 @@ test('Real Angular 21 Community Hub: 26 ClassFactory registrations, 4 tabs, PDF 
     hasText: 'Media & Artifact Integration Verification',
   });
   await expect(coldReloadedMediaCard).toBeVisible();
-  const coldMainPostGallery = coldReloadedMediaCard.locator('mjc-attachment-gallery', {
-    hasText: 'Cutover verification diagram',
-  });
+  const coldMainPostGallery = coldReloadedMediaCard.locator('mjc-attachment-gallery').first();
+  await expect(coldMainPostGallery.locator('.mjc-att-counter-pill')).toContainText('1 / 2');
   await expect(coldMainPostGallery).toContainText('Cutover verification diagram');
   await expect(coldMainPostGallery).toContainText(
     'OpenTelemetry Webhook Retry Span Schema',
   );
-  const reloadedImgSrc = await coldMainPostGallery
-    .locator('img.mjc-att-single-img, img.mjc-att-carousel__img')
+  const reloadedSmallSrc = await coldMainPostGallery
+    .locator('img.mjc-att-carousel__img')
     .first()
     .getAttribute('src');
-  expect(reloadedImgSrc).toMatch(/^data:image\/png;base64,/);
+  expect(reloadedSmallSrc).toBe(expectedSmallDataUrl);
+
+  // Advance carousel to slide 2 (1.6 MB large-blueprint.png) and verify exact byte-for-byte data URL & caption after cold reload
+  await coldMainPostGallery.getByRole('button', { name: 'Next slide' }).click();
+  await expect(coldMainPostGallery.locator('.mjc-att-counter-pill')).toContainText('2 / 2');
+  await expect(coldMainPostGallery).toContainText('Large 1.6 MB blueprint');
+  const reloadedLargeSrc = await coldMainPostGallery
+    .locator('img.mjc-att-carousel__img')
+    .first()
+    .getAttribute('src');
+  expect(reloadedLargeSrc).toBe(expectedLargeDataUrl);
 
   await coldReloadedMediaCard.locator('.mjc-inspect-btn').click();
   const coldThreadView = page.locator('#mjc-full-thread-view');
@@ -763,11 +880,12 @@ test('Real Angular 21 Community Hub: 26 ClassFactory registrations, 4 tabs, PDF 
   await page.keyboard.press('Escape');
   await expect(coldThreadView).toBeHidden();
 
-  // Switch to the Auto-Indexed Library tab, verify all media/artifacts appear after reload, capture screenshot, filter, and View in Thread
+  // Switch to the Auto-Indexed Library tab, verify all media/artifacts + Feature in Space Library flags after reload, capture screenshot, filter, and View in Thread
   await page.click('#mjc-hub-tab-media-library');
   const libraryView = page.locator('#mjc-media-library-view');
   await expect(libraryView).toBeVisible();
   await expect(libraryView).toContainText('cutover-proof.png');
+  await expect(libraryView).toContainText('large-blueprint.png');
   await expect(libraryView).toContainText('inline-reply-proof.png');
   await expect(libraryView).toContainText('OpenTelemetry Webhook Retry Span Schema');
   await expect(libraryView).toContainText('Verified Key Rotation Cutover Checklist');
@@ -778,6 +896,13 @@ test('Real Angular 21 Community Hub: 26 ClassFactory registrations, 4 tabs, PDF 
     path: join(SCREENSHOTS_DIR, 'community-attachments-and-media-library.png'),
     fullPage: false,
   });
+
+  // Verify persisted Feature in Space Library scope filtering
+  await page.click('#mjc-lib-scope-featured');
+  await expect(libraryView).toContainText('large-blueprint.png');
+  await expect(libraryView).toContainText('OpenTelemetry Webhook Retry Span Schema');
+  await expect(libraryView).not.toContainText('cutover-proof.png');
+  await page.click('#mjc-lib-scope-all');
 
   // Filter by Images
   await page.click('#mjc-lib-kind-image');
@@ -915,6 +1040,14 @@ test('Real Angular 21 Community Hub: 26 ClassFactory registrations, 4 tabs, PDF 
     livingSynthesisCitationsVerified: true,
     qaCanonWorkbenchExercised: true,
     mediaLibraryExercised: true,
+    attachmentVisualStatesVerified: {
+      inlineGallery: 'e2e/screenshots/attachments-01-inline-gallery.png',
+      lightboxModal: 'e2e/screenshots/attachments-02-lightbox-modal.png',
+      artifactFullPreview: 'e2e/screenshots/attachments-03-artifact-full-preview.png',
+      composerPicker: 'e2e/screenshots/attachments-04-composer-picker.png',
+      mediaLibrary: 'e2e/screenshots/community-attachments-and-media-library.png',
+      largeFileRoundTripVerified: true,
+    },
     persistentReloadVerified: true,
     livingCoAuthoringExercised: true,
     inlineFormExercised: true,
@@ -940,6 +1073,10 @@ test('Real Angular 21 Community Hub: 26 ClassFactory registrations, 4 tabs, PDF 
       'e2e/screenshots/06-living-co-authoring.png',
       'e2e/screenshots/07-collaboration-embedded.png',
       'e2e/screenshots/08-personalized-digest-preview.png',
+      'e2e/screenshots/attachments-01-inline-gallery.png',
+      'e2e/screenshots/attachments-02-lightbox-modal.png',
+      'e2e/screenshots/attachments-03-artifact-full-preview.png',
+      'e2e/screenshots/attachments-04-composer-picker.png',
       'e2e/screenshots/community-attachments-and-media-library.png',
       'e2e/screenshots/community-hub.png',
     ],
@@ -1011,6 +1148,53 @@ test('CR-6: Post attachment persistence failure surfaces error, preserves draft,
   expect(retriedState.spaceItems.length).toBe(spaceItemCountBefore + 2);
   expect(retriedState.forumPostAttachments.length).toBe(attachmentCountBefore + 2);
   expect(retriedState.mjArtifactVersions.length).toBe(artifactVersionCountBefore + 1);
+
+  // Reply composer persistence failure -> visible error banner, preserved reply text & staged attachment, rollback, and retry
+  const targetCard = page.locator('.mjc-stream-card', { hasText: 'Retry Draft Recovery Verification' });
+  await targetCard.locator('.mjc-inspect-btn').click();
+  const threadView = page.locator('#mjc-full-thread-view');
+  await expect(threadView).toBeVisible();
+
+  const replyStateBefore = await (await page.request.get(new URL('/api/harness/state', harnessUrl).toString())).json();
+  await page.request.post(new URL('/api/harness/faults', harnessUrl).toString(), {
+    data: { failSaveEntities: ['MJ_BizApps_Community: Forum Post Attachments'] },
+  });
+
+  await threadView.locator('#mjc-detail-reply-input').fill('Reply retry recovery verification');
+  await threadView.locator('input[type="file"]').setInputFiles({
+    name: 'reply-retry-proof.png',
+    mimeType: 'image/png',
+    buffer: Buffer.from(
+      'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==',
+      'base64',
+    ),
+  });
+  await expect(threadView.locator('.mjc-picker-drafts')).toContainText('reply-retry-proof.png');
+  await threadView.locator('#mjc-detail-reply-submit-btn').click();
+
+  await expect(page.locator('#mjc-detail-error-banner')).toBeVisible();
+  await expect(page.locator('#mjc-detail-error-banner')).toContainText(/Failed to save reply attachments/i);
+  await expect(threadView.locator('#mjc-detail-reply-input')).toHaveValue('Reply retry recovery verification');
+  await expect(threadView.locator('.mjc-picker-drafts')).toContainText('reply-retry-proof.png');
+
+  const replyRolledBackState = await (await page.request.get(new URL('/api/harness/state', harnessUrl).toString())).json();
+  expect(replyRolledBackState.posts.length).toBe(replyStateBefore.posts.length);
+  expect(replyRolledBackState.spaceItems.length).toBe(replyStateBefore.spaceItems.length);
+  expect(replyRolledBackState.forumPostAttachments.length).toBe(replyStateBefore.forumPostAttachments.length);
+  expect(replyRolledBackState.mjArtifactVersions.length).toBe(replyStateBefore.mjArtifactVersions.length);
+
+  await page.request.post(new URL('/api/harness/faults', harnessUrl).toString(), {
+    data: { failSaveEntities: [] },
+  });
+  await threadView.locator('#mjc-detail-reply-submit-btn').click();
+  await expect(threadView.locator('.mjc-full-thread-replies')).toContainText('Reply retry recovery verification');
+  await expect(threadView.locator('.mjc-full-thread-replies mjc-attachment-gallery')).toBeVisible();
+
+  const replyRetriedState = await (await page.request.get(new URL('/api/harness/state', harnessUrl).toString())).json();
+  expect(replyRetriedState.posts.length).toBe(replyStateBefore.posts.length + 1);
+  expect(replyRetriedState.spaceItems.length).toBe(replyStateBefore.spaceItems.length + 1);
+  expect(replyRetriedState.forumPostAttachments.length).toBe(replyStateBefore.forumPostAttachments.length + 1);
+  expect(replyRetriedState.mjArtifactVersions.length).toBe(replyStateBefore.mjArtifactVersions.length + 1);
 });
 
 test('CR-09: UserInfoEngine and ProcessInboundDigestReplyAction fail visibly on persistence failures without fallback masking', async ({ page }) => {

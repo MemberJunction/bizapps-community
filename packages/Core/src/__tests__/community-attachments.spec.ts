@@ -7,15 +7,20 @@ import {
   COMMUNITY_ATTACHMENT_MAX_FILE_BYTES,
   COMMUNITY_SPACE_ITEM_FOLDERS,
   ClassifyAttachmentKind,
+  ComputeAttachmentContentByteLength,
   GroupPostAttachmentsForDisplay,
   IsAllowedAttachmentMimeType,
   IsFeaturedLibraryFolder,
+  IsTemporaryOrPlaceholderAttachmentUrl,
   NormalizeAttachmentMimeType,
   ResolveAttachmentSpaceItemFolder,
   ResolveDefaultFeatureInLibrary,
   SanitizeCommunityAttachmentUrl,
+  SanitizePersistedAttachmentUrl,
   ValidateAttachmentBatchLimits,
   ValidateAttachmentFileSize,
+  ValidateAuthoritativeArtifactVersionRecord,
+  ValidateAuthoritativeFileRecord,
   ValidateCommunityAttachmentInput,
   type CommunityAttachmentItem,
 } from '../index.ts';
@@ -263,5 +268,78 @@ describe('@mj-biz-apps/community-core media & artifact attachments', () => {
       grouped.files.map((i) => i.id),
       ['att-file-late'],
     );
+  });
+
+  it('CR-1 & CR-4: rejects temporary blob:/attachments.local URLs at persistence and validates authoritative File & ArtifactVersion records', () => {
+    assert.equal(IsTemporaryOrPlaceholderAttachmentUrl('blob:https://community.example.com/123'), true);
+    assert.equal(IsTemporaryOrPlaceholderAttachmentUrl('https://attachments.local/photo.png'), true);
+    assert.equal(IsTemporaryOrPlaceholderAttachmentUrl('https://cdn.example.com/photo.png'), false);
+
+    assert.equal(SanitizePersistedAttachmentUrl('blob:https://community.example.com/123', 'image'), null);
+    assert.equal(SanitizePersistedAttachmentUrl('https://attachments.local/photo.png', 'image'), null);
+    assert.equal(
+      SanitizePersistedAttachmentUrl('https://cdn.example.com/photo.png', 'image'),
+      'https://cdn.example.com/photo.png',
+    );
+
+    const largeBytes = Buffer.alloc(1_600_000, 0x41);
+    const largeDataUrl = `data:image/png;base64,${largeBytes.toString('base64')}`;
+    assert.equal(SanitizePersistedAttachmentUrl(largeDataUrl, 'image'), largeDataUrl);
+    assert.equal(ComputeAttachmentContentByteLength(largeDataUrl, 'File'), 1_600_000);
+    assert.equal(ComputeAttachmentContentByteLength('hello world', 'Text'), 11);
+    assert.equal(ComputeAttachmentContentByteLength('https://cdn.example.com/file.png', 'File'), null);
+
+    const missingSizeFile = ValidateAuthoritativeFileRecord({
+      ID: '11111111-1111-4111-8111-111111111111',
+      Name: 'chart.png',
+      ContentType: 'image/png',
+    });
+    assert.equal(missingSizeFile.valid, false);
+
+    const validFile = ValidateAuthoritativeFileRecord({
+      ID: '11111111-1111-4111-8111-111111111111',
+      Name: 'chart.png',
+      ContentType: 'image/png',
+      Size: 4096,
+      DownloadURL: 'https://cdn.example.com/chart.png',
+    });
+    assert.equal(validFile.valid, true);
+    assert.equal(validFile.sizeBytes, 4096);
+
+    const nullFileBinding = ValidateAuthoritativeArtifactVersionRecord(
+      {
+        ID: '22222222-2222-4222-8222-222222222222',
+        ArtifactID: ARTIFACT_ID,
+        FileID: null,
+        ContentMode: 'File',
+        MimeType: 'image/png',
+        ContentSizeBytes: 2048,
+        Content: 'https://cdn.example.com/chart.png',
+      },
+      {
+        targetEntityName: 'MJ: Files',
+        targetRecordUuid: '11111111-1111-4111-8111-111111111111',
+      },
+    );
+    assert.equal(nullFileBinding.valid, false);
+    assert.match(nullFileBinding.error ?? '', /null or invalid FileID/);
+
+    const validTextArtifact = ValidateAuthoritativeArtifactVersionRecord(
+      {
+        ID: '22222222-2222-4222-8222-222222222223',
+        ArtifactID: ARTIFACT_ID,
+        FileID: null,
+        ContentMode: 'Text',
+        MimeType: 'text/html',
+        ContentSizeBytes: null,
+        Content: '<div><strong>Benchmark</strong></div>',
+      },
+      {
+        targetEntityName: 'MJ: Artifacts',
+        targetRecordUuid: ARTIFACT_ID,
+      },
+    );
+    assert.equal(validTextArtifact.valid, true);
+    assert.equal(validTextArtifact.sizeBytes, Buffer.byteLength('<div><strong>Benchmark</strong></div>', 'utf8'));
   });
 });
