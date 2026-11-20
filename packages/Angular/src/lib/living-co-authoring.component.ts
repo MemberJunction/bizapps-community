@@ -15,6 +15,7 @@ import {
   type SlaCapacityInput,
   type SlaCapacityResult,
 } from './community-hub-workbench.ts';
+import { CommunityAttachmentGalleryComponent } from './community-attachment-gallery.component.ts';
 
 export interface LivingDocFilterOption {
   key: LivingDocFilterKey;
@@ -38,7 +39,7 @@ const LIVING_DOC_FILTERS: ReadonlyArray<LivingDocFilterOption> = [
 @Component({
   standalone: true,
   selector: 'mjc-living-co-authoring',
-  imports: [CommonModule, FormsModule],
+  imports: [CommonModule, FormsModule, CommunityAttachmentGalleryComponent],
   templateUrl: './living-co-authoring.component.html',
   styleUrl: './living-co-authoring.component.css',
   changeDetection: ChangeDetectionStrategy.OnPush,

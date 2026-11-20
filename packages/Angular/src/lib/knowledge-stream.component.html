@@ -235,6 +235,14 @@
                   <p class="mjc-stream-card__excerpt">{{ item.excerpt }}</p>
                 }
 
+                @if (item.attachments && item.attachments.length > 0) {
+                  <mjc-attachment-gallery
+                    [attachments]="item.attachments"
+                    [mode]="isItemExpanded(item.id) ? 'full' : 'compact'"
+                    [ariaLabel]="'Attachments for ' + item.title"
+                  ></mjc-attachment-gallery>
+                }
+
                 @if (item.tags.length > 0) {
                   <div class="mjc-tag-row">
                     @for (tag of item.tags; track tag) {
@@ -372,6 +380,13 @@
                           }
                         </div>
                         <div class="mjc-inline-reply__body mjc-markdown" [innerHTML]="renderMarkdown(reply.bodyMarkdown)"></div>
+                        @if (reply.attachments && reply.attachments.length > 0) {
+                          <mjc-attachment-gallery
+                            [attachments]="reply.attachments"
+                            mode="compact"
+                            [ariaLabel]="'Attachments for reply by ' + reply.authorName"
+                          ></mjc-attachment-gallery>
+                        }
                       </div>
                     }
                   </div>

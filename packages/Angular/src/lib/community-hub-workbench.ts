@@ -1,4 +1,4 @@
-import type { IdeationAllocationMode } from '@mj-biz-apps/community-core';
+import type { CommunityAttachmentItem, IdeationAllocationMode } from '@mj-biz-apps/community-core';
 import type {
   mjBizAppsCommunityForumAnswerPostEntity,
   mjBizAppsCommunityForumInteractivePostEntity,
@@ -16,6 +16,7 @@ export interface QaCanonItemInput {
   epistemicStatus: mjBizAppsCommunityForumAnswerPostEntity['AIEpistemicStatus'];
   confidenceScore: number | null;
   isAccepted: boolean;
+  attachments?: CommunityAttachmentItem[];
 }
 
 export interface QaCanonStats {
@@ -34,6 +35,7 @@ export interface IdeationIdeaInput {
   effectiveQuadraticVotes: number;
   myPointsAllocated: number;
   myEffectiveVotes: number;
+  attachments?: CommunityAttachmentItem[];
 }
 
 export interface IdeationWalletSummary {
@@ -50,6 +52,7 @@ export interface LivingDocItemInput {
   bodyMarkdown: string;
   postTypeCode: 'collaborative-doc' | 'collaborative-sheet' | 'collaborative-deck' | 'interactive-experience';
   experienceKind?: mjBizAppsCommunityForumInteractivePostEntity['ExperienceKind'] | null;
+  attachments?: CommunityAttachmentItem[];
 }
 
 export interface LivingDocTypeMeta {

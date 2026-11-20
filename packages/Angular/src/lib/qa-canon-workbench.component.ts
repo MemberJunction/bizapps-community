@@ -13,6 +13,7 @@ import {
 } from './community-hub-workbench.ts';
 import type { CommunityBadgeTone } from './community-hub-commons.ts';
 import { RenderSafeMarkdownHtml, StripMarkdownToPlainText } from './community-markdown.ts';
+import { CommunityAttachmentGalleryComponent } from './community-attachment-gallery.component.ts';
 
 export interface QaFilterPillOption {
   key: QaCanonFilterKey;
@@ -35,7 +36,7 @@ const QA_FILTER_PILLS: ReadonlyArray<QaFilterPillOption> = [
 @Component({
   standalone: true,
   selector: 'mjc-qa-canon-workbench',
-  imports: [CommonModule, FormsModule],
+  imports: [CommonModule, FormsModule, CommunityAttachmentGalleryComponent],
   templateUrl: './qa-canon-workbench.component.html',
   styleUrl: './qa-canon-workbench.component.css',
   changeDetection: ChangeDetectionStrategy.OnPush,

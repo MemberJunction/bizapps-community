@@ -271,6 +271,14 @@
               <p class="mjc-living-card__body">{{ doc.bodyMarkdown }}</p>
             }
           }
+
+          @if (doc.attachments && doc.attachments.length > 0) {
+            <mjc-attachment-gallery
+              [attachments]="doc.attachments"
+              mode="full"
+              [ariaLabel]="'Attachments for ' + doc.title"
+            ></mjc-attachment-gallery>
+          }
         </div>
       }
     </div>

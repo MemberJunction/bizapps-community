@@ -1,5 +1,6 @@
 import { UUIDsEqual } from '@memberjunction/global';
-import { AssertValidUUID } from '@mj-biz-apps/community-core';
+import { AssertValidUUID, type CommunityAttachmentItem } from '@mj-biz-apps/community-core';
+import { DEMO_SEED_ATTACHMENTS } from './community-attachment-demo.ts';
 import { type CommunityGraphQLExecutor, InvokeToggleCommunityPostReactionMutation } from './community-hub-mutations.ts';
 import type {
   mjBizAppsCommunityForumAnswerPostEntity,
@@ -61,6 +62,7 @@ export interface CommunityCommonsReply {
   bodyMarkdown: string;
   isAccepted: boolean;
   upvotes: number;
+  attachments?: CommunityAttachmentItem[];
 }
 
 export interface CommunityCommonsItem {
@@ -91,6 +93,7 @@ export interface CommunityCommonsItem {
   sourceTab: CommunityHubTabKey;
   sourcePostId: string;
   forumId?: string | null;
+  attachments?: CommunityAttachmentItem[];
 }
 
 export interface CommunityFeaturedHighlight {
@@ -262,6 +265,7 @@ export interface CommonsQAInput {
   replies?: ReadonlyArray<CommunityCommonsReply>;
   tags?: ReadonlyArray<string>;
   promotedToSpaceId?: string | null;
+  attachments?: CommunityAttachmentItem[];
 }
 
 export interface CommonsIdeaInput {
@@ -281,6 +285,7 @@ export interface CommonsIdeaInput {
   replies?: ReadonlyArray<CommunityCommonsReply>;
   tags?: ReadonlyArray<string>;
   promotedToSpaceId?: string | null;
+  attachments?: CommunityAttachmentItem[];
 }
 
 export interface CommonsLivingDocInput {
@@ -300,6 +305,7 @@ export interface CommonsLivingDocInput {
   replies?: ReadonlyArray<CommunityCommonsReply>;
   tags?: ReadonlyArray<string>;
   promotedToSpaceId?: string | null;
+  attachments?: CommunityAttachmentItem[];
 }
 
 export interface CommonsFeedPostInput {
@@ -318,6 +324,7 @@ export interface CommonsFeedPostInput {
   tags?: ReadonlyArray<string>;
   promotedToSpaceId?: string | null;
   spaceId?: CommunitySpaceFilterId | null;
+  attachments?: CommunityAttachmentItem[];
 }
 
 export const COMMUNITY_SPACES_DIRECTORY: ReadonlyArray<CommunitySpaceDirectoryItem> = [
@@ -431,6 +438,7 @@ export const SEEDED_SUPPLEMENTAL_COMMONS_ITEMS: ReadonlyArray<CommunityCommonsIt
           'Confirmed our multi-tenant PostgreSQL staging cluster passed all 25 entity parity checks with zero manual adjustments.',
         isAccepted: true,
         upvotes: 12,
+        attachments: DEMO_SEED_ATTACHMENTS.rfcReply1,
       },
       {
         id: 'reply-rfc-2',
@@ -448,6 +456,7 @@ export const SEEDED_SUPPLEMENTAL_COMMONS_ITEMS: ReadonlyArray<CommunityCommonsIt
     deliverableTitle: null,
     sourceTab: 'knowledge-stream',
     sourcePostId: 'commons-rfc-2026-08',
+    attachments: DEMO_SEED_ATTACHMENTS.rfcMotion,
   },
   {
     id: 'commons-wg-webhook-telemetry',
@@ -483,12 +492,14 @@ export const SEEDED_SUPPLEMENTAL_COMMONS_ITEMS: ReadonlyArray<CommunityCommonsIt
           'Added our Prometheus alert rule snippets for dead-letter queue growth thresholds to Milestone 2.',
         isAccepted: true,
         upvotes: 9,
+        attachments: DEMO_SEED_ATTACHMENTS.wgReply1,
       },
     ],
     graduatedToDeliverable: true,
     deliverableTitle: 'Webhook Telemetry Reference Blueprint v1.0',
     sourceTab: 'living-co-authoring',
     sourcePostId: 'commons-wg-webhook-telemetry',
+    attachments: DEMO_SEED_ATTACHMENTS.wgTelemetry,
   },
 ];
 
@@ -627,6 +638,7 @@ export function BuildCommonsStreamItems(params: {
       sourceTab: 'knowledge-stream',
       sourcePostId: post.id,
       forumId: post.forumId ?? null,
+      attachments: post.attachments ? [...post.attachments] : undefined,
     });
   }
 
@@ -681,6 +693,7 @@ export function BuildCommonsStreamItems(params: {
       sourceTab: 'qa-canon-workbench',
       sourcePostId: qa.id,
       forumId: qa.forumId ?? null,
+      attachments: qa.attachments ? [...qa.attachments] : undefined,
     });
   }
 
@@ -736,6 +749,7 @@ export function BuildCommonsStreamItems(params: {
       sourceTab: 'quadratic-ideation-wallet',
       sourcePostId: idea.id,
       forumId: idea.campaignId || null,
+      attachments: idea.attachments ? [...idea.attachments] : undefined,
     });
   }
 
@@ -792,6 +806,7 @@ export function BuildCommonsStreamItems(params: {
       sourceTab: 'living-co-authoring',
       sourcePostId: doc.id,
       forumId: doc.forumId ?? null,
+      attachments: doc.attachments ? [...doc.attachments] : undefined,
     });
   }
 
@@ -802,6 +817,7 @@ export function BuildCommonsStreamItems(params: {
           ...supplemental,
           tags: [...supplemental.tags],
           replies: supplemental.replies.map((r) => ({ ...r })),
+          attachments: supplemental.attachments ? [...supplemental.attachments] : undefined,
         });
       }
     }

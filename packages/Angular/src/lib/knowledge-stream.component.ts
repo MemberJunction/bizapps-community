@@ -19,6 +19,7 @@ import {
 import type { CommunityHubDigestCadence, CommunityHubTabKey } from './community-hub-preferences.ts';
 import type { LivingThreadSynthesisView } from './community-hub-wedge.ts';
 import { RenderSafeMarkdownHtml } from './community-markdown.ts';
+import { CommunityAttachmentGalleryComponent } from './community-attachment-gallery.component.ts';
 import { AskFirstDeflectionWidgetComponent } from './widgets/ask-first-deflection-widget.component.ts';
 
 export interface KnowledgeStreamWalletSummaryItem {
@@ -36,7 +37,7 @@ export interface KnowledgeStreamWalletSummaryItem {
 @Component({
   standalone: true,
   selector: 'mjc-knowledge-stream',
-  imports: [CommonModule, FormsModule, AskFirstDeflectionWidgetComponent],
+  imports: [CommonModule, FormsModule, AskFirstDeflectionWidgetComponent, CommunityAttachmentGalleryComponent],
   templateUrl: './knowledge-stream.component.html',
   styleUrl: './knowledge-stream.component.css',
   changeDetection: ChangeDetectionStrategy.OnPush,

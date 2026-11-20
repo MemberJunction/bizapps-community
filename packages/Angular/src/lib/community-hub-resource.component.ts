@@ -36,8 +36,17 @@ import {
 import {
   AssertValidUUID,
   AssertValidUUIDList,
+  ClassifyAttachmentKind,
+  IsFeaturedLibraryFolder,
+  NormalizeAttachmentMimeType,
+  SanitizeCommunityAttachmentUrl,
+  type CommunityArtifactAttachmentItem,
+  type CommunityAttachmentItem,
+  type CommunityFileAttachmentItem,
   type IdeationAllocationMode,
 } from '@mj-biz-apps/community-core';
+import { DEMO_SEED_ATTACHMENTS } from './community-attachment-demo.ts';
+import { CommunityAttachmentGalleryComponent } from './community-attachment-gallery.component.ts';
 import {
   CommunityHubPreferences,
   type CommunityHubDigestCadence,
@@ -148,6 +157,7 @@ export interface CommunityHubQACanonItem {
   reactionScore?: number | null;
   replyCount?: number | null;
   promotedToSpaceId?: string | null;
+  attachments?: CommunityAttachmentItem[];
 }
 
 export interface CommunityHubIdeaItem {
@@ -161,6 +171,7 @@ export interface CommunityHubIdeaItem {
   myPointsAllocated: number;
   myEffectiveVotes: number;
   promotedToSpaceId?: string | null;
+  attachments?: CommunityAttachmentItem[];
 }
 
 export interface CommunityHubLivingDocItem {
@@ -173,6 +184,7 @@ export interface CommunityHubLivingDocItem {
   reactionScore?: number | null;
   replyCount?: number | null;
   promotedToSpaceId?: string | null;
+  attachments?: CommunityAttachmentItem[];
 }
 
 export interface CommunityHubFeedPost {
@@ -186,6 +198,7 @@ export interface CommunityHubFeedPost {
   replyCount?: number | null;
   reactionScore?: number | null;
   promotedToSpaceId?: string | null;
+  attachments?: CommunityAttachmentItem[];
 }
 
 /** An Ideation Campaign's wallet rules (`ForumIdeaCampaign` IS-A `Forum`), bound onto the
@@ -294,6 +307,7 @@ const SEEDED_FEED_POSTS_FALLBACK: CommunityHubFeedPost[] = [
     bodyMarkdown:
       'Provision a secondary client secret, roll worker secrets across active regions, verify lease telemetry, and revoke legacy keys after one lease interval.',
     status: 'Published',
+    attachments: DEMO_SEED_ATTACHMENTS.feedRotation,
   },
 ];
 
@@ -307,6 +321,7 @@ const SEEDED_QA_CANON_FALLBACK: CommunityHubQACanonItem[] = [
     epistemicStatus: 'Canon Verified',
     confidenceScore: 0.94,
     isAccepted: true,
+    attachments: DEMO_SEED_ATTACHMENTS.qaRotation,
   },
 ];
 
@@ -320,6 +335,7 @@ const SEEDED_IDEATION_FALLBACK: CommunityHubIdeaItem[] = [
     effectiveQuadraticVotes: 11,
     myPointsAllocated: 0,
     myEffectiveVotes: 0,
+    attachments: DEMO_SEED_ATTACHMENTS.ideaSigning,
   },
 ];
 
@@ -329,6 +345,7 @@ const SEEDED_LIVING_DOCS_FALLBACK: CommunityHubLivingDocItem[] = [
     title: 'OAuth2 Partner Onboarding Playbook',
     bodyMarkdown: '## OAuth2 Partner Playbook\n- Configure PKCE callback URLs\n- Enable token rotation alerts',
     postTypeCode: 'collaborative-doc',
+    attachments: DEMO_SEED_ATTACHMENTS.livingPlaybook,
   },
   {
     id: 'seed-form-1',
@@ -415,6 +432,7 @@ function buildMiniAppSrcdoc(title: string, kind: string): string {
     QaCanonWorkbenchComponent,
     LivingCoAuthoringComponent,
     QuadraticVotingSliderComponent,
+    CommunityAttachmentGalleryComponent,
   ],
   templateUrl: './community-hub-resource.component.html',
   styleUrl: './community-hub-resource.component.css',
@@ -525,6 +543,7 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
   private readonly repliesByRootPostId = new Map<string, CommunityCommonsReply[]>();
   private readonly upvotedPostIds = new Set<string>();
   private readonly tagNamesByPostId = new Map<string, string[]>();
+  private readonly attachmentsByPostId = new Map<string, CommunityAttachmentItem[]>();
 
   public livingDocItems: CommunityHubLivingDocItem[] = [];
   public selectedLivingDocId: string | null = null;
@@ -776,6 +795,7 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
           replyCount: p.replyCount ?? 0,
           replies: this.repliesByRootPostId.get(key),
           tags: this.isOfflineDemoMode ? undefined : (this.tagNamesByPostId.get(key) ?? []),
+          attachments: this.attachmentsByPostId.get(key) ?? p.attachments,
         };
       }),
       qaCanonItems: this.qaCanonItems.map((qa) => {
@@ -787,6 +807,7 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
           replyCount: qa.replyCount ?? 0,
           replies: this.repliesByRootPostId.get(key),
           tags: this.isOfflineDemoMode ? undefined : (this.tagNamesByPostId.get(key) ?? []),
+          attachments: this.attachmentsByPostId.get(key) ?? qa.attachments,
         };
       }),
       ideationItems: this.ideationItems.map((idea) => {
@@ -796,6 +817,7 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
           upvotedByMe: this.upvotedPostIds.has(key),
           replies: this.repliesByRootPostId.get(key),
           tags: this.isOfflineDemoMode ? undefined : (this.tagNamesByPostId.get(key) ?? []),
+          attachments: this.attachmentsByPostId.get(key) ?? idea.attachments,
         };
       }),
       livingDocItems: this.livingDocItems.map((doc) => {
@@ -807,6 +829,7 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
           replyCount: doc.replyCount ?? 0,
           replies: this.repliesByRootPostId.get(key),
           tags: this.isOfflineDemoMode ? undefined : (this.tagNamesByPostId.get(key) ?? []),
+          attachments: this.attachmentsByPostId.get(key) ?? doc.attachments,
         };
       }),
       includeDemoFixtures: this.isOfflineDemoMode,
@@ -841,6 +864,7 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
     this.repliesByRootPostId.clear();
     this.upvotedPostIds.clear();
     this.tagNamesByPostId.clear();
+    this.attachmentsByPostId.clear();
     this.detailSheetItemId = null;
     this.detailReplyText = '';
     this.detailActionMessage = null;
@@ -1423,6 +1447,256 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
         }
       }
     }
+
+    const replyIds: string[] = [];
+    for (const replyList of this.repliesByRootPostId.values()) {
+      for (const reply of replyList) {
+        try {
+          replyIds.push(AssertValidUUID(reply.id, 'replyId'));
+        } catch {
+          // Skip non-UUID synthetic IDs.
+        }
+      }
+    }
+
+    await this.loadAttachmentsForPosts(rv, user, Array.from(new Set([...validIds, ...replyIds])));
+
+    if (this.attachmentsByPostId.size > 0) {
+      this.feedPosts = this.feedPosts.map((p) => ({
+        ...p,
+        attachments: this.attachmentsByPostId.get(p.id.toLowerCase()) ?? p.attachments,
+      }));
+      this.qaCanonItems = this.qaCanonItems.map((q) => ({
+        ...q,
+        attachments: this.attachmentsByPostId.get(q.id.toLowerCase()) ?? q.attachments,
+      }));
+      this.ideationItems = this.ideationItems.map((i) => ({
+        ...i,
+        attachments: this.attachmentsByPostId.get(i.id.toLowerCase()) ?? i.attachments,
+      }));
+      this.livingDocItems = this.livingDocItems.map((d) => ({
+        ...d,
+        attachments: this.attachmentsByPostId.get(d.id.toLowerCase()) ?? d.attachments,
+      }));
+      for (const [rootKey, replyList] of this.repliesByRootPostId.entries()) {
+        this.repliesByRootPostId.set(
+          rootKey,
+          replyList.map((r) => ({
+            ...r,
+            attachments: this.attachmentsByPostId.get(r.id.toLowerCase()) ?? r.attachments,
+          })),
+        );
+      }
+    }
+  }
+
+  private async loadAttachmentsForPosts(
+    rv: RunView,
+    user: UserInfo,
+    postIds: ReadonlyArray<string>,
+  ): Promise<void> {
+    this.attachmentsByPostId.clear();
+    if (postIds.length === 0) return;
+
+    interface LiveAttachmentRow {
+      ID: string;
+      PostID: string;
+      SpaceItemID: string;
+      Caption: string | null;
+      Sequence: number;
+    }
+    interface LiveSpaceItemRow {
+      ID: string;
+      SpaceID: string;
+      EntityID: string;
+      RecordID: string;
+      Folder: string | null;
+      ArtifactVersionID: string | null;
+    }
+    interface LiveArtifactVersionRow {
+      ID: string;
+      ArtifactID: string;
+      VersionNumber: number | null;
+      Name: string | null;
+      ContentMode: string | null;
+      Content: string | null;
+      FileID: string | null;
+      FileName: string | null;
+      MimeType: string | null;
+      ContentSizeBytes: number | null;
+    }
+    interface LiveArtifactRow {
+      ID: string;
+      Name: string;
+      Type: string | null;
+    }
+    interface LiveFileRow {
+      ID: string;
+      Name: string;
+      ContentType: string | null;
+    }
+
+    try {
+      const postIn = this.buildUuidInClause(postIds, 'attachmentPostId');
+      const attRes = await LoadAllPaginatedRows<LiveAttachmentRow>({
+        runView: rv,
+        entityName: COMMUNITY_ENTITY_NAMES.ForumPostAttachments,
+        extraFilter: `PostID IN (${postIn})`,
+        fields: ['ID', 'PostID', 'SpaceItemID', 'Caption', 'Sequence'],
+        user,
+      });
+      if (!attRes.success || attRes.rows.length === 0) return;
+
+      const spaceItemIds = Array.from(new Set(attRes.rows.map((a) => a.SpaceItemID)));
+      const spaceItemIn = this.buildUuidInClause(spaceItemIds, 'spaceItemId');
+      const siRes = await LoadAllPaginatedRows<LiveSpaceItemRow>({
+        runView: rv,
+        entityName: 'MJ_BizApps_Collaboration: Space Items',
+        extraFilter: `ID IN (${spaceItemIn})`,
+        fields: ['ID', 'SpaceID', 'EntityID', 'RecordID', 'Folder', 'ArtifactVersionID'],
+        user,
+      });
+      if (!siRes.success || siRes.rows.length === 0) return;
+
+      const siById = new Map(siRes.rows.map((s) => [s.ID.toLowerCase(), s]));
+      const versionIds = Array.from(
+        new Set(siRes.rows.map((s) => s.ArtifactVersionID).filter((v): v is string => Boolean(v))),
+      );
+
+      const versionById = new Map<string, LiveArtifactVersionRow>();
+      if (versionIds.length > 0) {
+        const verRes = await LoadAllPaginatedRows<LiveArtifactVersionRow>({
+          runView: rv,
+          entityName: 'MJ: Artifact Versions',
+          extraFilter: `ID IN (${this.buildUuidInClause(versionIds, 'artifactVersionId')})`,
+          fields: ['ID', 'ArtifactID', 'VersionNumber', 'Name', 'ContentMode', 'Content', 'FileID', 'FileName', 'MimeType', 'ContentSizeBytes'],
+          user,
+        });
+        if (verRes.success) {
+          for (const v of verRes.rows) {
+            versionById.set(v.ID.toLowerCase(), v);
+          }
+        }
+      }
+
+      const artifactIds = new Set<string>();
+      const fileIds = new Set<string>();
+      for (const si of siRes.rows) {
+        const recordUuid = si.RecordID.startsWith('ID|') ? si.RecordID.slice(3) : si.RecordID;
+        const ver = si.ArtifactVersionID ? versionById.get(si.ArtifactVersionID.toLowerCase()) : undefined;
+        if (ver?.ArtifactID) artifactIds.add(ver.ArtifactID);
+        if (ver?.FileID) fileIds.add(ver.FileID);
+        try {
+          AssertValidUUID(recordUuid, 'recordUuid');
+          if (!ver || ver.ContentMode !== 'File') {
+            artifactIds.add(recordUuid);
+          } else {
+            fileIds.add(recordUuid);
+          }
+        } catch {
+          // Ignore non-UUID record references.
+        }
+      }
+
+      const artifactById = new Map<string, LiveArtifactRow>();
+      if (artifactIds.size > 0) {
+        const artRes = await LoadAllPaginatedRows<LiveArtifactRow>({
+          runView: rv,
+          entityName: 'MJ: Artifacts',
+          extraFilter: `ID IN (${this.buildUuidInClause(Array.from(artifactIds), 'artifactId')})`,
+          fields: ['ID', 'Name', 'Type'],
+          user,
+        });
+        if (artRes.success) {
+          for (const a of artRes.rows) artifactById.set(a.ID.toLowerCase(), a);
+        }
+      }
+
+      const fileById = new Map<string, LiveFileRow>();
+      if (fileIds.size > 0) {
+        const fileRes = await LoadAllPaginatedRows<LiveFileRow>({
+          runView: rv,
+          entityName: 'MJ: Files',
+          extraFilter: `ID IN (${this.buildUuidInClause(Array.from(fileIds), 'fileId')})`,
+          fields: ['ID', 'Name', 'ContentType'],
+          user,
+        });
+        if (fileRes.success) {
+          for (const f of fileRes.rows) fileById.set(f.ID.toLowerCase(), f);
+        }
+      }
+
+      for (const att of attRes.rows) {
+        const si = siById.get(att.SpaceItemID.toLowerCase());
+        if (!si) continue;
+        const ver = si.ArtifactVersionID ? versionById.get(si.ArtifactVersionID.toLowerCase()) ?? null : null;
+        const recordUuid = si.RecordID.startsWith('ID|') ? si.RecordID.slice(3) : si.RecordID;
+        const artifact =
+          (ver?.ArtifactID ? artifactById.get(ver.ArtifactID.toLowerCase()) : undefined) ??
+          artifactById.get(recordUuid.toLowerCase()) ??
+          null;
+        const featureInLibrary = IsFeaturedLibraryFolder(si.Folder);
+
+        let mapped: CommunityAttachmentItem;
+        if (artifact && (!ver || ver.ContentMode !== 'File')) {
+          const item: CommunityArtifactAttachmentItem = {
+            id: att.ID,
+            kind: 'artifact',
+            spaceId: si.SpaceID,
+            postId: att.PostID,
+            spaceItemId: si.ID,
+            forumPostAttachmentId: att.ID,
+            artifactId: artifact.ID,
+            artifactVersionId: ver?.ID ?? si.ArtifactVersionID,
+            artifactTypeName: artifact.Type?.trim() || 'Artifact',
+            artifactName: artifact.Name || ver?.Name || att.Caption || 'Untitled Artifact',
+            previewContent: ver?.Content ?? null,
+            contentType: ver?.MimeType ?? null,
+            versionNumber: ver?.VersionNumber ?? null,
+            showInlinePreview: true,
+            caption: att.Caption,
+            sequence: att.Sequence,
+            featureInLibrary,
+            folder: si.Folder,
+          };
+          mapped = item;
+        } else {
+          const fileId = ver?.FileID ?? recordUuid;
+          const fileRow = fileById.get(fileId.toLowerCase()) ?? null;
+          const fileName = ver?.FileName || fileRow?.Name || att.Caption || 'attachment';
+          const mimeType = NormalizeAttachmentMimeType(ver?.MimeType || fileRow?.ContentType || 'application/octet-stream');
+          const kind = ClassifyAttachmentKind(mimeType, false);
+          const safeUrl = SanitizeCommunityAttachmentUrl(ver?.Content ?? null, kind) ?? '';
+          const fileItem: CommunityFileAttachmentItem = {
+            id: att.ID,
+            kind: kind === 'artifact' ? 'file' : kind,
+            spaceId: si.SpaceID,
+            postId: att.PostID,
+            spaceItemId: si.ID,
+            forumPostAttachmentId: att.ID,
+            fileId,
+            fileName,
+            mimeType,
+            sizeBytes: ver?.ContentSizeBytes ?? 0,
+            url: safeUrl,
+            artifactVersionId: si.ArtifactVersionID,
+            caption: att.Caption,
+            sequence: att.Sequence,
+            featureInLibrary,
+            folder: si.Folder,
+          };
+          mapped = fileItem;
+        }
+
+        const key = att.PostID.toLowerCase();
+        const existing = this.attachmentsByPostId.get(key) ?? [];
+        existing.push(mapped);
+        existing.sort((a, b) => a.sequence - b.sequence);
+        this.attachmentsByPostId.set(key, existing);
+      }
+    } catch {
+      // Leave attachmentsByPostId empty if host environment omits attachment metadata tables.
+    }
   }
 
   private mapForumReplyRow(row: ForumReplyRow, user: UserInfo): CommunityCommonsReply {
@@ -1444,6 +1718,7 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
       bodyMarkdown: row.BodyMarkdown ?? '',
       isAccepted: row.Status === 'Answered',
       upvotes: row.ReactionScore ?? 0,
+      attachments: this.attachmentsByPostId.get(row.ID.toLowerCase()),
     };
   }
 

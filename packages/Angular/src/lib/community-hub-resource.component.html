@@ -297,6 +297,14 @@
 
                   <div class="mjc-full-thread-content mjc-markdown" [innerHTML]="renderMarkdown(activeDetail.bodyMarkdown)"></div>
 
+                  @if (activeDetail.attachments && activeDetail.attachments.length > 0) {
+                    <mjc-attachment-gallery
+                      [attachments]="activeDetail.attachments"
+                      mode="full"
+                      [ariaLabel]="'Attachments for ' + activeDetail.title"
+                    ></mjc-attachment-gallery>
+                  }
+
                   @if (activeDetail.tags.length > 0) {
                     <div class="mjc-drawer-tags">
                       @for (tag of activeDetail.tags; track tag) {
@@ -419,6 +427,13 @@
                           }
                         </div>
                         <div class="mjc-reply-card__body mjc-markdown" [innerHTML]="renderMarkdown(reply.bodyMarkdown)"></div>
+                        @if (reply.attachments && reply.attachments.length > 0) {
+                          <mjc-attachment-gallery
+                            [attachments]="reply.attachments"
+                            mode="compact"
+                            [ariaLabel]="'Attachments for reply by ' + reply.authorName"
+                          ></mjc-attachment-gallery>
+                        }
                       </div>
                     }
                   }
@@ -833,6 +848,14 @@
                           <h3 class="mjc-community-hub__card-title">{{ activeIdea.title }}</h3>
                           <div class="mjc-ideation-console__summary mjc-markdown" [innerHTML]="renderMarkdown(activeIdea.summary)"></div>
                         </div>
+
+                        @if (activeIdea.attachments && activeIdea.attachments.length > 0) {
+                          <mjc-attachment-gallery
+                            [attachments]="activeIdea.attachments"
+                            mode="full"
+                            [ariaLabel]="'Attachments for ' + activeIdea.title"
+                          ></mjc-attachment-gallery>
+                        }
 
                         <div class="mjc-ideation-console__metrics">
                           <div>
