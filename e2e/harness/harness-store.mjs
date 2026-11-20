@@ -1588,6 +1588,54 @@ export function createHarnessStore() {
         };
       }
 
+      if (String(query).includes('CreatemjBizAppsCommunityForumQuestionPost')) {
+        const questionId = String(input.ID ?? '').trim();
+        if (!questionId) {
+          return { CreatemjBizAppsCommunityForumQuestionPost: null };
+        }
+        const res = storeApi.commitOperations([
+          {
+            op: 'save',
+            entityName: 'MJ_BizApps_Community: Forum Question Posts',
+            record: {
+              ID: questionId,
+              AcceptedAnswerPostID: input.AcceptedAnswerPostID ?? null,
+              AICanonAnswerPostID: input.AICanonAnswerPostID ?? null,
+            },
+          },
+        ]);
+        if (!res.Success) {
+          return { CreatemjBizAppsCommunityForumQuestionPost: null };
+        }
+        return {
+          CreatemjBizAppsCommunityForumQuestionPost: {
+            ID: questionId,
+          },
+        };
+      }
+
+      if (String(query).includes('DeletemjBizAppsCommunityForumQuestionPost')) {
+        const questionId = String(variables?.ID ?? input.ID ?? '').trim();
+        if (!questionId) {
+          return { DeletemjBizAppsCommunityForumQuestionPost: null };
+        }
+        const res = storeApi.commitOperations([
+          {
+            op: 'delete',
+            entityName: 'MJ_BizApps_Community: Forum Question Posts',
+            record: { ID: questionId },
+          },
+        ]);
+        if (!res.Success) {
+          return { DeletemjBizAppsCommunityForumQuestionPost: null };
+        }
+        return {
+          DeletemjBizAppsCommunityForumQuestionPost: {
+            ID: questionId,
+          },
+        };
+      }
+
       return {};
     },
 
