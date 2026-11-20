@@ -13,7 +13,7 @@
   ],
   "scripts": {
     "build": "tsc",
-    "test": "node --experimental-strip-types --test src/custom-actions.test.ts src/digest-and-reply.test.ts src/custom/action-id-params.test.ts src/custom/save-or-fail.test.ts"
+    "test": "node --experimental-strip-types --test src/custom-actions.test.ts src/digest-and-reply.test.ts src/slice3-ask-first-and-synthesis.test.ts src/custom/action-id-params.test.ts src/custom/save-or-fail.test.ts"
   },
   "license": "BUSL-1.1",
   "dependencies": {
