@@ -1829,7 +1829,20 @@ describe('@mj-biz-apps/community-core-entities-server Slice 1 Server BaseEntity 
     });
 
     it('updates CommunityMemberProfile HelpfulAnswerCount and AcceptedAnswerCount on Save and Delete', async () => {
-      const answer1 = provider.createNewEntityInstance<ForumAnswerPostServerEntity>(COMMUNITY_ENTITY_NAMES.ForumAnswerPosts, user2,
+      // CR-03: non-author, non-moderator (user2) cannot self-accept an answer
+      const unauthorizedAccept = provider.createNewEntityInstance<ForumAnswerPostServerEntity>(
+        COMMUNITY_ENTITY_NAMES.ForumAnswerPosts,
+        user2,
+      )!;
+      unauthorizedAccept.ID = ANSWER_1_ID;
+      unauthorizedAccept.QuestionPostID = QUESTION_1_ID;
+      unauthorizedAccept.IsAcceptedByAuthor = true;
+      unauthorizedAccept.IsVerifiedByModerator = false;
+      assert.equal(await unauthorizedAccept.Save(), false);
+      assert.match(unauthorizedAccept.LatestResult?.CompleteMessage ?? '', /question author or moderator/i);
+
+      // Question author (user1) accepts user2's answer -> updates user2's CommunityMemberProfile
+      const answer1 = provider.createNewEntityInstance<ForumAnswerPostServerEntity>(COMMUNITY_ENTITY_NAMES.ForumAnswerPosts, user1,
       )!;
       answer1.ID = ANSWER_1_ID;
       answer1.QuestionPostID = QUESTION_1_ID;
