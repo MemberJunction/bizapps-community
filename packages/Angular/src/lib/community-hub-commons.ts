@@ -1324,6 +1324,25 @@ function extractEntitySaveError(entity: { LatestResult?: EntitySaveResultLike | 
   return msg.length > 0 ? msg : null;
 }
 
+async function rollbackCreatedEntities(
+  entities: ReadonlyArray<{ label: string; entity: { Delete?: () => Promise<boolean>; LatestResult?: EntitySaveResultLike | null } | null | undefined }>,
+): Promise<string[]> {
+  const failures: string[] = [];
+  for (const entry of entities) {
+    if (!entry.entity || typeof entry.entity.Delete !== 'function') continue;
+    try {
+      const deleted = await entry.entity.Delete();
+      if (!deleted) {
+        const msg = extractEntitySaveError(entry.entity) ?? 'Delete() returned false';
+        failures.push(`${entry.label}: ${msg}`);
+      }
+    } catch (err) {
+      failures.push(`${entry.label}: ${err instanceof Error ? err.message : 'Delete() threw an error'}`);
+    }
+  }
+  return failures;
+}
+
 export function ResolveAuthorizedForumTarget(
   targetForumId: string | null | undefined,
   allowedForumIDs: ReadonlyArray<string>,
@@ -1659,16 +1678,18 @@ export async function PersistAskSharePost(params: PersistAskShareParams): Promis
     if (draftAttachments.length > 0) {
       const targetSpaceId = matchedForum?.dbSpaceId?.trim() || '';
       if (!params.persistAttachments || !targetSpaceId) {
-        for (const createdTag of savedTagEntities.reverse()) {
-          await createdTag.Delete?.().catch(() => false);
-        }
-        await savedQuestionEntity?.Delete?.().catch(() => false);
-        await savedPostEntity.Delete?.().catch(() => false);
+        const rollbackFailures = await rollbackCreatedEntities([
+          ...[...savedTagEntities].reverse().map((entity, idx) => ({ label: `ForumPostTag[${idx}]`, entity })),
+          { label: 'ForumQuestionPost', entity: savedQuestionEntity },
+          { label: 'ForumPost', entity: savedPostEntity },
+        ]);
+        const rollbackSuffix =
+          rollbackFailures.length > 0 ? ` (Rollback cleanup failed: ${rollbackFailures.join('; ')})` : '';
         return {
           success: false,
           validationErrors: {},
           errorMessage:
-            'Target Space or attachment persistence provider is unavailable — rolled back post so attachments are not dropped.',
+            `Target Space or attachment persistence provider is unavailable — rolled back post so attachments are not dropped.${rollbackSuffix}`,
           persistedPostId: null,
           resolvedForumId: authorizedForumId,
           createdItem: null,
@@ -1681,17 +1702,19 @@ export async function PersistAskSharePost(params: PersistAskShareParams): Promis
         drafts: draftAttachments,
       });
       if (!attOutcome.success) {
-        for (const createdTag of savedTagEntities.reverse()) {
-          await createdTag.Delete?.().catch(() => false);
-        }
-        await savedQuestionEntity?.Delete?.().catch(() => false);
-        await savedPostEntity.Delete?.().catch(() => false);
+        const rollbackFailures = await rollbackCreatedEntities([
+          ...[...savedTagEntities].reverse().map((entity, idx) => ({ label: `ForumPostTag[${idx}]`, entity })),
+          { label: 'ForumQuestionPost', entity: savedQuestionEntity },
+          { label: 'ForumPost', entity: savedPostEntity },
+        ]);
+        const rollbackSuffix =
+          rollbackFailures.length > 0 ? ` (Rollback cleanup failed: ${rollbackFailures.join('; ')})` : '';
         return {
           success: false,
           validationErrors: {},
           errorMessage: attOutcome.errorMessage
-            ? `Failed to save post attachments: ${attOutcome.errorMessage} — rolled back post.`
-            : 'Failed to save post attachments — rolled back post.',
+            ? `Failed to save post attachments: ${attOutcome.errorMessage} — rolled back post.${rollbackSuffix}`
+            : `Failed to save post attachments — rolled back post.${rollbackSuffix}`,
           persistedPostId: null,
           resolvedForumId: authorizedForumId,
           createdItem: null,
@@ -2085,12 +2108,16 @@ export async function PersistDetailReply(params: PersistDetailReplyParams): Prom
     if (draftAttachments.length > 0) {
       const targetSpaceId = params.spaceId?.trim() || params.item.spaceId;
       if (!params.persistAttachments || !targetSpaceId) {
-        await savedReplyEntity.Delete?.().catch(() => false);
+        const rollbackFailures = await rollbackCreatedEntities([
+          { label: 'ReplyForumPost', entity: savedReplyEntity },
+        ]);
+        const rollbackSuffix =
+          rollbackFailures.length > 0 ? ` (Rollback cleanup failed: ${rollbackFailures.join('; ')})` : '';
         return {
           success: false,
           offlineFallback: false,
           errorMessage:
-            'Target Space or attachment persistence provider is unavailable — rolled back reply so attachments are not dropped.',
+            `Target Space or attachment persistence provider is unavailable — rolled back reply so attachments are not dropped.${rollbackSuffix}`,
           statusMessage: null,
           replies: params.item.replies,
           replyCount: params.item.replyCount,
@@ -2103,13 +2130,17 @@ export async function PersistDetailReply(params: PersistDetailReplyParams): Prom
         drafts: draftAttachments,
       });
       if (!attOutcome.success) {
-        await savedReplyEntity.Delete?.().catch(() => false);
+        const rollbackFailures = await rollbackCreatedEntities([
+          { label: 'ReplyForumPost', entity: savedReplyEntity },
+        ]);
+        const rollbackSuffix =
+          rollbackFailures.length > 0 ? ` (Rollback cleanup failed: ${rollbackFailures.join('; ')})` : '';
         return {
           success: false,
           offlineFallback: false,
           errorMessage: attOutcome.errorMessage
-            ? `Failed to save reply attachments: ${attOutcome.errorMessage} — rolled back reply.`
-            : 'Failed to save reply attachments — rolled back reply.',
+            ? `Failed to save reply attachments: ${attOutcome.errorMessage} — rolled back reply.${rollbackSuffix}`
+            : `Failed to save reply attachments — rolled back reply.${rollbackSuffix}`,
           statusMessage: null,
           replies: params.item.replies,
           replyCount: params.item.replyCount,

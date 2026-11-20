@@ -52,14 +52,18 @@ import { DEMO_SEED_ATTACHMENTS } from './community-attachment-demo.ts';
 import { CommunityAttachmentGalleryComponent } from './community-attachment-gallery.component.ts';
 import { CommunityAttachmentPickerComponent } from './community-attachment-picker.component.ts';
 import {
+  AuthorizeClientPostAttachmentWrite,
   DEMO_ACCESSIBLE_ARTIFACTS,
   LoadAccessibleArtifactsCatalog,
   PersistPostAttachmentsFromClient,
+  ResolveClientArtifactTypeId,
   ResolveComposerAttachmentEntryType,
   SyncDraftsForEntryTypeChange,
   type AccessibleArtifactCatalogItem,
   type CollaborationSpaceItemEntityView,
   type DraftCommunityAttachment,
+  type MJArtifactEntityLike,
+  type MJArtifactVersionEntityLike,
 } from './community-attachment-picker.ts';
 import {
   CommunityHubPreferences,
@@ -1580,8 +1584,15 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
     rv: RunView,
     user: UserInfo,
     postIds: ReadonlyArray<string>,
+    preserveExisting = false,
   ): Promise<void> {
-    this.attachmentsByPostId.clear();
+    if (!preserveExisting) {
+      this.attachmentsByPostId.clear();
+    } else {
+      for (const pid of postIds) {
+        this.attachmentsByPostId.delete(pid.toLowerCase());
+      }
+    }
     if (postIds.length === 0) return;
 
     interface LiveAttachmentRow {
@@ -1596,6 +1607,7 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
       SpaceID: string;
       EntityID: string;
       RecordID: string;
+      Band?: 'Shared' | 'Team' | null;
       Folder: string | null;
       ArtifactVersionID: string | null;
     }
@@ -1623,6 +1635,23 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
     }
 
     try {
+      const md = new Metadata();
+      let artifactsEntityId: string | null =
+        typeof md.EntityByName === 'function' ? md.EntityByName('MJ: Artifacts')?.ID ?? null : null;
+      if (!artifactsEntityId) {
+        const entRes = await rv.RunView<{ ID: string }>(
+          {
+            EntityName: 'MJ: Entities',
+            ExtraFilter: `Name = 'MJ: Artifacts'`,
+            Fields: ['ID'],
+            ResultType: 'simple',
+            MaxRows: 1,
+          },
+          user,
+        );
+        artifactsEntityId = entRes?.Success ? entRes.Results?.[0]?.ID ?? null : null;
+      }
+
       const postIn = this.buildUuidInClause(postIds, 'attachmentPostId');
       const attRes = await LoadAllPaginatedRows<LiveAttachmentRow>({
         runView: rv,
@@ -1639,7 +1668,7 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
         runView: rv,
         entityName: 'MJ_BizApps_Collaboration: Space Items',
         extraFilter: `ID IN (${spaceItemIn})`,
-        fields: ['ID', 'SpaceID', 'EntityID', 'RecordID', 'Folder', 'ArtifactVersionID'],
+        fields: ['ID', 'SpaceID', 'EntityID', 'RecordID', 'Band', 'Folder', 'ArtifactVersionID'],
         user,
       });
       if (!siRes.success || siRes.rows.length === 0) return;
@@ -1670,13 +1699,14 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
       for (const si of siRes.rows) {
         const recordUuid = si.RecordID.startsWith('ID|') ? si.RecordID.slice(3) : si.RecordID;
         const ver = si.ArtifactVersionID ? versionById.get(si.ArtifactVersionID.toLowerCase()) : undefined;
-        if (ver?.ArtifactID) artifactIds.add(ver.ArtifactID);
+        const isDirectArtifact = Boolean(artifactsEntityId && UUIDsEqual(si.EntityID, artifactsEntityId));
+        if (ver?.ArtifactID && ver.ContentMode !== 'File') artifactIds.add(ver.ArtifactID);
         if (ver?.FileID) fileIds.add(ver.FileID);
         try {
           AssertValidUUID(recordUuid, 'recordUuid');
           if (!ver || ver.ContentMode !== 'File') {
             artifactIds.add(recordUuid);
-          } else {
+          } else if (!isDirectArtifact) {
             fileIds.add(recordUuid);
           }
         } catch {
@@ -1717,17 +1747,20 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
         if (!si) continue;
         const ver = si.ArtifactVersionID ? versionById.get(si.ArtifactVersionID.toLowerCase()) ?? null : null;
         const recordUuid = si.RecordID.startsWith('ID|') ? si.RecordID.slice(3) : si.RecordID;
+        const isDirectArtifact = Boolean(artifactsEntityId && UUIDsEqual(si.EntityID, artifactsEntityId));
+        const isFileBackedVersion = Boolean(ver && ver.ContentMode === 'File');
         const artifact =
-          (ver?.ArtifactID ? artifactById.get(ver.ArtifactID.toLowerCase()) : undefined) ??
-          artifactById.get(recordUuid.toLowerCase()) ??
+          (ver?.ArtifactID && !isFileBackedVersion ? artifactById.get(ver.ArtifactID.toLowerCase()) : undefined) ??
+          (!isFileBackedVersion ? artifactById.get(recordUuid.toLowerCase()) : undefined) ??
           null;
         const featureInLibrary = IsFeaturedLibraryFolder(si.Folder);
         const authoredByCurrentUser = this.authoredPostIds.has(att.PostID.toLowerCase());
         const attAuthorUserId = authoredByCurrentUser ? user.ID : null;
         const attAuthorName = authoredByCurrentUser ? user.Name || 'Community Member' : 'Community Member';
+        const band = si.Band === 'Team' ? 'Team' : 'Shared';
 
         let mapped: CommunityAttachmentItem;
-        if (artifact && (!ver || ver.ContentMode !== 'File')) {
+        if (artifact && !isFileBackedVersion) {
           const item: CommunityArtifactAttachmentItem = {
             id: att.ID,
             kind: 'artifact',
@@ -1747,17 +1780,19 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
             sequence: att.Sequence,
             featureInLibrary,
             folder: si.Folder,
+            band,
             authorUserId: attAuthorUserId,
             authorName: attAuthorName,
           };
           mapped = item;
         } else {
-          const fileId = ver?.FileID ?? recordUuid;
-          const fileRow = fileById.get(fileId.toLowerCase()) ?? null;
+          const fileId = ver?.FileID ?? (isDirectArtifact ? null : recordUuid);
+          const resolvedArtifactId = ver?.ArtifactID ?? (isDirectArtifact ? recordUuid : null);
+          const fileRow = fileId ? fileById.get(fileId.toLowerCase()) ?? null : null;
           const fileName = ver?.FileName || fileRow?.Name || att.Caption || 'attachment';
           const mimeType = NormalizeAttachmentMimeType(ver?.MimeType || fileRow?.ContentType || 'application/octet-stream');
           const kind = ClassifyAttachmentKind(mimeType, false);
-          const safeUrl = SanitizeCommunityAttachmentUrl(ver?.Content ?? null, kind) ?? '';
+          const safeUrl = SanitizeCommunityAttachmentUrl(ver?.Content ?? null, kind === 'artifact' ? 'file' : kind) ?? '';
           const fileItem: CommunityFileAttachmentItem = {
             id: att.ID,
             kind: kind === 'artifact' ? 'file' : kind,
@@ -1770,11 +1805,13 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
             mimeType,
             sizeBytes: ver?.ContentSizeBytes ?? 0,
             url: safeUrl,
-            artifactVersionId: si.ArtifactVersionID,
+            artifactId: resolvedArtifactId,
+            artifactVersionId: ver?.ID ?? si.ArtifactVersionID,
             caption: att.Caption,
             sequence: att.Sequence,
             featureInLibrary,
             folder: si.Folder,
+            band,
             authorUserId: attAuthorUserId,
             authorName: attAuthorName,
           };
@@ -1826,6 +1863,19 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
     });
     if (!res.success) {
       throw new Error(res.errorMessage || 'Failed to reload replies from server.');
+    }
+    const replyIds = res.rows
+      .map((r) => r.ID)
+      .filter((id) => {
+        try {
+          AssertValidUUID(id, 'replyId');
+          return true;
+        } catch {
+          return false;
+        }
+      });
+    if (replyIds.length > 0) {
+      await this.loadAttachmentsForPosts(rv, user, replyIds, true);
     }
     return res.rows.map((r) => this.mapForumReplyRow(r, user));
   }
@@ -2546,6 +2596,7 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
     isOfflineDemoMode: boolean,
   ) {
     const md = new Metadata();
+    const rv = new RunView();
     return async (params: {
       postId: string;
       spaceId: string;
@@ -2558,13 +2609,23 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
         isOfflineDemoMode,
         currentUserId: user?.ID ?? null,
         authorName: user?.Name || 'Community Member',
+        authorizePostWrite: !isOfflineDemoMode && user
+          ? ({ postId, spaceId, drafts }) =>
+              AuthorizeClientPostAttachmentWrite({
+                rv,
+                postId,
+                spaceId,
+                user,
+                incomingDrafts: drafts,
+              })
+          : null,
         resolveEntityId: !isOfflineDemoMode && user
           ? async (entityName: string) => {
               if (typeof md.EntityByName === 'function') {
                 const info = md.EntityByName(entityName);
                 if (info?.ID) return info.ID;
               }
-              const res = await new RunView().RunView<{ ID: string }>(
+              const res = await rv.RunView<{ ID: string }>(
                 {
                   EntityName: 'MJ: Entities',
                   ExtraFilter: `Name = '${EscapeSqlLiteral(entityName)}'`,
@@ -2576,6 +2637,15 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
               );
               return res?.Success ? res.Results?.[0]?.ID ?? null : null;
             }
+          : null,
+        resolveArtifactTypeId: !isOfflineDemoMode && user
+          ? (kind, mimeType) => ResolveClientArtifactTypeId(rv, kind, mimeType, user)
+          : null,
+        createArtifactEntity: !isOfflineDemoMode && user
+          ? () => md.GetEntityObject<MJArtifactEntityLike & import('@memberjunction/core').BaseEntity>('MJ: Artifacts', user)
+          : null,
+        createArtifactVersionEntity: !isOfflineDemoMode && user
+          ? () => md.GetEntityObject<MJArtifactVersionEntityLike & import('@memberjunction/core').BaseEntity>('MJ: Artifact Versions', user)
           : null,
         createSpaceItemEntity: !isOfflineDemoMode && user
           ? () => md.GetEntityObject<CollaborationSpaceItemEntityView>('MJ_BizApps_Collaboration: Space Items', user)

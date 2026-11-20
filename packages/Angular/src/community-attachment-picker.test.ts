@@ -10,6 +10,7 @@ import {
   COMMUNITY_SPACE_ITEM_FOLDERS,
 } from '@mj-biz-apps/community-core';
 import {
+  AuthorizeClientPostAttachmentWrite,
   CreateDraftArtifactAttachment,
   CreateDraftFileAttachment,
   DEMO_ACCESSIBLE_ARTIFACTS,
@@ -28,8 +29,12 @@ import {
   ValidateDraftAttachmentsForSubmit,
   type DraftCommunityAttachment,
   type ForumPostAttachmentEntityLike,
+  type MJArtifactEntityLike,
+  type MJArtifactVersionEntityLike,
   type SpaceItemEntityLike,
 } from './lib/community-attachment-picker.ts';
+import { UserInfo } from '@memberjunction/core';
+import { COMMUNITY_ENTITY_NAMES } from '@mj-biz-apps/community-entities';
 import {
   PersistAskSharePost,
   PersistDetailReply,
@@ -339,7 +344,9 @@ describe('Slice 3 — MJ Artifact Search, Selection, Version Pinning & Auto-Libr
 });
 
 describe('Slice 3 — SpaceItem + ForumPostAttachment Persistence & Fail-Closed Error Handling', () => {
-  it('persists SpaceItem + ForumPostAttachment records via MJ entity factories in live mode', async () => {
+  it('durably persists MJ: Artifacts + MJ: Artifact Versions + SpaceItem + ForumPostAttachment records in live mode (never substituting ForumPost.ID)', async () => {
+    const savedArtifacts: MJArtifactEntityLike[] = [];
+    const savedArtifactVersions: MJArtifactVersionEntityLike[] = [];
     const savedSpaceItems: SpaceItemEntityLike[] = [];
     const savedAttachments: ForumPostAttachmentEntityLike[] = [];
     let nextId = 1;
@@ -348,7 +355,7 @@ describe('Slice 3 — SpaceItem + ForumPostAttachment Persistence & Fail-Closed 
       fileName: 'cutover-chart.png',
       mimeType: 'image/png',
       sizeBytes: 8192,
-      url: 'https://cdn.example.com/cutover-chart.png',
+      url: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==',
       entryType: 'post',
       sequence: 1,
       caption: 'Cutover chart',
@@ -370,6 +377,44 @@ describe('Slice 3 — SpaceItem + ForumPostAttachment Persistence & Fail-Closed 
       authorName: 'Amith',
       resolveEntityId: async (entityName) =>
         entityName === 'MJ: Artifacts' ? ARTIFACTS_ENTITY_UUID : FILES_ENTITY_UUID,
+      resolveArtifactTypeId: async () => '11111111-1111-4111-8111-000000000099',
+      createArtifactEntity: async () => {
+        const art: MJArtifactEntityLike = {
+          ID: `dddd0000-0000-4000-8000-00000000010${nextId++}`,
+          Name: '',
+          Description: null,
+          TypeID: '',
+          UserID: '',
+          Visibility: 'System Only',
+          Save: async () => {
+            savedArtifacts.push(art);
+            return true;
+          },
+          Delete: async () => true,
+        };
+        return art;
+      },
+      createArtifactVersionEntity: async () => {
+        const ver: MJArtifactVersionEntityLike = {
+          ID: `eeee0000-0000-4000-8000-00000000010${nextId++}`,
+          ArtifactID: '',
+          VersionNumber: 1,
+          Name: null,
+          UserID: '',
+          ContentMode: 'File',
+          Content: null,
+          FileID: null,
+          FileName: null,
+          MimeType: null,
+          ContentSizeBytes: null,
+          Save: async () => {
+            savedArtifactVersions.push(ver);
+            return true;
+          },
+          Delete: async () => true,
+        };
+        return ver;
+      },
       createSpaceItemEntity: async () => {
         const entity: SpaceItemEntityLike = {
           ID: `aaaa0000-0000-4000-8000-00000000010${nextId++}`,
@@ -408,10 +453,20 @@ describe('Slice 3 — SpaceItem + ForumPostAttachment Persistence & Fail-Closed 
 
     assert.equal(result.success, true);
     assert.equal(result.offlineFallback, false);
+    assert.equal(savedArtifacts.length, 1);
+    assert.equal(savedArtifactVersions.length, 1);
     assert.equal(savedSpaceItems.length, 2);
     assert.equal(savedAttachments.length, 2);
 
-    assert.equal(savedSpaceItems[0].EntityID, FILES_ENTITY_UUID);
+    assert.equal(savedArtifacts[0].Visibility, 'System Only');
+    assert.equal(savedArtifactVersions[0].ContentMode, 'File');
+    assert.equal(savedArtifactVersions[0].FileName, 'cutover-chart.png');
+    assert.equal(savedArtifactVersions[0].MimeType, 'image/png');
+    assert.equal(savedArtifactVersions[0].ContentSizeBytes, 8192);
+    assert.equal(savedSpaceItems[0].EntityID, ARTIFACTS_ENTITY_UUID);
+    assert.equal(savedSpaceItems[0].RecordID, `ID|${savedArtifacts[0].ID}`);
+    assert.notEqual(savedSpaceItems[0].RecordID, `ID|${POST_UUID}`);
+    assert.equal(savedSpaceItems[0].ArtifactVersionID, savedArtifactVersions[0].ID);
     assert.equal(savedSpaceItems[0].Folder, 'Post Media');
     assert.equal(savedAttachments[0].Caption, 'Cutover chart');
     assert.equal(savedAttachments[0].Sequence, 1);
@@ -423,7 +478,7 @@ describe('Slice 3 — SpaceItem + ForumPostAttachment Persistence & Fail-Closed 
     assert.equal(savedAttachments[1].Sequence, 2);
   });
 
-  it('rolls back created SpaceItem records and fails visibly when ForumPostAttachment.Save() fails', async () => {
+  it('rolls back created Artifact/ArtifactVersion/SpaceItem records and surfaces Delete() failures explicitly', async () => {
     const deletedEntities: string[] = [];
 
     const imgDraft = CreateDraftFileAttachment({
@@ -441,7 +496,39 @@ describe('Slice 3 — SpaceItem + ForumPostAttachment Persistence & Fail-Closed 
       drafts: [imgDraft],
       isOfflineDemoMode: false,
       currentUserId: USER_UUID,
-      resolveEntityId: async () => FILES_ENTITY_UUID,
+      resolveEntityId: async () => ARTIFACTS_ENTITY_UUID,
+      resolveArtifactTypeId: async () => '11111111-1111-4111-8111-000000000099',
+      createArtifactEntity: async () => ({
+        ID: 'dddd0000-0000-4000-8000-000000000301',
+        Name: '',
+        Description: null,
+        TypeID: '',
+        UserID: '',
+        Visibility: 'System Only',
+        Save: async () => true,
+        Delete: async () => {
+          deletedEntities.push('Artifact');
+          return false; // Simulate rollback Delete() failure!
+        },
+      }),
+      createArtifactVersionEntity: async () => ({
+        ID: 'eeee0000-0000-4000-8000-000000000301',
+        ArtifactID: '',
+        VersionNumber: 1,
+        Name: null,
+        UserID: '',
+        ContentMode: 'File',
+        Content: null,
+        FileID: null,
+        FileName: null,
+        MimeType: null,
+        ContentSizeBytes: null,
+        Save: async () => true,
+        Delete: async () => {
+          deletedEntities.push('ArtifactVersion');
+          return true;
+        },
+      }),
       createSpaceItemEntity: async () => ({
         ID: 'cccc0000-0000-4000-8000-000000000301',
         SpaceID: '',
@@ -475,7 +562,92 @@ describe('Slice 3 — SpaceItem + ForumPostAttachment Persistence & Fail-Closed 
 
     assert.equal(result.success, false);
     assert.match(result.errorMessage ?? '', /Permission denied on ForumPostAttachment/);
-    assert.deepEqual(deletedEntities, ['SpaceItem']);
+    assert.match(result.errorMessage ?? '', /Rollback cleanup failed/);
+    assert.deepEqual(deletedEntities, ['SpaceItem', 'ArtifactVersion', 'Artifact']);
+  });
+
+  it('CR-2: AuthorizeClientPostAttachmentWrite derives Team band for Team posts and rejects unauthorized/locked writes', async () => {
+    const teamUser = new UserInfo(undefined, { ID: USER_UUID, Name: 'Team User', Email: 't@example.com' });
+    const outsiderUser = new UserInfo(undefined, { ID: '33333333-3333-4333-8333-999999999999', Name: 'Outsider', Email: 'o@example.com' });
+    const teamPostId = '44444444-4444-4444-8444-111111111111';
+    const lockedPostId = '44444444-4444-4444-8444-222222222222';
+    const teamForumId = '22222222-2222-4222-8222-111111111111';
+
+    const draft = CreateDraftFileAttachment({
+      fileName: 'team-roadmap.png',
+      mimeType: 'image/png',
+      sizeBytes: 1024,
+      url: 'https://cdn.example.com/team-roadmap.png',
+      entryType: 'post',
+      sequence: 1,
+    }).draft!;
+
+    const mockRv = {
+      RunView: async <T>(q: { EntityName: string; ExtraFilter?: string }) => {
+        const f = q.ExtraFilter ?? '';
+        if (q.EntityName === COMMUNITY_ENTITY_NAMES.ForumPosts) {
+          if (f.includes(teamPostId)) {
+            return {
+              Success: true,
+              Results: [{ ID: teamPostId, ForumID: teamForumId, ParentPostID: null, AuthorUserID: USER_UUID, VisibilityBand: 'Team', IsLocked: false }] as T[],
+            };
+          }
+          if (f.includes(lockedPostId)) {
+            return {
+              Success: true,
+              Results: [{ ID: lockedPostId, ForumID: teamForumId, ParentPostID: null, AuthorUserID: USER_UUID, VisibilityBand: 'Team', IsLocked: true }] as T[],
+            };
+          }
+        }
+        if (q.EntityName === COMMUNITY_ENTITY_NAMES.Forums) {
+          return {
+            Success: true,
+            Results: [{ ID: teamForumId, SpaceID: SPACE_UUID, Name: 'Team Forum', VisibilityBand: 'Team', InheritsSpaceMembers: true, PostingPolicy: 'Open', Status: 'Active' }] as T[],
+          };
+        }
+        if (q.EntityName === 'MJ_BizApps_Collaboration: Spaces') {
+          return { Success: true, Results: [{ ID: SPACE_UUID, OwnerID: USER_UUID }] as T[] };
+        }
+        if (q.EntityName === 'MJ_BizApps_Collaboration: Space Members') {
+          if (f.includes(USER_UUID)) {
+            return { Success: true, Results: [{ ID: 'sm1', SpaceID: SPACE_UUID, UserID: USER_UUID, Band: 'Team', Status: 'Active' }] as T[] };
+          }
+          return { Success: true, Results: [] as T[] };
+        }
+        return { Success: true, Results: [] as T[] };
+      },
+    };
+
+    const authorizedTeam = await AuthorizeClientPostAttachmentWrite({
+      rv: mockRv as Parameters<typeof AuthorizeClientPostAttachmentWrite>[0]['rv'],
+      postId: teamPostId,
+      spaceId: SPACE_UUID,
+      user: teamUser,
+      incomingDrafts: [draft],
+    });
+    assert.equal(authorizedTeam.authorized, true);
+    assert.equal(authorizedTeam.band, 'Team');
+    assert.equal(authorizedTeam.spaceId, SPACE_UUID);
+
+    const lockedResult = await AuthorizeClientPostAttachmentWrite({
+      rv: mockRv as Parameters<typeof AuthorizeClientPostAttachmentWrite>[0]['rv'],
+      postId: lockedPostId,
+      spaceId: SPACE_UUID,
+      user: teamUser,
+      incomingDrafts: [draft],
+    });
+    assert.equal(lockedResult.authorized, false);
+    assert.match(lockedResult.errorMessage ?? '', /locked/i);
+
+    const outsiderResult = await AuthorizeClientPostAttachmentWrite({
+      rv: mockRv as Parameters<typeof AuthorizeClientPostAttachmentWrite>[0]['rv'],
+      postId: teamPostId,
+      spaceId: SPACE_UUID,
+      user: outsiderUser,
+      incomingDrafts: [draft],
+    });
+    assert.equal(outsiderResult.authorized, false);
+    assert.match(outsiderResult.errorMessage ?? '', /not authorized/i);
   });
 
   it('rolls back new ForumPost in PersistAskSharePost and PersistDetailReply when attachment persistence fails', async () => {

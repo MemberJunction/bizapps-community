@@ -7,6 +7,8 @@ import {
   COMMUNITY_ATTACHMENT_MAX_COUNT_PER_POST,
   COMMUNITY_ATTACHMENT_MAX_FILE_BYTES,
   ClassifyAttachmentKind,
+  CommunityRules,
+  EscapeSqlLiteral,
   IsAllowedAttachmentMimeType,
   NormalizeAttachmentMimeType,
   ResolveAttachmentSpaceItemFolder,
@@ -21,10 +23,15 @@ import {
   type CommunityFileAttachmentItem,
   type CommunitySpaceItemFolder,
   type CommunityVisibilityBand,
+  type ForumVisibilityBand,
 } from '@mj-biz-apps/community-core';
 import {
   COMMUNITY_ENTITY_NAMES,
+  type mjBizAppsCommunityForumEntity,
+  type mjBizAppsCommunityForumMemberEntity,
   type mjBizAppsCommunityForumPostAttachmentEntity,
+  type mjBizAppsCommunityForumPostEntity,
+  type mjBizAppsCommunityForumRoleTypeEntity,
 } from '@mj-biz-apps/community-entities';
 import { FormatAttachmentBytes, ResolveArtifactIconClass, ResolveFileAttachmentMeta } from './community-attachment-gallery.ts';
 import type { AskShareEntryType, EntitySaveResultLike } from './community-hub-commons.ts';
@@ -68,6 +75,9 @@ export interface DraftFileAttachment {
   previewUrl: string | null;
   durationSeconds?: number | null;
   fileId?: string | null;
+  artifactId?: string | null;
+  artifactVersionId?: string | null;
+  existingSpaceItemId?: string | null;
   caption: string;
   sequence: number;
   featureInLibrary: boolean;
@@ -148,6 +158,42 @@ export interface ForumPostAttachmentEntityLike {
   Delete?(): Promise<boolean>;
 }
 
+export interface MJArtifactEntityLike {
+  ID: string;
+  Name: string;
+  Description: string | null;
+  TypeID: string;
+  UserID: string;
+  Visibility: 'Always' | 'System Only';
+  LatestResult?: EntitySaveResultLike | null;
+  Save(): Promise<boolean>;
+  Delete?(): Promise<boolean>;
+}
+
+export interface MJArtifactVersionEntityLike {
+  ID: string;
+  ArtifactID: string;
+  VersionNumber: number;
+  Name: string | null;
+  UserID: string;
+  ContentMode: 'File' | 'Text';
+  Content: string | null;
+  FileID: string | null;
+  FileName: string | null;
+  MimeType: string | null;
+  ContentSizeBytes: number | null;
+  LatestResult?: EntitySaveResultLike | null;
+  Save(): Promise<boolean>;
+  Delete?(): Promise<boolean>;
+}
+
+export interface ClientPostAttachmentAuthorizationResult {
+  authorized: boolean;
+  spaceId: string;
+  band: CommunityVisibilityBand;
+  errorMessage: string | null;
+}
+
 export interface PersistPostAttachmentsFromClientParams {
   postId: string;
   spaceId: string;
@@ -159,6 +205,15 @@ export interface PersistPostAttachmentsFromClientParams {
   resolveEntityId: ((entityName: string) => Promise<string | null>) | null;
   createSpaceItemEntity: (() => Promise<SpaceItemEntityLike | null>) | null;
   createForumPostAttachmentEntity: (() => Promise<ForumPostAttachmentEntityLike | null>) | null;
+  createArtifactEntity?: (() => Promise<MJArtifactEntityLike | null>) | null;
+  createArtifactVersionEntity?: (() => Promise<MJArtifactVersionEntityLike | null>) | null;
+  resolveArtifactTypeId?: ((kind: 'image' | 'video' | 'audio' | 'file', mimeType: string) => Promise<string | null>) | null;
+  authorizePostWrite?: ((params: {
+    postId: string;
+    spaceId: string;
+    userId: string;
+    drafts: ReadonlyArray<DraftCommunityAttachment>;
+  }) => Promise<ClientPostAttachmentAuthorizationResult>) | null;
 }
 
 export interface PersistPostAttachmentsFromClientResult {
@@ -378,6 +433,9 @@ export function CreateDraftFileAttachment(params: {
   sequence: number;
   durationSeconds?: number | null;
   fileId?: string | null;
+  artifactId?: string | null;
+  artifactVersionId?: string | null;
+  existingSpaceItemId?: string | null;
   caption?: string;
 }): { draft?: DraftFileAttachment; error?: string } {
   const trimmedName = params.fileName.trim();
@@ -429,6 +487,9 @@ export function CreateDraftFileAttachment(params: {
       previewUrl: kind === 'image' ? safeUrl : null,
       durationSeconds: params.durationSeconds ?? null,
       fileId: params.fileId ?? null,
+      artifactId: params.artifactId ?? null,
+      artifactVersionId: params.artifactVersionId ?? null,
+      existingSpaceItemId: params.existingSpaceItemId ?? null,
       caption: params.caption?.trim() ?? '',
       sequence: params.sequence,
       featureInLibrary,
@@ -740,6 +801,8 @@ export function ConvertDraftsToCommunityAttachments(params: {
       spaceId: params.spaceId,
       postId: params.postId,
       fileId: draft.fileId ?? null,
+      artifactId: draft.artifactId ?? null,
+      artifactVersionId: draft.artifactVersionId ?? null,
       fileName: draft.fileName,
       mimeType: draft.mimeType,
       sizeBytes: draft.sizeBytes,
@@ -765,12 +828,488 @@ function extractSaveFailureMessage(
   return msg || fallback;
 }
 
+interface ClientAuthPostRow {
+  ID: string;
+  ForumID: string;
+  ParentPostID: string | null;
+  AuthorUserID: string | null;
+  VisibilityBand: CommunityVisibilityBand;
+  IsLocked: boolean;
+}
+
+interface ClientAuthForumRow {
+  ID: string;
+  SpaceID: string;
+  Name: string;
+  VisibilityBand: ForumVisibilityBand;
+  InheritsSpaceMembers: boolean;
+  PostingPolicy: mjBizAppsCommunityForumEntity['PostingPolicy'];
+  Status: mjBizAppsCommunityForumEntity['Status'];
+}
+
+interface ClientAuthSpaceRow {
+  ID: string;
+  OwnerID?: string | null;
+}
+
+interface ClientAuthSpaceMemberRow {
+  ID: string;
+  SpaceID: string;
+  UserID: string;
+  Band?: 'Shared' | 'Team' | null;
+  Status: 'Active' | 'Invited' | 'Removed';
+}
+
+interface ClientAuthForumMemberRow {
+  ID: string;
+  ForumID: string;
+  UserID: string;
+  ForumRoleTypeID: string;
+  Status: mjBizAppsCommunityForumMemberEntity['Status'];
+}
+
+type ClientAuthRoleCapabilitiesRow = Pick<
+  mjBizAppsCommunityForumRoleTypeEntity,
+  'ID' | 'CanConfigureForum' | 'CanModerateQueue' | 'CanCreateRootPost' | 'CanReply'
+>;
+
+interface ClientArtifactTypeRow {
+  ID: string;
+  Name: string;
+  ContentType: string | null;
+  IsEnabled?: boolean | null;
+}
+
+/**
+ * Authorizes a client attachment write against the authoritative `ForumPost`, `Forum`,
+ * `Space`, `SpaceMember`, `ForumMember`, existing post attachment limits, and target
+ * `MJ: Artifacts` / `MJ: Artifact Versions` / `MJ: Files` access under `user`.
+ * Derives the authoritative `spaceId` and `band` (`Shared` vs `Team`) so `Team` posts
+ * are never silently indexed into the `Shared` band.
+ */
+export async function AuthorizeClientPostAttachmentWrite(params: {
+  rv: Pick<RunView, 'RunView'>;
+  postId: string;
+  spaceId?: string | null;
+  user: UserInfo;
+  incomingDrafts: ReadonlyArray<DraftCommunityAttachment>;
+}): Promise<ClientPostAttachmentAuthorizationResult> {
+  const deny = (errorMessage: string): ClientPostAttachmentAuthorizationResult => ({
+    authorized: false,
+    spaceId: params.spaceId ?? '',
+    band: 'Shared',
+    errorMessage,
+  });
+
+  let validPostId: string;
+  let validUserId: string;
+  try {
+    validPostId = AssertValidUUID(params.postId, 'postId');
+    validUserId = AssertValidUUID(params.user?.ID ?? '', 'user.ID');
+  } catch (err) {
+    return deny(err instanceof Error ? err.message : 'Valid post and user identifiers are required.');
+  }
+
+  const postRes = await params.rv.RunView<ClientAuthPostRow>(
+    {
+      EntityName: COMMUNITY_ENTITY_NAMES.ForumPosts,
+      ExtraFilter: `ID = '${validPostId}'`,
+      Fields: ['ID', 'ForumID', 'ParentPostID', 'AuthorUserID', 'VisibilityBand', 'IsLocked'],
+      ResultType: 'simple',
+      MaxRows: 1,
+    },
+    params.user,
+  );
+  if (!postRes?.Success || !postRes.Results?.[0]) {
+    return deny(`ForumPost ${validPostId} was not found or access is denied.`);
+  }
+  const post = postRes.Results[0];
+
+  let validForumId: string;
+  try {
+    validForumId = AssertValidUUID(post.ForumID, 'post.ForumID');
+  } catch {
+    return deny('Source post has an invalid ForumID.');
+  }
+
+  const forumRes = await params.rv.RunView<ClientAuthForumRow>(
+    {
+      EntityName: COMMUNITY_ENTITY_NAMES.Forums,
+      ExtraFilter: `ID = '${validForumId}'`,
+      Fields: ['ID', 'SpaceID', 'Name', 'VisibilityBand', 'InheritsSpaceMembers', 'PostingPolicy', 'Status'],
+      ResultType: 'simple',
+      MaxRows: 1,
+    },
+    params.user,
+  );
+  if (!forumRes?.Success || !forumRes.Results?.[0]) {
+    return deny(`Forum ${validForumId} was not found or access is denied.`);
+  }
+  const forum = forumRes.Results[0];
+
+  let authoritativeSpaceId: string;
+  try {
+    authoritativeSpaceId = AssertValidUUID(forum.SpaceID, 'forum.SpaceID');
+  } catch {
+    return deny(`Forum ${forum.ID} has an invalid SpaceID.`);
+  }
+
+  if (params.spaceId && params.spaceId.trim() && !UUIDsEqual(authoritativeSpaceId, params.spaceId.trim())) {
+    return deny(`Requested Space ${params.spaceId} does not match source Forum Space ${authoritativeSpaceId}.`);
+  }
+
+  if (forum.Status !== 'Active') {
+    return deny(`Forum "${forum.Name}" has status "${forum.Status}" and does not accept attachment writes.`);
+  }
+
+  const [spaceRes, spaceMemberRes, forumMemberRes] = await Promise.all([
+    params.rv.RunView<ClientAuthSpaceRow>(
+      {
+        EntityName: 'MJ_BizApps_Collaboration: Spaces',
+        ExtraFilter: `ID = '${authoritativeSpaceId}'`,
+        Fields: ['ID', 'OwnerID'],
+        ResultType: 'simple',
+        MaxRows: 1,
+      },
+      params.user,
+    ),
+    params.rv.RunView<ClientAuthSpaceMemberRow>(
+      {
+        EntityName: 'MJ_BizApps_Collaboration: Space Members',
+        ExtraFilter: `SpaceID = '${authoritativeSpaceId}' AND UserID = '${validUserId}' AND Status = 'Active'`,
+        Fields: ['ID', 'SpaceID', 'UserID', 'Band', 'Status'],
+        ResultType: 'simple',
+        MaxRows: 1,
+      },
+      params.user,
+    ),
+    params.rv.RunView<ClientAuthForumMemberRow>(
+      {
+        EntityName: COMMUNITY_ENTITY_NAMES.ForumMembers,
+        ExtraFilter: `ForumID = '${validForumId}' AND UserID = '${validUserId}'`,
+        Fields: ['ID', 'ForumID', 'UserID', 'ForumRoleTypeID', 'Status'],
+        ResultType: 'simple',
+        MaxRows: 1,
+      },
+      params.user,
+    ),
+  ]);
+
+  if (!spaceRes?.Success || !spaceRes.Results?.[0]) {
+    return deny(`Collaboration Space ${authoritativeSpaceId} was not found or access is denied.`);
+  }
+  if (!spaceMemberRes?.Success || !forumMemberRes?.Success) {
+    return deny('Unable to verify Space or Forum membership for attachment write.');
+  }
+
+  const space = spaceRes.Results[0];
+  const spaceMember = spaceMemberRes.Results?.[0] ?? null;
+  const isSpaceOwner = Boolean(space.OwnerID && UUIDsEqual(space.OwnerID, validUserId));
+  if (!isSpaceOwner && !spaceMember) {
+    return deny(`Caller is not authorized to access Collaboration Space ${authoritativeSpaceId}.`);
+  }
+  const canSeeTeamBand = isSpaceOwner || spaceMember?.Band === 'Team';
+
+  const forumMember = forumMemberRes.Results?.[0] ?? null;
+  let roleType: ClientAuthRoleCapabilitiesRow | null = null;
+  if (forumMember) {
+    const validRoleId = AssertValidUUID(forumMember.ForumRoleTypeID, 'ForumRoleTypeID');
+    const roleRes = await params.rv.RunView<ClientAuthRoleCapabilitiesRow>(
+      {
+        EntityName: COMMUNITY_ENTITY_NAMES.ForumRoleTypes,
+        ExtraFilter: `ID = '${validRoleId}'`,
+        Fields: ['ID', 'CanConfigureForum', 'CanModerateQueue', 'CanCreateRootPost', 'CanReply'],
+        ResultType: 'simple',
+        MaxRows: 1,
+      },
+      params.user,
+    );
+    if (!roleRes?.Success || !roleRes.Results?.[0]) {
+      return deny(`Unable to resolve ForumRoleType ${validRoleId} for Forum ${validForumId}.`);
+    }
+    roleType = roleRes.Results[0];
+  }
+
+  const decision = CommunityRules.EvaluateForumAccess({
+    spaceAccess: {
+      canReadSpace: true,
+      canSeeTeamBand,
+      isSpaceOpenForWrites: true,
+    },
+    forum: {
+      visibilityBand: forum.VisibilityBand,
+      inheritsSpaceMembers: Boolean(forum.InheritsSpaceMembers),
+      postingPolicy: forum.PostingPolicy,
+      status: forum.Status,
+    },
+    forumMembership:
+      forumMember && roleType
+        ? {
+            status: forumMember.Status,
+            canConfigureForum: Boolean(roleType.CanConfigureForum),
+            canModerateQueue: Boolean(roleType.CanModerateQueue),
+            canCreateRootPost: Boolean(roleType.CanCreateRootPost),
+            canReply: Boolean(roleType.CanReply),
+          }
+        : null,
+  });
+
+  if (!decision.canReadForum) {
+    return deny(`Caller is not authorized to access Forum ${forum.ID}.`);
+  }
+  if (post.VisibilityBand === 'Team' && !decision.canSeeTeamPosts) {
+    return deny(`Caller is not authorized to access Team-band post ${post.ID}.`);
+  }
+
+  const isModerator = decision.canModerateQueue;
+  if (post.IsLocked && !isModerator) {
+    return deny(`Post ${post.ID} is locked; attachments cannot be modified.`);
+  }
+  const isAuthor = post.AuthorUserID !== null && UUIDsEqual(post.AuthorUserID, validUserId);
+  if (!isAuthor && !isModerator) {
+    return deny('Only the post author or a forum moderator may modify attachments on this post.');
+  }
+  const isReply = post.ParentPostID !== null;
+  if (isAuthor && !isModerator) {
+    if (!isReply && !decision.canCreateRootPost) {
+      return deny('Caller does not hold permission to attach media to root posts in this forum.');
+    }
+    if (isReply && !decision.canReply) {
+      return deny('Caller does not hold permission to attach media to replies in this forum.');
+    }
+  }
+
+  const resolvedBand = CommunityRules.ResolvePostVisibilityBand({
+    forumVisibilityBand: forum.VisibilityBand,
+    requestedBand: post.VisibilityBand,
+    authorCanSeeTeamBand: canSeeTeamBand,
+  });
+
+  // Enforce combined attachment count and aggregate byte ceilings across existing + incoming drafts
+  const existingAttRes = await params.rv.RunView<{ ID: string; SpaceItemID: string }>(
+    {
+      EntityName: COMMUNITY_ENTITY_NAMES.ForumPostAttachments,
+      ExtraFilter: `PostID = '${validPostId}'`,
+      Fields: ['ID', 'SpaceItemID'],
+      ResultType: 'simple',
+      MaxRows: COMMUNITY_ATTACHMENT_MAX_COUNT_PER_POST + 5,
+    },
+    params.user,
+  );
+  if (!existingAttRes?.Success) {
+    return deny(`Unable to inspect existing attachments on Post ${validPostId}.`);
+  }
+  const existingAtts = existingAttRes.Results ?? [];
+  const existingSizeEntries: Array<{ sizeBytes?: number | null }> = [];
+  if (existingAtts.length > 0) {
+    const siIds = Array.from(new Set(existingAtts.map((a) => `'${AssertValidUUID(a.SpaceItemID, 'SpaceItemID')}'`)));
+    const siRes = await params.rv.RunView<{ ID: string; ArtifactVersionID: string | null }>(
+      {
+        EntityName: 'MJ_BizApps_Collaboration: Space Items',
+        ExtraFilter: `ID IN (${siIds.join(',')})`,
+        Fields: ['ID', 'ArtifactVersionID'],
+        ResultType: 'simple',
+        MaxRows: COMMUNITY_ATTACHMENT_MAX_COUNT_PER_POST + 5,
+      },
+      params.user,
+    );
+    const verIds = Array.from(
+      new Set((siRes?.Success ? siRes.Results ?? [] : []).map((s) => s.ArtifactVersionID).filter((v): v is string => Boolean(v))),
+    );
+    const sizeByVer = new Map<string, number | null>();
+    if (verIds.length > 0) {
+      const verRes = await params.rv.RunView<{ ID: string; ContentSizeBytes: number | null }>(
+        {
+          EntityName: 'MJ: Artifact Versions',
+          ExtraFilter: `ID IN (${verIds.map((id) => `'${AssertValidUUID(id, 'ArtifactVersionID')}'`).join(',')})`,
+          Fields: ['ID', 'ContentSizeBytes'],
+          ResultType: 'simple',
+          MaxRows: COMMUNITY_ATTACHMENT_MAX_COUNT_PER_POST + 5,
+        },
+        params.user,
+      );
+      for (const v of verRes?.Success ? verRes.Results ?? [] : []) {
+        sizeByVer.set(v.ID.toLowerCase(), v.ContentSizeBytes);
+      }
+    }
+    const sizeBySi = new Map<string, number | null>();
+    for (const si of siRes?.Success ? siRes.Results ?? [] : []) {
+      sizeBySi.set(si.ID.toLowerCase(), si.ArtifactVersionID ? sizeByVer.get(si.ArtifactVersionID.toLowerCase()) ?? null : null);
+    }
+    for (const att of existingAtts) {
+      existingSizeEntries.push({ sizeBytes: sizeBySi.get(att.SpaceItemID.toLowerCase()) ?? null });
+    }
+  }
+
+  const incomingSizeEntries = params.incomingDrafts.map((d) => ({
+    sizeBytes: d.kind === 'artifact' ? null : d.sizeBytes,
+  }));
+  const batchLimits = ValidateAttachmentBatchLimits([...existingSizeEntries, ...incomingSizeEntries], {
+    maxFileBytes: COMMUNITY_ATTACHMENT_MAX_FILE_BYTES,
+    maxCountPerPost: COMMUNITY_ATTACHMENT_MAX_COUNT_PER_POST,
+    maxAggregateBytesPerPost: COMMUNITY_ATTACHMENT_MAX_AGGREGATE_BYTES_PER_POST,
+  });
+  if (!batchLimits.valid) {
+    return deny(batchLimits.errors.join(' '));
+  }
+
+  // Verify target artifact / version / file accessibility under user
+  for (const draft of params.incomingDrafts) {
+    if (draft.kind === 'artifact') {
+      const validArtifactId = AssertValidUUID(draft.artifactId, 'artifactId');
+      const artRes = await params.rv.RunView<{ ID: string }>(
+        {
+          EntityName: 'MJ: Artifacts',
+          ExtraFilter: `ID = '${validArtifactId}'`,
+          Fields: ['ID'],
+          ResultType: 'simple',
+          MaxRows: 1,
+        },
+        params.user,
+      );
+      if (!artRes?.Success || !artRes.Results?.[0]) {
+        return deny(`Artifact ${validArtifactId} was not found or caller lacks read access.`);
+      }
+      const targetVersionId = draft.pinnedVersionId ?? draft.latestVersionId ?? null;
+      if (targetVersionId) {
+        const validVerId = AssertValidUUID(targetVersionId, 'artifactVersionId');
+        const verRes = await params.rv.RunView<{ ID: string }>(
+          {
+            EntityName: 'MJ: Artifact Versions',
+            ExtraFilter: `ID = '${validVerId}' AND ArtifactID = '${validArtifactId}'`,
+            Fields: ['ID'],
+            ResultType: 'simple',
+            MaxRows: 1,
+          },
+          params.user,
+        );
+        if (!verRes?.Success || !verRes.Results?.[0]) {
+          return deny(`Artifact Version ${validVerId} for Artifact ${validArtifactId} was not found or access is denied.`);
+        }
+      }
+    } else {
+      if (draft.fileId) {
+        const validFileId = AssertValidUUID(draft.fileId, 'fileId');
+        const fileRes = await params.rv.RunView<{ ID: string }>(
+          {
+            EntityName: 'MJ: Files',
+            ExtraFilter: `ID = '${validFileId}'`,
+            Fields: ['ID'],
+            ResultType: 'simple',
+            MaxRows: 1,
+          },
+          params.user,
+        );
+        if (!fileRes?.Success || !fileRes.Results?.[0]) {
+          return deny(`File ${validFileId} was not found or caller lacks read access.`);
+        }
+      }
+      if (draft.artifactVersionId) {
+        const validVerId = AssertValidUUID(draft.artifactVersionId, 'artifactVersionId');
+        const verRes = await params.rv.RunView<{
+          ID: string;
+          ArtifactID: string;
+          ContentMode: string | null;
+          FileID: string | null;
+          MimeType: string | null;
+          ContentSizeBytes: number | null;
+          Content: string | null;
+        }>(
+          {
+            EntityName: 'MJ: Artifact Versions',
+            ExtraFilter: `ID = '${validVerId}'`,
+            Fields: ['ID', 'ArtifactID', 'ContentMode', 'FileID', 'MimeType', 'ContentSizeBytes', 'Content'],
+            ResultType: 'simple',
+            MaxRows: 1,
+          },
+          params.user,
+        );
+        if (!verRes?.Success || !verRes.Results?.[0]) {
+          return deny(`Artifact Version ${validVerId} was not found or access is denied.`);
+        }
+        const ver = verRes.Results[0];
+        if (ver.ContentMode !== 'File') {
+          return deny(`Artifact Version ${validVerId} has ContentMode "${ver.ContentMode ?? 'null'}", expected "File".`);
+        }
+        if (draft.fileId && ver.FileID && !UUIDsEqual(ver.FileID, draft.fileId)) {
+          return deny(`Artifact Version ${validVerId} belongs to a different File than ${draft.fileId}.`);
+        }
+        if (ver.MimeType && !IsAllowedAttachmentMimeType(NormalizeAttachmentMimeType(ver.MimeType))) {
+          return deny(`Artifact Version ${validVerId} MIME type "${ver.MimeType}" is not permitted.`);
+        }
+        if (ver.Content && !SanitizeCommunityAttachmentUrl(ver.Content, draft.kind)) {
+          return deny(`Artifact Version ${validVerId} content URL uses an unsafe or unsupported scheme.`);
+        }
+      }
+    }
+  }
+
+  return {
+    authorized: true,
+    spaceId: authoritativeSpaceId,
+    band: resolvedBand,
+    errorMessage: null,
+  };
+}
+
+/**
+ * Resolves an enabled `MJ: Artifact Types` ID suitable for storing an uploaded Community file/media attachment.
+ */
+export async function ResolveClientArtifactTypeId(
+  rv: Pick<RunView, 'RunView'>,
+  kind: 'image' | 'video' | 'audio' | 'file',
+  mimeType: string,
+  user: UserInfo,
+): Promise<string | null> {
+  const res = await rv.RunView<ClientArtifactTypeRow>(
+    {
+      EntityName: 'MJ: Artifact Types',
+      ExtraFilter: 'IsEnabled = 1',
+      Fields: ['ID', 'Name', 'ContentType', 'IsEnabled'],
+      ResultType: 'simple',
+      MaxRows: 100,
+    },
+    user,
+  );
+  const rows = res?.Success ? res.Results ?? [] : [];
+  if (rows.length === 0) {
+    return null;
+  }
+
+  const normalizedMime = NormalizeAttachmentMimeType(mimeType);
+  const exactMime = rows.find(
+    (r) => r.ContentType && NormalizeAttachmentMimeType(r.ContentType) === normalizedMime,
+  );
+  if (exactMime) return exactMime.ID;
+
+  const preferredNamesByKind: Record<'image' | 'video' | 'audio' | 'file', string[]> = {
+    image: ['image'],
+    video: ['video', 'video production'],
+    audio: ['audio'],
+    file: ['generic binary', 'file', 'document'],
+  };
+  for (const targetName of preferredNamesByKind[kind]) {
+    const match = rows.find((r) => r.Name.trim().toLowerCase() === targetName);
+    if (match) return match.ID;
+  }
+
+  const wildcardMime = rows.find(
+    (r) => r.ContentType && r.ContentType.trim().toLowerCase() === `${kind}/*`,
+  );
+  if (wildcardMime) return wildcardMime.ID;
+
+  const genericBinary = rows.find((r) => r.Name.trim().toLowerCase() === 'generic binary');
+  return genericBinary?.ID ?? rows[0].ID;
+}
+
 /**
  * Persists composer attachment drafts onto a saved `ForumPost` or reply by creating
- * `SpaceItem` + `ForumPostAttachment` records via MJ `Metadata.GetEntityObject` in live mode,
- * or returning clean in-memory `CommunityAttachmentItem[]` in offline demo mode (`!Metadata.Provider`).
+ * `MJ: Artifacts` + `MJ: Artifact Versions` (for newly uploaded files), `SpaceItem`, and
+ * `ForumPostAttachment` records via MJ `Metadata.GetEntityObject` in live mode, or returning
+ * clean in-memory `CommunityAttachmentItem[]` in offline demo mode (`!Metadata.Provider`).
  *
- * Fails closed with compensating rollback of created records if validation or entity persistence fails.
+ * Fails closed with compensating rollback of created records (and explicit reporting of any
+ * rollback Delete() failures) if authorization, validation, or entity persistence fails.
  */
 export async function PersistPostAttachmentsFromClient(
   params: PersistPostAttachmentsFromClientParams,
@@ -831,6 +1370,30 @@ export async function PersistPostAttachmentsFromClient(
     };
   }
 
+  let effectiveSpaceId = validSpaceId;
+  let band: CommunityVisibilityBand = params.band === 'Team' ? 'Team' : 'Shared';
+
+  if (params.authorizePostWrite) {
+    const authResult = await params.authorizePostWrite({
+      postId: validPostId,
+      spaceId: validSpaceId,
+      userId: validUserId,
+      drafts: orderedDrafts,
+    });
+    if (!authResult.authorized) {
+      return {
+        success: false,
+        offlineFallback: false,
+        errorMessage: authResult.errorMessage ?? 'Not authorized to attach media to this post.',
+        persistedAttachments: [],
+      };
+    }
+    if (authResult.spaceId) {
+      effectiveSpaceId = AssertValidUUID(authResult.spaceId, 'authorized spaceId');
+    }
+    band = authResult.band;
+  }
+
   if (
     !params.resolveEntityId ||
     !params.createSpaceItemEntity ||
@@ -846,10 +1409,17 @@ export async function PersistPostAttachmentsFromClient(
 
   const hasArtifacts = orderedDrafts.some((d) => d.kind === 'artifact');
   const hasFiles = orderedDrafts.some((d) => d.kind !== 'artifact');
-  const artifactsEntityId = hasArtifacts ? await params.resolveEntityId('MJ: Artifacts') : null;
+  const hasNewUploadsNeedingArtifact = orderedDrafts.some(
+    (d) => d.kind !== 'artifact' && !d.fileId && !d.artifactVersionId,
+  );
+
+  const artifactsEntityId =
+    hasArtifacts || hasNewUploadsNeedingArtifact
+      ? await params.resolveEntityId('MJ: Artifacts')
+      : null;
   const filesEntityId = hasFiles ? await params.resolveEntityId('MJ: Files') : null;
 
-  if (hasArtifacts && !artifactsEntityId) {
+  if ((hasArtifacts || hasNewUploadsNeedingArtifact) && !artifactsEntityId) {
     return {
       success: false,
       offlineFallback: false,
@@ -866,34 +1436,127 @@ export async function PersistPostAttachmentsFromClient(
     };
   }
 
-  const band: 'Shared' | 'Team' = params.band === 'Team' ? 'Team' : 'Shared';
-  const createdForRollback: Array<{ Delete?: () => Promise<boolean> }> = [];
+  if (
+    hasNewUploadsNeedingArtifact &&
+    (!params.createArtifactEntity || !params.createArtifactVersionEntity || !params.resolveArtifactTypeId)
+  ) {
+    return {
+      success: false,
+      offlineFallback: false,
+      errorMessage:
+        'Metadata entity provider for "MJ: Artifacts" / "MJ: Artifact Versions" is unavailable — cannot durably persist uploaded files.',
+      persistedAttachments: [],
+    };
+  }
+
+  const createdForRollback: Array<{
+    label: string;
+    entity: { LatestResult?: EntitySaveResultLike | null; Delete?: () => Promise<boolean> };
+  }> = [];
   const persistedAttachments: CommunityAttachmentItem[] = [];
 
   try {
     for (const draft of orderedDrafts) {
+      let targetEntityId = '';
+      let targetRecordId = '';
+      let resolvedArtifactId: string | null = null;
+      let resolvedArtifactVersionId: string | null = null;
+
+      if (draft.kind === 'artifact') {
+        targetEntityId = artifactsEntityId!;
+        targetRecordId = AssertValidUUID(draft.artifactId, 'artifactId');
+        resolvedArtifactId = targetRecordId;
+        resolvedArtifactVersionId = draft.pinnedVersionId ?? draft.latestVersionId ?? null;
+      } else if (!draft.fileId && !draft.artifactVersionId) {
+        const artifactTypeId = await params.resolveArtifactTypeId!(draft.kind, draft.mimeType);
+        if (!artifactTypeId) {
+          throw new Error(
+            `No enabled MJ: Artifact Types record was found to store uploaded file "${draft.fileName}".`,
+          );
+        }
+
+        const artifact = await params.createArtifactEntity!();
+        if (!artifact) {
+          throw new Error(`Could not instantiate MJ: Artifacts entity for "${draft.fileName}".`);
+        }
+        artifact.Name = draft.fileName.slice(0, 255);
+        artifact.Description = draft.caption.trim() ? draft.caption.trim().slice(0, 500) : null;
+        artifact.TypeID = artifactTypeId;
+        artifact.UserID = validUserId;
+        artifact.Visibility = 'System Only';
+        const artSaved = await artifact.Save();
+        if (!artSaved || !artifact.ID) {
+          throw new Error(
+            extractSaveFailureMessage(artifact, `Failed to persist MJ: Artifacts record for "${draft.fileName}".`),
+          );
+        }
+        createdForRollback.push({ label: `MJ: Artifacts ${artifact.ID}`, entity: artifact });
+
+        const artifactVersion = await params.createArtifactVersionEntity!();
+        if (!artifactVersion) {
+          throw new Error(`Could not instantiate MJ: Artifact Versions entity for "${draft.fileName}".`);
+        }
+        artifactVersion.ArtifactID = artifact.ID;
+        artifactVersion.VersionNumber = 1;
+        artifactVersion.Name = draft.fileName.slice(0, 255);
+        artifactVersion.UserID = validUserId;
+        artifactVersion.ContentMode = 'File';
+        artifactVersion.Content = draft.url;
+        artifactVersion.FileID = null;
+        artifactVersion.FileName = draft.fileName.slice(0, 500);
+        artifactVersion.MimeType = draft.mimeType.slice(0, 200);
+        artifactVersion.ContentSizeBytes = draft.sizeBytes;
+        const verSaved = await artifactVersion.Save();
+        if (!verSaved || !artifactVersion.ID) {
+          throw new Error(
+            extractSaveFailureMessage(
+              artifactVersion,
+              `Failed to persist MJ: Artifact Versions record for "${draft.fileName}".`,
+            ),
+          );
+        }
+        createdForRollback.push({
+          label: `MJ: Artifact Versions ${artifactVersion.ID}`,
+          entity: artifactVersion,
+        });
+
+        resolvedArtifactId = artifact.ID;
+        resolvedArtifactVersionId = artifactVersion.ID;
+        targetEntityId = artifactsEntityId!;
+        targetRecordId = artifact.ID;
+      } else if (draft.fileId) {
+        const validFileId = AssertValidUUID(draft.fileId, 'fileId');
+        targetEntityId = filesEntityId!;
+        targetRecordId = validFileId;
+        resolvedArtifactId = draft.artifactId ?? null;
+        resolvedArtifactVersionId = draft.artifactVersionId ?? null;
+      } else {
+        const validVerId = AssertValidUUID(draft.artifactVersionId ?? '', 'artifactVersionId');
+        const validArtId = AssertValidUUID(draft.artifactId ?? '', 'artifactId');
+        const resolvedArtsEntityId = artifactsEntityId ?? (await params.resolveEntityId('MJ: Artifacts'));
+        if (!resolvedArtsEntityId) {
+          throw new Error('Could not resolve entity metadata for "MJ: Artifacts".');
+        }
+        targetEntityId = resolvedArtsEntityId;
+        targetRecordId = validArtId;
+        resolvedArtifactId = validArtId;
+        resolvedArtifactVersionId = validVerId;
+      }
+
       const spaceItem = await params.createSpaceItemEntity();
       if (!spaceItem) {
         throw new Error('Could not instantiate SpaceItem entity for attachment.');
       }
 
       const folder = ResolveAttachmentSpaceItemFolder(draft.featureInLibrary);
-      spaceItem.SpaceID = validSpaceId;
+      spaceItem.SpaceID = effectiveSpaceId;
+      spaceItem.EntityID = targetEntityId;
+      spaceItem.RecordID = `ID|${targetRecordId}`;
       spaceItem.Band = band;
       spaceItem.PromotedAt = band === 'Shared' ? new Date() : null;
       spaceItem.PromotedByUserID = band === 'Shared' ? validUserId : null;
       spaceItem.Folder = folder;
-
-      if (draft.kind === 'artifact') {
-        spaceItem.EntityID = artifactsEntityId!;
-        spaceItem.RecordID = `ID|${AssertValidUUID(draft.artifactId, 'artifactId')}`;
-        spaceItem.ArtifactVersionID = draft.pinnedVersionId ?? draft.latestVersionId ?? null;
-      } else {
-        spaceItem.EntityID = filesEntityId!;
-        const targetFileRecordId = draft.fileId ? AssertValidUUID(draft.fileId, 'fileId') : validPostId;
-        spaceItem.RecordID = `ID|${targetFileRecordId}`;
-        spaceItem.ArtifactVersionID = null;
-      }
+      spaceItem.ArtifactVersionID = resolvedArtifactVersionId;
 
       const spaceItemSaved = await spaceItem.Save();
       if (!spaceItemSaved || !spaceItem.ID) {
@@ -901,7 +1564,7 @@ export async function PersistPostAttachmentsFromClient(
           extractSaveFailureMessage(spaceItem, 'Failed to persist SpaceItem record for attachment.'),
         );
       }
-      createdForRollback.push(spaceItem);
+      createdForRollback.push({ label: `SpaceItem ${spaceItem.ID}`, entity: spaceItem });
 
       const postAttachment = await params.createForumPostAttachmentEntity();
       if (!postAttachment) {
@@ -918,24 +1581,39 @@ export async function PersistPostAttachmentsFromClient(
           extractSaveFailureMessage(postAttachment, 'Failed to persist ForumPostAttachment record.'),
         );
       }
-      createdForRollback.push(postAttachment);
+      createdForRollback.push({
+        label: `ForumPostAttachment ${postAttachment.ID}`,
+        entity: postAttachment,
+      });
 
       const converted = ConvertDraftsToCommunityAttachments({
         drafts: [draft],
-        spaceId: validSpaceId,
+        spaceId: effectiveSpaceId,
         postId: validPostId,
         authorUserId: validUserId,
         authorName: params.authorName,
         band,
       })[0];
 
-      persistedAttachments.push({
-        ...converted,
-        id: postAttachment.ID,
-        spaceItemId: spaceItem.ID,
-        forumPostAttachmentId: postAttachment.ID,
-        sequence: draft.sequence,
-      });
+      if (converted.kind === 'artifact') {
+        persistedAttachments.push({
+          ...converted,
+          id: postAttachment.ID,
+          spaceItemId: spaceItem.ID,
+          forumPostAttachmentId: postAttachment.ID,
+          sequence: draft.sequence,
+        });
+      } else {
+        persistedAttachments.push({
+          ...converted,
+          id: postAttachment.ID,
+          spaceItemId: spaceItem.ID,
+          forumPostAttachmentId: postAttachment.ID,
+          artifactId: resolvedArtifactId,
+          artifactVersionId: resolvedArtifactVersionId,
+          sequence: draft.sequence,
+        });
+      }
     }
 
     return {
@@ -945,19 +1623,32 @@ export async function PersistPostAttachmentsFromClient(
       persistedAttachments,
     };
   } catch (err) {
+    const rollbackFailures: string[] = [];
     for (const created of createdForRollback.reverse()) {
-      if (typeof created.Delete === 'function') {
+      if (typeof created.entity.Delete === 'function') {
         try {
-          await created.Delete();
-        } catch {
-          // Best-effort compensating rollback to avoid orphaned SpaceItem / ForumPostAttachment records.
+          const deleted = await created.entity.Delete();
+          if (!deleted) {
+            rollbackFailures.push(
+              `${created.label}: ${extractSaveFailureMessage(created.entity, 'Delete() returned false')}`,
+            );
+          }
+        } catch (deleteErr) {
+          rollbackFailures.push(
+            `${created.label}: ${deleteErr instanceof Error ? deleteErr.message : 'Delete() threw an error'}`,
+          );
         }
       }
     }
+    const baseMessage = err instanceof Error ? err.message : 'Failed to persist post attachments.';
+    const errorMessage =
+      rollbackFailures.length > 0
+        ? `${baseMessage} (Rollback cleanup failed: ${rollbackFailures.join('; ')})`
+        : baseMessage;
     return {
       success: false,
       offlineFallback: false,
-      errorMessage: err instanceof Error ? err.message : 'Failed to persist post attachments.',
+      errorMessage,
       persistedAttachments: [],
     };
   }
@@ -967,6 +1658,7 @@ interface LiveArtifactCatalogRow {
   ID: string;
   Name: string;
   Type?: string | null;
+  Visibility?: 'Always' | 'System Only' | null;
 }
 
 interface LiveArtifactVersionCatalogRow {
@@ -980,6 +1672,7 @@ interface LiveArtifactVersionCatalogRow {
 
 /**
  * Loads accessible `MJ: Artifacts` and their `MJ: Artifact Versions` for the live Artifact Picker.
+ * Excludes `'System Only'` backing artifacts created for raw file attachments.
  */
 export async function LoadAccessibleArtifactsCatalog(
   rv: Pick<RunView, 'RunView'>,
@@ -988,7 +1681,7 @@ export async function LoadAccessibleArtifactsCatalog(
   const artRes = await rv.RunView<LiveArtifactCatalogRow>(
     {
       EntityName: 'MJ: Artifacts',
-      Fields: ['ID', 'Name', 'Type'],
+      Fields: ['ID', 'Name', 'Type', 'Visibility'],
       OrderBy: 'Name ASC',
       ResultType: 'simple',
       MaxRows: 100,
@@ -999,7 +1692,10 @@ export async function LoadAccessibleArtifactsCatalog(
     return [];
   }
 
-  const artifacts = artRes.Results;
+  const artifacts = artRes.Results.filter((a) => a.Visibility !== 'System Only');
+  if (artifacts.length === 0) {
+    return [];
+  }
   const validIds: string[] = [];
   for (const row of artifacts) {
     try {
@@ -1064,24 +1760,42 @@ export function BuildSpaceItemCompositeKey(spaceItemId: string): CompositeKey {
 }
 
 /**
- * Reads a browser `File` into a data URL (or object URL fallback for large video/audio/files)
- * so preview chips work cleanly without exceeding `COMMUNITY_ATTACHMENT_MAX_DATA_URL_BYTES`.
+ * Reads a browser `File` into a durable `data:` URL when `<= 1.5 MiB` (falling back to a
+ * `blob:` URL for oversized media files) so uploaded files survive persistence and cold reload.
  */
 export async function ReadBrowserFilePreviewUrl(
   file: File,
   kind: CommunityAttachmentKind,
+  resolvedMimeType?: string,
 ): Promise<string> {
   if (
-    kind === 'image' &&
+    kind !== 'artifact' &&
     file.size <= 1_500_000 &&
     typeof FileReader !== 'undefined'
   ) {
     return new Promise<string>((resolve) => {
       const reader = new FileReader();
       reader.onload = () => {
-        if (typeof reader.result === 'string' && reader.result.startsWith('data:image/')) {
-          resolve(reader.result);
-        } else if (typeof URL !== 'undefined' && typeof URL.createObjectURL === 'function') {
+        if (typeof reader.result === 'string' && reader.result.startsWith('data:')) {
+          let dataUrl = reader.result;
+          const targetMime = NormalizeAttachmentMimeType(resolvedMimeType || file.type);
+          if (targetMime) {
+            const commaIdx = dataUrl.indexOf(',');
+            if (commaIdx > 5) {
+              const header = dataUrl.slice(5, commaIdx);
+              const payload = dataUrl.slice(commaIdx + 1);
+              const currentMime = header.split(';')[0].trim().toLowerCase();
+              if (!currentMime || currentMime === 'application/octet-stream') {
+                dataUrl = `data:${targetMime};base64,${payload}`;
+              }
+            }
+          }
+          if (SanitizeCommunityAttachmentUrl(dataUrl, kind)) {
+            resolve(dataUrl);
+            return;
+          }
+        }
+        if (typeof URL !== 'undefined' && typeof URL.createObjectURL === 'function') {
           resolve(URL.createObjectURL(file));
         } else {
           resolve('');

@@ -159,7 +159,7 @@ export class CommunityAttachmentPickerComponent {
         continue;
       }
 
-      const previewUrl = await ReadBrowserFilePreviewUrl(file, prelim.draft.kind);
+      const previewUrl = await ReadBrowserFilePreviewUrl(file, prelim.draft.kind, prelim.draft.mimeType);
       const finalized = CreateDraftFileAttachment({
         fileName: file.name,
         mimeType: file.type,
