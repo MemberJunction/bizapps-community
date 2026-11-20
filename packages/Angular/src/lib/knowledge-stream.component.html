@@ -188,10 +188,11 @@
                   class="mjc-upvote-btn"
                   [class.mjc-upvote-btn--active]="item.upvotedByMe"
                   [attr.aria-pressed]="item.upvotedByMe"
-                  [attr.aria-label]="'Upvote ' + item.title + ' (' + item.upvoteCount + ')'"
+                  [attr.title]="'Upvote ' + item.title"
                   (click)="upvoteItem($event, item.id)"
                 >
                   <span class="mjc-upvote-btn__arrow" aria-hidden="true">▲</span>
+                  <span class="mjc-sr-only">Upvote </span>
                   <span class="mjc-upvote-btn__count">{{ item.upvoteCount }}</span>
                 </button>
               </div>
