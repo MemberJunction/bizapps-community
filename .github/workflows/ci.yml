@@ -54,7 +54,7 @@ jobs:
 
           const rootPkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
           const mjVersion =
-            rootPkg.devDependencies?.['@memberjunction/core'] || '6.3.0-edge.0';
+            rootPkg.devDependencies?.['@memberjunction/core'] || '6.3.0-edge.1';
           const pkgOverrides = rootPkg.pnpm?.overrides || {};
           const mergedOverrides = {
             '@types/node': '24.10.11',
