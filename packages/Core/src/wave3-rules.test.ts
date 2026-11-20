@@ -1,6 +1,7 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  validateIdeaAllocations,
   validateIdeaAllocationChange,
   validateAcceptedAnswerChange,
   validatePollResponse,
@@ -86,6 +87,61 @@ describe('@mj-biz-apps/community-core Wave 3 domain rules', () => {
         false,
       );
     });
+
+    it('enforces exact budget, MaxPointsPerIdea, case-insensitive UUID refund, and voteWeightMultiplier', () => {
+      // Exact budget ceiling (64 + 36 = 100) succeeds
+      const exactBudget = validateIdeaAllocations({
+        mode: 'Quadratic',
+        budgetPoints: 100,
+        maxPointsPerIdea: 64,
+        voteWeightMultiplier: 1.25,
+        allocations: [
+          { ideaPostId: 'idea-1', pointsAllocated: 64 },
+          { ideaPostId: 'idea-2', pointsAllocated: 36 },
+        ],
+      });
+      assert.equal(exactBudget.valid, true);
+      assert.equal(exactBudget.remainingBudgetPoints, 0);
+      assert.equal(exactBudget.effectiveVotesByIdea['idea-1'], 10); // 8 * 1.25
+      assert.equal(exactBudget.effectiveVotesByIdea['idea-2'], 7.5); // 6 * 1.25
+
+      // Over MaxPointsPerIdea fails
+      const overMaxPerIdea = validateIdeaAllocations({
+        mode: 'Quadratic',
+        budgetPoints: 100,
+        maxPointsPerIdea: 64,
+        allocations: [{ ideaPostId: 'idea-1', pointsAllocated: 65 }],
+      });
+      assert.equal(overMaxPerIdea.valid, false);
+      assert.match(overMaxPerIdea.errorMessage ?? '', /MaxPointsPerIdea/);
+
+      // Non-positive or non-integer allocation fails in ValidateIdeaAllocations
+      assert.equal(
+        validateIdeaAllocations({
+          mode: 'Point Allocation',
+          budgetPoints: 100,
+          allocations: [{ ideaPostId: 'idea-1', pointsAllocated: 0 }],
+        }).valid,
+        false,
+      );
+
+      // Case-insensitive UUID matching refunds prior spend on same idea
+      const caseInsensitiveRevise = validateIdeaAllocationChange({
+        mode: 'Quadratic',
+        budgetPoints: 100,
+        maxPointsPerIdea: 64,
+        existingAllocations: [
+          { ideaPostId: 'AAAAAAAA-AAAA-4AAA-8AAA-AAAAAAAAAAAA', pointsAllocated: 64 },
+          { ideaPostId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', pointsAllocated: 36 },
+        ],
+        changedIdeaPostId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+        newPointsAllocated: 49,
+      });
+      assert.equal(caseInsensitiveRevise.valid, true);
+      assert.equal(caseInsensitiveRevise.totalPointsUsed, 85);
+      assert.equal(caseInsensitiveRevise.remainingBudgetPoints, 15);
+      assert.equal(caseInsensitiveRevise.effectiveVotesByIdea['aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'], 7);
+    });
   });
 
   describe('ValidateAcceptedAnswerChange (Q&A single accepted-answer invariant)', () => {
@@ -140,6 +196,32 @@ describe('@mj-biz-apps/community-core Wave 3 domain rules', () => {
         isQuestionAuthor: true,
       });
       assert.equal(decision.allowed, false);
+    });
+
+    it('handles case-insensitive UUID matching for re-accept and unaccept, and rejects unaccept when none is accepted', () => {
+      const caseInsensitiveReaccept = validateAcceptedAnswerChange({
+        answerPostId: 'AAAAAAAA-1111-4111-8111-111111111111',
+        settingAccepted: true,
+        currentlyAcceptedAnswerPostId: 'aaaaaaaa-1111-4111-8111-111111111111',
+        isQuestionAuthor: true,
+      });
+      assert.equal(caseInsensitiveReaccept.allowed, true);
+
+      const caseInsensitiveUnaccept = validateAcceptedAnswerChange({
+        answerPostId: 'aaaaaaaa-1111-4111-8111-111111111111',
+        settingAccepted: false,
+        currentlyAcceptedAnswerPostId: 'AAAAAAAA-1111-4111-8111-111111111111',
+        isQuestionAuthor: true,
+      });
+      assert.equal(caseInsensitiveUnaccept.allowed, true);
+
+      const unacceptWhenNull = validateAcceptedAnswerChange({
+        answerPostId: 'answer-1',
+        settingAccepted: false,
+        currentlyAcceptedAnswerPostId: null,
+        isQuestionAuthor: true,
+      });
+      assert.equal(unacceptWhenNull.allowed, false);
     });
   });
 
@@ -291,6 +373,58 @@ describe('@mj-biz-apps/community-core Wave 3 domain rules', () => {
         resolveBestInteractiveSession({ scoringMode: 'Best Score', sessions: [] }),
         null,
       );
+    });
+
+    it('handles edge cases for maxAttemptsPerMember = 0, incomplete Fastest Time, broken Streak at attempt 1, and null Best Score', () => {
+      const zeroAttempts = validateInteractiveAttempt({
+        maxAttemptsPerMember: 0,
+        existingSessions: [],
+      });
+      assert.equal(zeroAttempts.allowed, false);
+
+      // Fastest Time returns null if no session is completed with a non-null duration
+      assert.equal(
+        resolveBestInteractiveSession({
+          scoringMode: 'Fastest Time',
+          sessions: [
+            { attemptNumber: 1, score: 100, durationSeconds: 10, completed: false },
+            { attemptNumber: 2, score: 100, durationSeconds: null, completed: true },
+          ],
+        }),
+        null,
+      );
+
+      // Streak returns null when attempt 1 is incomplete even if attempts 2..3 are completed
+      assert.equal(
+        resolveBestInteractiveSession({
+          scoringMode: 'Streak',
+          sessions: [
+            { attemptNumber: 1, score: null, durationSeconds: null, completed: false },
+            { attemptNumber: 2, score: null, durationSeconds: null, completed: true },
+            { attemptNumber: 3, score: null, durationSeconds: null, completed: true },
+          ],
+        }),
+        null,
+      );
+
+      // Completion returns null when no session completed
+      assert.equal(
+        resolveBestInteractiveSession({
+          scoringMode: 'Completion',
+          sessions: [{ attemptNumber: 1, score: 50, durationSeconds: 30, completed: false }],
+        }),
+        null,
+      );
+
+      // Best Score prefers numeric 0 over null
+      const zeroBeatsNull = resolveBestInteractiveSession({
+        scoringMode: 'Best Score',
+        sessions: [
+          { attemptNumber: 1, score: null, durationSeconds: 20, completed: false },
+          { attemptNumber: 2, score: 0, durationSeconds: 40, completed: true },
+        ],
+      });
+      assert.equal(zeroBeatsNull?.attemptNumber, 2);
     });
   });
 });
