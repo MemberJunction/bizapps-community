@@ -81,8 +81,11 @@ export class CommunityHubPreferences {
     return this.store.SetSetting(COMMUNITY_HUB_PREFERENCE_KEYS.digestFormat, value);
   }
 
-  public GetPorchCollapsed(): boolean {
-    return this.store.GetSetting(COMMUNITY_HUB_PREFERENCE_KEYS.porchCollapsed) === 'true';
+  public GetPorchCollapsed(defaultCollapsed = false): boolean {
+    const raw = this.store.GetSetting(COMMUNITY_HUB_PREFERENCE_KEYS.porchCollapsed);
+    if (raw === 'true') return true;
+    if (raw === 'false') return false;
+    return defaultCollapsed;
   }
 
   public async SetPorchCollapsed(collapsed: boolean): Promise<boolean> {

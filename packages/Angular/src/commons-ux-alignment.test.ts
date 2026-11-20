@@ -61,12 +61,12 @@ describe('Slice 1 UX Alignment — Sticky Top Shell, Branding & Export Wiring', 
   const commonsTs = readFileSync(join(LIB_DIR, 'community-hub-commons.ts'), 'utf8');
   const streamHtml = readFileSync(join(LIB_DIR, 'knowledge-stream.component.html'), 'utf8');
 
-  it('uses sticky top header bar (position: sticky; top: 0; z-index: 20) and MemberJunction Community Hub branding', () => {
+  it('uses sticky top header bar (position: sticky; top: 0; z-index: 20) and clean Community header branding', () => {
     assert.match(hubCss, /\.mjc-hub-header\s*\{[\s\S]*position:\s*sticky;[\s\S]*top:\s*0;[\s\S]*z-index:\s*20;/);
-    assert.ok(hubHtml.includes('MemberJunction Community Hub'));
+    assert.ok(hubHtml.includes("spaceName || 'Community'"));
     assert.ok(hubHtml.includes('openAskShareModal()'));
     assert.ok(hubHtml.includes('exportDigestPdf()'));
-    assert.ok(hubHtml.includes('aria-label="Search community threads, Q&A canon, and playbooks"'));
+    assert.ok(hubHtml.includes('aria-label="Search community discussions, Q&A, and playbooks"'));
     assert.ok(hubHtml.includes('clearHeaderSearch()'));
   });
 
@@ -89,7 +89,7 @@ describe('Slice 1 UX Alignment — Collapsible Editorial Porch & 3 Featured High
   const hubHtml = readFileSync(join(LIB_DIR, 'community-hub-resource.component.html'), 'utf8');
 
   it('supports porchCollapsed toggle with aria-expanded and UserInfoEngine preference persistence', async () => {
-    assert.match(hubTs, /public porchCollapsed = false;/);
+    assert.match(hubTs, /public porchCollapsed = true;/);
     assert.match(hubTs, /public togglePorch\(\): void/);
     assert.match(hubHtml, /\[attr\.aria-expanded\]="!porchCollapsed"/);
     assert.match(hubHtml, /\(click\)="togglePorch\(\)"/);
@@ -97,9 +97,13 @@ describe('Slice 1 UX Alignment — Collapsible Editorial Porch & 3 Featured High
     const { store, data } = createFakeStore();
     const prefs = new CommunityHubPreferences(store);
     assert.equal(prefs.GetPorchCollapsed(), false);
+    assert.equal(prefs.GetPorchCollapsed(true), true);
+    await prefs.SetPorchCollapsed(false);
+    assert.equal(data.get(COMMUNITY_HUB_PREFERENCE_KEYS.porchCollapsed), 'false');
+    assert.equal(prefs.GetPorchCollapsed(true), false);
     await prefs.SetPorchCollapsed(true);
     assert.equal(data.get(COMMUNITY_HUB_PREFERENCE_KEYS.porchCollapsed), 'true');
-    assert.equal(prefs.GetPorchCollapsed(), true);
+    assert.equal(prefs.GetPorchCollapsed(true), true);
   });
 
   it('builds 3 distinct Featured Highlight Cards (Open Canon/Motion, Living Playbook, Active Graduation/Working Group)', () => {
@@ -255,7 +259,7 @@ describe('Slice 1 UX Alignment — 3-Column Commons Workspace Filtering & Layout
     assert.ok(COMMUNITY_TOPIC_TAGS.length >= 5);
     assert.deepEqual(
       STREAM_TYPE_FILTER_OPTIONS.map((o) => o.label),
-      ['All Activity', 'Posts', 'Verified Q&A', 'Ideation', 'Living Guides'],
+      ['All', 'Posts', 'Q&A', 'Ideas', 'Playbooks'],
     );
     assert.ok(SEEDED_COMMUNITY_SESSIONS.length >= 3);
     assert.match(streamCss, /grid-template-columns:\s*260px\s+minmax\(0,\s*1fr\)\s+300px/);
@@ -308,8 +312,14 @@ describe('Slice 1 UX Alignment — Slide-Over Detail Sheet Drawer & + Ask or Sha
   const hubTs = readFileSync(join(LIB_DIR, 'community-hub-resource.component.ts'), 'utf8');
   const hubHtml = readFileSync(join(LIB_DIR, 'community-hub-resource.component.html'), 'utf8');
 
-  it('declares accessible role="dialog" + aria-modal="true" + Escape dismissal for Detail Sheet & Ask/Share Modal', () => {
-    assert.match(hubHtml, /id="mjc-detail-sheet-backdrop"[\s\S]*role="dialog"[\s\S]*aria-modal="true"[\s\S]*aria-labelledby="mjc-detail-sheet-title"/);
+  it('renders Full-Page Thread View (no slide-over drawer), inline card expansion, and accessible modal dialogs with Escape dismissal', () => {
+    const streamHtml = readFileSync(join(LIB_DIR, 'knowledge-stream.component.html'), 'utf8');
+    assert.ok(!hubHtml.includes('id="mjc-detail-sheet-backdrop"'), 'slide-over detail sheet drawer must be removed');
+    assert.match(hubHtml, /id="mjc-full-thread-view"[\s\S]*aria-labelledby="mjc-detail-sheet-title"/);
+    assert.ok(hubHtml.includes('id="mjc-detail-sheet-close-btn"'));
+    assert.ok(streamHtml.includes('class="mjc-inline-thread"'));
+    assert.ok(streamHtml.includes('mjc-expand-btn'));
+    assert.ok(hubHtml.includes('mjc-idea-stepper'));
     assert.match(hubHtml, /id="mjc-ask-share-modal-backdrop"[\s\S]*role="dialog"[\s\S]*aria-modal="true"[\s\S]*aria-labelledby="mjc-ask-share-title"/);
     assert.match(hubTs, /@HostListener\('document:keydown\.escape'\)/);
   });

@@ -125,13 +125,13 @@ export interface CommunityHubTabDefinition {
 
 /** The 4 Community Hub tabs, in display order. */
 export const COMMUNITY_HUB_TABS: ReadonlyArray<CommunityHubTabDefinition> = [
-  { key: 'knowledge-stream', label: 'Knowledge Stream', icon: 'fa-solid fa-stream' },
-  { key: 'qa-canon-workbench', label: 'Q&A Canon Workbench', icon: 'fa-solid fa-check-double' },
-  { key: 'quadratic-ideation-wallet', label: 'Quadratic Ideation Wallet', icon: 'fa-solid fa-lightbulb' },
+  { key: 'knowledge-stream', label: 'Feed', icon: 'fa-solid fa-house' },
+  { key: 'qa-canon-workbench', label: 'Q&A', icon: 'fa-solid fa-circle-question' },
+  { key: 'quadratic-ideation-wallet', label: 'Ideas', icon: 'fa-solid fa-lightbulb' },
   {
     key: 'living-co-authoring',
-    label: 'Living Co-Authoring & Interactive Mini-Apps',
-    icon: 'fa-solid fa-file-signature',
+    label: 'Playbooks',
+    icon: 'fa-solid fa-book-open',
   },
 ];
 
@@ -447,9 +447,9 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
   public structuredThreadSynthesis: LivingThreadSynthesisView | null = null;
   public isSynthesizingFeed = false;
 
-  // Sticky Header Search, Digest Export, Personalized Digest Preview & Editorial Porch state
+  // Sticky Header Search, Digest Export, Personalized Digest Preview & Highlights state
   public headerSearchQuery = '';
-  public porchCollapsed = false;
+  public porchCollapsed = true;
   public isExportingDigest = false;
   public digestExportError: string | null = null;
   public isDigestDrawerOpen = false;
@@ -611,8 +611,17 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
     return this.commonsItems.find((item) => item.id === this.detailSheetItemId) ?? null;
   }
 
+  public get relatedDetailItems(): ReadonlyArray<CommunityCommonsItem> {
+    const active = this.detailSheetItem;
+    if (!active) return [];
+    const others = this.commonsItems.filter((item) => item.id !== active.id);
+    const sameSpace = others.filter((item) => item.spaceId === active.spaceId);
+    const differentSpace = others.filter((item) => item.spaceId !== active.spaceId);
+    return [...sameSpace, ...differentSpace].slice(0, 4);
+  }
+
   public get hasActiveOverlay(): boolean {
-    return Boolean(this.detailSheetItem || this.isAskShareModalOpen || this.isDigestDrawerOpen);
+    return Boolean(this.isAskShareModalOpen || this.isDigestDrawerOpen);
   }
 
   public get topDigestMatchTitle(): string | null {
@@ -736,7 +745,7 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
       this.activeTabKey = saved;
       this.focusedTabKey = saved;
     }
-    this.porchCollapsed = this.preferences.GetPorchCollapsed();
+    this.porchCollapsed = this.preferences.GetPorchCollapsed(true);
     const savedCadence = this.preferences.GetDigestCadence();
     if (savedCadence) {
       this.digestCadence = savedCadence;
@@ -1981,6 +1990,12 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
     this.detailActionMessage = null;
     this.detailErrorMessage = null;
     this.cdr.markForCheck();
+    queueMicrotask(() => {
+      const hubEl = this.doc?.querySelector<HTMLElement>('.mjc-community-hub');
+      if (hubEl && typeof hubEl.scrollTo === 'function') {
+        hubEl.scrollTo({ top: 0 });
+      }
+    });
     this.scheduleOverlayInitialFocus('detail');
   }
 
@@ -2104,13 +2119,16 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
     }
   }
 
-  public async submitDetailReply(): Promise<void> {
-    const item = this.detailSheetItem;
-    const text = this.detailReplyText.trim();
+  public async submitDetailReply(targetItemId?: string, replyTextOverride?: string): Promise<void> {
+    const item = targetItemId
+      ? this.commonsItems.find((entry) => entry.id === targetItemId) ?? null
+      : this.detailSheetItem;
+    const text = (replyTextOverride ?? this.detailReplyText).trim();
     if (!item || !text) return;
 
     this.detailActionMessage = null;
     this.detailErrorMessage = null;
+    this.streamActionError = null;
 
     const provider = Metadata.Provider;
     const user: UserInfo | undefined = provider?.CurrentUser;
@@ -2143,7 +2161,9 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
     });
 
     if (!outcome.success) {
-      this.detailErrorMessage = outcome.errorMessage ?? 'Failed to save reply on server.';
+      const errMsg = outcome.errorMessage ?? 'Failed to save reply on server.';
+      this.detailErrorMessage = errMsg;
+      this.streamActionError = errMsg;
       this.cdr.markForCheck();
       return;
     }
@@ -2161,7 +2181,9 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
           }
         : entry,
     );
-    this.detailReplyText = '';
+    if (replyTextOverride === undefined) {
+      this.detailReplyText = '';
+    }
     this.detailActionMessage = outcome.statusMessage ?? 'Reply saved to thread.';
     this.cdr.markForCheck();
   }
@@ -2172,11 +2194,12 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
 
     this.detailActionMessage = null;
     this.detailErrorMessage = null;
+    this.streamActionError = null;
 
     const provider = Metadata.Provider;
     if (!provider) {
       this.commonsItems = GraduateStreamItem(this.commonsItems, itemId);
-      this.detailActionMessage = 'Thread graduated into an active Working Group deliverable.';
+      this.detailActionMessage = 'Working Group created from this thread.';
       this.cdr.markForCheck();
       return;
     }
@@ -2190,15 +2213,17 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
     });
 
     if (!result.success) {
-      this.detailErrorMessage = result.errorMessage ?? 'Failed to graduate thread to Working Group space.';
+      const errMsg = result.errorMessage ?? 'Failed to start Working Group space.';
+      this.detailErrorMessage = errMsg;
+      this.streamActionError = errMsg;
       this.cdr.markForCheck();
       return;
     }
 
     this.commonsItems = GraduateStreamItem(this.commonsItems, itemId, result.promotedToSpaceId);
     this.detailActionMessage = result.promotedToSpaceId
-      ? `Thread graduated into Working Group Space (${result.promotedToSpaceId}).`
-      : 'Thread graduated into an active Working Group deliverable.';
+      ? `Working Group Space created (${result.promotedToSpaceId}).`
+      : 'Working Group created from this thread.';
     this.cdr.markForCheck();
   }
 
@@ -2721,6 +2746,12 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
   public SelectTab(key: CommunityHubTabKey): void {
     this.activeTabKey = key;
     this.focusedTabKey = key;
+    if (this.detailSheetItemId) {
+      this.detailSheetItemId = null;
+      this.detailReplyText = '';
+      this.detailActionMessage = null;
+      this.detailErrorMessage = null;
+    }
     if (!this.EmbeddedMode) {
       void this.preferences.SetActiveTab(key);
     } else if (!this.ShowTabBar) {
@@ -3165,6 +3196,58 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
     void this.OnVoteAllocationChanged(this.selectedIdeaId, points, effectiveVotes);
   }
 
+  public getIdeaNextVoteDeltaCost(idea: CommunityHubIdeaItem): number {
+    if (this.activeCampaign.allocationMode === 'Quadratic') {
+      const currentVotes = Math.floor(Math.sqrt(Math.max(0, idea.myPointsAllocated)));
+      const nextPoints = (currentVotes + 1) * (currentVotes + 1);
+      return Math.max(1, nextPoints - idea.myPointsAllocated);
+    }
+    return 5;
+  }
+
+  public canStepIdeaVote(idea: CommunityHubIdeaItem, deltaVotes: 1 | -1): boolean {
+    if (this.ideationLoadFailed) return false;
+    if (deltaVotes < 0) {
+      return idea.myPointsAllocated > 0;
+    }
+    const deltaCost = this.getIdeaNextVoteDeltaCost(idea);
+    const nextPoints = idea.myPointsAllocated + deltaCost;
+    if (deltaCost > this.remainingWalletPoints) {
+      return false;
+    }
+    if (this.activeCampaign.maxPointsPerIdea != null && nextPoints > this.activeCampaign.maxPointsPerIdea) {
+      return false;
+    }
+    return nextPoints <= this.activeCampaign.budgetPoints;
+  }
+
+  public stepIdeaVote(event: Event, idea: CommunityHubIdeaItem, deltaVotes: 1 | -1): void {
+    event.stopPropagation();
+    if (!this.canStepIdeaVote(idea, deltaVotes)) return;
+    this.SelectIdea(idea.id);
+
+    let nextPoints: number;
+    if (this.activeCampaign.allocationMode === 'Quadratic') {
+      const currentVotes =
+        deltaVotes > 0
+          ? Math.floor(Math.sqrt(Math.max(0, idea.myPointsAllocated)))
+          : Math.ceil(Math.sqrt(Math.max(0, idea.myPointsAllocated)));
+      const nextVotes = Math.max(0, currentVotes + deltaVotes);
+      nextPoints = nextVotes * nextVotes;
+    } else {
+      nextPoints = Math.max(0, idea.myPointsAllocated + deltaVotes * 5);
+    }
+
+    const maxAllowed = Math.min(
+      idea.myPointsAllocated + this.remainingWalletPoints,
+      this.activeCampaign.maxPointsPerIdea ?? this.activeCampaign.budgetPoints,
+      this.activeCampaign.budgetPoints,
+    );
+    const clampedPoints = Math.max(0, Math.min(nextPoints, maxAllowed));
+    const effectiveVotes = ComputeQuadraticEffectiveVotes(clampedPoints, this.activeCampaign.allocationMode);
+    void this.OnVoteAllocationChanged(idea.id, clampedPoints, effectiveVotes);
+  }
+
   public async ProposeIdea(): Promise<boolean> {
     const title = this.newIdeaTitle.trim();
     if (!title) return false;
@@ -3456,7 +3539,7 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
   }
 
   public override async GetResourceDisplayName(_data: ResourceData): Promise<string> {
-    return this.spaceName ? `${this.spaceName} — Community Hub` : 'MemberJunction Community Hub';
+    return this.spaceName ? `${this.spaceName} — Community` : 'Community';
   }
 
   public override async GetResourceIconClass(_data: ResourceData): Promise<string> {

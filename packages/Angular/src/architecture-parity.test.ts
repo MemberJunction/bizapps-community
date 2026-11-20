@@ -187,13 +187,8 @@ describe('OpenApp Readiness — CommunityHubResource architecture', () => {
   });
 
   it('declares all 4 required Community Hub tabs', () => {
-    for (const label of [
-      'Knowledge Stream',
-      'Q&A Canon Workbench',
-      'Quadratic Ideation Wallet',
-      'Living Co-Authoring & Interactive Mini-Apps',
-    ]) {
-      assert.ok(componentSource.includes(label), `missing tab label "${label}"`);
+    for (const label of ['Feed', 'Q&A', 'Ideas', 'Playbooks']) {
+      assert.ok(componentSource.includes(`label: '${label}'`), `missing tab label "${label}"`);
     }
   });
 

@@ -17,6 +17,7 @@ import {
   type CommunityStreamTypeFilter,
 } from './community-hub-commons.ts';
 import type { CommunityHubDigestCadence, CommunityHubTabKey } from './community-hub-preferences.ts';
+import type { LivingThreadSynthesisView } from './community-hub-wedge.ts';
 import { AskFirstDeflectionWidgetComponent } from './widgets/ask-first-deflection-widget.component.ts';
 
 export interface KnowledgeStreamWalletSummaryItem {
@@ -53,6 +54,7 @@ export class KnowledgeStreamComponent {
   @Input() public allowedForumIDs: string[] = [];
   @Input() public isSynthesizing = false;
   @Input() public threadSynthesisResult: string | null = null;
+  @Input() public structuredThreadSynthesis: LivingThreadSynthesisView | null = null;
   @Input() public actionError: string | null = null;
   @Input() public activeCampaignName = '';
   @Input() public remainingWalletPoints = 0;
@@ -70,12 +72,16 @@ export class KnowledgeStreamComponent {
   @Output() public readonly itemInspected = new EventEmitter<string>();
   @Output() public readonly itemUpvoted = new EventEmitter<string>();
   @Output() public readonly threadSynthesized = new EventEmitter<string>();
+  @Output() public readonly inlineReplySubmitted = new EventEmitter<{ itemId: string; replyBody: string }>();
+  @Output() public readonly itemGraduated = new EventEmitter<string>();
   @Output() public readonly askShareRequested = new EventEmitter<void>();
   @Output() public readonly navigateToTab = new EventEmitter<CommunityHubTabKey>();
   @Output() public readonly sessionRsvpToggled = new EventEmitter<string>();
   @Output() public readonly digestPreviewRequested = new EventEmitter<void>();
 
   public canonLookupQuery = '';
+  private readonly expandedItemIds = new Set<string>();
+  private readonly inlineReplyDrafts = new Map<string, string>();
 
   public get filteredItems(): CommunityCommonsItem[] {
     return FilterCommonsStream(this.items, {
@@ -151,6 +157,42 @@ export class KnowledgeStreamComponent {
 
   public inspectItem(itemId: string): void {
     this.itemInspected.emit(itemId);
+  }
+
+  public isItemExpanded(itemId: string): boolean {
+    return this.expandedItemIds.has(itemId);
+  }
+
+  public toggleItemExpanded(itemId: string): void {
+    if (this.expandedItemIds.has(itemId)) {
+      this.expandedItemIds.delete(itemId);
+    } else {
+      this.expandedItemIds.add(itemId);
+    }
+  }
+
+  public expandAndSynthesize(item: CommunityCommonsItem): void {
+    this.expandedItemIds.add(item.id);
+    this.threadSynthesized.emit(item.sourcePostId);
+  }
+
+  public getInlineReplyDraft(itemId: string): string {
+    return this.inlineReplyDrafts.get(itemId) ?? '';
+  }
+
+  public setInlineReplyDraft(itemId: string, value: string): void {
+    this.inlineReplyDrafts.set(itemId, value);
+  }
+
+  public submitInlineReply(itemId: string): void {
+    const replyBody = (this.inlineReplyDrafts.get(itemId) ?? '').trim();
+    if (!replyBody) return;
+    this.inlineReplyDrafts.set(itemId, '');
+    this.inlineReplySubmitted.emit({ itemId, replyBody });
+  }
+
+  public graduateItem(itemId: string): void {
+    this.itemGraduated.emit(itemId);
   }
 
   public upvoteItem(event: Event, itemId: string): void {

@@ -359,11 +359,11 @@ export const COMMUNITY_TOPIC_TAGS: ReadonlyArray<string> = [
 ];
 
 export const STREAM_TYPE_FILTER_OPTIONS: ReadonlyArray<CommunityStreamTypeOption> = [
-  { key: 'all', label: 'All Activity', icon: 'fa-solid fa-layer-group' },
+  { key: 'all', label: 'All', icon: 'fa-solid fa-layer-group' },
   { key: 'post', label: 'Posts', icon: 'fa-solid fa-comments' },
-  { key: 'verified-qa', label: 'Verified Q&A', icon: 'fa-solid fa-check-double' },
-  { key: 'ideation', label: 'Ideation', icon: 'fa-solid fa-lightbulb' },
-  { key: 'living-guide', label: 'Living Guides', icon: 'fa-solid fa-book-open' },
+  { key: 'verified-qa', label: 'Q&A', icon: 'fa-solid fa-circle-question' },
+  { key: 'ideation', label: 'Ideas', icon: 'fa-solid fa-lightbulb' },
+  { key: 'living-guide', label: 'Playbooks', icon: 'fa-solid fa-book-open' },
 ];
 
 export const SEEDED_COMMUNITY_SESSIONS: ReadonlyArray<CommunitySessionItem> = [
