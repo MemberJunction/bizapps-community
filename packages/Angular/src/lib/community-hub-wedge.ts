@@ -1,6 +1,14 @@
+import { Metadata, RunView, type UserInfo } from '@memberjunction/core';
+import { GetGlobalObjectStore, IsValidUUID } from '@memberjunction/global';
 import {
+  COMMUNITY_ACTION_DRIVER_CLASSES,
+  COMMUNITY_ACTION_IDS,
   CommunityEmbeddingPersonalizationService,
   CosineSimilarity,
+  EscapeSqlLiteral,
+  ResolveCommunityActionID,
+  type ActionCatalogEntryLike,
+  type CommunityActionKey,
   type CommunityMemberInteraction,
   type EpistemicAnswerStatus,
   type PersonalizationCandidatePost,
@@ -71,9 +79,26 @@ export interface SendDigestSummaryView {
   message: string;
 }
 
-interface ActionParamLike {
+export type ActionParamValue = string | number | boolean | null | object | undefined;
+
+export interface ActionParamLike {
   Name: string;
-  Value?: string | number | boolean | null | object;
+  Value?: ActionParamValue;
+  Type?: string;
+}
+
+export interface GraphQLActionResultLike {
+  Success?: boolean;
+  ResultCode?: string | null;
+  Message?: string | null;
+  Result?: ActionParamLike[] | Record<string, ActionParamLike | ActionParamValue> | string | object | null;
+  Params?: ActionParamLike[];
+}
+
+interface ActionEngineSingletonLike {
+  Loaded?: boolean;
+  Actions?: ReadonlyArray<ActionCatalogEntryLike>;
+  Config?: (forceRefresh?: boolean, contextUser?: UserInfo) => Promise<boolean>;
 }
 
 interface DeliveryJsonRow {
@@ -83,6 +108,187 @@ interface DeliveryJsonRow {
   replyToAddress?: string | null;
   providerName?: string;
   success?: boolean;
+}
+
+const ACTION_ENGINE_GLOBAL_KEY = '___SINGLETON__ActionEngineBase';
+const resolvedActionIdCache = new Map<CommunityActionKey, string>();
+
+/** Clears the cached runtime action ID map (for isolated unit tests). */
+export function ClearResolvedActionIdCache(): void {
+  resolvedActionIdCache.clear();
+}
+
+function getActionEngineSingleton(): ActionEngineSingletonLike | null {
+  const store = GetGlobalObjectStore();
+  if (!store) return null;
+  const candidate = store[ACTION_ENGINE_GLOBAL_KEY];
+  if (candidate && typeof candidate === 'object') {
+    return candidate as ActionEngineSingletonLike;
+  }
+  return null;
+}
+
+/**
+ * Synchronously resolves a Community action's UUID from `ActionEngineBase.Instance.Actions`
+ * (or explicit `actions` override) by `DriverClass` / `Name`, falling back to the canonical
+ * UUID in {@link COMMUNITY_ACTION_IDS}. Never returns a non-UUID driver class string.
+ */
+export function ResolveCommunityActionRuntimeID(
+  key: CommunityActionKey,
+  actions?: ReadonlyArray<ActionCatalogEntryLike> | null,
+): string {
+  if (actions && actions.length > 0) {
+    return ResolveCommunityActionID(key, actions);
+  }
+  const engine = getActionEngineSingleton();
+  if (engine?.Actions && engine.Actions.length > 0) {
+    return ResolveCommunityActionID(key, engine.Actions);
+  }
+  return COMMUNITY_ACTION_IDS[key];
+}
+
+/**
+ * Resolves a Community action's UUID asynchronously: checks `ActionEngineBase.Instance.Actions`
+ * (configuring it if available), then optionally queries `MJ: Actions` by `DriverClass` when a
+ * live provider is active, falling back deterministically to {@link COMMUNITY_ACTION_IDS}.
+ */
+export async function ResolveCommunityActionIDWithRunView(
+  key: CommunityActionKey,
+  options?: {
+    actions?: ReadonlyArray<ActionCatalogEntryLike> | null;
+    user?: UserInfo | null;
+    runView?: {
+      RunView: (params: {
+        EntityName: string;
+        ExtraFilter?: string;
+        Fields?: string[];
+        ResultType?: string;
+        MaxRows?: number;
+      }, user?: UserInfo) => Promise<{ Success: boolean; Results?: ActionCatalogEntryLike[] }>;
+    } | null;
+  },
+): Promise<string> {
+  if (options?.actions && options.actions.length > 0) {
+    return ResolveCommunityActionID(key, options.actions);
+  }
+
+  const engine = getActionEngineSingleton();
+  if (engine) {
+    if (!engine.Loaded && typeof engine.Config === 'function') {
+      try {
+        await engine.Config(false, options?.user ?? Metadata.Provider?.CurrentUser);
+      } catch {
+        // Fall through to RunView / canonical constant fallback.
+      }
+    }
+    if (engine.Actions && engine.Actions.length > 0) {
+      const fromEngine = ResolveCommunityActionID(key, engine.Actions);
+      resolvedActionIdCache.set(key, fromEngine);
+      return fromEngine;
+    }
+  }
+
+  const cached = resolvedActionIdCache.get(key);
+  if (cached && IsValidUUID(cached)) {
+    return cached;
+  }
+
+  const activeUser = options?.user ?? Metadata.Provider?.CurrentUser;
+  const rv = options?.runView ?? (Metadata.Provider && activeUser ? new RunView() : null);
+  if (rv && activeUser) {
+    try {
+      const driverClass = EscapeSqlLiteral(COMMUNITY_ACTION_DRIVER_CLASSES[key]);
+      const res = await rv.RunView(
+        {
+          EntityName: 'MJ: Actions',
+          ExtraFilter: `DriverClass = '${driverClass}' AND Status = 'Active'`,
+          Fields: ['ID', 'DriverClass', 'Name', 'Status'],
+          ResultType: 'simple',
+          MaxRows: 1,
+        },
+        activeUser,
+      );
+      if (res?.Success && res.Results && res.Results.length > 0) {
+        const resolved = ResolveCommunityActionID(key, res.Results);
+        resolvedActionIdCache.set(key, resolved);
+        return resolved;
+      }
+    } catch {
+      // Fall back to deterministic canonical UUID constant.
+    }
+  }
+
+  return COMMUNITY_ACTION_IDS[key];
+}
+
+function isActionParamObject(entry: object): entry is ActionParamLike {
+  return 'Name' in entry && typeof (entry as { Name?: ActionParamValue }).Name === 'string';
+}
+
+/**
+ * Extracts normalized output parameters from a `GraphQLActionClient.RunAction` result (which stores
+ * parsed `ResultData` on `res.Result` and echoes input params on `res.Params`) as well as direct
+ * server/test `ActionResultSimple` payloads where output params live on `res.Params`.
+ */
+export function ExtractActionOutputParams(result: GraphQLActionResultLike | null | undefined): ActionParamLike[] {
+  if (!result) return [];
+  const collected: ActionParamLike[] = [];
+  const seenNames = new Set<string>();
+
+  const pushEntry = (name: string, value: ActionParamValue, type?: string): void => {
+    const trimmed = name.trim();
+    if (!trimmed) return;
+    if (type && type.trim().toLowerCase() === 'input') return;
+    const key = trimmed.toLowerCase();
+    if (seenNames.has(key)) return;
+    seenNames.add(key);
+    collected.push({ Name: trimmed, Value: value ?? null, Type: type });
+  };
+
+  let rawResult = result.Result;
+  if (typeof rawResult === 'string' && rawResult.trim()) {
+    try {
+      rawResult = JSON.parse(rawResult) as GraphQLActionResultLike['Result'];
+    } catch {
+      rawResult = null;
+    }
+  }
+
+  if (Array.isArray(rawResult)) {
+    for (const item of rawResult) {
+      if (item && typeof item === 'object' && isActionParamObject(item)) {
+        pushEntry(item.Name, item.Value, item.Type);
+      }
+    }
+  } else if (rawResult && typeof rawResult === 'object') {
+    for (const [k, v] of Object.entries(rawResult)) {
+      if (v && typeof v === 'object' && !Array.isArray(v) && isActionParamObject(v)) {
+        pushEntry(v.Name, v.Value, v.Type);
+      } else {
+        pushEntry(k, v as ActionParamValue);
+      }
+    }
+  }
+
+  if (Array.isArray(result.Params)) {
+    for (const param of result.Params) {
+      if (param && typeof param.Name === 'string') {
+        pushEntry(param.Name, param.Value, param.Type);
+      }
+    }
+  }
+
+  return collected;
+}
+
+/** Case-insensitive lookup for an output parameter value across `res.Result` and `res.Params`. */
+export function GetActionOutputValue(
+  result: GraphQLActionResultLike | null | undefined,
+  paramName: string,
+): ActionParamValue | undefined {
+  const outputs = ExtractActionOutputParams(result);
+  const target = paramName.trim().toLowerCase();
+  return outputs.find((p) => p.Name.toLowerCase() === target)?.Value;
 }
 
 function mapEpistemicStatus(raw: string | null | undefined): EpistemicAnswerStatus | null {
@@ -198,7 +404,10 @@ export async function BuildPersonalizedDigestPreview(params: {
     const source = itemBySourcePostId.get(entry.post.postId);
     const rawPct = entry.isColdStartFallback
       ? Math.round(Math.min(0.95, Math.max(0.45, entry.score)) * 100)
-      : Math.round(Math.min(0.99, Math.max(0.35, entry.semanticSimilarity > 0 ? entry.semanticSimilarity : entry.score)) * 100);
+      : Math.round(
+          Math.min(0.99, Math.max(0.35, entry.semanticSimilarity > 0 ? entry.semanticSimilarity : entry.score)) *
+            100,
+        );
 
     return {
       postId: entry.post.postId,
@@ -315,7 +524,7 @@ export async function ComputeLiveAskFirstMatches(params: {
   return scored.slice(0, maxMatches).map((s) => s.match);
 }
 
-function parseJsonStringArray(raw: string | number | boolean | null | object | undefined): string[] {
+function parseJsonStringArray(raw: ActionParamValue | undefined): string[] {
   if (Array.isArray(raw)) {
     return raw.filter((item): item is string => typeof item === 'string' && item.trim().length > 0);
   }
@@ -330,32 +539,41 @@ function parseJsonStringArray(raw: string | number | boolean | null | object | u
   }
 }
 
-function parseCitationsArray(
-  raw: string | number | boolean | null | object | undefined,
-): LivingThreadSynthesisCitation[] {
-  if (typeof raw !== 'string' || !raw.trim()) return [];
-  try {
-    const parsed = JSON.parse(raw) as Array<{
-      citationIndex?: number;
-      authorDisplayName?: string;
-      postId?: string | null;
-      roleLabel?: string;
-    }>;
-    if (!Array.isArray(parsed)) return [];
-    return parsed.map((entry, idx) => ({
-      citationIndex: typeof entry.citationIndex === 'number' ? entry.citationIndex : idx + 1,
-      authorDisplayName: entry.authorDisplayName?.trim() || 'Community Member',
-      postId: entry.postId ?? null,
-      roleLabel: entry.roleLabel?.trim() || 'Contributor',
-    }));
-  } catch {
+function parseCitationsArray(raw: ActionParamValue | undefined): LivingThreadSynthesisCitation[] {
+  let list: Array<{
+    citationIndex?: number;
+    authorDisplayName?: string;
+    postId?: string | null;
+    roleLabel?: string;
+  }> = [];
+
+  if (Array.isArray(raw)) {
+    list = raw;
+  } else if (typeof raw === 'string' && raw.trim()) {
+    try {
+      const parsed = JSON.parse(raw) as typeof list;
+      if (Array.isArray(parsed)) {
+        list = parsed;
+      }
+    } catch {
+      return [];
+    }
+  } else {
     return [];
   }
+
+  return list.map((entry, idx) => ({
+    citationIndex: typeof entry.citationIndex === 'number' ? entry.citationIndex : idx + 1,
+    authorDisplayName: entry.authorDisplayName?.trim() || 'Community Member',
+    postId: entry.postId ?? null,
+    roleLabel: entry.roleLabel?.trim() || 'Contributor',
+  }));
 }
 
 /**
- * Builds structured Living Thread Synthesis details from action output parameters, falling back
- * cleanly to client-side reply attribution when optional parameters are omitted.
+ * Decodes structured Living Thread Synthesis details from `GraphQLActionClient` (`Result` /
+ * `ResultData`) and `Params` output parameters. Fails closed (returns `null`) on `Success: false`
+ * or when `allowClientFallback === false` and no server synthesis payload was returned.
  */
 export function ParseLivingSynthesisPayload(params: {
   rootPostId: string;
@@ -364,16 +582,34 @@ export function ParseLivingSynthesisPayload(params: {
   replies: ReadonlyArray<CommunityCommonsReply>;
   actionMessage?: string | null;
   actionParams?: ReadonlyArray<ActionParamLike>;
-}): LivingThreadSynthesisView {
-  const getParam = (name: string): string | number | boolean | null | object | undefined =>
-    params.actionParams?.find((p) => p.Name.toLowerCase() === name.toLowerCase())?.Value;
+  actionResult?: GraphQLActionResultLike | null;
+  allowClientFallback?: boolean;
+}): LivingThreadSynthesisView | null {
+  if (params.actionResult && params.actionResult.Success !== true) {
+    return null;
+  }
 
-  const execRaw = getParam('AIExecutiveSummary');
-  const takeaways = parseJsonStringArray(getParam('KeyTakeaways'));
-  const openQuestions = parseJsonStringArray(getParam('OpenQuestions'));
-  const citations = parseCitationsArray(getParam('ContributorCitations'));
-  const countRaw = getParam('ConsideredReplyCount');
-  const atRaw = getParam('AISynthesizedAt');
+  const effectiveResult: GraphQLActionResultLike = params.actionResult ?? {
+    Success: true,
+    Message: params.actionMessage,
+    Params: params.actionParams ? [...params.actionParams] : [],
+  };
+
+  const execRaw = GetActionOutputValue(effectiveResult, 'AIExecutiveSummary');
+  const takeaways = parseJsonStringArray(GetActionOutputValue(effectiveResult, 'KeyTakeaways'));
+  const openQuestions = parseJsonStringArray(GetActionOutputValue(effectiveResult, 'OpenQuestions'));
+  const citations = parseCitationsArray(GetActionOutputValue(effectiveResult, 'ContributorCitations'));
+  const countRaw = GetActionOutputValue(effectiveResult, 'ConsideredReplyCount');
+  const atRaw = GetActionOutputValue(effectiveResult, 'AISynthesizedAt');
+
+  const parsedCount =
+    typeof countRaw === 'number' && Number.isFinite(countRaw)
+      ? countRaw
+      : typeof countRaw === 'string' && countRaw.trim() && Number.isFinite(Number(countRaw))
+        ? Number(countRaw)
+        : params.replies.length;
+
+  const effectiveMessage = params.actionResult?.Message ?? params.actionMessage;
 
   if (takeaways.length > 0 || citations.length > 0 || typeof execRaw === 'string') {
     return {
@@ -381,23 +617,23 @@ export function ParseLivingSynthesisPayload(params: {
       executiveSummary:
         typeof execRaw === 'string' && execRaw.trim()
           ? execRaw.trim()
-          : params.actionMessage?.trim() || `Living synthesis for "${params.title}".`,
-      consideredReplyCount:
-        typeof countRaw === 'number' && Number.isFinite(countRaw) ? countRaw : params.replies.length,
-      keyTakeaways:
-        takeaways.length > 0
-          ? takeaways
-          : [params.bodyMarkdown.slice(0, 140) + (params.bodyMarkdown.length > 140 ? '…' : '')],
+          : effectiveMessage?.trim() || `Living synthesis for "${params.title}".`,
+      consideredReplyCount: parsedCount,
+      keyTakeaways: takeaways,
       openQuestions,
       contributorCitations: citations,
       synthesizedAtIso: typeof atRaw === 'string' && atRaw.trim() ? atRaw : null,
     };
   }
 
+  if (params.allowClientFallback === false) {
+    return null;
+  }
+
   return BuildClientLivingSynthesis(params);
 }
 
-/** Deterministic client-side Living Thread Synthesis fallback for offline/demo threads. */
+/** Deterministic client-side Living Thread Synthesis fallback for offline/demo threads ONLY. */
 export function BuildClientLivingSynthesis(params: {
   rootPostId: string;
   title: string;
@@ -448,20 +684,41 @@ export function BuildClientLivingSynthesis(params: {
   };
 }
 
-/** Parses `Community.SendPersonalizedDigest` action output into a clean UI summary. */
+/**
+ * Parses `Community.SendPersonalizedDigest` outputs from BOTH `res.Result` (`GraphQLActionClient`
+ * parsed `ResultData`) and `res.Params`, never fabricating default delivery counts on failure or
+ * missing output parameters.
+ */
 export function ParseSendDigestActionResult(params: {
   success: boolean;
   message?: string | null;
   actionParams?: ReadonlyArray<ActionParamLike>;
+  actionResult?: GraphQLActionResultLike | null;
 }): SendDigestSummaryView {
-  const getParam = (name: string): string | number | boolean | null | object | undefined =>
-    params.actionParams?.find((p) => p.Name.toLowerCase() === name.toLowerCase())?.Value;
+  const isSuccess = params.actionResult ? params.actionResult.Success === true : params.success === true;
+  const effectiveResult: GraphQLActionResultLike = params.actionResult ?? {
+    Success: isSuccess,
+    Message: params.message,
+    Params: params.actionParams ? [...params.actionParams] : [],
+  };
+  const effectiveMessage = params.actionResult?.Message ?? params.message;
 
-  const sentRaw = getParam('SentCount');
-  const failedRaw = getParam('FailedCount');
-  const providerRaw = getParam('ProviderName');
-  const dryRunRaw = getParam('DryRun');
-  const deliveriesRaw = getParam('DeliveriesJSON');
+  if (!isSuccess) {
+    return {
+      sentCount: 0,
+      failedCount: 0,
+      providerName: '',
+      dryRun: false,
+      topReplyToAddress: null,
+      message: effectiveMessage?.trim() || 'Personalized digest dispatch failed.',
+    };
+  }
+
+  const sentRaw = GetActionOutputValue(effectiveResult, 'SentCount');
+  const failedRaw = GetActionOutputValue(effectiveResult, 'FailedCount');
+  const providerRaw = GetActionOutputValue(effectiveResult, 'ProviderName');
+  const dryRunRaw = GetActionOutputValue(effectiveResult, 'DryRun');
+  const deliveriesRaw = GetActionOutputValue(effectiveResult, 'DeliveriesJSON');
 
   let topReplyToAddress: string | null = null;
   if (typeof deliveriesRaw === 'string' && deliveriesRaw.trim()) {
@@ -473,17 +730,31 @@ export function ParseSendDigestActionResult(params: {
     } catch {
       topReplyToAddress = null;
     }
+  } else if (Array.isArray(deliveriesRaw)) {
+    const list = deliveriesRaw as DeliveryJsonRow[];
+    topReplyToAddress = list.find((d) => typeof d.replyToAddress === 'string')?.replyToAddress ?? null;
   }
 
+  const sentCount =
+    typeof sentRaw === 'number' && Number.isFinite(sentRaw)
+      ? sentRaw
+      : typeof sentRaw === 'string' && sentRaw.trim() && Number.isFinite(Number(sentRaw))
+        ? Number(sentRaw)
+        : 0;
+
+  const failedCount =
+    typeof failedRaw === 'number' && Number.isFinite(failedRaw)
+      ? failedRaw
+      : typeof failedRaw === 'string' && failedRaw.trim() && Number.isFinite(Number(failedRaw))
+        ? Number(failedRaw)
+        : 0;
+
   return {
-    sentCount: typeof sentRaw === 'number' ? sentRaw : Number(sentRaw ?? (params.success ? 1 : 0)) || 0,
-    failedCount: typeof failedRaw === 'number' ? failedRaw : Number(failedRaw ?? 0) || 0,
-    providerName:
-      typeof providerRaw === 'string' && providerRaw.trim()
-        ? providerRaw.trim()
-        : 'Community Test Email Driver',
+    sentCount,
+    failedCount,
+    providerName: typeof providerRaw === 'string' && providerRaw.trim() ? providerRaw.trim() : '',
     dryRun: dryRunRaw === true || dryRunRaw === 'true',
     topReplyToAddress,
-    message: params.message?.trim() || 'Personalized test digest dispatched.',
+    message: effectiveMessage?.trim() || 'Personalized digest dispatched.',
   };
 }

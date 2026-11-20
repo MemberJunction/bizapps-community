@@ -181,6 +181,51 @@
             </button>
           </div>
         }
+        @if (activeSection === 'spaces' && embeddedCollaborationMode && activeGraduatedSpaceId) {
+          <section
+            id="mjc-graduated-working-space-view"
+            class="mjc-working-space-shell"
+            [attr.data-space-id]="activeGraduatedSpaceId"
+            aria-label="Graduated Collaboration Working Space"
+          >
+            <div class="mjc-working-space-shell__header">
+              <div class="mjc-working-space-shell__title-group">
+                <button
+                  type="button"
+                  id="mjc-working-space-back-btn"
+                  class="mjc-community-hub__btn"
+                  (click)="closeGraduatedWorkingSpace()"
+                >
+                  ← Return to Community Hub
+                </button>
+                <div>
+                  <span class="mjc-community-hub__badge">Collaboration Working Space</span>
+                  <h2 id="mjc-working-space-title" class="mjc-working-space-shell__title">
+                    {{ graduatedSpaceRecord?.Name || 'Working Group Collaboration Space' }}
+                  </h2>
+                  <p class="mjc-working-space-shell__meta">
+                    Space ID: <code>{{ activeGraduatedSpaceId }}</code>
+                  </p>
+                </div>
+              </div>
+              <div class="mjc-community-hub__btn-row">
+                <button
+                  type="button"
+                  id="mjc-working-space-open-record-btn"
+                  class="mjc-community-hub__btn mjc-community-hub__btn--primary"
+                  (click)="openCollaborationSpaceRecord(activeGraduatedSpaceId)"
+                >
+                  Open Collaboration Space Record →
+                </button>
+              </div>
+            </div>
+            @if (isLoadingGraduatedSpace) {
+              <p class="mjc-community-hub__hint">Loading Collaboration Working Space details…</p>
+            } @else if (graduatedSpaceRecord?.Description) {
+              <p class="mjc-working-space-shell__desc">{{ graduatedSpaceRecord?.Description }}</p>
+            }
+          </section>
+        }
         @switch (activeTabKey) {
           @case ('knowledge-stream') {
             <section

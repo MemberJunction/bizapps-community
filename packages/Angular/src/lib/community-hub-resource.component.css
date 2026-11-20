@@ -1403,3 +1403,51 @@
   padding-top: var(--mj-space-2);
   border-top: 1px solid var(--mj-border-subtle, var(--mj-border-default));
 }
+
+/* ─── GRADUATED COLLABORATION WORKING SPACE VIEW (CR-08) ──────────────────── */
+
+.mjc-working-space-shell {
+  display: flex;
+  flex-direction: column;
+  gap: var(--mj-space-3);
+  margin: var(--mj-space-4) var(--mj-space-5) 0;
+  padding: var(--mj-space-4);
+  border: 1px solid color-mix(in srgb, var(--mj-brand-primary) 35%, var(--mj-border-default));
+  border-radius: var(--mj-radius-md);
+  background: var(--mj-bg-surface);
+}
+
+.mjc-working-space-shell__header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--mj-space-3);
+}
+
+.mjc-working-space-shell__title-group {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--mj-space-3);
+}
+
+.mjc-working-space-shell__title {
+  margin: var(--mj-space-1) 0 0 0;
+  font-size: var(--mj-text-lg, 1.125rem);
+  font-weight: var(--mj-font-semibold);
+  color: var(--mj-text-primary);
+}
+
+.mjc-working-space-shell__meta {
+  margin: var(--mj-space-1) 0 0 0;
+  font-size: var(--mj-text-xs);
+  color: var(--mj-text-secondary);
+}
+
+.mjc-working-space-shell__desc {
+  margin: 0;
+  font-size: var(--mj-text-sm, 0.875rem);
+  color: var(--mj-text-secondary);
+  line-height: 1.5;
+}

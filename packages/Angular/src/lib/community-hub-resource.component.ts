@@ -36,7 +36,6 @@ import {
 import {
   AssertValidUUID,
   AssertValidUUIDList,
-  COMMUNITY_ACTION_DRIVER_CLASSES,
   COMMUNITY_ACTION_IDS,
   type IdeationAllocationMode,
 } from '@mj-biz-apps/community-core';
@@ -49,8 +48,10 @@ import {
   BuildClientLivingSynthesis,
   BuildPersonalizedDigestPreview,
   ComputeLiveAskFirstMatches,
+  GetActionOutputValue,
   ParseLivingSynthesisPayload,
   ParseSendDigestActionResult,
+  ResolveCommunityActionIDWithRunView,
   type AskFirstLiveMatch,
   type LivingThreadSynthesisView,
   type PersonalizedDigestPreviewItem,
@@ -414,11 +415,17 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
   @Input() public EmbeddedMode = false;
   @Input() public ShowTabBar = true;
   @Output() public readonly embeddedTabRequested = new EventEmitter<CommunityHubTabKey>();
+  @Output() public readonly graduatedSpaceOpened = new EventEmitter<{ spaceId: string }>();
 
   public readonly tabs = COMMUNITY_HUB_TABS;
   public readonly spaceDirectory = COMMUNITY_SPACES_DIRECTORY.filter((s) => s.id !== 'all');
   public activeTabKey: CommunityHubTabKey = COMMUNITY_HUB_TABS[0].key;
   public focusedTabKey: CommunityHubTabKey = COMMUNITY_HUB_TABS[0].key;
+  public activeSection: 'hub' | 'spaces' = 'hub';
+  public embeddedCollaborationMode = false;
+  public activeGraduatedSpaceId: string | null = null;
+  public graduatedSpaceRecord: { ID: string; Name: string; Description: string | null } | null = null;
+  public isLoadingGraduatedSpace = false;
 
   public spaceName = 'MemberJunction Community';
   public isOfflineDemoMode = false;
@@ -1601,8 +1608,8 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
         return;
       }
 
-      const pdfBase64Param = result.Params?.find((p) => p.Name === 'PDFBase64');
-      const pdfBase64 = typeof pdfBase64Param?.Value === 'string' ? pdfBase64Param.Value : null;
+      const rawPdf = GetActionOutputValue(result, 'PDFBase64');
+      const pdfBase64 = typeof rawPdf === 'string' ? rawPdf : null;
       if (pdfBase64) {
         this.downloadPdfBytes(pdfBase64, `${effectiveSpaceName}-community-digest.pdf`);
       } else {
@@ -1764,20 +1771,19 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
         actionParams.push({ Name: 'SpaceID', Value: AssertValidUUID(this.ScopeSpaceId, 'ScopeSpaceId'), Type: 'Input' });
       }
 
-      const result = await actionClient.RunAction(
-        COMMUNITY_ACTION_DRIVER_CLASSES.SendPersonalizedDigest,
-        actionParams,
-      );
+      const actionId = await ResolveCommunityActionIDWithRunView('SendPersonalizedDigest');
+      const result = await actionClient.RunAction(actionId, actionParams);
 
-      if (!result.Success) {
-        this.sendTestDigestError = result.Message ?? 'Failed to dispatch test digest.';
+      if (result?.Success !== true) {
+        this.sendTestDigestResult = null;
+        this.sendTestDigestError = result?.Message ?? 'Failed to dispatch test digest.';
         return;
       }
 
       this.sendTestDigestResult = ParseSendDigestActionResult({
-        success: result.Success,
+        success: true,
         message: result.Message,
-        actionParams: result.Params,
+        actionResult: result,
       });
     } catch (err) {
       this.sendTestDigestError = err instanceof Error ? err.message : 'Failed to dispatch test digest.';
@@ -1945,8 +1951,107 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
 
   public openGraduatedSpace(event: Event, promotedSpaceId: string): void {
     event.preventDefault();
-    this.setSpaceFilter(promotedSpaceId);
+    const spaceId = promotedSpaceId?.trim();
+    if (!spaceId) return;
+
+    this.activeSection = 'spaces';
+    this.embeddedCollaborationMode = true;
+    this.activeGraduatedSpaceId = spaceId;
+    this.activeSpaceFilter = spaceId;
+    this.graduatedSpaceRecord = null;
     this.closeDetailSheet();
+    this.graduatedSpaceOpened.emit({ spaceId });
+    this.notifyHostNavigationForWorkingSpace(spaceId);
+    void this.loadGraduatedWorkingSpace(spaceId);
+    this.cdr.markForCheck();
+  }
+
+  public closeGraduatedWorkingSpace(): void {
+    this.activeSection = 'hub';
+    this.embeddedCollaborationMode = false;
+    this.activeGraduatedSpaceId = null;
+    this.cdr.markForCheck();
+  }
+
+  public openCollaborationSpaceRecord(spaceId: string): void {
+    const trimmed = spaceId?.trim();
+    if (!trimmed) return;
+    try {
+      this.navigationService?.OpenEntityRecord?.('MJ_BizApps_Collaboration: Spaces', CompositeKey.FromID(trimmed));
+    } catch {
+      // Ignore when running outside full MJ Explorer shell.
+    }
+  }
+
+  private notifyHostNavigationForWorkingSpace(spaceId: string): void {
+    try {
+      this.navigationService?.SetAgentContext?.(this, {
+        activeSection: 'spaces',
+        embeddedCollaborationMode: true,
+        activeSpaceId: spaceId,
+      });
+      if (typeof this.navigationService?.SwitchToApp === 'function') {
+        void this.navigationService
+          .SwitchToApp('94F5906B-38AB-4A9F-BFCA-3D395BBBC198', 'Spaces', {
+            view: 'space',
+            space: spaceId,
+            tab: 'overview',
+          })
+          .catch(() => undefined);
+      }
+    } catch {
+      // Standalone / embedded harness continues with embedded Collaboration Working Space view.
+    }
+  }
+
+  private async loadGraduatedWorkingSpace(spaceId: string): Promise<void> {
+    const provider = Metadata.Provider;
+    const user = provider?.CurrentUser;
+    if (!provider || !user) {
+      this.graduatedSpaceRecord = {
+        ID: spaceId,
+        Name: this.spaceNameById.get(spaceId.toLowerCase()) ?? 'Working Group Collaboration Space',
+        Description: 'Graduated Working Group workspace active for collaborative execution.',
+      };
+      this.cdr.markForCheck();
+      return;
+    }
+
+    this.isLoadingGraduatedSpace = true;
+    this.cdr.markForCheck();
+    try {
+      const safeId = AssertValidUUID(spaceId, 'graduatedSpaceId');
+      const res = await new RunView().RunView<{ ID: string; Name: string; Description: string | null }>(
+        {
+          EntityName: 'MJ_BizApps_Collaboration: Spaces',
+          ExtraFilter: `ID = '${safeId}'`,
+          Fields: ['ID', 'Name', 'Description'],
+          ResultType: 'simple',
+          MaxRows: 1,
+        },
+        user,
+      );
+      if (this.activeGraduatedSpaceId !== spaceId) return;
+      const row = res?.Success ? res.Results?.[0] : null;
+      this.graduatedSpaceRecord = row ?? {
+        ID: spaceId,
+        Name: this.spaceNameById.get(spaceId.toLowerCase()) ?? 'Working Group Collaboration Space',
+        Description: 'Graduated Working Group Collaboration Space.',
+      };
+    } catch {
+      if (this.activeGraduatedSpaceId === spaceId) {
+        this.graduatedSpaceRecord = {
+          ID: spaceId,
+          Name: this.spaceNameById.get(spaceId.toLowerCase()) ?? 'Working Group Collaboration Space',
+          Description: 'Graduated Working Group Collaboration Space.',
+        };
+      }
+    } finally {
+      if (this.activeGraduatedSpaceId === spaceId) {
+        this.isLoadingGraduatedSpace = false;
+        this.cdr.markForCheck();
+      }
+    }
   }
 
   public async submitDetailReply(): Promise<void> {
@@ -2422,6 +2527,9 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
     if (this.isSynthesizingFeed) return;
     this.isSynthesizingFeed = true;
     this.threadSynthesisResult = null;
+    this.structuredThreadSynthesis = null;
+    this.detailErrorMessage = null;
+    this.streamActionError = null;
     this.cdr.markForCheck();
 
     const post = this.feedPosts.find((p) => p.id === postId);
@@ -2434,17 +2542,26 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
       const provider = Metadata.Provider;
       if (provider?.CurrentUser) {
         const actionClient = new GraphQLActionClient(provider as GraphQLDataProvider);
-        const res = await actionClient.RunAction(COMMUNITY_ACTION_IDS.LivingThreadSynthesis, [
+        const actionId = await ResolveCommunityActionIDWithRunView('LivingThreadSynthesis');
+        const res = await actionClient.RunAction(actionId, [
           { Name: 'RootPostID', Value: postId, Type: 'Input' },
         ]);
+        if (res?.Success !== true) {
+          const errMsg = res?.Message || 'Living thread synthesis failed.';
+          this.detailErrorMessage = errMsg;
+          this.streamActionError = errMsg;
+          this.threadSynthesisResult = null;
+          this.structuredThreadSynthesis = null;
+          return;
+        }
         this.threadSynthesisResult = res.Message || `Living synthesis updated for "${title}".`;
         this.structuredThreadSynthesis = ParseLivingSynthesisPayload({
           rootPostId: postId,
           title,
           bodyMarkdown,
           replies,
-          actionMessage: res.Message,
-          actionParams: res.Params,
+          actionResult: res,
+          allowClientFallback: false,
         });
       } else {
         this.threadSynthesisResult = `Synthesized key takeaways for "${title}".`;
@@ -2457,7 +2574,11 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
         });
       }
     } catch (err) {
-      this.threadSynthesisResult = err instanceof Error ? err.message : 'Synthesis failed.';
+      const errMsg = err instanceof Error ? err.message : 'Synthesis failed.';
+      this.detailErrorMessage = errMsg;
+      this.streamActionError = errMsg;
+      this.threadSynthesisResult = null;
+      this.structuredThreadSynthesis = null;
     } finally {
       this.isSynthesizingFeed = false;
       this.cdr.markForCheck();
@@ -2709,8 +2830,8 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
           this.cdr.markForCheck();
           return;
         }
-        const statusParam = res.Params?.find((p) => p.Name === 'EpistemicStatus')?.Value;
-        const scoreParam = res.Params?.find((p) => p.Name === 'ConfidenceScore')?.Value;
+        const statusParam = GetActionOutputValue(res, 'EpistemicStatus');
+        const scoreParam = GetActionOutputValue(res, 'ConfidenceScore');
         if (typeof statusParam === 'string' && statusParam.trim()) {
           const parsedStatus = this.normalizeEpistemicStatus(statusParam);
           if (parsedStatus) {
