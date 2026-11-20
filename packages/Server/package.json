@@ -25,13 +25,13 @@
     "class-validator": "^0.14.3"
   },
   "peerDependencies": {
-    "@memberjunction/core": "6.3.0-edge.0",
-    "@memberjunction/core-entities": "6.3.0-edge.0",
-    "@memberjunction/global": "6.3.0-edge.0",
-    "@memberjunction/server": "6.3.0-edge.0",
-    "@mj-biz-apps/collaboration-core": "^0.1.0",
-    "@mj-biz-apps/collaboration-core-entities-server": "^0.1.0",
-    "@mj-biz-apps/collaboration-entities": "^0.1.0",
+    "@memberjunction/core": "^6.3.0-edge.0",
+    "@memberjunction/core-entities": "^6.3.0-edge.0",
+    "@memberjunction/global": "^6.3.0-edge.0",
+    "@memberjunction/server": "^6.3.0-edge.0",
+    "@mj-biz-apps/collaboration-core": ">=0.1.0 <1.0.0",
+    "@mj-biz-apps/collaboration-core-entities-server": ">=0.1.0 <1.0.0",
+    "@mj-biz-apps/collaboration-entities": ">=0.1.0 <1.0.0",
     "@mj-biz-apps/common-entities": ">=5.59.0 <6.0.0",
     "@mj-biz-apps/forms-entities": ">=0.16.0 <1.0.0",
     "@mj-biz-apps/tasks-entities": ">=1.5.0 <2.0.0"
@@ -40,6 +40,7 @@
     "@memberjunction/core": "6.3.0-edge.0",
     "@memberjunction/core-entities": "6.3.0-edge.0",
     "@memberjunction/global": "6.3.0-edge.0",
+    "@memberjunction/server": "6.3.0-edge.0",
     "@types/node": "24.10.11",
     "typescript": "5.9.3"
   },

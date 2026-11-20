@@ -13,7 +13,8 @@
     "forum-role-types",
     "row-level-security-filters",
     "entity-permissions",
-    "entities"
+    "entities",
+    "actions"
   ],
   "emitSyncNotes": false,
   "sqlLogging": {
