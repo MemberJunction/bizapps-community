@@ -36,7 +36,6 @@ import {
 import {
   AssertValidUUID,
   AssertValidUUIDList,
-  COMMUNITY_ACTION_IDS,
   type IdeationAllocationMode,
 } from '@mj-biz-apps/community-core';
 import {
@@ -1599,7 +1598,12 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
         return;
       }
       const actionClient = new GraphQLActionClient(provider);
-      const result = await actionClient.RunAction(COMMUNITY_ACTION_IDS.ExportDigestPDF, [
+      const exportActionId = await ResolveCommunityActionIDWithRunView('ExportDigestPDF');
+      if (!exportActionId) {
+        this.digestExportError = 'Community.ExportDigestPDF action is missing or disabled in MJ: Actions.';
+        return;
+      }
+      const result = await actionClient.RunAction(exportActionId, [
         { Name: 'SpaceName', Value: effectiveSpaceName, Type: 'Input' },
         { Name: 'AllowedForumIDs', Value: this.allowedForumIDs.join(','), Type: 'Input' },
       ]);
@@ -1773,6 +1777,12 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
       }
 
       const actionId = await ResolveCommunityActionIDWithRunView('SendPersonalizedDigest');
+      if (!actionId) {
+        this.sendTestDigestResult = null;
+        this.sendTestDigestError =
+          'Community.SendPersonalizedDigest action is missing or disabled in the MJ: Actions catalog.';
+        return;
+      }
       const result = await actionClient.RunAction(actionId, actionParams);
 
       if (result?.Success !== true) {
@@ -2547,6 +2557,15 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
       if (provider?.CurrentUser) {
         const actionClient = new GraphQLActionClient(provider as GraphQLDataProvider);
         const actionId = await ResolveCommunityActionIDWithRunView('LivingThreadSynthesis');
+        if (!actionId) {
+          const errMsg =
+            'Community.LivingThreadSynthesis action is missing or disabled in the MJ: Actions catalog.';
+          this.detailErrorMessage = errMsg;
+          this.streamActionError = errMsg;
+          this.threadSynthesisResult = null;
+          this.structuredThreadSynthesis = null;
+          return;
+        }
         const res = await actionClient.RunAction(actionId, [
           { Name: 'RootPostID', Value: postId, Type: 'Input' },
         ]);
@@ -2826,7 +2845,14 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
       try {
         AssertValidUUID(item.id, 'answerPostId');
         const actionClient = new GraphQLActionClient(provider as GraphQLDataProvider);
-        const res = await actionClient.RunAction(COMMUNITY_ACTION_IDS.EpistemicAnswerGrading, [
+        const gradeActionId = await ResolveCommunityActionIDWithRunView('EpistemicAnswerGrading');
+        if (!gradeActionId) {
+          this.qaActionMessage =
+            'Community.EpistemicAnswerGrading action is missing or disabled in MJ: Actions.';
+          this.cdr.markForCheck();
+          return;
+        }
+        const res = await actionClient.RunAction(gradeActionId, [
           { Name: 'AnswerPostID', Value: item.id, Type: 'Input' },
         ]);
         if (!res.Success) {

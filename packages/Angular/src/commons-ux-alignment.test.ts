@@ -74,9 +74,9 @@ describe('Slice 1 UX Alignment — Sticky Top Shell, Branding & Export Wiring', 
     }
   });
 
-  it('wires exportDigestPdf() to GraphQLActionClient and COMMUNITY_ACTION_IDS.ExportDigestPDF without window.print()', () => {
+  it('wires exportDigestPdf() to GraphQLActionClient and ExportDigestPDF catalog resolution without window.print()', () => {
     assert.match(hubTs, /public async exportDigestPdf\(\): Promise<void>/);
-    assert.match(hubTs, /RunAction\(COMMUNITY_ACTION_IDS\.ExportDigestPDF/);
+    assert.match(hubTs, /ResolveCommunityActionIDWithRunView\('ExportDigestPDF'\)/);
     assert.doesNotMatch(hubTs, /window\.print\s*\(/);
   });
 });

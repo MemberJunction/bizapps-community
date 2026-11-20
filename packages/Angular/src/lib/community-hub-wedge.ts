@@ -6,7 +6,7 @@ import {
   CommunityEmbeddingPersonalizationService,
   CosineSimilarity,
   EscapeSqlLiteral,
-  ResolveCommunityActionID,
+  FindCommunityActionInCatalog,
   type ActionCatalogEntryLike,
   type CommunityActionKey,
   type CommunityMemberInteraction,
@@ -130,92 +130,134 @@ function getActionEngineSingleton(): ActionEngineSingletonLike | null {
 
 /**
  * Synchronously resolves a Community action's UUID from `ActionEngineBase.Instance.Actions`
- * (or explicit `actions` override) by `DriverClass` / `Name`, falling back to the canonical
- * UUID in {@link COMMUNITY_ACTION_IDS}. Never returns a non-UUID driver class string.
+ * (or explicit `actions` override) by `DriverClass` / `Name`. When an explicit `actions` catalog
+ * or loaded `ActionEngineBase` catalog is provided, returns `null` if the action is missing or
+ * disabled; otherwise falls back to {@link COMMUNITY_ACTION_IDS} only in unconfigured/offline mode
+ * (unless `strict: true`).
  */
 export function ResolveCommunityActionRuntimeID(
   key: CommunityActionKey,
   actions?: ReadonlyArray<ActionCatalogEntryLike> | null,
-): string {
-  if (actions && actions.length > 0) {
-    return ResolveCommunityActionID(key, actions);
+  options?: { strict?: boolean },
+): string | null {
+  if (actions !== undefined && actions !== null) {
+    return FindCommunityActionInCatalog(key, actions);
   }
   const engine = getActionEngineSingleton();
   if (engine?.Actions && engine.Actions.length > 0) {
-    return ResolveCommunityActionID(key, engine.Actions);
+    return FindCommunityActionInCatalog(key, engine.Actions);
+  }
+  if (options?.strict) {
+    return null;
   }
   return COMMUNITY_ACTION_IDS[key];
 }
 
+export interface ActionCatalogRunViewLike {
+  RunView: (
+    params: {
+      EntityName: string;
+      ExtraFilter?: string;
+      Fields?: string[];
+      ResultType?: string;
+      MaxRows?: number;
+    },
+    user?: UserInfo,
+  ) => Promise<{ Success: boolean; Results?: ActionCatalogEntryLike[] }>;
+}
+
 /**
- * Resolves a Community action's UUID asynchronously: checks `ActionEngineBase.Instance.Actions`
- * (configuring it if available), then optionally queries `MJ: Actions` by `DriverClass` when a
- * live provider is active, falling back deterministically to {@link COMMUNITY_ACTION_IDS}.
+ * Resolves a Community action's UUID asynchronously:
+ * 1. Checks explicit `options.actions` (if supplied) via {@link FindCommunityActionInCatalog}.
+ * 2. Checks `ActionEngineBase.Instance.Actions` (configuring it if available). If `Actions` is
+ *    non-empty but contains only unrelated actions (`FindCommunityActionInCatalog` returns `null`),
+ *    does NOT fall back early — proceeds directly to `RunView` on `'MJ: Actions'` / `'Actions'`.
+ * 3. When an explicit catalog or `RunView` is present (or `strict: true`) and the action is
+ *    missing or disabled, returns `null` rather than fabricating a silent fallback UUID.
  */
 export async function ResolveCommunityActionIDWithRunView(
   key: CommunityActionKey,
   options?: {
     actions?: ReadonlyArray<ActionCatalogEntryLike> | null;
     user?: UserInfo | null;
-    runView?: {
-      RunView: (params: {
-        EntityName: string;
-        ExtraFilter?: string;
-        Fields?: string[];
-        ResultType?: string;
-        MaxRows?: number;
-      }, user?: UserInfo) => Promise<{ Success: boolean; Results?: ActionCatalogEntryLike[] }>;
-    } | null;
+    runView?: ActionCatalogRunViewLike | null;
+    strict?: boolean;
   },
-): Promise<string> {
-  if (options?.actions && options.actions.length > 0) {
-    return ResolveCommunityActionID(key, options.actions);
+): Promise<string | null> {
+  const hasExplicitCatalog = options?.actions !== undefined && options?.actions !== null;
+  if (hasExplicitCatalog) {
+    const fromExplicit = FindCommunityActionInCatalog(key, options?.actions);
+    if (fromExplicit) {
+      resolvedActionIdCache.set(key, fromExplicit);
+      return fromExplicit;
+    }
+    if (!options?.runView) {
+      return null;
+    }
   }
 
+  const activeUser = options?.user ?? Metadata.Provider?.CurrentUser;
   const engine = getActionEngineSingleton();
-  if (engine) {
+  let engineHasLoadedCatalog = false;
+  if (engine && !hasExplicitCatalog) {
     if (!engine.Loaded && typeof engine.Config === 'function') {
       try {
-        await engine.Config(false, options?.user ?? Metadata.Provider?.CurrentUser);
+        await engine.Config(false, activeUser);
       } catch {
-        // Fall through to RunView / canonical constant fallback.
+        // Proceed to RunView below.
       }
     }
     if (engine.Actions && engine.Actions.length > 0) {
-      const fromEngine = ResolveCommunityActionID(key, engine.Actions);
-      resolvedActionIdCache.set(key, fromEngine);
-      return fromEngine;
+      engineHasLoadedCatalog = true;
+      const fromEngine = FindCommunityActionInCatalog(key, engine.Actions);
+      if (fromEngine) {
+        resolvedActionIdCache.set(key, fromEngine);
+        return fromEngine;
+      }
+      // Do NOT return a fallback early when ActionEngineBase contains only unrelated actions:
+      // fall through to execute the RunView lookup on 'MJ: Actions' / 'Actions'.
     }
+  }
+
+  const rv = options?.runView ?? (Metadata.Provider && activeUser ? new RunView() : null);
+  if (rv) {
+    const driverClass = EscapeSqlLiteral(COMMUNITY_ACTION_DRIVER_CLASSES[key]);
+    for (const entityName of ['MJ: Actions', 'Actions'] as const) {
+      try {
+        const res = await rv.RunView(
+          {
+            EntityName: entityName,
+            ExtraFilter: `DriverClass = '${driverClass}'`,
+            Fields: ['ID', 'DriverClass', 'Name', 'Status'],
+            ResultType: 'simple',
+            MaxRows: 5,
+          },
+          activeUser ?? undefined,
+        );
+        if (res?.Success && res.Results && res.Results.length > 0) {
+          const matched = FindCommunityActionInCatalog(key, res.Results);
+          if (matched) {
+            resolvedActionIdCache.set(key, matched);
+            return matched;
+          }
+          // DriverClass matched a disabled/inactive record in the catalog: fail visibly.
+          return null;
+        }
+      } catch {
+        // Try next entity name alias.
+      }
+    }
+    // RunView was consulted and the action is missing or disabled: never fabricate a fallback.
+    return null;
+  }
+
+  if (options?.strict || hasExplicitCatalog || engineHasLoadedCatalog) {
+    return null;
   }
 
   const cached = resolvedActionIdCache.get(key);
   if (cached && IsValidUUID(cached)) {
     return cached;
-  }
-
-  const activeUser = options?.user ?? Metadata.Provider?.CurrentUser;
-  const rv = options?.runView ?? (Metadata.Provider && activeUser ? new RunView() : null);
-  if (rv && activeUser) {
-    try {
-      const driverClass = EscapeSqlLiteral(COMMUNITY_ACTION_DRIVER_CLASSES[key]);
-      const res = await rv.RunView(
-        {
-          EntityName: 'MJ: Actions',
-          ExtraFilter: `DriverClass = '${driverClass}' AND Status = 'Active'`,
-          Fields: ['ID', 'DriverClass', 'Name', 'Status'],
-          ResultType: 'simple',
-          MaxRows: 1,
-        },
-        activeUser,
-      );
-      if (res?.Success && res.Results && res.Results.length > 0) {
-        const resolved = ResolveCommunityActionID(key, res.Results);
-        resolvedActionIdCache.set(key, resolved);
-        return resolved;
-      }
-    } catch {
-      // Fall back to deterministic canonical UUID constant.
-    }
   }
 
   return COMMUNITY_ACTION_IDS[key];

@@ -8,6 +8,7 @@ import {
   CommunityEmbeddingPersonalizationService,
   CosineSimilarity,
   DeterministicSemanticEmbeddingProvider,
+  FindCommunityActionInCatalog,
   NormalizeVector,
   ResolveCommunityActionID,
   type CommunityMemberInteraction,
@@ -276,14 +277,16 @@ describe('@mj-biz-apps/community-core — CommunityEmbeddingPersonalizationServi
   });
 });
 
-describe('@mj-biz-apps/community-core — ResolveCommunityActionID (CR-03)', () => {
-  it('defines canonical valid UUIDs for every action and resolves live ActionEngineBase catalog entries by DriverClass or Name', () => {
+describe('@mj-biz-apps/community-core — ResolveCommunityActionID & FindCommunityActionInCatalog (CR-03)', () => {
+  it('defines canonical valid UUIDs matching metadata/actions/.community-actions.json and distinguishes catalog matches from missing/disabled entries', () => {
+    assert.equal(COMMUNITY_ACTION_IDS.SendPersonalizedDigest, '8F4A2C10-5B9E-4D7A-9C31-6E8B2D4F1A90');
+    assert.equal(COMMUNITY_ACTION_IDS.ProcessInboundDigestReply, '9A5B3D21-6C0F-4E8B-8D42-7F9C3E5A2B01');
     for (const [key, id] of Object.entries(COMMUNITY_ACTION_IDS)) {
       assert.equal(IsValidUUID(id), true, `COMMUNITY_ACTION_IDS.${key} (${id}) must be a valid UUID`);
     }
 
     const liveDigestId = 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee';
-    const resolvedFromDriver = ResolveCommunityActionID('SendPersonalizedDigest', [
+    const catalogWithMatch = [
       { ID: '11111111-1111-4111-8111-111111111111', DriverClass: 'Other.Action', Status: 'Active' },
       {
         ID: liveDigestId,
@@ -291,17 +294,25 @@ describe('@mj-biz-apps/community-core — ResolveCommunityActionID (CR-03)', () 
         Name: 'Send Personalized Community Digest',
         Status: 'Active',
       },
-    ]);
-    assert.equal(resolvedFromDriver, liveDigestId);
+    ];
+    assert.equal(FindCommunityActionInCatalog('SendPersonalizedDigest', catalogWithMatch), liveDigestId);
+    assert.equal(ResolveCommunityActionID('SendPersonalizedDigest', catalogWithMatch), liveDigestId);
 
-    // Ignores inactive entries and falls back to canonical UUID constant when absent
-    const fallback = ResolveCommunityActionID('SendPersonalizedDigest', [
+    // Disabled/Inactive/missing entries return null from FindCommunityActionInCatalog and strict ResolveCommunityActionID
+    const disabledCatalog = [
       {
         ID: '22222222-2222-4222-8222-222222222222',
         DriverClass: COMMUNITY_ACTION_DRIVER_CLASSES.SendPersonalizedDigest,
+        Name: 'Send Personalized Community Digest',
         Status: 'Disabled',
       },
-    ]);
+    ];
+    assert.equal(FindCommunityActionInCatalog('SendPersonalizedDigest', disabledCatalog), null);
+    assert.equal(FindCommunityActionInCatalog('SendPersonalizedDigest', [{ ID: '33333333-3333-4333-8333-333333333333', DriverClass: 'Unrelated.Action', Status: 'Active' }]), null);
+    assert.equal(ResolveCommunityActionID('SendPersonalizedDigest', disabledCatalog, { strict: true }), null);
+
+    // Non-strict mode retains deterministic fallback UUID when no active catalog entry is present
+    const fallback = ResolveCommunityActionID('SendPersonalizedDigest', disabledCatalog);
     assert.equal(fallback, COMMUNITY_ACTION_IDS.SendPersonalizedDigest);
   });
 });

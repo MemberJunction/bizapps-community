@@ -38,6 +38,10 @@ export class DigestExportButtonComponent {
       const provider = Metadata.Provider as GraphQLDataProvider;
       const actionClient = new GraphQLActionClient(provider);
       const actionId = await ResolveCommunityActionIDWithRunView('ExportDigestPDF');
+      if (!actionId) {
+        this.errorMessage = 'Community.ExportDigestPDF action is missing or disabled in MJ: Actions.';
+        return;
+      }
       const result = await actionClient.RunAction(actionId, [
         { Name: 'SpaceName', Value: this.spaceName, Type: 'Input' },
         { Name: 'AllowedForumIDs', Value: this.allowedForumIDs.join(','), Type: 'Input' },

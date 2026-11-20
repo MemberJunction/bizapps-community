@@ -1,9 +1,8 @@
 import { IsValidUUID } from '@memberjunction/global';
 
 /**
- * The `MJ: Actions` primary key for each Community action, matching metadata/actions/
- * .community-actions.json (and deterministic canonical IDs for personalization/reply actions).
- * Shared with @mj-biz-apps/community-ng so client widgets can invoke
+ * The `MJ: Actions` primary key for each Community action, matching `metadata/actions/.community-actions.json`.
+ * Shared with `@mj-biz-apps/community-ng` so client widgets can invoke
  * `GraphQLActionClient.RunAction(actionID, params)` with a UUID `ActionID`.
  */
 export const COMMUNITY_ACTION_IDS = {
@@ -11,8 +10,8 @@ export const COMMUNITY_ACTION_IDS = {
   EpistemicAnswerGrading: 'FE5FFFC8-2CB4-4DC4-862F-E38DF19FE88D',
   LivingThreadSynthesis: 'B40307E3-3337-47F0-96CC-25A27A56BBDC',
   ExportDigestPDF: '6E7F8091-A2B3-44C5-D5D6-E7F8A9B0C1D2',
-  SendPersonalizedDigest: '7F8A9012-B3C4-45D6-86E7-F8A9B0C1D2E3',
-  ProcessInboundDigestReply: '8A9B0123-C4D5-46E7-87F8-A9B0C1D2E3F4',
+  SendPersonalizedDigest: '8F4A2C10-5B9E-4D7A-9C31-6E8B2D4F1A90',
+  ProcessInboundDigestReply: '9A5B3D21-6C0F-4E8B-8D42-7F9C3E5A2B01',
 } as const;
 
 export type CommunityActionKey = keyof typeof COMMUNITY_ACTION_IDS;
@@ -48,40 +47,84 @@ export interface ActionCatalogEntryLike {
   Status?: string | null;
 }
 
+/** Returns true when a catalog entry carries a valid UUID and is not `'Disabled'` / `'Inactive'`. */
+export function IsActionCatalogEntryActive(entry: ActionCatalogEntryLike): boolean {
+  if (!entry.ID || !IsValidUUID(entry.ID.trim())) {
+    return false;
+  }
+  const status = entry.Status?.trim().toLowerCase();
+  if (!status) {
+    return true;
+  }
+  return status === 'active';
+}
+
 /**
- * Resolves the canonical UUID `ActionID` for a Community action from an optional live action catalog
- * (such as `ActionEngineBase.Instance.Actions`) by `DriverClass` or `Name`, falling back to
- * {@link COMMUNITY_ACTION_IDS} when no matching active catalog entry is present.
+ * Searches an action catalog (such as `ActionEngineBase.Instance.Actions` or a `RunView` result)
+ * for an active entry matching `key` by `DriverClass` or `Name`. Returns the matched `ID` ONLY
+ * when an active matching entry exists, and returns `null` when missing or disabled.
  */
-export function ResolveCommunityActionID(
+export function FindCommunityActionInCatalog(
   key: CommunityActionKey,
-  actions?: ReadonlyArray<ActionCatalogEntryLike> | null,
-): string {
-  const fallbackId = COMMUNITY_ACTION_IDS[key];
-  if (!actions || actions.length === 0) {
-    return fallbackId;
+  catalog?: ReadonlyArray<ActionCatalogEntryLike> | null,
+): string | null {
+  if (!catalog || catalog.length === 0) {
+    return null;
   }
 
   const targetDriver = COMMUNITY_ACTION_DRIVER_CLASSES[key].toLowerCase();
   const targetName = COMMUNITY_ACTION_NAMES[key].toLowerCase();
 
-  const isUsable = (entry: ActionCatalogEntryLike): boolean =>
-    Boolean(entry.ID && IsValidUUID(entry.ID.trim())) &&
-    (!entry.Status || entry.Status.trim().toLowerCase() === 'active');
-
-  const byDriver = actions.find(
-    (entry) => isUsable(entry) && entry.DriverClass?.trim().toLowerCase() === targetDriver,
+  const driverMatches = catalog.filter(
+    (entry) => entry.DriverClass?.trim().toLowerCase() === targetDriver,
   );
-  if (byDriver?.ID) {
-    return byDriver.ID.trim();
+  if (driverMatches.length > 0) {
+    const activeDriver = driverMatches.find((entry) => IsActionCatalogEntryActive(entry));
+    return activeDriver?.ID ? activeDriver.ID.trim() : null;
   }
 
-  const byName = actions.find(
-    (entry) => isUsable(entry) && entry.Name?.trim().toLowerCase() === targetName,
+  const nameMatches = catalog.filter(
+    (entry) => entry.Name?.trim().toLowerCase() === targetName,
   );
-  if (byName?.ID) {
-    return byName.ID.trim();
+  if (nameMatches.length > 0) {
+    const activeByName = nameMatches.find((entry) => IsActionCatalogEntryActive(entry));
+    return activeByName?.ID ? activeByName.ID.trim() : null;
   }
 
-  return fallbackId;
+  return null;
+}
+
+/**
+ * Resolves the canonical UUID `ActionID` for a Community action from an optional live action catalog
+ * (such as `ActionEngineBase.Instance.Actions`) by `DriverClass` or `Name`, falling back to
+ * {@link COMMUNITY_ACTION_IDS} when no matching active catalog entry is present (unless `strict`
+ * is `true`, in which case missing/disabled entries return `null`).
+ */
+export function ResolveCommunityActionID(
+  key: CommunityActionKey,
+  actions?: ReadonlyArray<ActionCatalogEntryLike> | null,
+): string;
+export function ResolveCommunityActionID(
+  key: CommunityActionKey,
+  actions: ReadonlyArray<ActionCatalogEntryLike> | null | undefined,
+  options: { strict: true },
+): string | null;
+export function ResolveCommunityActionID(
+  key: CommunityActionKey,
+  actions?: ReadonlyArray<ActionCatalogEntryLike> | null,
+  options?: { strict?: boolean },
+): string | null;
+export function ResolveCommunityActionID(
+  key: CommunityActionKey,
+  actions?: ReadonlyArray<ActionCatalogEntryLike> | null,
+  options?: { strict?: boolean },
+): string | null {
+  const matched = FindCommunityActionInCatalog(key, actions);
+  if (matched) {
+    return matched;
+  }
+  if (options?.strict) {
+    return null;
+  }
+  return COMMUNITY_ACTION_IDS[key];
 }

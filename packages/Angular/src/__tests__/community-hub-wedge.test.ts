@@ -187,28 +187,83 @@ describe('Zero-CAC Wedge UX — Live Ask-First, Living Thread Synthesis & GraphQ
       assert.equal(resolvedFromEngine, liveDigestUuid);
       assert.equal(IsValidUUID(resolvedFromEngine), true);
 
-      // Clear engine singleton -> verify RunView resolution + deterministic fallback UUID
+      // Unrelated actions in ActionEngineBase.Instance.Actions MUST NOT return a fallback early;
+      // it must fall through to RunView ('MJ: Actions' / 'Actions') and resolve the installed action!
+      ClearResolvedActionIdCache();
+      store['___SINGLETON__ActionEngineBase'] = {
+        Loaded: true,
+        Actions: [
+          {
+            ID: '99999999-9999-4999-8999-999999999999',
+            DriverClass: 'Core.UnrelatedAction',
+            Name: 'Unrelated Action',
+            Status: 'Active',
+          },
+        ],
+      };
+      const queriedEntities: string[] = [];
+      const rvDigestUuid = '23456789-2345-4234-8234-2345678901bc';
+      const resolvedFromFallthroughRunView = await ResolveCommunityActionIDWithRunView('SendPersonalizedDigest', {
+        runView: {
+          RunView: async (params) => {
+            queriedEntities.push(params.EntityName);
+            if (params.EntityName === 'Actions') {
+              return {
+                Success: true,
+                Results: [
+                  {
+                    ID: rvDigestUuid,
+                    DriverClass: COMMUNITY_ACTION_DRIVER_CLASSES.SendPersonalizedDigest,
+                    Status: 'Active',
+                  },
+                ],
+              };
+            }
+            return { Success: true, Results: [] };
+          },
+        },
+      });
+      assert.deepEqual(queriedEntities, ['MJ: Actions', 'Actions']);
+      assert.equal(resolvedFromFallthroughRunView, rvDigestUuid);
+
+      // Missing or disabled actions in explicit catalog or RunView must fail visibly (return null),
+      // never fabricating a silent fallback UUID.
       delete store['___SINGLETON__ActionEngineBase'];
       ClearResolvedActionIdCache();
-      const rvDigestUuid = '23456789-2345-4234-8234-2345678901bc';
-      const resolvedFromRunView = await ResolveCommunityActionIDWithRunView('SendPersonalizedDigest', {
-        user: undefined,
+      const missingInRunView = await ResolveCommunityActionIDWithRunView('SendPersonalizedDigest', {
+        runView: {
+          RunView: async () => ({ Success: true, Results: [] }),
+        },
+      });
+      assert.equal(missingInRunView, null);
+
+      const disabledInRunView = await ResolveCommunityActionIDWithRunView('ProcessInboundDigestReply', {
         runView: {
           RunView: async () => ({
             Success: true,
             Results: [
               {
-                ID: rvDigestUuid,
-                DriverClass: COMMUNITY_ACTION_DRIVER_CLASSES.SendPersonalizedDigest,
-                Status: 'Active',
+                ID: COMMUNITY_ACTION_IDS.ProcessInboundDigestReply,
+                DriverClass: COMMUNITY_ACTION_DRIVER_CLASSES.ProcessInboundDigestReply,
+                Status: 'Disabled',
               },
             ],
           }),
         },
       });
-      // When user is undefined, falls back cleanly to COMMUNITY_ACTION_IDS canonical UUID
-      assert.equal(resolvedFromRunView, COMMUNITY_ACTION_IDS.SendPersonalizedDigest);
-      assert.equal(IsValidUUID(resolvedFromRunView), true);
+      assert.equal(disabledInRunView, null);
+
+      const disabledExplicit = await ResolveCommunityActionIDWithRunView('SendPersonalizedDigest', {
+        actions: [
+          {
+            ID: COMMUNITY_ACTION_IDS.SendPersonalizedDigest,
+            DriverClass: COMMUNITY_ACTION_DRIVER_CLASSES.SendPersonalizedDigest,
+            Status: 'Inactive',
+          },
+        ],
+      });
+      assert.equal(disabledExplicit, null);
+      assert.equal(ResolveCommunityActionRuntimeID('SendPersonalizedDigest', []), null);
 
       // Exercise real GraphQLActionClient.RunAction with resolved UUID ActionID and ResultData JSON
       let capturedActionId = '';
