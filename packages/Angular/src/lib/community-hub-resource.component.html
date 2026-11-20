@@ -863,7 +863,8 @@
                     id="mjc-ask-share-type"
                     name="askShareEntryType"
                     class="mjc-community-hub__input"
-                    [(ngModel)]="askShareEntryType"
+                    [ngModel]="askShareEntryType"
+                    (ngModelChange)="onAskShareEntryTypeChange($event)"
                   >
                     <option value="Question">Question</option>
                     <option value="Discussion Post">Discussion Post</option>
@@ -883,10 +884,10 @@
                       [ngModel]="askShareForumId"
                       (ngModelChange)="onAskShareForumChange($event)"
                     >
-                      @if (authorizedForums.length === 0) {
-                        <option value="">No authorized forums available</option>
+                      @if (compatibleAskShareForums.length === 0) {
+                        <option value="">No compatible forums available</option>
                       }
-                      @for (forum of authorizedForums; track forum.id) {
+                      @for (forum of compatibleAskShareForums; track forum.id) {
                         <option [value]="forum.id">{{ forum.name }}</option>
                       }
                     </select>
@@ -912,7 +913,7 @@
                   name="askShareTitle"
                   type="text"
                   class="mjc-community-hub__input"
-                  placeholder="e.g., How do multi-region GraphQL replicas handle failover?"
+                  placeholder="Enter a clear title or question..."
                   [ngModel]="askShareTitle"
                   (ngModelChange)="onAskShareTitleChange($event)"
                 />
@@ -949,7 +950,7 @@
                   name="askShareBody"
                   rows="4"
                   class="mjc-community-hub__textarea"
-                  placeholder="Provide context, architecture constraints, or runbook steps..."
+                  placeholder="Share context, details, or notes..."
                   [(ngModel)]="askShareBody"
                 ></textarea>
                 @if (askShareValidationErrors.body) {
@@ -958,30 +959,67 @@
               </div>
 
               <div class="mjc-community-hub__field">
-                <label for="mjc-ask-share-tags-input" class="mjc-community-hub__label">Tags (select or enter comma-separated names)</label>
-                @if (availableAskShareTopicTags.length > 0) {
-                  <div class="mjc-ideation-presets" role="group" aria-label="Forum topic tags">
-                    @for (tag of availableAskShareTopicTags; track tag.ID) {
-                      <button
-                        type="button"
-                        class="mjc-preset-btn"
-                        [class.mjc-preset-btn--active]="isAskShareTopicTagSelected(tag.ID)"
-                        [attr.aria-pressed]="isAskShareTopicTagSelected(tag.ID)"
-                        (click)="toggleAskShareTopicTag(tag.ID)"
-                      >
-                        #{{ tag.Name }}
-                      </button>
+                <label for="mjc-ask-share-tags-input" class="mjc-community-hub__label">Tags</label>
+                @if (selectedAskShareTopicTags.length > 0) {
+                  <div class="mjc-tag-selected-list" role="list" aria-label="Selected tags">
+                    @for (tag of selectedAskShareTopicTags; track tag.ID) {
+                      <span class="mjc-tag-chip" role="listitem">
+                        <span>#{{ tag.Name }}</span>
+                        <button
+                          type="button"
+                          class="mjc-tag-chip__remove"
+                          [attr.aria-label]="'Remove tag ' + tag.Name"
+                          (click)="removeAskShareTopicTag(tag.ID)"
+                        >
+                          ×
+                        </button>
+                      </span>
                     }
                   </div>
                 }
-                <input
-                  id="mjc-ask-share-tags-input"
-                  name="askShareTags"
-                  type="text"
-                  class="mjc-community-hub__input"
-                  placeholder="API Security, Multi-Region, Schema Parity"
-                  [(ngModel)]="askShareTags"
-                />
+                <div class="mjc-tag-autocomplete">
+                  <input
+                    id="mjc-ask-share-tags-input"
+                    name="askShareTags"
+                    type="text"
+                    autocomplete="off"
+                    role="combobox"
+                    aria-autocomplete="list"
+                    [attr.aria-expanded]="isAskShareTagMenuOpen"
+                    aria-controls="mjc-ask-share-tag-suggestions"
+                    class="mjc-community-hub__input"
+                    placeholder="Type to search tags..."
+                    [ngModel]="askShareTags"
+                    (ngModelChange)="onAskShareTagInputChange($event)"
+                    (focus)="onAskShareTagInputFocus()"
+                    (blur)="onAskShareTagInputBlur()"
+                    (keydown)="onAskShareTagInputKeydown($event)"
+                  />
+                  @if (isAskShareTagMenuOpen) {
+                    <ul
+                      id="mjc-ask-share-tag-suggestions"
+                      class="mjc-tag-suggestions"
+                      role="listbox"
+                      aria-label="Matching topic tags"
+                    >
+                      @for (tag of askShareTagSuggestions; track tag.ID; let idx = $index) {
+                        <li
+                          role="option"
+                          class="mjc-tag-suggestion"
+                          [class.mjc-tag-suggestion--active]="idx === askShareTagHighlightIndex"
+                          [attr.aria-selected]="idx === askShareTagHighlightIndex"
+                          (mousedown)="$event.preventDefault(); selectAskShareTagSuggestion(tag)"
+                          (mouseenter)="askShareTagHighlightIndex = idx"
+                        >
+                          <span class="mjc-tag-suggestion__name">#{{ tag.Name }}</span>
+                          @if (tag.PostCount && tag.PostCount > 0) {
+                            <span class="mjc-tag-suggestion__meta">{{ tag.PostCount === 1 ? '1 post' : tag.PostCount + ' posts' }}</span>
+                          }
+                        </li>
+                      }
+                    </ul>
+                  }
+                </div>
               </div>
 
               @if (askShareError) {

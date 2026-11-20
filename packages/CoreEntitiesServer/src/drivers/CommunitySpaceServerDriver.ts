@@ -1,4 +1,5 @@
 import { RegisterClass } from '@memberjunction/global';
+import { BaseSpaceTypeServerDriver } from '@mj-biz-apps/collaboration-core-entities-server';
 import {
   CommunityRules,
   type AnswerAcceptanceDecision,
@@ -291,7 +292,8 @@ export class AMAPostServerDriver extends BasePostServerDriver {}
  * Enforces slug formatting, creates default forums on Community Space creation, and contributes
  * forum/thread summaries to Collaboration's Space Agent context.
  */
-export class CommunitySpaceServerDriver {
+@RegisterClass(BaseSpaceTypeServerDriver, 'CommunitySpaceServerDriver')
+export class CommunitySpaceServerDriver extends BaseSpaceTypeServerDriver {
   public ValidateCommunitySlug(slug: string): ForumValidationResult {
     const normalized = slug.trim();
     if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(normalized)) {

@@ -2375,7 +2375,9 @@ export class ArchWorldEntityProvider {
       effectiveUser = MakeArchUserInfo(effectiveUser);
     }
 
-    const hasReg = MJGlobal.Instance.ClassFactory.GetRegistration(BaseEntity, entityName);
+    const hasReg =
+      entityName.startsWith('MJ_BizApps_Community:') &&
+      MJGlobal.Instance.ClassFactory.GetRegistration(BaseEntity, entityName);
     const instance = hasReg
       ? MJGlobal.Instance.ClassFactory.CreateInstance(BaseEntity, entityName, info, this)
       : new BaseEntity(info, this);

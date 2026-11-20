@@ -41,6 +41,40 @@ export const TOGGLE_COMMUNITY_POST_REACTION_MUTATION = `
   }
 `;
 
+export const CREATE_FORUM_QUESTION_POST_MUTATION = `
+  mutation CreatemjBizAppsCommunityForumQuestionPost($input: CreatemjBizAppsCommunityForumQuestionPostInput!) {
+    CreatemjBizAppsCommunityForumQuestionPost(input: $input) {
+      ID
+    }
+  }
+`;
+
+export const DELETE_FORUM_QUESTION_POST_MUTATION = `
+  mutation DeletemjBizAppsCommunityForumQuestionPost($ID: String!, $options___: DeleteOptionsInput!) {
+    DeletemjBizAppsCommunityForumQuestionPost(ID: $ID, options___: $options___) {
+      ID
+    }
+  }
+`;
+
+export interface CreateForumQuestionPostMutationInput {
+  ID: string;
+}
+
+export interface CreateForumQuestionPostMutationPayload {
+  ID: string;
+}
+
+export interface DeleteForumQuestionPostGraphQLVariables {
+  ID: string;
+  options___: {
+    SkipEntityAIActions: boolean;
+    SkipEntityActions: boolean;
+    ReplayOnly: boolean;
+    IsParentEntityDelete: boolean;
+  };
+}
+
 export interface CommunityReactionToggleMutationInput {
   PostID: string;
   ReactionType: string;
@@ -87,14 +121,22 @@ export interface PromoteCommunityAnswerToCanonMutationPayload {
   ErrorMessage?: string | null;
 }
 
-export interface CommunityGraphQLVariables {
-  input: GraduateCommunityThreadMutationInput | PromoteCommunityAnswerToCanonMutationInput | CommunityReactionToggleMutationInput;
-}
+export type CommunityGraphQLVariables =
+  | {
+      input:
+        | GraduateCommunityThreadMutationInput
+        | PromoteCommunityAnswerToCanonMutationInput
+        | CommunityReactionToggleMutationInput
+        | CreateForumQuestionPostMutationInput;
+    }
+  | DeleteForumQuestionPostGraphQLVariables;
 
 export interface CommunityGraphQLResponse {
   GraduateCommunityThread?: GraduateCommunityThreadMutationPayload | null;
   PromoteCommunityAnswerToCanon?: PromoteCommunityAnswerToCanonMutationPayload | null;
   ToggleCommunityPostReaction?: CommunityReactionToggleMutationPayload | null;
+  CreatemjBizAppsCommunityForumQuestionPost?: CreateForumQuestionPostMutationPayload | null;
+  DeletemjBizAppsCommunityForumQuestionPost?: CreateForumQuestionPostMutationPayload | null;
 }
 
 export interface CommunityGraphQLExecutor {
@@ -374,4 +416,67 @@ export async function GraduateThreadViaProvider(params: {
       errorMessage: err instanceof Error ? err.message : 'Failed to graduate thread to working group space.',
     };
   }
+}
+
+export interface SharedPKQuestionPostBridge {
+  ID: string;
+  LatestResult?: { CompleteMessage?: string | null; Message?: string | null } | null;
+  Save(): Promise<boolean>;
+  Delete(): Promise<boolean>;
+}
+
+/**
+ * Creates a `ForumQuestionPost` shared-PK extension adapter over GraphQL.
+ *
+ * `ForumQuestionPost.ID` is a shared primary key referencing `ForumPost.ID` with
+ * `AllowUpdateAPI = false` and `ParentID = null`, so `GraphQLDataProvider.Save()` omits `ID`
+ * on Create unless passed explicitly to `CreatemjBizAppsCommunityForumQuestionPost(input: { ID })`.
+ */
+export function CreateForumQuestionPostGraphQLAdapter(
+  executor: CommunityGraphQLExecutor,
+): SharedPKQuestionPostBridge {
+  const adapter: SharedPKQuestionPostBridge = {
+    ID: '',
+    LatestResult: null,
+    Save: async (): Promise<boolean> => {
+      try {
+        const validId = AssertValidUUID(adapter.ID, 'questionPostId');
+        const response = await executor.ExecuteGQL(CREATE_FORUM_QUESTION_POST_MUTATION, {
+          input: { ID: validId },
+        });
+        const createdId = response?.CreatemjBizAppsCommunityForumQuestionPost?.ID;
+        if (!createdId) {
+          adapter.LatestResult = {
+            CompleteMessage: 'CreatemjBizAppsCommunityForumQuestionPost returned an empty payload.',
+          };
+          return false;
+        }
+        adapter.ID = createdId;
+        adapter.LatestResult = null;
+        return true;
+      } catch (err) {
+        const message = err instanceof Error ? err.message : 'Failed saving ForumQuestionPost via GraphQL.';
+        adapter.LatestResult = { CompleteMessage: message };
+        return false;
+      }
+    },
+    Delete: async (): Promise<boolean> => {
+      try {
+        const validId = AssertValidUUID(adapter.ID, 'questionPostId');
+        const response = await executor.ExecuteGQL(DELETE_FORUM_QUESTION_POST_MUTATION, {
+          ID: validId,
+          options___: {
+            SkipEntityAIActions: false,
+            SkipEntityActions: false,
+            ReplayOnly: false,
+            IsParentEntityDelete: false,
+          },
+        });
+        return Boolean(response?.DeletemjBizAppsCommunityForumQuestionPost?.ID);
+      } catch {
+        return false;
+      }
+    },
+  };
+  return adapter;
 }

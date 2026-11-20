@@ -65,7 +65,12 @@ import {
   PersistProposedIdea,
   type IdeaAllocationAggregateRow,
 } from './community-hub-ideation.ts';
-import { GraduateThreadViaProvider, PromoteAnswerToCanonViaProvider } from './community-hub-mutations.ts';
+import {
+  CreateForumQuestionPostGraphQLAdapter,
+  GraduateThreadViaProvider,
+  PromoteAnswerToCanonViaProvider,
+  ResolveCommunityGraphQLExecutor,
+} from './community-hub-mutations.ts';
 import {
   BuildCommonsStreamItems,
   BuildDynamicSpaceDirectory,
@@ -73,8 +78,11 @@ import {
   BuildEditorialPorchHighlights,
   COMMUNITY_SPACES_DIRECTORY,
   ComputeNextTrapFocusTarget,
+  FilterAskShareTopicTagSuggestions,
+  FilterForumsForAskShareEntryType,
   FindMatchedCanonQuestion,
   GraduateStreamItem,
+  IsForumCompatibleWithAskShareEntryType,
   MapForumNameToSpaceId,
   PersistAskSharePost,
   PersistDetailReply,
@@ -193,6 +201,9 @@ interface ForumRow {
   ID: string;
   Name: string;
   SpaceID?: string | null;
+  ForumTypeID?: string | null;
+  Status?: string | null;
+  PostingPolicy?: string | null;
   Description?: string | null;
 }
 
@@ -481,6 +492,8 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
   public askShareBody = '';
   public askShareTags = '';
   public askShareSelectedTagIds: string[] = [];
+  public askShareTagInputFocused = false;
+  public askShareTagHighlightIndex = 0;
   public askShareValidationErrors: AskShareValidationErrors = {};
   public askShareError: string | null = null;
 
@@ -854,45 +867,65 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
       const rawScopeId = this.ScopeSpaceId?.trim() ?? '';
       const scopedSpaceId = rawScopeId ? AssertValidUUID(rawScopeId, 'ScopeSpaceId') : null;
 
-      const [forumsResult, collabSpacesResult, communitySpacesResult, postTypesResult, topicTagsResult] =
-        await Promise.all([
-          LoadAllPaginatedRows<ForumRow>({
-            runView: rv,
-            entityName: COMMUNITY_ENTITY_NAMES.Forums,
-            extraFilter: scopedSpaceId ? `SpaceID = '${scopedSpaceId}'` : '1=1',
-            fields: ['ID', 'Name', 'SpaceID', 'Description'],
-            user,
-          }),
-          LoadAllPaginatedRows<{ ID: string; Name: string }>({
-            runView: rv,
-            entityName: 'MJ_BizApps_Collaboration: Spaces',
-            extraFilter: scopedSpaceId ? `ID = '${scopedSpaceId}'` : '1=1',
-            fields: ['ID', 'Name'],
-            user,
-          }),
-          LoadAllPaginatedRows<{ ID: string; Slug: string; CommunityKind: string }>({
-            runView: rv,
-            entityName: COMMUNITY_ENTITY_NAMES.CommunitySpaces,
-            extraFilter: scopedSpaceId ? `ID = '${scopedSpaceId}'` : '1=1',
-            fields: ['ID', 'Slug', 'CommunityKind'],
-            user,
-          }),
-          LoadAllPaginatedRows<{ ID: string; Code: string }>({
-            runView: rv,
-            entityName: COMMUNITY_ENTITY_NAMES.PostTypes,
-            extraFilter: '1=1',
-            fields: ['ID', 'Code'],
-            user,
-          }),
-          LoadAllPaginatedRows<LiveForumTopicTagRow>({
-            runView: rv,
-            entityName: COMMUNITY_ENTITY_NAMES.ForumTopicTags,
-            extraFilter: scopedSpaceId ? `SpaceID = '${scopedSpaceId}'` : '1=1',
-            fields: ['ID', 'SpaceID', 'Slug', 'Name', 'PostCount'],
-            user,
-          }),
-        ]);
+      const [
+        forumsResult,
+        forumTypesResult,
+        collabSpacesResult,
+        communitySpacesResult,
+        postTypesResult,
+        topicTagsResult,
+      ] = await Promise.all([
+        LoadAllPaginatedRows<ForumRow>({
+          runView: rv,
+          entityName: COMMUNITY_ENTITY_NAMES.Forums,
+          extraFilter: scopedSpaceId ? `SpaceID = '${scopedSpaceId}'` : '1=1',
+          fields: ['ID', 'Name', 'SpaceID', 'ForumTypeID', 'Status', 'PostingPolicy', 'Description'],
+          user,
+        }),
+        LoadAllPaginatedRows<{ ID: string; Code: string }>({
+          runView: rv,
+          entityName: COMMUNITY_ENTITY_NAMES.ForumTypes,
+          extraFilter: '1=1',
+          fields: ['ID', 'Code'],
+          user,
+        }),
+        LoadAllPaginatedRows<{ ID: string; Name: string }>({
+          runView: rv,
+          entityName: 'MJ_BizApps_Collaboration: Spaces',
+          extraFilter: scopedSpaceId ? `ID = '${scopedSpaceId}'` : '1=1',
+          fields: ['ID', 'Name'],
+          user,
+        }),
+        LoadAllPaginatedRows<{ ID: string; Slug: string; CommunityKind: string }>({
+          runView: rv,
+          entityName: COMMUNITY_ENTITY_NAMES.CommunitySpaces,
+          extraFilter: scopedSpaceId ? `ID = '${scopedSpaceId}'` : '1=1',
+          fields: ['ID', 'Slug', 'CommunityKind'],
+          user,
+        }),
+        LoadAllPaginatedRows<{ ID: string; Code: string }>({
+          runView: rv,
+          entityName: COMMUNITY_ENTITY_NAMES.PostTypes,
+          extraFilter: '1=1',
+          fields: ['ID', 'Code'],
+          user,
+        }),
+        LoadAllPaginatedRows<LiveForumTopicTagRow>({
+          runView: rv,
+          entityName: COMMUNITY_ENTITY_NAMES.ForumTopicTags,
+          extraFilter: scopedSpaceId ? `SpaceID = '${scopedSpaceId}'` : '1=1',
+          fields: ['ID', 'SpaceID', 'Slug', 'Name', 'PostCount'],
+          user,
+        }),
+      ]);
       if (loadVersion !== this.loadHubStateVersion) return;
+
+      const forumTypeCodeById = new Map<string, string>();
+      for (const ft of forumTypesResult.success ? forumTypesResult.rows : []) {
+        if (ft.Code) {
+          forumTypeCodeById.set(ft.ID.toLowerCase(), ft.Code.trim().toLowerCase());
+        }
+      }
 
       this.postTypeIdByCode.clear();
       for (const pt of postTypesResult.success ? postTypesResult.rows : []) {
@@ -956,6 +989,9 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
         name: f.Name,
         spaceId: f.SpaceID?.trim() || MapForumNameToSpaceId(f.Name),
         dbSpaceId: f.SpaceID ?? null,
+        forumTypeCode: f.ForumTypeID ? (forumTypeCodeById.get(f.ForumTypeID.toLowerCase()) ?? null) : null,
+        status: f.Status ?? null,
+        postingPolicy: f.PostingPolicy ?? null,
       }));
       this.allowedForumIDs = this.authorizedForums.map((f) => f.id);
       if (scopedSpaceId) {
@@ -2168,13 +2204,45 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
 
   // ─── Ask or Share Modal ───────────────────────────────────────────────────
 
+  public get compatibleAskShareForums(): ReadonlyArray<AuthorizedForumOption> {
+    return FilterForumsForAskShareEntryType(
+      this.authorizedForums,
+      this.askShareEntryType,
+      this.activeSpaceFilter,
+    );
+  }
+
   public get availableAskShareTopicTags(): ReadonlyArray<LiveForumTopicTagRow> {
     if (this.isOfflineDemoMode) return [];
     const selectedForum = this.authorizedForums.find((f) => UUIDsEqual(f.id, this.askShareForumId));
     const targetSpaceId = selectedForum?.dbSpaceId?.trim() || null;
     if (!targetSpaceId) return this.loadedTopicTags;
-    const scoped = this.loadedTopicTags.filter((t) => !t.SpaceID || UUIDsEqual(t.SpaceID, targetSpaceId));
-    return scoped.length > 0 ? scoped : this.loadedTopicTags;
+    return this.loadedTopicTags.filter((t) => !t.SpaceID || UUIDsEqual(t.SpaceID, targetSpaceId));
+  }
+
+  public get selectedAskShareTopicTags(): ReadonlyArray<LiveForumTopicTagRow> {
+    const byId = new Map(this.availableAskShareTopicTags.map((t) => [t.ID.toLowerCase(), t]));
+    const resolved: LiveForumTopicTagRow[] = [];
+    for (const id of this.askShareSelectedTagIds) {
+      const match = byId.get(id.toLowerCase());
+      if (match) {
+        resolved.push(match);
+      }
+    }
+    return resolved;
+  }
+
+  public get askShareTagSuggestions(): ReadonlyArray<LiveForumTopicTagRow> {
+    return FilterAskShareTopicTagSuggestions({
+      availableTags: this.availableAskShareTopicTags,
+      query: this.askShareTags,
+      selectedTagIds: this.askShareSelectedTagIds,
+      maxResults: 8,
+    });
+  }
+
+  public get isAskShareTagMenuOpen(): boolean {
+    return this.askShareTagInputFocused && this.askShareTagSuggestions.length > 0;
   }
 
   public isAskShareTopicTagSelected(tagId: string): boolean {
@@ -2186,6 +2254,124 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
       this.askShareSelectedTagIds = this.askShareSelectedTagIds.filter((id) => !UUIDsEqual(id, tagId));
     } else {
       this.askShareSelectedTagIds = [...this.askShareSelectedTagIds, tagId];
+    }
+    this.cdr.markForCheck();
+  }
+
+  public removeAskShareTopicTag(tagId: string): void {
+    this.askShareSelectedTagIds = this.askShareSelectedTagIds.filter((id) => !UUIDsEqual(id, tagId));
+    this.cdr.markForCheck();
+  }
+
+  public onAskShareTagInputFocus(): void {
+    this.askShareTagInputFocused = true;
+    this.askShareTagHighlightIndex = 0;
+    this.cdr.markForCheck();
+  }
+
+  public onAskShareTagInputBlur(): void {
+    this.askShareTagInputFocused = false;
+    this.cdr.markForCheck();
+  }
+
+  public onAskShareTagInputChange(nextValue: string): void {
+    this.askShareTags = nextValue;
+    this.askShareTagInputFocused = true;
+    this.askShareTagHighlightIndex = 0;
+    this.cdr.markForCheck();
+  }
+
+  public selectAskShareTagSuggestion(tag: LiveForumTopicTagRow): void {
+    if (!this.isAskShareTopicTagSelected(tag.ID)) {
+      this.askShareSelectedTagIds = [...this.askShareSelectedTagIds, tag.ID];
+    }
+    const lastCommaIdx = this.askShareTags.lastIndexOf(',');
+    if (lastCommaIdx >= 0) {
+      const prefix = this.askShareTags.slice(0, lastCommaIdx).trim();
+      this.askShareTags = prefix ? `${prefix}, ` : '';
+    } else {
+      this.askShareTags = '';
+    }
+    this.askShareTagHighlightIndex = 0;
+    this.cdr.markForCheck();
+  }
+
+  public onAskShareTagInputKeydown(event: KeyboardEvent): void {
+    const suggestions = this.askShareTagSuggestions;
+    if (event.key === 'ArrowDown' && suggestions.length > 0) {
+      event.preventDefault();
+      this.askShareTagInputFocused = true;
+      this.askShareTagHighlightIndex = (this.askShareTagHighlightIndex + 1) % suggestions.length;
+      this.cdr.markForCheck();
+      return;
+    }
+    if (event.key === 'ArrowUp' && suggestions.length > 0) {
+      event.preventDefault();
+      this.askShareTagInputFocused = true;
+      this.askShareTagHighlightIndex =
+        (this.askShareTagHighlightIndex - 1 + suggestions.length) % suggestions.length;
+      this.cdr.markForCheck();
+      return;
+    }
+    if (event.key === 'Enter' && this.isAskShareTagMenuOpen) {
+      event.preventDefault();
+      const chosen = suggestions[this.askShareTagHighlightIndex] ?? suggestions[0];
+      if (chosen) {
+        this.selectAskShareTagSuggestion(chosen);
+      }
+      return;
+    }
+    if (event.key === ',' && suggestions.length > 0) {
+      const lastCommaIdx = this.askShareTags.lastIndexOf(',');
+      const token = (lastCommaIdx >= 0 ? this.askShareTags.slice(lastCommaIdx + 1) : this.askShareTags)
+        .trim()
+        .replace(/^#+/, '')
+        .trim()
+        .toLowerCase();
+      const exact = suggestions.find(
+        (t) => t.Name.trim().toLowerCase() === token || (t.Slug?.trim().toLowerCase() ?? '') === token,
+      );
+      if (exact) {
+        event.preventDefault();
+        this.selectAskShareTagSuggestion(exact);
+      }
+      return;
+    }
+    if (event.key === 'Escape' && this.isAskShareTagMenuOpen) {
+      event.preventDefault();
+      event.stopPropagation();
+      this.askShareTagInputFocused = false;
+      this.cdr.markForCheck();
+      return;
+    }
+    if (event.key === 'Backspace' && this.askShareTags === '' && this.askShareSelectedTagIds.length > 0) {
+      this.askShareSelectedTagIds = this.askShareSelectedTagIds.slice(0, -1);
+      this.cdr.markForCheck();
+    }
+  }
+
+  public onAskShareEntryTypeChange(nextType: AskShareEntryType): void {
+    this.askShareEntryType = nextType;
+    this.askShareError = null;
+    if (!this.isOfflineDemoMode) {
+      const previousForum = this.authorizedForums.find((f) => UUIDsEqual(f.id, this.askShareForumId));
+      const compatible = this.compatibleAskShareForums;
+      const stillCompatible = compatible.some((f) => UUIDsEqual(f.id, this.askShareForumId));
+      if (!stillCompatible) {
+        const sameSpaceMatch = previousForum?.dbSpaceId
+          ? compatible.find((f) => f.dbSpaceId && UUIDsEqual(f.dbSpaceId, previousForum.dbSpaceId!))
+          : undefined;
+        const nextForum = sameSpaceMatch ?? compatible[0] ?? null;
+        this.askShareForumId = nextForum?.id ?? '';
+        if (nextForum) {
+          this.askShareSpaceId = nextForum.spaceId;
+        }
+        const prevSpace = previousForum?.dbSpaceId ?? null;
+        const nextSpace = nextForum?.dbSpaceId ?? null;
+        if (!prevSpace || !nextSpace || !UUIDsEqual(prevSpace, nextSpace)) {
+          this.askShareSelectedTagIds = [];
+        }
+      }
     }
     this.cdr.markForCheck();
   }
@@ -2206,14 +2392,10 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
     this.askShareEntryType = defaultType;
     this.askShareTitle = '';
     if (!this.isOfflineDemoMode && this.authorizedForums.length > 0) {
-      const preferred =
-        (this.activeSpaceFilter !== 'all'
-          ? this.authorizedForums.find(
-              (f) => f.spaceId === this.activeSpaceFilter || f.dbSpaceId === this.activeSpaceFilter,
-            )
-          : undefined) ?? this.authorizedForums[0];
-      this.askShareForumId = preferred.id;
-      this.askShareSpaceId = preferred.spaceId;
+      const compatible = this.compatibleAskShareForums;
+      const preferred = compatible[0] ?? this.authorizedForums[0];
+      this.askShareForumId = preferred?.id ?? '';
+      this.askShareSpaceId = preferred?.spaceId ?? 'architecture-standards';
     } else {
       this.askShareForumId = '';
       this.askShareSpaceId = this.activeSpaceFilter !== 'all' ? this.activeSpaceFilter : 'architecture-standards';
@@ -2221,6 +2403,8 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
     this.askShareBody = '';
     this.askShareTags = '';
     this.askShareSelectedTagIds = [];
+    this.askShareTagInputFocused = false;
+    this.askShareTagHighlightIndex = 0;
     this.askShareValidationErrors = {};
     this.askShareError = null;
     this.cdr.markForCheck();
@@ -2228,12 +2412,18 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
   }
 
   public onAskShareForumChange(forumId: string): void {
+    const previousForum = this.authorizedForums.find((f) => UUIDsEqual(f.id, this.askShareForumId));
     this.askShareForumId = forumId;
     const matched = this.authorizedForums.find((f) => UUIDsEqual(f.id, forumId));
     if (matched) {
       this.askShareSpaceId = matched.spaceId;
     }
-    this.askShareSelectedTagIds = [];
+    const prevSpace = previousForum?.dbSpaceId ?? null;
+    const nextSpace = matched?.dbSpaceId ?? null;
+    if (!prevSpace || !nextSpace || !UUIDsEqual(prevSpace, nextSpace)) {
+      this.askShareSelectedTagIds = [];
+    }
+    this.askShareTagHighlightIndex = 0;
     this.askShareError = null;
     this.cdr.markForCheck();
   }
@@ -2289,6 +2479,8 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
     const trigger = this.lastAskShareTrigger;
     this.lastAskShareTrigger = null;
     this.isAskShareModalOpen = false;
+    this.askShareTagInputFocused = false;
+    this.askShareTagHighlightIndex = 0;
     this.liveAskShareDeflections = [];
     this.askShareValidationErrors = {};
     this.askShareError = null;
@@ -2434,11 +2626,16 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
           : null,
       createQuestionPostEntity:
         provider && user
-          ? () =>
-              new Metadata().GetEntityObject<mjBizAppsCommunityForumQuestionPostEntity>(
+          ? async () => {
+              const gqlExecutor = ResolveCommunityGraphQLExecutor(provider);
+              if (gqlExecutor) {
+                return CreateForumQuestionPostGraphQLAdapter(gqlExecutor);
+              }
+              return new Metadata().GetEntityObject<mjBizAppsCommunityForumQuestionPostEntity>(
                 COMMUNITY_ENTITY_NAMES.ForumQuestionPosts,
                 user,
-              )
+              );
+            }
           : null,
       createPostTagEntity:
         provider && user
@@ -2631,10 +2828,29 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
     }
   }
 
-  private resolveTargetForumId(preferredForumId?: string | null): string | null {
+  private resolveTargetForumId(
+    preferredForumId?: string | null,
+    entryType?: AskShareEntryType,
+  ): string | null {
     const explicit = ResolveAuthorizedForumTarget(preferredForumId, this.allowedForumIDs);
     if (explicit) {
-      return explicit;
+      if (!entryType) {
+        return explicit;
+      }
+      const explicitForum = this.authorizedForums.find((f) => UUIDsEqual(f.id, explicit));
+      if (!explicitForum || IsForumCompatibleWithAskShareEntryType(explicitForum, entryType)) {
+        return explicit;
+      }
+    }
+    if (entryType) {
+      const compatible = FilterForumsForAskShareEntryType(
+        this.authorizedForums,
+        entryType,
+        this.activeSpaceFilter,
+      );
+      if (compatible.length > 0) {
+        return ResolveAuthorizedForumTarget(compatible[0].id, this.allowedForumIDs);
+      }
     }
     if (this.activeSpaceFilter !== 'all') {
       const spaceForum = this.authorizedForums.find((f) => f.spaceId === this.activeSpaceFilter);
@@ -2669,7 +2885,7 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
     const body = this.newQuestionBody.trim();
     if (!title || !body) return;
 
-    const targetForumId = this.resolveTargetForumId();
+    const targetForumId = this.resolveTargetForumId(null, 'Question');
     const generatedId = crypto.randomUUID();
     const created: CommunityHubQACanonItem = {
       id: generatedId,
@@ -2700,10 +2916,13 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
         }
         const md = new Metadata();
         const post = await md.GetEntityObject<mjBizAppsCommunityForumPostEntity>(COMMUNITY_ENTITY_NAMES.ForumPosts, user);
-        const qPost = await md.GetEntityObject<mjBizAppsCommunityForumQuestionPostEntity>(
-          COMMUNITY_ENTITY_NAMES.ForumQuestionPosts,
-          user,
-        );
+        const gqlExecutor = ResolveCommunityGraphQLExecutor(provider);
+        const qPost = gqlExecutor
+          ? CreateForumQuestionPostGraphQLAdapter(gqlExecutor)
+          : await md.GetEntityObject<mjBizAppsCommunityForumQuestionPostEntity>(
+              COMMUNITY_ENTITY_NAMES.ForumQuestionPosts,
+              user,
+            );
         if (!post || !qPost) {
           this.qaActionMessage = 'Could not instantiate Question entities.';
           this.cdr.markForCheck();
@@ -2717,15 +2936,21 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
         post.Status = 'Published';
         const postSaved = await post.Save();
         if (!postSaved) {
-          this.qaActionMessage = 'Failed to save Forum Post for question.';
+          const reason = post.LatestResult?.CompleteMessage?.trim() || post.LatestResult?.Message?.trim();
+          this.qaActionMessage = reason
+            ? `Failed to save question: ${reason}`
+            : 'Failed to save Forum Post for question.';
           this.cdr.markForCheck();
           return;
         }
         qPost.ID = post.ID;
         const qSaved = await qPost.Save();
         if (!qSaved) {
+          const qReason = qPost.LatestResult?.CompleteMessage?.trim() || qPost.LatestResult?.Message?.trim();
           await post.Delete().catch(() => false);
-          this.qaActionMessage = 'Failed to save Forum Question Post subtype — rolled back base post.';
+          this.qaActionMessage = qReason
+            ? `Failed to save Question subtype: ${qReason} — rolled back base post.`
+            : 'Failed to save Forum Question Post subtype — rolled back base post.';
           this.cdr.markForCheck();
           return;
         }
