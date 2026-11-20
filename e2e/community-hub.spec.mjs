@@ -440,6 +440,11 @@ test('Real Angular 21 Community Hub: 26 ClassFactory registrations, 4 tabs, PDF 
     'LivingThreadSynthesis action must update root post SummaryMarkdown from persisted replies',
   ).toContain('Verified failover timing in staging cluster.');
   expect(
+    Array.isArray(stateBeforeReload.communicationLogs) &&
+      stateBeforeReload.communicationLogs.some((l) => l.Status === 'Complete'),
+    'SendPersonalizedDigest must route through MJ CommunicationEngine and persist Complete communication logs',
+  ).toBe(true);
+  expect(
     Array.isArray(stateBeforeReload.digestOutbox) && stateBeforeReload.digestOutbox.length >= 1,
     'SendPersonalizedDigest action must record outbound digest in real CommunityTestCommunicationProvider outbox',
   ).toBe(true);
@@ -447,16 +452,24 @@ test('Real Angular 21 Community Hub: 26 ClassFactory registrations, 4 tabs, PDF 
   expect(outboxEntry.replyTo).toMatch(/^reply\+[A-Za-z0-9_-]{16}\.[A-Za-z0-9_-]{32}@reply\.bizapps\.local$/);
   expect(Buffer.byteLength(outboxEntry.replyTo.split('@')[0], 'utf8')).toBeLessThanOrEqual(64);
 
-  // Verify UserInfoEngine preferences were persisted through MJ: User Settings entity rows
-  expect(
-    Array.isArray(stateBeforeReload.userSettingRows) &&
-      stateBeforeReload.userSettingRows.some((s) => s.Setting === 'bizapps-community.digestCadence' && s.Value === 'daily'),
-    'UserInfoEngine digestCadence setting must persist as MJ: User Settings entity row',
-  ).toBe(true);
+  // Verify real debounced UserInfoEngine preferences flushed through MJ: User Settings entity rows
+  await expect
+    .poll(
+      async () => {
+        const snap = await (await page.request.get(new URL('/api/harness/state', harnessUrl).toString())).json();
+        return (
+          Array.isArray(snap.userSettingRows) &&
+          snap.userSettingRows.some((s) => s.Setting === 'bizapps-community.digestCadence' && s.Value === 'daily') &&
+          snap.userSettingRows.some((s) => s.Setting === 'bizapps-community.activeTopicFilter' && s.Value === 'Multi-Region')
+        );
+      },
+      { timeout: 5000 },
+    )
+    .toBe(true);
 
-  // CR-09: Verify ProcessInboundDigestReply via /api/harness/run-action using the real production
-  // ParseAndVerifyInboundEmailReply helper:
-  // (a) Tampered Reply-To token must be rejected with INVALID_SIGNATURE and 0 persisted reply posts
+  // CR-09: Verify ProcessInboundDigestReply via real GraphQLActionClient.RunAction -> ExecuteGQL('RunAction') ->
+  // registered ProcessInboundDigestReplyAction.Run(...):
+  // (a) Tampered Reply-To token must be rejected with 0 persisted reply posts
   const [replyLocal, replyDomain] = outboxEntry.replyTo.split('@');
   const tamperedReplyAddress = `${replyLocal.slice(0, -1)}${replyLocal.endsWith('A') ? 'B' : 'A'}@${replyDomain}`;
   const postCountBeforeReply = stateBeforeReload.posts.length;
@@ -470,11 +483,11 @@ test('Real Angular 21 Community Hub: 26 ClassFactory registrations, 4 tabs, PDF 
     ['9A5B3D21-6C0F-4E8B-8D42-7F9C3E5A2B01', tamperedReplyAddress],
   );
   expect(tamperedInboundRes.Success).toBe(false);
-  expect(tamperedInboundRes.ResultCode).toBe('INVALID_SIGNATURE');
+  expect(tamperedInboundRes.Message).toMatch(/HMAC-SHA256 signature verification failed/i);
   const stateAfterTampered = await (await page.request.get(new URL('/api/harness/state', harnessUrl).toString())).json();
   expect(stateAfterTampered.posts.length).toBe(postCountBeforeReply);
 
-  // (b) Captured valid Reply-To token verifies via production helper, strips quoted email chrome,
+  // (b) Captured valid Reply-To token verifies via production action, strips quoted email chrome,
   // and persists exactly 1 new authorized reply post
   const validInboundRes = await page.evaluate(
     ([actionId, replyTo]) =>
@@ -490,7 +503,10 @@ test('Real Angular 21 Community Hub: 26 ClassFactory registrations, 4 tabs, PDF 
     ['9A5B3D21-6C0F-4E8B-8D42-7F9C3E5A2B01', outboxEntry.replyTo],
   );
   expect(validInboundRes.Success).toBe(true);
-  expect(validInboundRes.ResultCode).toBe('SUCCESS');
+  expect(Array.isArray(validInboundRes.Result)).toBe(true);
+  expect(validInboundRes.Result.find((p) => p.Name === 'CleanedBodyMarkdown')?.Value).toBe(
+    'Confirmed in staging — rotating keys cleanly.',
+  );
   const stateAfterInbound = await (await page.request.get(new URL('/api/harness/state', harnessUrl).toString())).json();
   expect(stateAfterInbound.posts.length).toBe(postCountBeforeReply + 1);
   const inboundPersistedReply = stateAfterInbound.posts.find(
@@ -512,7 +528,7 @@ test('Real Angular 21 Community Hub: 26 ClassFactory registrations, 4 tabs, PDF 
     window.__runGraphQLAction('00000000-0000-0000-0000-000000000000', []),
   );
   expect(invalidActionResult.Success).toBe(false);
-  expect(invalidActionResult.ResultCode).toBe('ACTION_NOT_FOUND');
+  expect(invalidActionResult.Message).toMatch(/Unknown or inactive action ID/i);
 
   // RELOAD FULL PAGE and verify all 6 mutated states + UserInfoEngine preferences remain rendered cleanly from DB!
   await page.reload();
@@ -696,4 +712,65 @@ test('Real Angular 21 Community Hub: 26 ClassFactory registrations, 4 tabs, PDF 
     ],
   };
   writeFileSync(join(REPORTS_DIR, 'community-hub-wcag-report.json'), JSON.stringify(report, null, 2));
+});
+
+test('CR-09: UserInfoEngine and ProcessInboundDigestReplyAction fail visibly on persistence failures without fallback masking', async ({ page }) => {
+  await page.request.post(new URL('/api/harness/reset', harnessUrl).toString());
+  await page.goto(harnessUrl);
+  await page.waitForFunction(() => window.__harnessReady === true);
+
+  // 1. Trigger a real UI personalized digest so a signed Reply-To is issued via CommunicationEngine
+  await page.click('#mjc-header-digest-btn');
+  await page.click('#mjc-digest-send-test-btn');
+  await expect(page.locator('#mjc-digest-send-status')).toContainText('Community Test Email Driver');
+
+  const initialState = await (await page.request.get(new URL('/api/harness/state', harnessUrl).toString())).json();
+  expect(initialState.communicationLogs.length).toBeGreaterThanOrEqual(1);
+  expect(initialState.digestOutbox.length).toBeGreaterThanOrEqual(1);
+  const replyTo = initialState.digestOutbox[0].replyTo;
+  const postsBefore = initialState.posts.length;
+
+  // 2. Inject Forum Posts persistence failure and verify ProcessInboundDigestReplyAction fails visibly (0 writes)
+  await page.request.post(new URL('/api/harness/faults', harnessUrl).toString(), {
+    data: { failSaveEntities: ['MJ_BizApps_Community: Forum Posts'] },
+  });
+  const saveFailRes = await page.evaluate(
+    ([actionId, addr]) =>
+      window.__runGraphQLAction(actionId, [
+        { Name: 'ReplyToAddress', Value: addr, Type: 'Input' },
+        { Name: 'SenderEmail', Value: 'member@bizapps-community.local', Type: 'Input' },
+        { Name: 'RawBodyText', Value: 'Should fail cleanly when ForumPost.Save() fails', Type: 'Input' },
+      ]),
+    ['9A5B3D21-6C0F-4E8B-8D42-7F9C3E5A2B01', replyTo],
+  );
+  expect(saveFailRes.Success).toBe(false);
+  expect(saveFailRes.Message).toMatch(/Failed to persist inbound email reply/i);
+  const stateAfterSaveFail = await (await page.request.get(new URL('/api/harness/state', harnessUrl).toString())).json();
+  expect(stateAfterSaveFail.posts.length).toBe(postsBefore);
+
+  // 3. Inject MJ: User Settings persistence failure and verify real UserInfoEngine.SetSetting fails visibly
+  await page.request.post(new URL('/api/harness/faults', harnessUrl).toString(), {
+    data: { failSaveEntities: ['MJ: User Settings'] },
+  });
+  const settingResult = await page.evaluate(async () => {
+    const ok = await window.__userInfoEngine.SetSetting('bizapps-community.digestCadence', 'weekly');
+    return {
+      ok,
+      cached: window.__userInfoEngine.GetSetting('bizapps-community.digestCadence') ?? null,
+    };
+  });
+  expect(settingResult.ok).toBe(false);
+
+  const stateAfterSettingFail = await (await page.request.get(new URL('/api/harness/state', harnessUrl).toString())).json();
+  expect(
+    stateAfterSettingFail.userSettingRows.some((r) => r.Setting === 'bizapps-community.digestCadence'),
+  ).toBe(false);
+
+  // Reloading must NOT show any masked preference value
+  await page.reload();
+  await page.waitForFunction(() => window.__harnessReady === true);
+  const reloadedSetting = await page.evaluate(
+    () => window.__userInfoEngine.GetSetting('bizapps-community.digestCadence') ?? null,
+  );
+  expect(reloadedSetting).toBeNull();
 });

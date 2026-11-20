@@ -3,6 +3,8 @@ import { describe, it } from 'node:test';
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { Metadata, RunView } from '@memberjunction/core';
+import { UserInfoEngine } from '@memberjunction/core-entities';
 import { GraphQLActionClient, type GraphQLDataProvider } from '@memberjunction/graphql-dataprovider';
 import { GetGlobalObjectStore, IsValidUUID } from '@memberjunction/global';
 import {
@@ -467,5 +469,171 @@ describe('Zero-CAC Wedge UX — Live Ask-First, Living Thread Synthesis & GraphQ
     assert.match(hubHtml, /id="mjc-detail-synthesis-card"/);
     assert.match(hubHtml, /id="mjc-detail-open-graduated-space-link"/);
     assert.match(hubHtml, /Why this was picked for you:/);
+  });
+
+  it('harness executes real GraphQLActionClient.RunAction, real UserInfoEngine, registered BaseAction pipelines, and CommunicationEngine without monkey-patching or fallback masking (CR-09)', async () => {
+    const repoRoot = join(HERE, '..', '..', '..', '..');
+    const entrySrc = readFileSync(join(repoRoot, 'e2e', 'harness', 'angular-harness-entry.mjs'), 'utf8');
+    const storeSrc = readFileSync(join(repoRoot, 'e2e', 'harness', 'harness-store.mjs'), 'utf8');
+
+    // Static contract assertions: no method replacement or fallback settings masking
+    assert.doesNotMatch(entrySrc, /GraphQLActionClient\.prototype\.RunAction\s*=/);
+    assert.doesNotMatch(entrySrc, /uiEngine\.(GetSetting|SetSetting|SetSettingDebounced)\s*=/);
+    assert.doesNotMatch(entrySrc, /\/api\/harness\/user-settings/);
+    assert.match(entrySrc, /UserInfoEngine\.Instance\.Config/);
+    assert.match(entrySrc, /String\(query\)\.includes\('RunAction\('\)/);
+    assert.match(storeSrc, /ClassFactory\.CreateInstance\(BaseAction,\s*installedEntry\.DriverClass\)/);
+    assert.match(storeSrc, /CommunicationEngine\.Instance\.Config/);
+    assert.doesNotMatch(storeSrc, /usedCommunicationEngine:\s*true/);
+
+    const { createHarnessStore } = await import('../../../../e2e/harness/harness-store.mjs');
+    const store = createHarnessStore();
+    store.reset();
+
+    const prevMetadataProvider = Metadata.Provider;
+    const prevRunViewProvider = RunView.Provider;
+    const storeProvider = store.createProvider();
+    Metadata.Provider = storeProvider;
+    RunView.Provider = storeProvider;
+
+    try {
+      const gqlProvider = {
+        ExecuteGQL: async (query: string, variables: { input: { ActionID: string; Params?: Array<{ Name: string; Value: string; Type: 'Input' | 'Output' }> } }) => {
+          if (query.includes('RunAction(') && variables?.input?.ActionID) {
+            const actionRes = await store.runAction(variables.input.ActionID, variables.input.Params ?? []);
+            return {
+              RunAction: {
+                Success: actionRes.Success,
+                Message: actionRes.Message,
+                ResultCode: actionRes.ResultCode,
+                ResultData: actionRes.ResultData,
+              },
+            };
+          }
+          return store.executeGraphQL(query, variables);
+        },
+      };
+
+      const actionClient = new GraphQLActionClient(gqlProvider as GraphQLDataProvider);
+
+      // (a) Real GraphQLActionClient.RunAction -> SendPersonalizedCommunityDigestAction -> CommunicationEngine -> CommunityTestCommunicationProvider
+      const digestRes = await actionClient.RunAction(COMMUNITY_ACTION_IDS.SendPersonalizedDigest, [
+        { Name: 'UseTestDriver', Value: 'true', Type: 'Input' },
+        { Name: 'DryRun', Value: 'false', Type: 'Input' },
+        { Name: 'CommunityName', Value: 'Integration Test Community', Type: 'Input' },
+        { Name: 'MaxItemsPerDigest', Value: '5', Type: 'Input' },
+      ]);
+      assert.equal(digestRes.Success, true, digestRes.Message);
+
+      const parsedDigest = ParseSendDigestActionResult({
+        success: true,
+        message: digestRes.Message,
+        actionResult: digestRes,
+      });
+      assert.equal(parsedDigest.sentCount, 1);
+      assert.ok(parsedDigest.topReplyToAddress, 'Expected real Reply-To address from SendPersonalizedCommunityDigestAction');
+
+      const deliveriesRaw = GetActionOutputValue(digestRes, 'DeliveriesJSON');
+      assert.equal(typeof deliveriesRaw, 'string');
+      const deliveries = JSON.parse(String(deliveriesRaw)) as Array<{ usedCommunicationEngine: boolean; replyToAddress: string }>;
+      assert.equal(deliveries[0].usedCommunicationEngine, true, 'CommunicationEngine must have executed');
+
+      const snapAfterSend = store.getDebugSnapshot();
+      assert.ok(snapAfterSend.communicationLogs.length >= 1, 'CommunicationEngine must persist MJ: Communication Logs');
+      assert.equal(snapAfterSend.communicationLogs[0].Status, 'Complete');
+      assert.equal(snapAfterSend.digestOutbox.length, 1);
+      assert.equal(snapAfterSend.digestOutbox[0].replyTo, parsedDigest.topReplyToAddress);
+
+      // Verify usedCommunicationEngine reflects actual engine state (false when provider is absent from CommunicationEngine)
+      store.setFaults({ disableCommunicationEngineProviders: true });
+      const fallbackDigestRes = await actionClient.RunAction(COMMUNITY_ACTION_IDS.SendPersonalizedDigest, [
+        { Name: 'UseTestDriver', Value: 'true', Type: 'Input' },
+        { Name: 'DryRun', Value: 'false', Type: 'Input' },
+        { Name: 'CommunityName', Value: 'Integration Test Community', Type: 'Input' },
+      ]);
+      assert.equal(fallbackDigestRes.Success, true);
+      const fallbackDeliveries = JSON.parse(String(GetActionOutputValue(fallbackDigestRes, 'DeliveriesJSON'))) as Array<{
+        usedCommunicationEngine: boolean;
+      }>;
+      assert.equal(fallbackDeliveries[0].usedCommunicationEngine, false);
+      store.setFaults({ disableCommunicationEngineProviders: false });
+
+      // (b) ProcessInboundDigestReplyAction: tampering (0 writes), save failure (0 writes), revocation (0 writes), valid reply (1 write)
+      const postsBefore = store.getDebugSnapshot().posts.length;
+      const [localPart, domainPart] = String(parsedDigest.topReplyToAddress).split('@');
+      const tamperedAddr = `${localPart.slice(0, -1)}${localPart.endsWith('A') ? 'B' : 'A'}@${domainPart}`;
+
+      const tamperedRes = await actionClient.RunAction(COMMUNITY_ACTION_IDS.ProcessInboundDigestReply, [
+        { Name: 'ReplyToAddress', Value: tamperedAddr, Type: 'Input' },
+        { Name: 'SenderEmail', Value: 'member@bizapps-community.local', Type: 'Input' },
+        { Name: 'RawBodyText', Value: 'Tampered token must fail', Type: 'Input' },
+      ]);
+      assert.equal(tamperedRes.Success, false);
+      assert.equal(store.getDebugSnapshot().posts.length, postsBefore);
+
+      // Save failure propagation from ForumPost entity Save()
+      store.setFaults({ failSaveEntities: ['MJ_BizApps_Community: Forum Posts'] });
+      const saveFailRes = await actionClient.RunAction(COMMUNITY_ACTION_IDS.ProcessInboundDigestReply, [
+        { Name: 'ReplyToAddress', Value: String(parsedDigest.topReplyToAddress), Type: 'Input' },
+        { Name: 'SenderEmail', Value: 'member@bizapps-community.local', Type: 'Input' },
+        { Name: 'RawBodyText', Value: 'Should fail on ForumPost.Save()', Type: 'Input' },
+      ]);
+      assert.equal(saveFailRes.Success, false);
+      assert.match(saveFailRes.Message, /Failed to persist inbound email reply/i);
+      assert.equal(store.getDebugSnapshot().posts.length, postsBefore);
+      store.setFaults({ failSaveEntities: [] });
+
+      // Valid reply persists 1 stripped child post
+      const validReplyRes = await actionClient.RunAction(COMMUNITY_ACTION_IDS.ProcessInboundDigestReply, [
+        { Name: 'ReplyToAddress', Value: String(parsedDigest.topReplyToAddress), Type: 'Input' },
+        { Name: 'SenderEmail', Value: 'member@bizapps-community.local', Type: 'Input' },
+        { Name: 'RawBodyText', Value: 'Real action pipeline reply.\n\nOn Thu wrote:\n> Quoted', Type: 'Input' },
+      ]);
+      assert.equal(validReplyRes.Success, true, validReplyRes.Message);
+      assert.equal(store.getDebugSnapshot().posts.length, postsBefore + 1);
+      assert.equal(
+        GetActionOutputValue(validReplyRes, 'CleanedBodyMarkdown'),
+        'Real action pipeline reply.',
+      );
+
+      // Authorization enforcement on revoked SpaceMember
+      store.getStateMutable().spaceMembers[0].Status = 'Removed';
+      const revokedRes = await actionClient.RunAction(COMMUNITY_ACTION_IDS.ProcessInboundDigestReply, [
+        { Name: 'ReplyToAddress', Value: String(parsedDigest.topReplyToAddress), Type: 'Input' },
+        { Name: 'SenderEmail', Value: 'member@bizapps-community.local', Type: 'Input' },
+        { Name: 'RawBodyText', Value: 'Revoked member must not persist', Type: 'Input' },
+      ]);
+      assert.equal(revokedRes.Success, false);
+      assert.match(revokedRes.Message, /not active|permission|authorized/i);
+      assert.equal(store.getDebugSnapshot().posts.length, postsBefore + 1);
+
+      // (c) Real UserInfoEngine preference persistence + visible failure on MJ: User Settings save failure
+      const engine = UserInfoEngine.Instance;
+      await engine.Config(true, storeProvider.CurrentUser, storeProvider);
+      const savedOk = await engine.SetSetting('bizapps-community.digestCadence', 'daily', storeProvider.CurrentUser);
+      assert.equal(savedOk, true);
+      assert.equal(engine.GetSetting('bizapps-community.digestCadence'), 'daily');
+      assert.equal(
+        store.getDebugSnapshot().userSettingRows.some(
+          (r: { Setting: string; Value: string }) =>
+            r.Setting === 'bizapps-community.digestCadence' && r.Value === 'daily',
+        ),
+        true,
+      );
+
+      store.setFaults({ failSaveEntities: ['MJ: User Settings'] });
+      const failedSaveOk = await engine.SetSetting('bizapps-community.failedKey', 'blocked', storeProvider.CurrentUser);
+      assert.equal(failedSaveOk, false, 'UserInfoEngine.SetSetting must return false visibly when MJ: User Settings save fails');
+      assert.equal(
+        store.getDebugSnapshot().userSettingRows.some((r: { Setting: string }) => r.Setting === 'bizapps-community.failedKey'),
+        false,
+      );
+      await engine.Config(true, storeProvider.CurrentUser, storeProvider);
+      assert.equal(engine.GetSetting('bizapps-community.failedKey'), undefined);
+    } finally {
+      store.reset();
+      Metadata.Provider = prevMetadataProvider;
+      RunView.Provider = prevRunViewProvider;
+    }
   });
 });

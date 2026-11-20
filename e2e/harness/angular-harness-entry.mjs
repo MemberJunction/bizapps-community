@@ -133,26 +133,48 @@ async function postHarnessJson(endpoint, body) {
   }
 }
 
-function createEntityWrapper(entityName, existingRow) {
+function createEntityWrapper(entityName, existingRow, isSavedInit = Boolean(existingRow)) {
   const record = existingRow ? { ...existingRow } : { ID: crypto.randomUUID() };
+  let isSaved = isSavedInit;
   let activeTxGroup = null;
 
-  const commitOrThrow = async (op) => {
+  const commitOrFalse = async (op) => {
     try {
       const res = await postHarnessJson('/api/harness/tx-submit', {
         ops: [{ op, entityName, record: { ...record } }],
       });
-      return Boolean(res?.Success);
+      if (res?.Success) {
+        isSaved = op === 'save';
+        entityObj.LatestResult = null;
+        return true;
+      }
+      const msg = res?.ErrorMessage || `Harness ${op} failed for ${entityName}`;
+      entityObj.LatestResult = { Message: msg, CompleteMessage: msg };
+      return false;
     } catch (err) {
-      entityObj.LatestResult = { CompleteMessage: err instanceof Error ? err.message : String(err) };
-      throw err;
+      const msg = err instanceof Error ? err.message : String(err);
+      entityObj.LatestResult = { Message: msg, CompleteMessage: msg };
+      return false;
     }
   };
 
   const entityObj = {
     LatestResult: null,
+    get IsSaved() {
+      return isSaved;
+    },
     NewRecord() {
       record.ID = crypto.randomUUID();
+      isSaved = false;
+    },
+    Get(field) {
+      return record[field];
+    },
+    Set(field, value) {
+      record[field] = value;
+    },
+    GetAll() {
+      return { ...record };
     },
     get TransactionGroup() {
       return activeTxGroup;
@@ -165,14 +187,14 @@ function createEntityWrapper(entityName, existingRow) {
         activeTxGroup.AddTransaction({ op: 'save', entityName, record: { ...record } });
         return true;
       }
-      return commitOrThrow('save');
+      return commitOrFalse('save');
     },
     async Delete() {
       if (activeTxGroup) {
         activeTxGroup.AddTransaction({ op: 'delete', entityName, record: { ...record } });
         return true;
       }
-      return commitOrThrow('delete');
+      return commitOrFalse('delete');
     },
   };
 
@@ -190,24 +212,58 @@ function createEntityWrapper(entityName, existingRow) {
 }
 
 const mockProvider = {
+  ProviderType: 'Network',
   CurrentUser: HARNESS_USER,
+  Entities: [],
+  EntityByName: () => undefined,
   async RunView(params) {
-    return postHarnessJson('/api/harness/run-view', { params });
+    const res = await postHarnessJson('/api/harness/run-view', { params });
+    if (params?.ResultType !== 'simple' && Array.isArray(res?.Results)) {
+      return {
+        ...res,
+        Results: res.Results.map((row) => createEntityWrapper(params.EntityName, row, true)),
+      };
+    }
+    return res;
   },
   async RunViews(paramsArray) {
     return Promise.all(paramsArray.map((p) => this.RunView(p)));
   },
   async GetEntityObject(entityName, compositeKeyOrUser) {
     let existing = null;
-    const keyId = compositeKeyOrUser?.KeyValuePairs?.[0]?.Value ?? compositeKeyOrUser?.ID;
+    const keyId = Array.isArray(compositeKeyOrUser?.KeyValuePairs)
+      ? compositeKeyOrUser.KeyValuePairs[0]?.Value
+      : null;
     if (keyId) {
       const res = await postHarnessJson('/api/harness/entity-by-id', { entityName, id: keyId });
       existing = res?.record ?? null;
       if (!existing) return null;
     }
-    return createEntityWrapper(entityName, existing);
+    return createEntityWrapper(entityName, existing, Boolean(existing));
   },
   async ExecuteGQL(query, variables) {
+    if (String(query).includes('RunAction(') && variables?.input?.ActionID) {
+      const input = variables.input;
+      window.__executedActions = window.__executedActions || [];
+      window.__executedActions.push({ actionName: input.ActionID, params: input.Params ?? [] });
+      const actionResult = await postHarnessJson('/api/harness/run-action', {
+        actionID: input.ActionID,
+        params: Array.isArray(input.Params) ? input.Params : [],
+      });
+      return {
+        RunAction: {
+          Success: Boolean(actionResult?.Success),
+          Message: actionResult?.Message ?? '',
+          ResultCode: actionResult?.ResultCode ?? (actionResult?.Success ? 'SUCCESS' : 'FAILED'),
+          ResultData:
+            typeof actionResult?.ResultData === 'string'
+              ? actionResult.ResultData
+              : actionResult?.ResultData != null
+                ? JSON.stringify(actionResult.ResultData)
+                : null,
+        },
+      };
+    }
     return postHarnessJson('/api/harness/graphql', { query, variables });
   },
   async CreateTransactionGroup() {
@@ -227,94 +283,11 @@ const mockProvider = {
 Metadata.Provider = mockProvider;
 RunView.Provider = mockProvider;
 
-// Fixture-backed harness boundary: loads persisted 'MJ: User Settings' entity rows via
-// /api/harness/run-view (fallback /api/harness/user-settings) and routes UserInfoEngine writes
-// through GetEntityObject('MJ: User Settings') -> Save() + /api/harness/user-settings so both the
-// real MJ entity transaction path and harness settings endpoint stay synchronized across reloads.
-const userSettingsMap = new Map();
-const userSettingEntityIds = new Map();
-try {
-  const settingsView = await mockProvider.RunView({
-    EntityName: 'MJ: User Settings',
-    ExtraFilter: `UserID = '${HARNESS_USER.ID}'`,
-    ResultType: 'simple',
-  });
-  for (const row of settingsView?.Results ?? []) {
-    if (typeof row?.Setting === 'string' && typeof row?.Value === 'string') {
-      userSettingsMap.set(row.Setting, row.Value);
-      if (row.ID) userSettingEntityIds.set(row.Setting, row.ID);
-    }
-  }
-  if (userSettingsMap.size === 0) {
-    const initialSettingsRes = await fetch('/api/harness/user-settings');
-    if (initialSettingsRes.ok) {
-      const parsed = await initialSettingsRes.json();
-      for (const [k, v] of Object.entries(parsed?.settings ?? {})) {
-        if (typeof v === 'string') {
-          userSettingsMap.set(k, v);
-        }
-      }
-    }
-  }
-} catch {
-  // Ignore if harness settings endpoint is unavailable.
-}
-
-async function persistUserSettingViaEntity(key, value) {
-  userSettingsMap.set(key, value);
-  const existingId = userSettingEntityIds.get(key);
-  const settingEntity = existingId
-    ? await mockProvider.GetEntityObject('MJ: User Settings', { ID: existingId })
-    : await mockProvider.GetEntityObject('MJ: User Settings');
-  if (settingEntity) {
-    if (!existingId) {
-      settingEntity.NewRecord();
-      settingEntity.UserID = HARNESS_USER.ID;
-      settingEntity.Setting = key;
-      userSettingEntityIds.set(key, settingEntity.ID);
-    }
-    settingEntity.Value = value;
-    await settingEntity.Save();
-  }
-  await postHarnessJson('/api/harness/user-settings', { key, value });
-  return true;
-}
-
-const uiEngine = UserInfoEngine.Instance;
-uiEngine.GetSetting = (key) => userSettingsMap.get(key);
-uiEngine.SetSetting = async (key, value) => persistUserSettingViaEntity(key, value);
-uiEngine.SetSettingDebounced = (key, value) => {
-  void persistUserSettingViaEntity(key, value);
-};
-
-GraphQLActionClient.prototype.RunAction = async function (actionName, params) {
-  window.__executedActions = window.__executedActions || [];
-  window.__executedActions.push({ actionName, params });
-
-  const actionResult = await postHarnessJson('/api/harness/run-action', {
-    actionID: actionName,
-    params: Array.isArray(params) ? params : [],
-  });
-
-  let parsedResult = null;
-  if (typeof actionResult?.ResultData === 'string' && actionResult.ResultData.trim()) {
-    try {
-      parsedResult = JSON.parse(actionResult.ResultData);
-    } catch {
-      parsedResult = actionResult.ResultData;
-    }
-  }
-
-  return {
-    Success: Boolean(actionResult?.Success),
-    ResultCode: actionResult?.ResultCode ?? (actionResult?.Success ? 'SUCCESS' : 'FAILED'),
-    Message: actionResult?.Message ?? '',
-    Result: parsedResult,
-    LogEntry: null,
-    Params: Array.isArray(params) ? params : [],
-    RunParams: null,
-  };
-};
+// Configure the real UserInfoEngine against mockProvider so GetSetting, SetSetting, and
+// SetSettingDebounced execute their genuine 'MJ: User Settings' entity persistence path with zero
+// method monkey-patching and zero fallback HTTP masking.
+await UserInfoEngine.Instance.Config(true, HARNESS_USER, mockProvider);
+window.__userInfoEngine = UserInfoEngine.Instance;
 
 window.__runGraphQLAction = async (actionId, params = []) => {
   return new GraphQLActionClient(mockProvider).RunAction(actionId, params);

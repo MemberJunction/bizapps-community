@@ -131,6 +131,12 @@ export async function StartHarnessServer() {
         sendJson(res, 200, { Success: true });
         return;
       }
+      if (urlPath === '/api/harness/faults' && req.method === 'POST') {
+        const body = await readJsonBody(req);
+        store.setFaults(body ?? {});
+        sendJson(res, 200, { Success: true });
+        return;
+      }
       if (urlPath === '/api/harness/state' && req.method === 'GET') {
         sendJson(res, 200, store.getDebugSnapshot());
         return;

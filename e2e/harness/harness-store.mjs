@@ -1,26 +1,31 @@
 import { randomUUID } from 'node:crypto';
 import { readFileSync } from 'node:fs';
+import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import {
   COMMUNITY_ACTION_IDS,
-  CommunityEmbeddingPersonalizationService,
-  CommunityRules,
 } from '../../packages/Core/dist/index.js';
 import {
   BuildCommunityDigestPDF,
-  BuildReplyToEmailAddress,
   ClearCompactReplyTokenRegistry,
   CommunityTestCommunicationProvider,
   ComputeSemanticAskFirstDeflection,
   GradeEpistemicAnswer,
   LoadBizAppsCommunityActions,
-  ParseAndVerifyInboundEmailReply,
-  RenderPersonalizedDigestEmail,
-  SignDigestReplyToken,
-  StripQuotedEmailReply,
   SynthesizeLivingThread,
 } from '../../packages/Actions/dist/index.js';
+
+const actionsRequire = createRequire(new URL('../../packages/Actions/package.json', import.meta.url));
+const { BaseAction } = await import(pathToFileURL(actionsRequire.resolve('@memberjunction/actions')).href);
+const { RunActionParams } = await import(pathToFileURL(actionsRequire.resolve('@memberjunction/actions-base')).href);
+const { CommunicationEngine } = await import(
+  pathToFileURL(actionsRequire.resolve('@memberjunction/communication-engine')).href
+);
+const { CompositeKey, Metadata, ProviderType, RunView, UserInfo } = await import(
+  pathToFileURL(actionsRequire.resolve('@memberjunction/core')).href
+);
+const { MJGlobal } = await import(pathToFileURL(actionsRequire.resolve('@memberjunction/global')).href);
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ACTIONS_METADATA_PATH = join(HERE, '..', '..', 'metadata', 'actions', '.community-actions.json');
@@ -93,20 +98,67 @@ const OTHER_SPACE_POST_ID_SET = new Set(
 );
 
 function buildInitialState() {
-  return {
+  const stateObj = {
+    users: [
+      {
+        ID: C.HARNESS_USER_ID,
+        Name: 'E2E Harness Member',
+        Email: 'member@bizapps-community.local',
+      },
+    ],
     spaces: [
-      { ID: C.SPACE_1, Name: 'Customer Success Community' },
-      { ID: C.SPACE_2, Name: 'Internal Security Guild' },
+      { ID: C.SPACE_1, Name: 'Customer Success Community', ParentID: null, InheritsMembership: false, ClosedAt: null },
+      { ID: C.SPACE_2, Name: 'Internal Security Guild', ParentID: null, InheritsMembership: false, ClosedAt: null },
     ],
     communitySpaces: [
       { ID: C.SPACE_1, Slug: 'customer-success', CommunityKind: 'Product Community' },
       { ID: C.SPACE_2, Slug: 'internal-security-guild', CommunityKind: 'Working Group' },
     ],
     forums: [
-      { ID: C.FORUM_1, SpaceID: C.SPACE_1, Name: 'Product Roadmap Q1', Description: 'Roadmap ideas and voting' },
-      { ID: C.FORUM_2, SpaceID: C.SPACE_1, Name: 'Enterprise Scale Q2', Description: 'Scale architecture roadmap' },
-      { ID: C.FORUM_GENERAL, SpaceID: C.SPACE_1, Name: 'Knowledge & Q&A', Description: 'Technical Q&A and runbooks' },
-      { ID: C.FORUM_OTHER_SPACE, SpaceID: C.SPACE_2, Name: 'Isolated Security Forum', Description: 'Security guild' },
+      {
+        ID: C.FORUM_1,
+        SpaceID: C.SPACE_1,
+        Name: 'Product Roadmap Q1',
+        Slug: 'product-roadmap-q1',
+        Description: 'Roadmap ideas and voting',
+        Status: 'Active',
+        VisibilityBand: 'Shared',
+        InheritsSpaceMembers: true,
+        PostingPolicy: 'Open',
+      },
+      {
+        ID: C.FORUM_2,
+        SpaceID: C.SPACE_1,
+        Name: 'Enterprise Scale Q2',
+        Slug: 'enterprise-scale-q2',
+        Description: 'Scale architecture roadmap',
+        Status: 'Active',
+        VisibilityBand: 'Shared',
+        InheritsSpaceMembers: true,
+        PostingPolicy: 'Open',
+      },
+      {
+        ID: C.FORUM_GENERAL,
+        SpaceID: C.SPACE_1,
+        Name: 'Knowledge & Q&A',
+        Slug: 'knowledge-qa',
+        Description: 'Technical Q&A and runbooks',
+        Status: 'Active',
+        VisibilityBand: 'Shared',
+        InheritsSpaceMembers: true,
+        PostingPolicy: 'Open',
+      },
+      {
+        ID: C.FORUM_OTHER_SPACE,
+        SpaceID: C.SPACE_2,
+        Name: 'Isolated Security Forum',
+        Slug: 'isolated-security-forum',
+        Description: 'Security guild',
+        Status: 'Active',
+        VisibilityBand: 'Shared',
+        InheritsSpaceMembers: true,
+        PostingPolicy: 'Open',
+      },
     ],
     postTypes: [
       { ID: C.PT_QUESTION, Code: 'question', Name: 'Question' },
@@ -430,6 +482,30 @@ function buildInitialState() {
       { ID: C.Q_2, AcceptedAnswerPostID: null, AICanonAnswerPostID: null },
       { ID: C.Q_OTHER_SPACE, AcceptedAnswerPostID: C.ANS_OTHER_SPACE, AICanonAnswerPostID: C.ANS_OTHER_SPACE },
     ],
+    communityMemberProfiles: [],
+    communicationBaseMessageTypes: [
+      { ID: '11110000-0000-4000-8000-000000000001', Name: 'Email' },
+    ],
+    communicationProviders: [
+      {
+        ID: '11110000-0000-4000-8000-000000000002',
+        Name: 'Community Test Email Driver',
+        SupportsSending: true,
+        SupportsReceiving: false,
+        SupportsDrafts: true,
+        Status: 'Active',
+      },
+    ],
+    communicationProviderMessageTypes: [
+      {
+        ID: '11110000-0000-4000-8000-000000000003',
+        CommunicationProviderID: '11110000-0000-4000-8000-000000000002',
+        CommunicationBaseMessageTypeID: '11110000-0000-4000-8000-000000000001',
+        Name: 'Standard Email',
+        Status: 'Active',
+      },
+    ],
+    communicationLogs: [],
     userSettings: [],
     spaceRoles: [
       { ID: C.SPACE_ROLE_MEMBER, CanSeeTeamBand: true, CanContribute: true, IsActive: true },
@@ -487,6 +563,15 @@ function buildInitialState() {
     gqlCalls: [],
     actionCalls: [],
   };
+  stateObj.posts = stateObj.posts.map((p) => ({
+    VisibilityBand: 'Shared',
+    IsLocked: false,
+    AuthorUser: 'E2E Harness Member',
+    __mj_CreatedAt: '2026-11-18T10:00:00.000Z',
+    LastActivityAt: '2026-11-18T12:00:00.000Z',
+    ...p,
+  }));
+  return stateObj;
 }
 
 function parseInIds(extraFilter, columnName = 'ID') {
@@ -511,6 +596,17 @@ function parseEqFilter(extraFilter, columnName) {
 
 export function createHarnessStore() {
   let state = buildInitialState();
+  let faults = {
+    failSaveEntities: new Set(),
+    disableCommunicationEngineProviders: false,
+  };
+
+  const HARNESS_SERVER_USER = new UserInfo(undefined, {
+    ID: C.HARNESS_USER_ID,
+    Name: 'E2E Harness Member',
+    Email: 'member@bizapps-community.local',
+    UserRoles: [],
+  });
 
   function recomputePostRollups(postId) {
     if (!postId) return;
@@ -528,6 +624,10 @@ export function createHarnessStore() {
   function applyOp(entry) {
     const { op, entityName, record } = entry;
     const isDelete = op === 'delete';
+
+    if (faults.failSaveEntities.has(entityName)) {
+      throw new Error(`Simulated persistence failure for ${entityName}`);
+    }
 
     if (entityName === 'MJ_BizApps_Community: Forum Idea Allocations') {
       if (isDelete) {
@@ -573,6 +673,11 @@ export function createHarnessStore() {
         ReplyCount: 0,
         ReactionScore: 0,
         PromotedToSpaceID: null,
+        VisibilityBand: 'Shared',
+        IsLocked: false,
+        AuthorUser: 'E2E Harness Member',
+        __mj_CreatedAt: new Date().toISOString(),
+        LastActivityAt: new Date().toISOString(),
         ...record,
       };
       const idx = state.posts.findIndex((p) => p.ID.toLowerCase() === String(normalized.ID).toLowerCase());
@@ -659,14 +764,142 @@ export function createHarnessStore() {
       };
       if (idx >= 0) state.userSettings[idx] = { ...state.userSettings[idx], ...row };
       else state.userSettings.push(row);
+      return;
+    }
+
+    if (entityName === 'MJ: Communication Logs') {
+      if (isDelete) {
+        state.communicationLogs = state.communicationLogs.filter(
+          (l) => l.ID.toLowerCase() !== String(record.ID).toLowerCase(),
+        );
+        return;
+      }
+      const row = {
+        ID: record.ID || randomUUID(),
+        ...record,
+      };
+      const idx = state.communicationLogs.findIndex((l) => l.ID.toLowerCase() === String(row.ID).toLowerCase());
+      if (idx >= 0) state.communicationLogs[idx] = { ...state.communicationLogs[idx], ...row };
+      else state.communicationLogs.push(row);
     }
   }
 
-  return {
+  function createEntityProxy(entityName, existingRow) {
+    const record = existingRow ? { ...existingRow } : { ID: randomUUID() };
+    let isSaved = Boolean(existingRow);
+    const entityObj = {
+      LatestResult: null,
+      get IsSaved() {
+        return isSaved;
+      },
+      NewRecord() {
+        record.ID = randomUUID();
+        isSaved = false;
+      },
+      Get(field) {
+        return record[field];
+      },
+      Set(field, value) {
+        record[field] = value;
+      },
+      GetAll() {
+        return { ...record };
+      },
+      async Save() {
+        const res = storeApi.commitOperations([{ op: 'save', entityName, record: { ...record } }]);
+        if (res.Success) {
+          isSaved = true;
+          entityObj.LatestResult = null;
+          return true;
+        }
+        entityObj.LatestResult = {
+          Message: res.ErrorMessage ?? 'Save failed',
+          CompleteMessage: res.ErrorMessage ?? 'Save failed',
+        };
+        return false;
+      },
+      async Delete() {
+        const res = storeApi.commitOperations([{ op: 'delete', entityName, record: { ...record } }]);
+        if (res.Success) {
+          isSaved = false;
+          return true;
+        }
+        entityObj.LatestResult = {
+          Message: res.ErrorMessage ?? 'Delete failed',
+          CompleteMessage: res.ErrorMessage ?? 'Delete failed',
+        };
+        return false;
+      },
+    };
+    return new Proxy(entityObj, {
+      get(target, prop) {
+        if (prop in target) return target[prop];
+        return record[prop];
+      },
+      set(target, prop, value) {
+        if (prop in target) target[prop] = value;
+        else record[prop] = value;
+        return true;
+      },
+    });
+  }
+
+  function createStoreProvider() {
+    return {
+      ProviderType: ProviderType.Network,
+      CurrentUser: HARNESS_SERVER_USER,
+      Entities: [],
+      EntityByName: () => undefined,
+      async RunView(params) {
+        const results = storeApi.runView(params);
+        return { Success: true, Results: results, TotalRowCount: results.length };
+      },
+      async RunViews(paramsArray) {
+        return Promise.all((paramsArray ?? []).map((p) => this.RunView(p)));
+      },
+      async GetEntityObject(entityName, compositeKeyOrUser) {
+        let existing = null;
+        const keyId =
+          compositeKeyOrUser &&
+          typeof compositeKeyOrUser === 'object' &&
+          Array.isArray(compositeKeyOrUser.KeyValuePairs)
+            ? compositeKeyOrUser.KeyValuePairs[0]?.Value
+            : null;
+        if (keyId) {
+          existing = storeApi.getEntityById(entityName, keyId);
+          if (!existing) return null;
+        }
+        return createEntityProxy(entityName, existing);
+      },
+    };
+  }
+
+  const storeApi = {
     reset() {
       CommunityTestCommunicationProvider.ClearSentMessages();
       ClearCompactReplyTokenRegistry();
       state = buildInitialState();
+      faults = {
+        failSaveEntities: new Set(),
+        disableCommunicationEngineProviders: false,
+      };
+    },
+
+    setFaults(nextFaults = {}) {
+      if (Array.isArray(nextFaults.failSaveEntities)) {
+        faults.failSaveEntities = new Set(nextFaults.failSaveEntities);
+      }
+      if (typeof nextFaults.disableCommunicationEngineProviders === 'boolean') {
+        faults.disableCommunicationEngineProviders = nextFaults.disableCommunicationEngineProviders;
+      }
+    },
+
+    getStateMutable() {
+      return state;
+    },
+
+    createProvider() {
+      return createStoreProvider();
     },
 
     getDebugSnapshot() {
@@ -685,6 +918,7 @@ export function createHarnessStore() {
         questions: state.questions,
         userSettings: this.getUserSettings(),
         userSettingRows: state.userSettings,
+        communicationLogs: state.communicationLogs,
         gqlCalls: state.gqlCalls,
         digestOutbox: CommunityTestCommunicationProvider.Instance.GetOutbox(),
         actionCalls: state.actionCalls,
@@ -720,12 +954,33 @@ export function createHarnessStore() {
       const extraFilter = params?.ExtraFilter ?? '';
 
       switch (entityName) {
+        case 'MJ: Users': {
+          let rows = state.users;
+          const ids = parseInIds(extraFilter, 'ID');
+          const id = parseEqFilter(extraFilter, 'ID');
+          if (ids) rows = rows.filter((u) => ids.has(u.ID.toLowerCase()));
+          else if (id) rows = rows.filter((u) => u.ID.toLowerCase() === id.toLowerCase());
+          return rows;
+        }
         case 'MJ_BizApps_Community: Forums': {
+          let rows = state.forums;
+          const ids = parseInIds(extraFilter, 'ID');
+          const id = parseEqFilter(extraFilter, 'ID');
           const spaceId = parseEqFilter(extraFilter, 'SpaceID');
-          if (spaceId) {
-            return state.forums.filter((f) => f.SpaceID.toLowerCase() === spaceId.toLowerCase());
+          const status = parseEqFilter(extraFilter, 'Status');
+          if (ids) {
+            rows = rows.filter((f) => ids.has(f.ID.toLowerCase()));
+          } else if (id) {
+            rows = rows.filter((f) => f.ID.toLowerCase() === id.toLowerCase());
+          } else if (spaceId) {
+            rows = rows.filter((f) => f.SpaceID.toLowerCase() === spaceId.toLowerCase());
+          } else {
+            rows = rows.filter((f) => f.SpaceID.toLowerCase() !== C.SPACE_2.toLowerCase());
           }
-          return state.forums.filter((f) => f.SpaceID.toLowerCase() !== C.SPACE_2.toLowerCase());
+          if (status) {
+            rows = rows.filter((f) => String(f.Status ?? 'Active').toLowerCase() === status.toLowerCase());
+          }
+          return rows;
         }
         case 'MJ_BizApps_Collaboration: Spaces': {
           const id = parseEqFilter(extraFilter, 'ID');
@@ -734,6 +989,50 @@ export function createHarnessStore() {
           }
           return state.spaces.filter((s) => s.ID.toLowerCase() !== C.SPACE_2.toLowerCase());
         }
+        case 'MJ_BizApps_Collaboration: Space Role Types':
+          return state.spaceRoles;
+        case 'MJ_BizApps_Collaboration: Space Members': {
+          const userId = parseEqFilter(extraFilter, 'UserID');
+          if (userId) {
+            return state.spaceMembers.filter((m) => m.UserID.toLowerCase() === userId.toLowerCase());
+          }
+          return state.spaceMembers;
+        }
+        case 'MJ_BizApps_Community: Forum Role Types': {
+          const id = parseEqFilter(extraFilter, 'ID');
+          if (id) {
+            return state.forumRoleTypes.filter((r) => r.ID.toLowerCase() === id.toLowerCase());
+          }
+          return state.forumRoleTypes;
+        }
+        case 'MJ_BizApps_Community: Forum Members': {
+          let rows = state.forumMembers;
+          const forumIds = parseInIds(extraFilter, 'ForumID');
+          const forumId = parseEqFilter(extraFilter, 'ForumID');
+          const userId = parseEqFilter(extraFilter, 'UserID');
+          if (forumIds) rows = rows.filter((m) => forumIds.has(m.ForumID.toLowerCase()));
+          if (forumId) rows = rows.filter((m) => m.ForumID.toLowerCase() === forumId.toLowerCase());
+          if (userId) rows = rows.filter((m) => m.UserID.toLowerCase() === userId.toLowerCase());
+          return rows;
+        }
+        case 'MJ_BizApps_Community: Community Member Profiles': {
+          const userId = parseEqFilter(extraFilter, 'UserID');
+          if (userId) {
+            return state.communityMemberProfiles.filter((p) => p.UserID.toLowerCase() === userId.toLowerCase());
+          }
+          return state.communityMemberProfiles;
+        }
+        case 'MJ: Communication Base Message Types':
+          return state.communicationBaseMessageTypes;
+        case 'MJ: Communication Providers':
+          return faults.disableCommunicationEngineProviders ? [] : state.communicationProviders;
+        case 'MJ: Communication Provider Message Types':
+          return faults.disableCommunicationEngineProviders ? [] : state.communicationProviderMessageTypes;
+        case 'MJ: Entity Communication Message Types':
+        case 'MJ: Entity Communication Fields':
+          return [];
+        case 'MJ: Communication Logs':
+          return state.communicationLogs;
         case 'MJ_BizApps_Community: Community Spaces': {
           const id = parseEqFilter(extraFilter, 'ID');
           if (id) {
@@ -741,9 +1040,18 @@ export function createHarnessStore() {
           }
           return state.communitySpaces.filter((s) => s.ID.toLowerCase() !== C.SPACE_2.toLowerCase());
         }
-        case 'MJ_BizApps_Community: Post Types':
+        case 'MJ_BizApps_Community: Post Types': {
+          const code = parseEqFilter(extraFilter, 'Code');
+          if (code) {
+            return state.postTypes.filter((pt) => String(pt.Code).toLowerCase() === code.toLowerCase());
+          }
           return state.postTypes;
+        }
         case 'MJ_BizApps_Community: Forum Topic Tags': {
+          const ids = parseInIds(extraFilter, 'ID');
+          if (ids) {
+            return state.topicTags.filter((t) => ids.has(t.ID.toLowerCase()));
+          }
           const spaceId = parseEqFilter(extraFilter, 'SpaceID');
           if (spaceId) {
             return state.topicTags.filter((t) => t.SpaceID.toLowerCase() === spaceId.toLowerCase());
@@ -774,10 +1082,20 @@ export function createHarnessStore() {
           return rows;
         }
         case 'MJ_BizApps_Community: Forum Answer Posts': {
+          let rows = state.answers;
+          const questionIds = parseInIds(extraFilter, 'QuestionPostID');
           const ids = parseInIds(extraFilter, 'ID');
-          return ids
-            ? state.answers.filter((a) => ids.has(a.ID.toLowerCase()))
-            : state.answers.filter((a) => !OTHER_SPACE_POST_ID_SET.has(a.ID.toLowerCase()));
+          if (questionIds) {
+            rows = rows.filter((a) => a.QuestionPostID && questionIds.has(a.QuestionPostID.toLowerCase()));
+          } else if (ids) {
+            rows = rows.filter((a) => ids.has(a.ID.toLowerCase()));
+          } else {
+            rows = rows.filter((a) => !OTHER_SPACE_POST_ID_SET.has(a.ID.toLowerCase()));
+          }
+          if (extraFilter.includes('IsAcceptedByAuthor = 1')) {
+            rows = rows.filter((a) => Boolean(a.IsAcceptedByAuthor));
+          }
+          return rows;
         }
         case 'MJ_BizApps_Community: Forum Idea Campaigns': {
           const campaignIds = parseInIds(extraFilter, 'ID');
@@ -829,11 +1147,20 @@ export function createHarnessStore() {
           const idEq = parseEqFilter(extraFilter, 'ID');
           const rootIds = parseInIds(extraFilter, 'RootPostID');
           const rootEq = parseEqFilter(extraFilter, 'RootPostID');
+          const authorEq = parseEqFilter(extraFilter, 'AuthorUserID');
+          const statusEq = parseEqFilter(extraFilter, 'Status');
 
           if (forumIds) {
             rows = rows.filter((p) => forumIds.has(String(p.ForumID).toLowerCase()));
           } else if (!ids && !idEq && !rootIds && !rootEq) {
             rows = rows.filter((p) => !OTHER_SPACE_POST_ID_SET.has(p.ID.toLowerCase()));
+          }
+
+          if (authorEq) {
+            rows = rows.filter((p) => String(p.AuthorUserID ?? '').toLowerCase() === authorEq.toLowerCase());
+          }
+          if (statusEq) {
+            rows = rows.filter((p) => String(p.Status ?? '').toLowerCase() === statusEq.toLowerCase());
           }
 
           if (ids) {
@@ -1239,313 +1566,64 @@ export function createHarnessStore() {
         };
       }
 
-      if (normalizedId === COMMUNITY_ACTION_IDS.SendPersonalizedDigest.toUpperCase()) {
-        const communityName = String(getParam('CommunityName') ?? 'BizApps Community').trim() || 'BizApps Community';
-        const dryRunRaw = getParam('DryRun');
-        const dryRun = dryRunRaw === true || String(dryRunRaw).toLowerCase() === 'true';
-        const maxItems = Math.max(1, Math.min(25, Number(getParam('MaxItemsPerDigest')) || 5));
-        const allowedForumIdsRaw = String(getParam('AllowedForumIDs') ?? '').trim();
-        const allowedSet = allowedForumIdsRaw
-          ? new Set(
-              allowedForumIdsRaw
-                .split(',')
-                .map((id) => id.trim().toLowerCase())
-                .filter(Boolean),
-            )
-          : null;
+      if (
+        normalizedId === COMMUNITY_ACTION_IDS.SendPersonalizedDigest.toUpperCase() ||
+        normalizedId === COMMUNITY_ACTION_IDS.ProcessInboundDigestReply.toUpperCase()
+      ) {
+        const storeProvider = createStoreProvider();
+        Metadata.Provider = storeProvider;
+        RunView.Provider = storeProvider;
 
-        const tagNamesById = new Map(state.topicTags.map((t) => [t.ID.toLowerCase(), t.Name]));
-        const answerByQuestionId = new Map(state.answers.map((a) => [a.QuestionPostID?.toLowerCase() ?? '', a]));
-        const candidates = state.posts
-          .filter(
-            (p) =>
-              p.RootPostID == null &&
-              p.ForumID !== C.FORUM_OTHER_SPACE &&
-              (!allowedSet || allowedSet.has(p.ForumID.toLowerCase())),
-          )
-          .map((p) => {
-            const forum = state.forums.find((f) => f.ID.toLowerCase() === p.ForumID.toLowerCase());
-            const tags = state.postTags
-              .filter((pt) => pt.PostID.toLowerCase() === p.ID.toLowerCase())
-              .map((pt) => tagNamesById.get(pt.TopicTagID.toLowerCase()))
-              .filter(Boolean);
-            const answer = answerByQuestionId.get(p.ID.toLowerCase());
-            return {
-              postId: p.ID,
-              forumId: p.ForumID,
-              forumName: forum?.Name ?? 'Community',
-              title: p.Title ?? 'Community Thread',
-              bodyMarkdown: p.BodyMarkdown ?? '',
-              summaryMarkdown: p.SummaryMarkdown ?? null,
-              authorDisplayName: 'E2E Harness Member',
-              topicTags: tags,
-              epistemicStatus: answer?.AIEpistemicStatus ?? null,
-              replyCount: p.ReplyCount ?? 0,
-              reactionScore: p.ReactionScore ?? 0,
-              createdAt: new Date(),
-              lastActivityAt: new Date(),
-            };
-          });
-
-        const interactions = state.reactions
-          .filter((r) => r.UserID.toLowerCase() === C.HARNESS_USER_ID.toLowerCase())
-          .map((r) => {
-            const post = state.posts.find((p) => p.ID.toLowerCase() === r.PostID.toLowerCase());
-            if (!post) return null;
-            const tags = state.postTags
-              .filter((pt) => pt.PostID.toLowerCase() === post.ID.toLowerCase())
-              .map((pt) => tagNamesById.get(pt.TopicTagID.toLowerCase()))
-              .filter(Boolean);
-            return {
-              postId: post.ID,
-              forumId: post.ForumID,
-              title: post.Title ?? '',
-              bodyText: post.BodyMarkdown ?? '',
-              topicTags: tags,
-              interactionType: 'reacted',
-              occurredAt: new Date(),
-            };
-          })
-          .filter(Boolean);
-
-        const { ranked } = await CommunityEmbeddingPersonalizationService.Instance.RankPostsForMember({
-          userId: C.HARNESS_USER_ID,
-          interactions,
-          candidates,
-          options: { maxItems },
-        });
-
-        const renderItems = ranked.map((entry) => {
-          const replyToken = SignDigestReplyToken({
-            memberUserId: C.HARNESS_USER_ID,
-            forumId: entry.post.forumId,
-            rootPostId: entry.post.postId,
-            parentPostId: entry.post.postId,
-            recipientEmail: 'member@bizapps-community.local',
-          });
-          const replyToAddress = BuildReplyToEmailAddress(replyToken, 'reply.bizapps.local');
-          return { ranked: entry, replyToken, replyToAddress };
-        });
-
-        const rendered = RenderPersonalizedDigestEmail({
-          recipientName: 'E2E Harness Member',
-          communityName,
-          items: renderItems,
-        });
-        const firstReplyItem = renderItems.find((item) => Boolean(item.replyToAddress && item.replyToken));
-
-        const sendRes = await CommunityTestCommunicationProvider.Instance.SendSingleMessage({
-          From: 'community-digest@bizapps.local',
-          FromName: 'BizApps Community Digest',
-          To: 'member@bizapps-community.local',
-          Subject: rendered.subject,
-          Body: rendered.textBody,
-          HTMLBody: rendered.htmlBody,
-          Headers: firstReplyItem ? { 'Reply-To': firstReplyItem.replyToAddress } : {},
-          DryRun: dryRun,
-        });
-
-        const output = [
-          { Name: 'SentCount', Value: sendRes.Success ? 1 : 0, Type: 'Output' },
-          { Name: 'FailedCount', Value: sendRes.Success ? 0 : 1, Type: 'Output' },
-          { Name: 'DryRun', Value: dryRun, Type: 'Output' },
-          { Name: 'ProviderName', Value: 'Community Test Email Driver', Type: 'Output' },
-          {
-            Name: 'DeliveriesJSON',
-            Value: JSON.stringify([
-              {
-                userId: C.HARNESS_USER_ID,
-                email: 'member@bizapps-community.local',
-                itemCount: rendered.itemCount,
-                replyToAddress: firstReplyItem?.replyToAddress ?? null,
-                providerName: 'Community Test Email Driver',
-                usedCommunicationEngine: true,
-                dryRun,
-                success: sendRes.Success,
-              },
-            ]),
-            Type: 'Output',
-          },
-        ];
-        return {
-          Success: sendRes.Success,
-          ResultCode: sendRes.Success ? 'SUCCESS' : 'DELIVERY_FAILED',
-          Message: sendRes.Success
-            ? `Dispatched 1 personalized digest(s) for ${communityName} via Community Test Email Driver (0 failed).`
-            : sendRes.Error || 'Digest dispatch failed.',
-          ResultData: JSON.stringify(output),
-        };
-      }
-
-      if (normalizedId === COMMUNITY_ACTION_IDS.ProcessInboundDigestReply.toUpperCase()) {
-        const replyTarget = String(getParam('ReplyToAddress') || getParam('ReplyToken') || '').trim();
-        if (!replyTarget) {
+        const actionInstance = MJGlobal.Instance.ClassFactory.CreateInstance(BaseAction, installedEntry.DriverClass);
+        if (!actionInstance || actionInstance.constructor.name === 'BaseAction') {
           return {
             Success: false,
-            ResultCode: 'MISSING_REPLY_TOKEN',
-            Message: 'ReplyToAddress or ReplyToken is required.',
+            ResultCode: 'ACTION_DRIVER_NOT_REGISTERED',
+            Message: `Registered BaseAction driver "${installedEntry.DriverClass}" could not be resolved.`,
             ResultData: null,
           };
         }
-        const rawBodyText = String(getParam('RawBodyText') ?? '');
-        if (!rawBodyText.trim()) {
-          return {
-            Success: false,
-            ResultCode: 'EMPTY_REPLY_BODY',
-            Message: 'RawBodyText is required.',
-            ResultData: null,
-          };
-        }
-        const senderEmail = String(getParam('SenderEmail') || 'member@bizapps-community.local').trim();
+
         const callerUserId = String(getParam('UserID') || C.HARNESS_USER_ID).trim();
-
-        const parsed = ParseAndVerifyInboundEmailReply({
-          replyToAddressOrToken: replyTarget,
-          rawBodyText,
-          senderEmail,
-          skipSenderBindingCheck: false,
-        });
-        if (!parsed.token.valid) {
-          return {
-            Success: false,
-            ResultCode: parsed.token.errorCode,
-            Message: parsed.token.reason,
-            ResultData: null,
-          };
-        }
-
-        const cleanedBody = StripQuotedEmailReply(rawBodyText);
-        if (!cleanedBody) {
-          return {
-            Success: false,
-            ResultCode: 'EMPTY_REPLY_BODY',
-            Message: 'Email reply contained no new content after stripping quoted history.',
-            ResultData: null,
-          };
-        }
-
-        const { payload } = parsed.token;
-        if (callerUserId.toLowerCase() !== payload.u.toLowerCase()) {
-          return {
-            Success: false,
-            ResultCode: 'MEMBER_MISMATCH',
-            Message: 'Caller user does not match token member identity.',
-            ResultData: null,
-          };
-        }
-
-        const forum = state.forums.find((f) => f.ID.toLowerCase() === payload.f.toLowerCase());
-        const rootPost = state.posts.find((p) => p.ID.toLowerCase() === payload.r.toLowerCase());
-        if (!forum || !rootPost) {
-          return {
-            Success: false,
-            ResultCode: !forum ? 'FORUM_NOT_FOUND' : 'THREAD_NOT_FOUND',
-            Message: !forum ? `Forum ${payload.f} not found.` : `Root post ${payload.r} not found.`,
-            ResultData: null,
-          };
-        }
-        if (rootPost.IsLocked) {
-          return {
-            Success: false,
-            ResultCode: 'THREAD_LOCKED',
-            Message: 'Cannot reply to a locked thread.',
-            ResultData: null,
-          };
-        }
-
-        const spaceMember = state.spaceMembers.find(
-          (m) =>
-            m.SpaceID.toLowerCase() === forum.SpaceID.toLowerCase() &&
-            m.UserID.toLowerCase() === payload.u.toLowerCase() &&
-            m.Status === 'Active',
-        );
-        const spaceRole = spaceMember
-          ? state.spaceRoles.find((r) => r.ID.toLowerCase() === spaceMember.SpaceRoleTypeID.toLowerCase() && r.IsActive)
-          : null;
-        const forumMember = state.forumMembers.find(
-          (m) => m.ForumID.toLowerCase() === forum.ID.toLowerCase() && m.UserID.toLowerCase() === payload.u.toLowerCase(),
-        );
-        const forumRole = forumMember
-          ? state.forumRoleTypes.find((r) => r.ID.toLowerCase() === forumMember.ForumRoleTypeID.toLowerCase() && r.IsActive)
-          : null;
-
-        if (!spaceMember || !spaceRole?.CanContribute || (forumMember && (forumMember.Status !== 'Active' || !forumRole?.CanReply))) {
-          return {
-            Success: false,
-            ResultCode: 'ACCESS_REVOKED',
-            Message: 'Member lacks active Space/Forum/Role permission to reply.',
-            ResultData: null,
-          };
-        }
-
-        const decision = CommunityRules.EvaluateForumAccess({
-          spaceAccess: {
-            canReadSpace: true,
-            canSeeTeamBand: Boolean(spaceRole.CanSeeTeamBand),
-            isSpaceOpenForWrites: true,
-          },
-          forum: {
-            visibilityBand: forum.VisibilityBand ?? 'Shared',
-            inheritsSpaceMembers: forum.InheritsSpaceMembers ?? true,
-            postingPolicy: forum.PostingPolicy ?? 'Open',
-            status: forum.Status ?? 'Active',
-          },
-          forumMembership:
-            forumMember && forumRole
-              ? {
-                  status: forumMember.Status,
-                  canConfigureForum: Boolean(forumRole.CanConfigureForum),
-                  canModerateQueue: Boolean(forumRole.CanModerateQueue),
-                  canCreateRootPost: Boolean(forumRole.CanCreateRootPost ?? forumRole.CanReply),
-                  canReply: Boolean(forumRole.CanReply),
-                }
-              : null,
+        const userRow = state.users.find((u) => u.ID.toLowerCase() === callerUserId.toLowerCase());
+        const effectiveUser = new UserInfo(undefined, {
+          ID: callerUserId,
+          Name: userRow?.Name ?? 'E2E Harness Member',
+          Email: userRow?.Email ?? 'member@bizapps-community.local',
+          UserRoles: [],
         });
 
-        if (!decision.canReply) {
-          return {
-            Success: false,
-            ResultCode: 'ACCESS_REVOKED',
-            Message: 'Member is not authorized to reply in this forum.',
-            ResultData: null,
-          };
+        if (normalizedId === COMMUNITY_ACTION_IDS.SendPersonalizedDigest.toUpperCase()) {
+          await CommunicationEngine.Instance.Config(true, effectiveUser, storeProvider);
         }
 
-        const newReplyId = randomUUID();
-        const newReply = {
-          ID: newReplyId,
-          ForumID: forum.ID,
-          PostTypeID: C.PT_REPLY,
-          RootPostID: rootPost.ID,
-          ParentPostID: payload.p,
-          ReplyDepth: 1,
-          AuthorUserID: payload.u,
-          Title: `Re: ${rootPost.Title ?? 'Thread'}`,
-          BodyMarkdown: cleanedBody,
-          VisibilityBand: rootPost.VisibilityBand ?? 'Shared',
-          Status: 'Published',
-          ReplyCount: 0,
-          ReactionScore: 0,
-          PromotedToSpaceID: null,
-        };
-        state.posts.push(newReply);
-        recomputePostRollups(rootPost.ID);
+        const runParams = new RunActionParams();
+        runParams.Action = installedEntry;
+        runParams.ContextUser = effectiveUser;
+        runParams.Filters = [];
+        runParams.Params = inputParams.map((p) => ({
+          Name: String(p?.Name ?? ''),
+          Value: p?.Value,
+          Type: p?.Type ?? 'Input',
+        }));
 
-        const output = [
-          { Name: 'PostID', Value: newReplyId, Type: 'Output' },
-          { Name: 'ForumID', Value: forum.ID, Type: 'Output' },
-          { Name: 'RootPostID', Value: rootPost.ID, Type: 'Output' },
-          { Name: 'ParentPostID', Value: payload.p, Type: 'Output' },
-          { Name: 'AuthorUserID', Value: payload.u, Type: 'Output' },
-          { Name: 'ReplyDepth', Value: 1, Type: 'Output' },
-          { Name: 'Status', Value: 'Published', Type: 'Output' },
-          { Name: 'CleanedBodyMarkdown', Value: cleanedBody, Type: 'Output' },
-        ];
+        const actionResult = await actionInstance.Run(runParams);
+        if (
+          actionResult.Success &&
+          normalizedId === COMMUNITY_ACTION_IDS.ProcessInboundDigestReply.toUpperCase()
+        ) {
+          const rootPostParam = (actionResult.Params ?? []).find(
+            (p) => String(p?.Name ?? '').toLowerCase() === 'rootpostid',
+          );
+          if (rootPostParam?.Value) {
+            recomputePostRollups(String(rootPostParam.Value));
+          }
+        }
         return {
-          Success: true,
-          ResultCode: 'SUCCESS',
-          Message: `Persisted inbound email reply onto thread ${rootPost.ID} (depth 1).`,
-          ResultData: JSON.stringify(output),
+          Success: Boolean(actionResult.Success),
+          ResultCode: actionResult.ResultCode ?? (actionResult.Success ? 'SUCCESS' : 'FAILED'),
+          Message: actionResult.Message ?? '',
+          ResultData: Array.isArray(actionResult.Params) ? JSON.stringify(actionResult.Params) : null,
         };
       }
 
@@ -1590,4 +1668,5 @@ export function createHarnessStore() {
       };
     },
   };
+  return storeApi;
 }
