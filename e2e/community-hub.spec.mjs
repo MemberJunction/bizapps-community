@@ -18,6 +18,7 @@ const TAB_KEYS = [
   'qa-canon-workbench',
   'quadratic-ideation-wallet',
   'living-co-authoring',
+  'media-library',
 ];
 
 /** @type {{ url: string, fontAwesomeMode: string, close: () => Promise<void> }} */
@@ -594,6 +595,131 @@ test('Real Angular 21 Community Hub: 26 ClassFactory registrations, 4 tabs, PDF 
   );
   await page.click('#mjc-hub-tab-knowledge-stream');
 
+  // --- 6c. Rich Media Carousels, Audio/Video, Embedded MJ Artifacts, Attachment Persistence & Auto-Indexed Library ---
+  const carouselCard = page.locator('.mjc-stream-card', {
+    hasText: 'Zero-Downtime API Key Rotation Playbook',
+  });
+  await expect(carouselCard).toBeVisible();
+  await expect(carouselCard.locator('.mjc-att-counter-pill')).toContainText('1 / 3');
+  await carouselCard.getByRole('button', { name: 'Next slide' }).click();
+  await expect(carouselCard.locator('.mjc-att-counter-pill')).toContainText('2 / 3');
+  await carouselCard.getByRole('button', { name: 'Previous slide' }).click();
+  await expect(carouselCard.locator('.mjc-att-counter-pill')).toContainText('1 / 3');
+
+  // Open image lightbox from carousel, verify dialog, dismiss with Escape
+  await carouselCard.getByRole('button', { name: /Open slide 1 in lightbox/ }).click();
+  await expect(page.locator('.mjc-att-modal-dialog--lightbox')).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(page.locator('.mjc-att-modal-dialog--lightbox')).toBeHidden();
+
+  // Expand inline MJ Artifact preview inside Feed card and verify sandboxed iframe
+  await carouselCard.getByRole('button', { name: /^Preview$/ }).click();
+  const inlineArtifactIframe = carouselCard.locator('iframe.mjc-att-artifact-iframe');
+  await expect(inlineArtifactIframe).toBeVisible();
+  await expect(inlineArtifactIframe).toHaveAttribute('sandbox', 'allow-scripts');
+  await carouselCard.getByRole('button', { name: /^Hide Preview$/ }).click();
+
+  // Verify Video + Multi-track Audio Switcher on Read Replica Architecture card
+  const mediaPostCard = page.locator('.mjc-stream-card', {
+    hasText: 'Multi-Region GraphQL Read Replica Architecture',
+  });
+  await expect(mediaPostCard.locator('video.mjc-att-video-player')).toBeVisible();
+  await expect(mediaPostCard.locator('.mjc-att-audio-card--multi .mjc-att-counter-pill')).toContainText('Track 1 of 2');
+  await mediaPostCard.getByRole('button', { name: 'Next audio track' }).click();
+  await expect(mediaPostCard.locator('.mjc-att-audio-card--multi .mjc-att-counter-pill')).toContainText('Track 2 of 2');
+
+  // Create a new post with an attached PNG image + embedded MJ Artifact via + New Post modal
+  const preAttachState = await (await page.request.get(new URL('/api/harness/state', harnessUrl).toString())).json();
+  const spaceItemCountBefore = preAttachState.spaceItems.length;
+  const attachmentCountBefore = preAttachState.forumPostAttachments.length;
+
+  await page.click('#mjc-header-ask-share-btn');
+  await page.selectOption('#mjc-ask-share-type', 'Discussion Post');
+  await page.fill('#mjc-ask-share-title-input', 'Media & Artifact Integration Verification');
+  await page.fill('#mjc-ask-share-body-input', 'Verifying uploaded PNG image and embedded OpenTelemetry MJ Artifact.');
+  await page
+    .locator('#mjc-ask-share-modal-backdrop input[type="file"]')
+    .setInputFiles({
+      name: 'cutover-proof.png',
+      mimeType: 'image/png',
+      buffer: Buffer.from(
+        'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==',
+        'base64',
+      ),
+    });
+  await expect(page.locator('#mjc-ask-share-modal-backdrop .mjc-picker-drafts')).toContainText('cutover-proof.png');
+
+  await page.locator('#mjc-ask-share-modal-backdrop button', { hasText: 'Embed MJ Artifact' }).click();
+  await page.locator('#mjc-ask-share-modal-backdrop .mjc-picker-popover__search').fill('OpenTelemetry');
+  await page.locator('#mjc-ask-share-modal-backdrop .mjc-picker-artifact-row button', { hasText: 'Attach' }).click();
+  await expect(page.locator('#mjc-ask-share-modal-backdrop .mjc-picker-drafts')).toContainText(
+    'OpenTelemetry Webhook Retry Span Schema',
+  );
+
+  await page.click('#mjc-ask-share-submit-btn');
+  await expect(page.locator('#mjc-ask-share-modal-backdrop')).toBeHidden();
+
+  const mediaVerifiedCard = page.locator('.mjc-stream-card', {
+    hasText: 'Media & Artifact Integration Verification',
+  });
+  await expect(mediaVerifiedCard).toBeVisible();
+  await expect(mediaVerifiedCard.locator('mjc-attachment-gallery')).toBeVisible();
+  await expect(mediaVerifiedCard.locator('mjc-attachment-gallery')).toContainText('OpenTelemetry Webhook Retry Span Schema');
+
+  const postAttachState = await (await page.request.get(new URL('/api/harness/state', harnessUrl).toString())).json();
+  expect(postAttachState.spaceItems.length).toBe(spaceItemCountBefore + 2);
+  expect(postAttachState.forumPostAttachments.length).toBe(attachmentCountBefore + 2);
+
+  // Switch to the Auto-Indexed Library tab, verify all media/artifacts appear, capture screenshot, filter, and View in Thread
+  await page.click('#mjc-hub-tab-media-library');
+  const libraryView = page.locator('#mjc-media-library-view');
+  await expect(libraryView).toBeVisible();
+  await expect(libraryView).toContainText('cutover-proof.png');
+  await expect(libraryView).toContainText('OpenTelemetry Webhook Retry Span Schema');
+  await expect(libraryView).toContainText('dual-key-sequence.png');
+  await expect(libraryView).toContainText('replica-failover-audit.pdf');
+
+  await page.screenshot({
+    path: join(SCREENSHOTS_DIR, 'community-attachments-and-media-library.png'),
+    fullPage: false,
+  });
+
+  // Filter by Images
+  await page.click('#mjc-lib-kind-image');
+  await expect(libraryView).toContainText('cutover-proof.png');
+  await expect(libraryView).toContainText('dual-key-sequence.png');
+  await expect(libraryView).not.toContainText('OpenTelemetry Webhook Retry Span Schema');
+
+  // Filter by Artifacts
+  await page.click('#mjc-lib-kind-artifact');
+  await expect(libraryView).toContainText('OpenTelemetry Webhook Retry Span Schema');
+  await expect(libraryView).toContainText('Multi-Region Rollover Latency Report');
+  await expect(libraryView).not.toContainText('cutover-proof.png');
+
+  // Filter by My Uploads (current user's items stay visible, peer user's PDF is excluded)
+  await page.click('#mjc-lib-kind-all');
+  await page.click('#mjc-lib-scope-my-uploads');
+  await expect(libraryView).toContainText('cutover-proof.png');
+  await expect(libraryView).toContainText('OpenTelemetry Webhook Retry Span Schema');
+  await expect(libraryView).not.toContainText('replica-failover-audit.pdf');
+
+  // Reset scope, search for newly attached image, and click "View in Thread ->"
+  await page.click('#mjc-lib-scope-all');
+  await page.fill('#mjc-media-library-search', 'cutover-proof');
+  await expect(libraryView).toContainText('cutover-proof.png');
+  await libraryView.locator('.mjc-lib-thread-btn').first().click();
+
+  const jumpedThreadView = page.locator('#mjc-full-thread-view');
+  await expect(jumpedThreadView).toBeVisible();
+  await expect(jumpedThreadView).toContainText('Media & Artifact Integration Verification');
+  await expect(jumpedThreadView).toContainText('OpenTelemetry Webhook Retry Span Schema');
+  await page.keyboard.press('Escape');
+  await expect(jumpedThreadView).toBeHidden();
+
+  await page.click('#mjc-hub-tab-media-library');
+  await page.click('#mjc-media-library-search-clear-btn');
+  await page.click('#mjc-hub-tab-knowledge-stream');
+
   // --- 7. WCAG 2.1 AA via axe-core across every tab ---
   /** @type {Record<string, { violationCount: number, criticalOrSerious: number }>} */
   const axeResultsByTab = {};
@@ -693,6 +819,7 @@ test('Real Angular 21 Community Hub: 26 ClassFactory registrations, 4 tabs, PDF 
     userInfoEnginePreferencesPersisted: true,
     livingSynthesisCitationsVerified: true,
     qaCanonWorkbenchExercised: true,
+    mediaLibraryExercised: true,
     persistentReloadVerified: true,
     livingCoAuthoringExercised: true,
     inlineFormExercised: true,
@@ -718,6 +845,7 @@ test('Real Angular 21 Community Hub: 26 ClassFactory registrations, 4 tabs, PDF 
       'e2e/screenshots/06-living-co-authoring.png',
       'e2e/screenshots/07-collaboration-embedded.png',
       'e2e/screenshots/08-personalized-digest-preview.png',
+      'e2e/screenshots/community-attachments-and-media-library.png',
       'e2e/screenshots/community-hub.png',
     ],
   };
