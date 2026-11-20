@@ -1,0 +1,625 @@
+@if (hasAttachments) {
+  <div
+    class="mjc-att-gallery"
+    [class.mjc-att-gallery--compact]="mode === 'compact'"
+    role="region"
+    [attr.aria-label]="ariaLabel"
+  >
+    <!-- 1. VISUAL MEDIA (Single Image, Single Video, or Multi-Media Carousel) -->
+    @if (model.visualMedia.length === 1 && activeVisualSlide; as singleMedia) {
+      @if (singleMedia.isImage) {
+        <figure class="mjc-att-single-figure">
+          @if (singleMedia.safeUrl; as safeImgUrl) {
+            <button
+              type="button"
+              class="mjc-att-zoom-trigger"
+              [attr.aria-label]="'Open full-size image preview: ' + singleMedia.altText"
+              (click)="openLightbox(0)"
+            >
+              <img
+                class="mjc-att-single-img"
+                [src]="safeImgUrl"
+                [alt]="singleMedia.altText"
+                loading="lazy"
+              />
+              <span class="mjc-att-zoom-badge" aria-hidden="true">
+                <i class="fa-solid fa-expand"></i>
+                <span>Expand</span>
+              </span>
+            </button>
+          } @else {
+            <div class="mjc-att-blocked-notice" role="status">
+              <i class="fa-solid fa-shield-halved" aria-hidden="true"></i>
+              <span>Image blocked: unsupported or unsafe URL scheme ({{ singleMedia.fileName }}).</span>
+            </div>
+          }
+          @if (singleMedia.caption) {
+            <figcaption class="mjc-att-caption">{{ singleMedia.caption }}</figcaption>
+          }
+        </figure>
+      } @else if (singleMedia.isVideo) {
+        <figure class="mjc-att-video-figure">
+          @if (singleMedia.safeUrl; as safeVideoUrl) {
+            <video
+              class="mjc-att-video-player"
+              controls
+              preload="metadata"
+              [attr.poster]="singleMedia.safePosterUrl"
+              [src]="safeVideoUrl"
+              [attr.aria-label]="singleMedia.altText"
+            >
+              Your browser cannot play this video inline.
+              <a [href]="safeVideoUrl" target="_blank" rel="noopener noreferrer">Download {{ singleMedia.fileName }}</a>
+            </video>
+          } @else {
+            <div class="mjc-att-blocked-notice" role="status">
+              <i class="fa-solid fa-shield-halved" aria-hidden="true"></i>
+              <span>Video blocked: unsupported or unsafe URL scheme ({{ singleMedia.fileName }}).</span>
+            </div>
+          }
+          @if (singleMedia.caption || singleMedia.formattedDuration) {
+            <figcaption class="mjc-att-caption">
+              <span>{{ singleMedia.caption || singleMedia.fileName }}</span>
+              @if (singleMedia.formattedDuration; as dur) {
+                <span class="mjc-att-meta-pill">{{ dur }}</span>
+              }
+            </figcaption>
+          }
+        </figure>
+      }
+    } @else if (model.visualMedia.length > 1 && activeVisualSlide; as slide) {
+      <section
+        class="mjc-att-carousel"
+        role="region"
+        aria-roledescription="carousel"
+        [attr.aria-label]="'Visual media gallery (' + model.visualMedia.length + ' items)'"
+        (keydown)="onCarouselKeydown($event)"
+      >
+        <div class="mjc-att-carousel__topbar">
+          <span class="mjc-att-counter-pill" aria-hidden="true">
+            {{ activeSlideIndex + 1 }} / {{ model.visualMedia.length }}
+          </span>
+          <span class="mjc-att-carousel__filename">{{ slide.caption || slide.fileName }}</span>
+          <div class="mjc-att-carousel__actions">
+            @if (slide.isImage && slide.safeUrl) {
+              <button
+                type="button"
+                class="mjc-att-btn mjc-att-btn--sm"
+                [attr.aria-label]="'Open slide ' + (activeSlideIndex + 1) + ' in lightbox: ' + slide.altText"
+                (click)="openLightbox(activeSlideIndex)"
+              >
+                <i class="fa-solid fa-expand" aria-hidden="true"></i>
+                <span>Lightbox</span>
+              </button>
+            }
+          </div>
+        </div>
+
+        <div
+          class="mjc-att-carousel__stage"
+          tabindex="0"
+          role="group"
+          aria-roledescription="slide"
+          [attr.aria-label]="(activeSlideIndex + 1) + ' of ' + model.visualMedia.length + ': ' + slide.altText"
+        >
+          <button
+            type="button"
+            class="mjc-att-carousel__nav mjc-att-carousel__nav--prev"
+            aria-label="Previous slide"
+            (click)="prevSlide()"
+          >
+            <i class="fa-solid fa-chevron-left" aria-hidden="true"></i>
+          </button>
+
+          @if (slide.isImage) {
+            @if (slide.safeUrl; as safeSlideImg) {
+              <button
+                type="button"
+                class="mjc-att-carousel__img-btn"
+                [attr.aria-label]="'Open lightbox for ' + slide.altText"
+                (click)="openLightbox(activeSlideIndex)"
+              >
+                <img
+                  class="mjc-att-carousel__img"
+                  [src]="safeSlideImg"
+                  [alt]="slide.altText"
+                />
+              </button>
+            } @else {
+              <div class="mjc-att-blocked-notice" role="status">
+                <i class="fa-solid fa-shield-halved" aria-hidden="true"></i>
+                <span>Image blocked by URL security policy.</span>
+              </div>
+            }
+          } @else {
+            @if (slide.safeUrl; as safeSlideVideo) {
+              <video
+                class="mjc-att-video-player"
+                controls
+                preload="metadata"
+                [attr.poster]="slide.safePosterUrl"
+                [src]="safeSlideVideo"
+                [attr.aria-label]="slide.altText"
+              >
+                Your browser cannot play this video inline.
+              </video>
+            } @else {
+              <div class="mjc-att-blocked-notice" role="status">
+                <i class="fa-solid fa-shield-halved" aria-hidden="true"></i>
+                <span>Video blocked by URL security policy.</span>
+              </div>
+            }
+          }
+
+          <button
+            type="button"
+            class="mjc-att-carousel__nav mjc-att-carousel__nav--next"
+            aria-label="Next slide"
+            (click)="nextSlide()"
+          >
+            <i class="fa-solid fa-chevron-right" aria-hidden="true"></i>
+          </button>
+        </div>
+
+        <p class="mjc-att-sr-only" role="status" aria-live="polite">{{ carouselAnnouncement }}</p>
+
+        <nav class="mjc-att-thumbs" aria-label="Choose a media slide">
+          @for (media of model.visualMedia; track media.id; let idx = $index) {
+            <button
+              type="button"
+              class="mjc-att-thumb"
+              [class.mjc-att-thumb--active]="idx === activeSlideIndex"
+              [attr.aria-current]="idx === activeSlideIndex ? 'true' : null"
+              [attr.aria-label]="'Slide ' + (idx + 1) + ' of ' + model.visualMedia.length + ': ' + media.altText"
+              (click)="goToSlide(idx)"
+            >
+              @if (media.isImage && media.safeUrl) {
+                <img class="mjc-att-thumb__img" [src]="media.safeUrl" alt="" />
+              } @else if (media.isVideo && media.safePosterUrl) {
+                <img class="mjc-att-thumb__img" [src]="media.safePosterUrl" alt="" />
+                <span class="mjc-att-thumb__video-badge" aria-hidden="true">
+                  <i class="fa-solid fa-play"></i>
+                </span>
+              } @else {
+                <span class="mjc-att-thumb__placeholder" aria-hidden="true">
+                  <i [class]="media.isVideo ? 'fa-solid fa-film' : 'fa-regular fa-image'"></i>
+                </span>
+              }
+            </button>
+          }
+        </nav>
+      </section>
+    }
+
+    <!-- 2. AUDIO PLAYER & MULTI-TRACK AUDIO CAROUSEL / SWITCHER -->
+    @if (model.audioTracks.length === 1 && activeAudioTrack; as singleAudio) {
+      <section class="mjc-att-audio-card" aria-label="Audio attachment">
+        <div class="mjc-att-audio-card__head">
+          <span class="mjc-att-audio-icon" aria-hidden="true">
+            <i class="fa-solid fa-headphones"></i>
+          </span>
+          <div class="mjc-att-audio-card__meta">
+            <strong class="mjc-att-audio-card__title">{{ singleAudio.title }}</strong>
+            <span class="mjc-att-audio-card__sub">
+              {{ singleAudio.fileName }} · {{ singleAudio.formattedSize }}
+              @if (singleAudio.formattedDuration; as dur) {
+                <span> · {{ dur }}</span>
+              }
+            </span>
+          </div>
+        </div>
+        @if (singleAudio.safeUrl; as safeAudioUrl) {
+          <audio
+            class="mjc-att-audio-player"
+            controls
+            preload="metadata"
+            [src]="safeAudioUrl"
+            [attr.aria-label]="singleAudio.title"
+          >
+            Your browser cannot play this audio inline.
+          </audio>
+        } @else {
+          <p class="mjc-att-blocked-notice" role="status">Audio URL blocked by security policy.</p>
+        }
+      </section>
+    } @else if (model.audioTracks.length > 1 && activeAudioTrack; as activeTrack) {
+      <section class="mjc-att-audio-card mjc-att-audio-card--multi" aria-label="Audio track switcher">
+        <div class="mjc-att-audio-switcher__bar">
+          <div class="mjc-att-audio-switcher__info">
+            <span class="mjc-att-audio-icon" aria-hidden="true">
+              <i class="fa-solid fa-headphones"></i>
+            </span>
+            <span class="mjc-att-counter-pill">
+              Track {{ activeAudioIndex + 1 }} of {{ model.audioTracks.length }}
+            </span>
+            <strong class="mjc-att-audio-card__title">{{ activeTrack.title }}</strong>
+          </div>
+          <div class="mjc-att-audio-switcher__controls">
+            <button
+              type="button"
+              class="mjc-att-btn mjc-att-btn--sm"
+              aria-label="Previous audio track"
+              (click)="prevAudioTrack()"
+            >
+              <i class="fa-solid fa-chevron-left" aria-hidden="true"></i>
+              <span>Prev</span>
+            </button>
+            <button
+              type="button"
+              class="mjc-att-btn mjc-att-btn--sm"
+              aria-label="Next audio track"
+              (click)="nextAudioTrack()"
+            >
+              <span>Next</span>
+              <i class="fa-solid fa-chevron-right" aria-hidden="true"></i>
+            </button>
+          </div>
+        </div>
+
+        @if (activeTrack.safeUrl; as safeTrackUrl) {
+          <audio
+            class="mjc-att-audio-player"
+            controls
+            preload="metadata"
+            [src]="safeTrackUrl"
+            [attr.aria-label]="activeTrack.title"
+          >
+            Your browser cannot play this audio inline.
+          </audio>
+        } @else {
+          <p class="mjc-att-blocked-notice" role="status">Audio URL blocked by security policy.</p>
+        }
+
+        <p class="mjc-att-sr-only" role="status" aria-live="polite">{{ audioAnnouncement }}</p>
+
+        <div class="mjc-att-audio-pills" role="group" aria-label="Select audio track">
+          @for (track of model.audioTracks; track track.id; let idx = $index) {
+            <button
+              type="button"
+              class="mjc-att-track-pill"
+              [class.mjc-att-track-pill--active]="idx === activeAudioIndex"
+              [attr.aria-pressed]="idx === activeAudioIndex"
+              (click)="selectAudioTrack(idx)"
+            >
+              <span>{{ idx + 1 }}. {{ track.title }}</span>
+              @if (track.formattedDuration; as dur) {
+                <span class="mjc-att-track-pill__dur">{{ dur }}</span>
+              }
+            </button>
+          }
+        </div>
+      </section>
+    }
+
+    <!-- 3. EMBEDDED MJ ARTIFACT CARDS -->
+    @if (model.artifacts.length > 0) {
+      <div class="mjc-att-artifacts-list">
+        @for (artifact of model.artifacts; track artifact.id) {
+          <article class="mjc-att-artifact-card">
+            <div class="mjc-att-artifact-card__head">
+              <div class="mjc-att-artifact-card__identity">
+                <span class="mjc-att-artifact-icon" aria-hidden="true">
+                  <i [class]="artifact.iconClass"></i>
+                </span>
+                <div class="mjc-att-artifact-card__titles">
+                  <div class="mjc-att-artifact-card__badges">
+                    <span class="mjc-att-badge mjc-att-badge--brand">{{ artifact.artifactTypeName }}</span>
+                    @if (artifact.versionBadge; as ver) {
+                      <span class="mjc-att-badge">{{ ver }}</span>
+                    }
+                    @if (artifact.featureInLibrary) {
+                      <span class="mjc-att-badge mjc-att-badge--success">
+                        <i class="fa-solid fa-bookmark" aria-hidden="true"></i>
+                        <span>Featured in Library</span>
+                      </span>
+                    }
+                    @if (artifact.modality) {
+                      <span class="mjc-att-badge">{{ artifact.modality }}</span>
+                    }
+                  </div>
+                  <h4 class="mjc-att-artifact-card__name">{{ artifact.artifactName }}</h4>
+                  @if (artifact.caption) {
+                    <p class="mjc-att-artifact-card__caption">{{ artifact.caption }}</p>
+                  }
+                </div>
+              </div>
+
+              <div class="mjc-att-artifact-card__actions">
+                @if (artifact.preview.hasPreview) {
+                  <button
+                    type="button"
+                    class="mjc-att-btn mjc-att-btn--sm"
+                    [attr.aria-expanded]="isArtifactExpanded(artifact.id)"
+                    (click)="toggleArtifactPreview(artifact.id)"
+                  >
+                    <i
+                      [class]="isArtifactExpanded(artifact.id) ? 'fa-solid fa-chevron-up' : 'fa-solid fa-eye'"
+                      aria-hidden="true"
+                    ></i>
+                    <span>{{ isArtifactExpanded(artifact.id) ? 'Hide Preview' : 'Preview' }}</span>
+                  </button>
+                }
+                <button
+                  type="button"
+                  class="mjc-att-btn mjc-att-btn--sm mjc-att-btn--primary"
+                  [attr.aria-label]="'Full preview of ' + artifact.artifactName"
+                  (click)="openArtifactFullPreview(artifact.id)"
+                >
+                  <i class="fa-solid fa-up-right-and-down-left-from-center" aria-hidden="true"></i>
+                  <span>Full Preview</span>
+                </button>
+              </div>
+            </div>
+
+            @if (isArtifactExpanded(artifact.id) && artifact.preview.hasPreview) {
+              <div class="mjc-att-artifact-viewer">
+                @switch (artifact.preview.format) {
+                  @case ('markdown') {
+                    <div
+                      class="mjc-att-artifact-md mjc-markdown"
+                      [innerHTML]="artifact.preview.renderedMarkdownHtml"
+                    ></div>
+                  }
+                  @case ('html') {
+                    <div class="mjc-att-sandbox-bar">
+                      <i class="fa-solid fa-shield-halved" aria-hidden="true"></i>
+                      <span>Sandboxed HTML Artifact (`sandbox="allow-scripts"`)</span>
+                    </div>
+                    <iframe
+                      class="mjc-att-artifact-iframe"
+                      sandbox="allow-scripts"
+                      [srcdoc]="getTrustedSrcdoc(artifact)"
+                      [title]="artifact.artifactName + ' sandboxed preview'"
+                    ></iframe>
+                  }
+                  @case ('svg') {
+                    <div class="mjc-att-sandbox-bar">
+                      <i class="fa-solid fa-shield-halved" aria-hidden="true"></i>
+                      <span>Isolated SVG Artifact (`sandbox="allow-scripts"`)</span>
+                    </div>
+                    <iframe
+                      class="mjc-att-artifact-iframe mjc-att-artifact-iframe--svg"
+                      sandbox="allow-scripts"
+                      [srcdoc]="getTrustedSrcdoc(artifact)"
+                      [title]="artifact.artifactName + ' diagram preview'"
+                    ></iframe>
+                  }
+                  @case ('json') {
+                    <pre class="mjc-att-artifact-code"><code>{{ artifact.preview.formattedCode }}</code></pre>
+                  }
+                  @case ('code') {
+                    <pre class="mjc-att-artifact-code"><code>{{ artifact.preview.formattedCode }}</code></pre>
+                  }
+                  @default {
+                    <dl class="mjc-att-artifact-dl">
+                      @for (entry of artifact.preview.structuredEntries; track entry.key) {
+                        <div class="mjc-att-artifact-dl__row">
+                          <dt>{{ entry.key }}</dt>
+                          <dd>{{ entry.value }}</dd>
+                        </div>
+                      }
+                    </dl>
+                  }
+                }
+              </div>
+            }
+          </article>
+        }
+      </div>
+    }
+
+    <!-- 4. REGULAR NON-MEDIA FILE CHIPS / CARDS -->
+    @if (model.files.length > 0) {
+      <div class="mjc-att-files-grid">
+        @for (file of model.files; track file.id) {
+          <div class="mjc-att-file-chip">
+            <span class="mjc-att-file-chip__icon" aria-hidden="true">
+              <i [class]="file.iconClass"></i>
+            </span>
+            <div class="mjc-att-file-chip__info">
+              <span class="mjc-att-file-chip__name">{{ file.fileName }}</span>
+              <span class="mjc-att-file-chip__meta">
+                {{ file.typeLabel }} · {{ file.formattedSize }}
+                @if (file.caption) {
+                  <span> · {{ file.caption }}</span>
+                }
+              </span>
+            </div>
+            @if (file.safeUrl; as safeFileUrl) {
+              <a
+                class="mjc-att-btn mjc-att-btn--sm"
+                [href]="safeFileUrl"
+                target="_blank"
+                rel="noopener noreferrer"
+                [attr.download]="file.fileName"
+                [attr.aria-label]="'Download or open ' + file.fileName"
+              >
+                <i class="fa-solid fa-download" aria-hidden="true"></i>
+                <span>Open</span>
+              </a>
+            } @else {
+              <span class="mjc-att-file-chip__blocked">Unavailable</span>
+            }
+          </div>
+        }
+      </div>
+    }
+  </div>
+}
+
+<!-- LIGHTBOX MODAL (Keyboard Escape / ArrowLeft / ArrowRight + Focus Trap & Restore) -->
+@if (lightboxItem; as lbItem) {
+  <div
+    class="mjc-att-modal-backdrop"
+    role="presentation"
+    (click)="closeLightbox()"
+  >
+    <div
+      #lightboxDialog
+      class="mjc-att-modal-dialog mjc-att-modal-dialog--lightbox"
+      role="dialog"
+      aria-modal="true"
+      [attr.aria-labelledby]="lightboxTitleId"
+      tabindex="-1"
+      (keydown)="onLightboxKeydown($event)"
+      (click)="$event.stopPropagation()"
+    >
+      <div class="mjc-att-modal-header">
+        <div class="mjc-att-modal-header__copy">
+          @if (model.visualMedia.length > 1 && lightboxIndex !== null) {
+            <span class="mjc-att-counter-pill">{{ lightboxIndex + 1 }} / {{ model.visualMedia.length }}</span>
+          }
+          <h3 [id]="lightboxTitleId" class="mjc-att-modal-title">{{ lbItem.caption || lbItem.fileName }}</h3>
+        </div>
+        <button
+          type="button"
+          class="mjc-att-modal-close"
+          aria-label="Close lightbox"
+          (click)="closeLightbox()"
+        >
+          ✕
+        </button>
+      </div>
+
+      <div class="mjc-att-lightbox-body">
+        @if (model.visualMedia.length > 1) {
+          <button
+            type="button"
+            class="mjc-att-lightbox-nav"
+            aria-label="Previous media item"
+            (click)="prevLightboxItem()"
+          >
+            <i class="fa-solid fa-chevron-left" aria-hidden="true"></i>
+          </button>
+        }
+
+        <div class="mjc-att-lightbox-stage">
+          @if (lbItem.isImage && lbItem.safeUrl) {
+            <img class="mjc-att-lightbox-img" [src]="lbItem.safeUrl" [alt]="lbItem.altText" />
+          } @else if (lbItem.isVideo && lbItem.safeUrl) {
+            <video
+              class="mjc-att-lightbox-video"
+              controls
+              preload="metadata"
+              [attr.poster]="lbItem.safePosterUrl"
+              [src]="lbItem.safeUrl"
+              [attr.aria-label]="lbItem.altText"
+            ></video>
+          } @else {
+            <div class="mjc-att-blocked-notice" role="status">
+              Media URL blocked by security policy.
+            </div>
+          }
+        </div>
+
+        @if (model.visualMedia.length > 1) {
+          <button
+            type="button"
+            class="mjc-att-lightbox-nav"
+            aria-label="Next media item"
+            (click)="nextLightboxItem()"
+          >
+            <i class="fa-solid fa-chevron-right" aria-hidden="true"></i>
+          </button>
+        }
+      </div>
+
+      <div class="mjc-att-modal-footer">
+        <span class="mjc-att-modal-meta">{{ lbItem.fileName }} · {{ lbItem.formattedSize }}</span>
+        @if (lbItem.safeUrl) {
+          <a
+            class="mjc-att-btn mjc-att-btn--sm"
+            [href]="lbItem.safeUrl"
+            target="_blank"
+            rel="noopener noreferrer"
+            [attr.download]="lbItem.fileName"
+          >
+            <i class="fa-solid fa-download" aria-hidden="true"></i>
+            <span>Download</span>
+          </a>
+        }
+      </div>
+    </div>
+  </div>
+}
+
+<!-- EMBEDDED MJ ARTIFACT FULL PREVIEW MODAL -->
+@if (fullPreviewArtifact; as modalArt) {
+  <div
+    class="mjc-att-modal-backdrop"
+    role="presentation"
+    (click)="closeArtifactFullPreview()"
+  >
+    <div
+      #artifactModalDialog
+      class="mjc-att-modal-dialog mjc-att-modal-dialog--artifact"
+      role="dialog"
+      aria-modal="true"
+      [attr.aria-labelledby]="artifactModalTitleId"
+      tabindex="-1"
+      (keydown)="onArtifactModalKeydown($event)"
+      (click)="$event.stopPropagation()"
+    >
+      <div class="mjc-att-modal-header">
+        <div class="mjc-att-modal-header__copy">
+          <span class="mjc-att-badge mjc-att-badge--brand">{{ modalArt.artifactTypeName }}</span>
+          @if (modalArt.versionBadge; as ver) {
+            <span class="mjc-att-badge">{{ ver }}</span>
+          }
+          @if (modalArt.featureInLibrary) {
+            <span class="mjc-att-badge mjc-att-badge--success">Featured in Library</span>
+          }
+          <h3 [id]="artifactModalTitleId" class="mjc-att-modal-title">{{ modalArt.artifactName }}</h3>
+        </div>
+        <button
+          type="button"
+          class="mjc-att-modal-close"
+          aria-label="Close artifact preview"
+          (click)="closeArtifactFullPreview()"
+        >
+          ✕
+        </button>
+      </div>
+
+      <div class="mjc-att-artifact-modal-body">
+        @switch (modalArt.preview.format) {
+          @case ('markdown') {
+            <div class="mjc-att-artifact-md mjc-markdown" [innerHTML]="modalArt.preview.renderedMarkdownHtml"></div>
+          }
+          @case ('html') {
+            <iframe
+              class="mjc-att-artifact-iframe mjc-att-artifact-iframe--full"
+              sandbox="allow-scripts"
+              [srcdoc]="getTrustedSrcdoc(modalArt)"
+              [title]="modalArt.artifactName + ' full sandboxed preview'"
+            ></iframe>
+          }
+          @case ('svg') {
+            <iframe
+              class="mjc-att-artifact-iframe mjc-att-artifact-iframe--full"
+              sandbox="allow-scripts"
+              [srcdoc]="getTrustedSrcdoc(modalArt)"
+              [title]="modalArt.artifactName + ' full diagram preview'"
+            ></iframe>
+          }
+          @case ('json') {
+            <pre class="mjc-att-artifact-code"><code>{{ modalArt.preview.formattedCode }}</code></pre>
+          }
+          @case ('code') {
+            <pre class="mjc-att-artifact-code"><code>{{ modalArt.preview.formattedCode }}</code></pre>
+          }
+          @default {
+            <dl class="mjc-att-artifact-dl">
+              @for (entry of modalArt.preview.structuredEntries; track entry.key) {
+                <div class="mjc-att-artifact-dl__row">
+                  <dt>{{ entry.key }}</dt>
+                  <dd>{{ entry.value }}</dd>
+                </div>
+              }
+            </dl>
+          }
+        }
+      </div>
+    </div>
+  </div>
+}
