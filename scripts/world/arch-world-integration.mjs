@@ -1,5 +1,9 @@
 import assert from 'node:assert/strict';
+import { execFileSync } from 'node:child_process';
+import { existsSync, mkdtempSync, rmSync } from 'node:fs';
 import { createRequire } from 'node:module';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { describe, it, mock } from 'node:test';
 import {
   ARCH_ALL_FORUM_TYPE_CODES,
@@ -9,24 +13,30 @@ import {
   ARCH_IDEA_ALLOCATIONS,
   ARCH_IDEA_POSTS,
   ARCH_MEMBERS,
+  ARCH_POST_TAGS,
   ARCH_POSTS,
   ARCH_TOPIC_TAGS,
   GetArchWorldSeedSummary,
 } from './arch-world-data.mjs';
 import {
+  BuildArchitectAssociationWorldSql,
   CountArchWorldStoreRecords,
   CreateArchWorldRuntimeBridge,
+  CreatePersistedArchWorldProvider,
   GetSharedArchWorldStore,
   LoadArchitectAssociationWorld,
+  MakeArchUserInfo,
   ResetSharedArchWorldStore,
   TeardownArchitectAssociationWorld,
 } from './arch-world-loader.mjs';
 import { EvaluateCommunityForumCanPost } from '../fn-community-forum-access-shadow.mjs';
 import * as CommunityCore from '../../packages/Core/dist/index.js';
 import * as CommunityActions from '../../packages/Actions/dist/index.js';
+import * as CommunityEntities from '../../packages/Entities/dist/index.js';
+import * as CommunityCoreEntitiesServer from '../../packages/CoreEntitiesServer/dist/index.js';
 
 const requireFromActions = createRequire(new URL('../../packages/Actions/package.json', import.meta.url));
-const { Metadata, RunView, TransactionGroupBase, UserInfo } = await import(
+const { CompositeKey, Metadata, RunView, TransactionGroupBase, UserInfo } = await import(
   requireFromActions.resolve('@memberjunction/core')
 );
 const { RunActionParams } = await import(requireFromActions.resolve('@memberjunction/actions-base'));
@@ -54,6 +64,11 @@ const CommunityServer = await (async () => {
   }
 })();
 
+const { COMMUNITY_ENTITY_NAMES } = CommunityEntities;
+const {
+  ForumIdeaAllocationServerEntity,
+  ForumPostTagServerEntity,
+} = CommunityCoreEntitiesServer;
 const { CommunityEmbeddingPersonalizationService, CommunityRules } = CommunityCore;
 const {
   AskFirstDeflectionAction,
@@ -124,8 +139,10 @@ const COUNSEL_QA_FORUM_ID = 'A7C40200-4E12-4B8F-9A10-000000000011';
 
 const ARCH_SIGNING_SECRET = 'arch-world-hmac-signing-secret-2026';
 
-function setupRuntimeMocks(store, txGroup) {
-  const bridge = CreateArchWorldRuntimeBridge(store);
+function setupRuntimeMocks(store, txGroup, options = {}) {
+  const bridge = CreateArchWorldRuntimeBridge(store, options);
+  Metadata.Provider = bridge.provider;
+  RunView.Provider = bridge.provider;
   mock.method(RunView.prototype, 'RunView', bridge.handleRunView);
   mock.method(Metadata.prototype, 'GetEntityObject', bridge.handleGetEntityObject);
   mock.method(Metadata.prototype, 'CreateTransactionGroup', async () => txGroup);
@@ -148,13 +165,15 @@ function setupRuntimeMocks(store, txGroup) {
     ErrorMessage: '',
     Save: async () => true,
   }));
+  return bridge;
 }
 
 /**
  * Runs one full end-to-end verification pass against the retained `ARCH-WORLD` store.
  */
 export async function RunArchitectAssociationIntegrationCycle(options = {}) {
-  const store = options.store ?? GetSharedArchWorldStore();
+  const persistenceFilePath = options.persistenceFilePath;
+  const store = options.store ?? GetSharedArchWorldStore({ persistenceFilePath });
   const isRepeatCycle = Boolean(options.isRepeatCycle);
   const txGroup = new InMemoryArchTxGroup();
 
@@ -163,22 +182,27 @@ export async function RunArchitectAssociationIntegrationCycle(options = {}) {
   CommunityTestCommunicationProvider.ClearSentMessages();
 
   const prevSecret = process.env.COMMUNITY_DIGEST_REPLY_SECRET;
+  const prevMetadataProvider = Metadata.Provider;
+  const prevRunViewProvider = RunView.Provider;
   process.env.COMMUNITY_DIGEST_REPLY_SECRET = ARCH_SIGNING_SECRET;
 
   try {
-    setupRuntimeMocks(store, txGroup);
-
-    // 1. Idempotent Load + No-op Teardown
-    const load1 = LoadArchitectAssociationWorld({ store });
-    const load2 = LoadArchitectAssociationWorld({ store });
+    // 1. Authoritative Entity-Backed Idempotent Double-Load (via Metadata.GetEntityObject + ValidateAsync + Save)
+    const load1 = await LoadArchitectAssociationWorld({ store, persistenceFilePath });
+    const load2 = await LoadArchitectAssociationWorld({ store, persistenceFilePath });
     assert.equal(load2.createdCount, 0, 'second load must create 0 records');
     assert.equal(load2.updatedCount, 0, 'second load must update 0 records');
     assert.equal(load2.idempotent, true, 'second load must be strictly idempotent');
     assert.deepEqual(load2.counts, load1.counts);
+    if (!isRepeatCycle) {
+      assert.ok(load1.validatedEntityCount > 300, 'initial load must validate all seeded records via BaseEntity.ValidateAsync()');
+    }
+
+    setupRuntimeMocks(store, txGroup, { persistenceFilePath });
 
     // 2. Personalized Embedding Email Digest + MJ CommunicationEngine Test Driver
-    const kenjiUser = new UserInfo(undefined, { ID: KENJI_ID, Email: 'kenji.takahashi@agpa-guild.org', Name: 'Dr. Kenji Takahashi, FAIA' });
-    const eleanorUser = new UserInfo(undefined, { ID: ELEANOR_ID, Email: 'eleanor.vance@agpa-guild.org', Name: 'Eleanor Vance, FAIA' });
+    const kenjiUser = MakeArchUserInfo({ ID: KENJI_ID, Email: 'kenji.takahashi@agpa-guild.org', Name: 'Dr. Kenji Takahashi, FAIA' });
+    const eleanorUser = MakeArchUserInfo({ ID: ELEANOR_ID, Email: 'eleanor.vance@agpa-guild.org', Name: 'Eleanor Vance, FAIA' });
 
     const sendAction = new SendPersonalizedCommunityDigestAction();
     const allForumIds = ARCH_FORUMS.map((f) => f.ID).join(',');
@@ -388,42 +412,145 @@ export async function RunArchitectAssociationIntegrationCycle(options = {}) {
     const updatedDebateRoot = store.posts.get(MASS_TIMBER_DEBATE_POST_ID.toLowerCase());
     assert.ok(updatedDebateRoot?.SummaryMarkdown?.includes('**Key Takeaways:**'));
 
-    // 6. Quadratic Ideation Wallet (budget cap, cost = votes^2, refund-on-revote)
-    const kenjiExisting = Array.from(store.ideaAllocations.values())
-      .filter((a) => a.UserID.toLowerCase() === KENJI_ID.toLowerCase())
-      .map((a) => ({ ideaPostId: a.IdeaPostID, pointsAllocated: a.PointsAllocated }));
-    const overBudget = CommunityRules.ValidateIdeaAllocations({
-      mode: 'Quadratic',
-      budgetPoints: 100,
-      maxPointsPerIdea: 49,
-      allocations: [
-        ...kenjiExisting,
-        { ideaPostId: 'A7C40600-4E12-4B8F-9A10-000000000033', pointsAllocated: 49 },
-        { ideaPostId: 'A7C40600-4E12-4B8F-9A10-000000000034', pointsAllocated: 25 },
-      ],
-    });
-    assert.equal(overBudget.valid, false, 'allocations > 100 points must fail');
+    // 6. Quadratic Ideation Wallet — Authoritative ForumIdeaAllocationServerEntity persistence,
+    //    fail-closed over-budget rejection, refund-on-revote mutation, and RunView read-back verification
+    const md = new Metadata();
+    const rv = new RunView();
+    const IDEA_P32_ID = 'A7C40600-4E12-4B8F-9A10-000000000032';
+    const IDEA_P33_ID = 'A7C40600-4E12-4B8F-9A10-000000000033';
+
+    const kenjiBeforeRes = await rv.RunView(
+      {
+        EntityName: COMMUNITY_ENTITY_NAMES.ForumIdeaAllocations,
+        ExtraFilter: `UserID = '${KENJI_ID}'`,
+        ResultType: 'simple',
+      },
+      kenjiUser,
+    );
+    assert.equal(kenjiBeforeRes.Success, true);
+    const kenjiBeforeRows = kenjiBeforeRes.Results ?? [];
+    assert.equal(kenjiBeforeRows.length, 2, 'Kenji starts with exactly 2 idea allocations (P32 + P35)');
+    const kenjiExisting = kenjiBeforeRows.map((a) => ({
+      ideaPostId: a.IdeaPostID,
+      pointsAllocated: a.PointsAllocated,
+    }));
 
     const overIdeaCap = CommunityRules.ValidateIdeaAllocations({
       mode: 'Quadratic',
       budgetPoints: 100,
       maxPointsPerIdea: 49,
-      allocations: [{ ideaPostId: 'A7C40600-4E12-4B8F-9A10-000000000032', pointsAllocated: 64 }],
+      allocations: [{ ideaPostId: IDEA_P32_ID, pointsAllocated: 64 }],
     });
     assert.equal(overIdeaCap.valid, false, 'allocation > MaxPointsPerIdea (49) must fail');
 
-    // Refund-on-revote must allow Kenji to revise his existing 36-pt allocation up to 49 without double-counting
+    // Over-budget mutation via ForumIdeaAllocationServerEntity must fail ValidateAsync() / Save() with 0 writes
+    const overBudgetEntity = await md.GetEntityObject(
+      COMMUNITY_ENTITY_NAMES.ForumIdeaAllocations,
+      kenjiUser,
+    );
+    assert.ok(overBudgetEntity instanceof ForumIdeaAllocationServerEntity);
+    overBudgetEntity.IdeaPostID = IDEA_P33_ID;
+    overBudgetEntity.UserID = KENJI_ID;
+    overBudgetEntity.PointsAllocated = 49;
+    const overBudgetValidation = await overBudgetEntity.ValidateAsync();
+    assert.equal(overBudgetValidation.Success, false, 'over-budget allocation (>100 pts) must fail ValidateAsync()');
+    const overBudgetSaved = await overBudgetEntity.Save();
+    assert.equal(overBudgetSaved, false, 'over-budget allocation must fail Save()');
+
+    const afterRejectedRes = await rv.RunView(
+      {
+        EntityName: COMMUNITY_ENTITY_NAMES.ForumIdeaAllocations,
+        ExtraFilter: `UserID = '${KENJI_ID}'`,
+        ResultType: 'simple',
+      },
+      kenjiUser,
+    );
+    assert.equal(afterRejectedRes.Results.length, 2, 'failed over-budget Save() must produce zero writes');
+    assert.equal(
+      afterRejectedRes.Results.some((a) => a.IdeaPostID.toLowerCase() === IDEA_P33_ID.toLowerCase()),
+      false,
+      'rejected P33 allocation must not be persisted',
+    );
+
+    // Pure refund-on-revote check + authoritative ForumIdeaAllocationServerEntity update (6 votes / 36 pts -> 7 votes / 49 pts)
     const revoteValid = CommunityRules.ValidateIdeaAllocationChange({
       mode: 'Quadratic',
       budgetPoints: 100,
       maxPointsPerIdea: 49,
       existingAllocations: kenjiExisting,
-      changedIdeaPostId: 'A7C40600-4E12-4B8F-9A10-000000000032',
+      changedIdeaPostId: IDEA_P32_ID,
       newPointsAllocated: 49,
     });
     assert.equal(revoteValid.valid, true, revoteValid.errorMessage);
-    assert.equal(revoteValid.effectiveVotesByIdea['A7C40600-4E12-4B8F-9A10-000000000032'], 7);
+    assert.equal(revoteValid.effectiveVotesByIdea[IDEA_P32_ID], 7);
     assert.equal(revoteValid.totalPointsUsed, 65);
+
+    const kenjiP32Existing = kenjiBeforeRows.find(
+      (a) => a.IdeaPostID.toLowerCase() === IDEA_P32_ID.toLowerCase(),
+    );
+    assert.ok(kenjiP32Existing, 'Kenji P32 allocation must exist');
+    const allocEntity = await md.GetEntityObject(
+      COMMUNITY_ENTITY_NAMES.ForumIdeaAllocations,
+      CompositeKey.FromID(kenjiP32Existing.ID),
+      kenjiUser,
+    );
+    assert.ok(allocEntity instanceof ForumIdeaAllocationServerEntity);
+    allocEntity.PointsAllocated = 49;
+    const revoteValidation = await allocEntity.ValidateAsync();
+    assert.equal(revoteValidation.Success, true, revoteValidation.Errors.map((e) => e.Message).join('; '));
+    const revoteSaved = await allocEntity.Save();
+    assert.equal(revoteSaved, true, allocEntity.LatestResult?.CompleteMessage);
+
+    // Read back persisted allocation rows & recomputed ForumIdeaPost aggregates via RunView
+    const kenjiAfterRes = await rv.RunView(
+      {
+        EntityName: COMMUNITY_ENTITY_NAMES.ForumIdeaAllocations,
+        ExtraFilter: `UserID = '${KENJI_ID}'`,
+        ResultType: 'simple',
+      },
+      kenjiUser,
+    );
+    assert.equal(kenjiAfterRes.Success, true);
+    const kenjiAfterRows = kenjiAfterRes.Results ?? [];
+    assert.equal(kenjiAfterRows.length, 2, 'refund-on-revote must update single row without duplicates');
+    const persistedP32Alloc = kenjiAfterRows.find(
+      (a) => a.IdeaPostID.toLowerCase() === IDEA_P32_ID.toLowerCase(),
+    );
+    assert.equal(persistedP32Alloc?.PointsAllocated, 49);
+    assert.equal(persistedP32Alloc?.QuadraticVotes, 7);
+    const kenjiTotalSpend = kenjiAfterRows.reduce((sum, a) => sum + Number(a.PointsAllocated), 0);
+    assert.equal(kenjiTotalSpend, 65, 'total campaign spend must equal 65 (49 + 16), leaving 35 credits');
+    assert.equal(100 - kenjiTotalSpend, 35, 'remaining wallet budget must equal 35 credits');
+
+    const p32IdeaRes = await rv.RunView(
+      {
+        EntityName: COMMUNITY_ENTITY_NAMES.ForumIdeaPosts,
+        ExtraFilter: `ID = '${IDEA_P32_ID}'`,
+        ResultType: 'simple',
+      },
+      kenjiUser,
+    );
+    assert.equal(p32IdeaRes.Success, true);
+    const p32Idea = p32IdeaRes.Results?.[0];
+    assert.equal(p32Idea?.TotalPointsAllocated, 275, 'ForumIdeaPost TotalPointsAllocated must update from 262 to 275');
+    assert.equal(p32Idea?.EffectiveQuadraticVotes, 51, 'ForumIdeaPost EffectiveQuadraticVotes must update from 50 to 51');
+    assert.equal(p32Idea?.UniqueBackerCount, 10, 'UniqueBackerCount must remain 10 (no duplicate backer row)');
+
+    // CR-03 Authoritative ForumPostTagServerEntity cross-space rejection check
+    const invalidCrossSpaceTag = await md.GetEntityObject(
+      COMMUNITY_ENTITY_NAMES.ForumPostTags,
+      kenjiUser,
+    );
+    assert.ok(invalidCrossSpaceTag instanceof ForumPostTagServerEntity);
+    invalidCrossSpaceTag.PostID = MASS_TIMBER_DEBATE_POST_ID; // Space 2
+    invalidCrossSpaceTag.TopicTagID = 'A7C40300-4E12-4B8F-9A10-000000000002'; // Space 1 (ibc-2027)
+    const crossSpaceValidation = await invalidCrossSpaceTag.ValidateAsync();
+    assert.equal(crossSpaceValidation.Success, false, 'ForumPostTagServerEntity must reject cross-space tag assignment');
+    assert.match(
+      crossSpaceValidation.Errors.map((e) => e.Message).join('; '),
+      /does not match post Forum SpaceID/i,
+    );
+    assert.equal(await invalidCrossSpaceTag.Save(), false, 'cross-space ForumPostTag Save() must fail');
 
     // 7. Idempotent 1-Click Graduation to a Working Space
     const graduationService = new ThreadGraduationService();
@@ -477,11 +604,39 @@ export async function RunArchitectAssociationIntegrationCycle(options = {}) {
     assert.match(graduatedSpace.Description, /\*\*Key Takeaways:\*\*/);
     assert.equal(seededTask.Description, graduatedSpace.Description);
 
-    // 8. No-op Teardown preserves everything
-    const teardownRes = TeardownArchitectAssociationWorld({ store });
+    // 8. No-op Teardown preserves everything in store and durable backing file
+    const teardownRes = TeardownArchitectAssociationWorld({ store, persistenceFilePath });
     assert.equal(teardownRes.preserved, true);
     assert.ok(store.spaces.has(expectedSpaceId.toLowerCase()), 'no-op teardown must preserve graduated space');
     assert.ok(store.posts.has(persistedReplyId.toLowerCase()), 'no-op teardown must preserve inbound reply');
+
+    // Verify independent fresh provider read from disk sees all retained records without re-seeding
+    if (persistenceFilePath !== null) {
+      const freshProvider = CreatePersistedArchWorldProvider({ persistenceFilePath });
+      const freshRv = new RunView(freshProvider);
+      const freshAllocRes = await freshRv.RunView(
+        {
+          EntityName: COMMUNITY_ENTITY_NAMES.ForumIdeaAllocations,
+          ExtraFilter: `UserID = '${KENJI_ID}'`,
+          ResultType: 'simple',
+        },
+        kenjiUser,
+      );
+      assert.equal(freshAllocRes.Results.length, 2);
+      const freshP32 = freshAllocRes.Results.find(
+        (a) => a.IdeaPostID.toLowerCase() === IDEA_P32_ID.toLowerCase(),
+      );
+      assert.equal(freshP32?.PointsAllocated, 49, 'fresh persisted reader must see updated 49-pt allocation');
+      const freshSpaceRes = await freshRv.RunView(
+        {
+          EntityName: 'MJ_BizApps_Collaboration: Spaces',
+          ExtraFilter: `ID = '${expectedSpaceId}'`,
+          ResultType: 'simple',
+        },
+        kenjiUser,
+      );
+      assert.equal(freshSpaceRes.Results.length, 1, 'fresh persisted reader must see graduated Working Space');
+    }
 
     return {
       store,
@@ -492,6 +647,8 @@ export async function RunArchitectAssociationIntegrationCycle(options = {}) {
   } finally {
     if (prevSecret === undefined) delete process.env.COMMUNITY_DIGEST_REPLY_SECRET;
     else process.env.COMMUNITY_DIGEST_REPLY_SECRET = prevSecret;
+    Metadata.Provider = prevMetadataProvider;
+    RunView.Provider = prevRunViewProvider;
     ClearDigestReplyTokenRegistry();
     CommunityTestCommunicationProvider.ClearSentMessages();
     mock.restoreAll();
@@ -499,7 +656,7 @@ export async function RunArchitectAssociationIntegrationCycle(options = {}) {
 }
 
 function rachelContextUser() {
-  return new UserInfo(undefined, {
+  return MakeArchUserInfo({
     ID: RACHEL_ID,
     Email: 'rachel.goldstein@agpa-guild.org',
     Name: 'Rachel Goldstein, FAIA',
@@ -563,6 +720,23 @@ export function RegisterArchWorldIntegrationTests() {
         assert.ok(forumIds.has(post.ForumID), `Post ${post.ID} references unknown Forum ${post.ForumID}`);
       }
 
+      // CR-03 Referential integrity: every ForumPostTag MUST belong to the exact same Space as its Post's Forum
+      const forumSpaceById = new Map(ARCH_FORUMS.map((f) => [f.ID.toLowerCase(), f.SpaceID.toLowerCase()]));
+      const postForumById = new Map(ARCH_POSTS.map((p) => [p.ID.toLowerCase(), p.ForumID.toLowerCase()]));
+      const tagSpaceById = new Map(ARCH_TOPIC_TAGS.map((t) => [t.ID.toLowerCase(), t.SpaceID.toLowerCase()]));
+      for (const pt of ARCH_POST_TAGS) {
+        const forumId = postForumById.get(pt.PostID.toLowerCase());
+        const postSpaceId = forumId ? forumSpaceById.get(forumId) : undefined;
+        const tagSpaceId = tagSpaceById.get(pt.TopicTagID.toLowerCase());
+        assert.ok(postSpaceId, `PostTag ${pt.ID} references Post ${pt.PostID} with missing Forum/Space`);
+        assert.ok(tagSpaceId, `PostTag ${pt.ID} references unknown TopicTag ${pt.TopicTagID}`);
+        assert.equal(
+          postSpaceId,
+          tagSpaceId,
+          `PostTag ${pt.ID} violates Space boundary: Post ${pt.PostID} is in Space ${postSpaceId} but TopicTag ${pt.TopicTagID} is in Space ${tagSpaceId}`,
+        );
+      }
+
       // Cross-space & Team-band isolation via both fnCommunityForumAccess shadow and CommunityRules
       assert.equal(
         EvaluateCommunityForumCanPost({
@@ -605,16 +779,52 @@ export function RegisterArchWorldIntegrationTests() {
       }
     });
 
-    it('executes full end-to-end integration cycle across 2 consecutive runs on the retained world (with no-op teardown)', async () => {
-      const retainedStore = ResetSharedArchWorldStore();
-      const firstRun = await RunArchitectAssociationIntegrationCycle({ store: retainedStore, isRepeatCycle: false });
-      assert.ok(firstRun.counts.totalRecords > 150);
+    it('executes full end-to-end integration cycle across 2 consecutive runs on the retained world (with no-op teardown & cross-process persistence)', async () => {
+      const tempDir = mkdtempSync(join(tmpdir(), 'arch-world-persist-'));
+      const tempStateFile = join(tempDir, 'arch-world-state.json');
+      try {
+        const retainedStore = ResetSharedArchWorldStore({
+          persistenceFilePath: tempStateFile,
+          clearPersistence: true,
+        });
+        const firstRun = await RunArchitectAssociationIntegrationCycle({
+          store: retainedStore,
+          persistenceFilePath: tempStateFile,
+          isRepeatCycle: false,
+        });
+        assert.ok(firstRun.counts.totalRecords > 150);
+        assert.equal(existsSync(tempStateFile), true, 'durable backing store must exist on disk after run 1');
 
-      // Run #2 against the EXACT same retained store (after no-op TeardownArchitectAssociationWorld)
-      // proving repeat-run invariance without destructive cleanup or duplicate Working Spaces/Tasks.
-      const secondRun = await RunArchitectAssociationIntegrationCycle({ store: retainedStore, isRepeatCycle: true });
-      assert.equal(secondRun.graduatedSpaceId, firstRun.graduatedSpaceId);
-      assert.equal(secondRun.store.tasks.size, 1, 'repeat run must not create duplicate starter Tasks');
+        // Run #2 against the EXACT same retained store (after no-op TeardownArchitectAssociationWorld)
+        // proving repeat-run invariance without destructive cleanup or duplicate Working Spaces/Tasks/Allocations.
+        const secondRun = await RunArchitectAssociationIntegrationCycle({
+          store: retainedStore,
+          persistenceFilePath: tempStateFile,
+          isRepeatCycle: true,
+        });
+        assert.equal(secondRun.graduatedSpaceId, firstRun.graduatedSpaceId);
+        assert.equal(secondRun.store.tasks.size, 1, 'repeat run must not create duplicate starter Tasks');
+
+        // Independent child process read (zero shared memory) sees retained state without re-seeding
+        const verifyOutput = execFileSync(
+          process.execPath,
+          ['scripts/world/arch-world-loader.mjs', '--verify'],
+          {
+            env: { ...process.env, ARCH_WORLD_STATE_FILE: tempStateFile },
+            encoding: 'utf8',
+          },
+        );
+        assert.match(verifyOutput, /Spaces=5, CommunitySpaces=4, Forums=13, Posts=70, TopicTags=22, IdeaAllocations=25/);
+
+        // Deterministic SQL Server & PostgreSQL script generation matches world dataset
+        const sqlScripts = BuildArchitectAssociationWorldSql();
+        assert.match(sqlScripts.sqlServer, /\[__mj_BizAppsCommunity\]\.\[ForumPostTag\]/);
+        assert.match(sqlScripts.postgres, /INSERT INTO "ForumPostTag"/);
+        assert.match(sqlScripts.sqlServer, /UPDATE \[__mj_BizAppsCommunity\]\.\[ForumIdeaPost\]/);
+        assert.match(sqlScripts.postgres, /UPDATE "ForumIdeaPost" AS ip/);
+      } finally {
+        rmSync(tempDir, { recursive: true, force: true });
+      }
     });
   });
 }

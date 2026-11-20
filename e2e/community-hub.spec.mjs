@@ -941,7 +941,7 @@ test('ARCH-WORLD Showcase: Capture 5 crisp 1440x900 marketing screenshots with 0
     await page.keyboard.press('Escape');
     await expect(page.locator('#mjc-digest-drawer-backdrop')).toBeHidden();
 
-    // 5. Quadratic Ideation Wallet with voice-credit allocations
+    // 5. Quadratic Ideation Wallet with persisted voice-credit allocations
     await page.click('#mjc-hub-tab-quadratic-ideation-wallet');
     await expect(page.locator('#mjc-hub-panel-quadratic-ideation-wallet')).toBeVisible();
     await expect(page.locator('#mjc-hub-panel-quadratic-ideation-wallet')).toContainText('2027 Guild Standards & Tooling Ideation');
@@ -949,6 +949,38 @@ test('ARCH-WORLD Showcase: Capture 5 crisp 1440x900 marketing screenshots with 0
     await page.dispatchEvent('#mjc-qv-slider-input', 'input');
     await expect(page.locator('.mjc-qv-slider__meta')).toContainText('Effective votes: 7');
     await expect(page.locator('.mjc-qv-slider__meta')).toContainText('Remaining budget: 35');
+
+    // Wait for PersistIdeaAllocationAtomic transaction to commit and assert persisted state in harness store + UI
+    await page.waitForFunction(() => window.__harnessPendingOps === 0);
+    await expect
+      .poll(async () => {
+        const snapshot = await (await page.request.get(new URL('/api/harness/state', harnessUrl).toString())).json();
+        const kenjiP32Rows = (snapshot.allocations ?? []).filter(
+          (a) =>
+            String(a.UserID).toLowerCase() === 'a7c40400-4e12-4b8f-9a10-000000000001' &&
+            String(a.IdeaPostID).toLowerCase() === 'a7c40600-4e12-4b8f-9a10-000000000032',
+        );
+        const ideaP32 = (snapshot.ideas ?? []).find(
+          (i) => String(i.ID).toLowerCase() === 'a7c40600-4e12-4b8f-9a10-000000000032',
+        );
+        return {
+          rowCount: kenjiP32Rows.length,
+          pointsAllocated: kenjiP32Rows[0]?.PointsAllocated ?? null,
+          quadraticVotes: kenjiP32Rows[0]?.QuadraticVotes ?? null,
+          totalPointsAllocated: ideaP32?.TotalPointsAllocated ?? null,
+          effectiveQuadraticVotes: ideaP32?.EffectiveQuadraticVotes ?? null,
+        };
+      })
+      .toEqual({
+        rowCount: 1,
+        pointsAllocated: 49,
+        quadraticVotes: 7,
+        totalPointsAllocated: 275,
+        effectiveQuadraticVotes: 51,
+      });
+
+    await expect(page.locator('.mjc-idea-card').first()).toContainText('Your allocation: 49 pts');
+    await expect(page.locator('.mjc-idea-card').first()).toContainText('275 pts');
     const walletAxe = await new AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa']).analyze();
     expect(walletAxe.violations.filter((v) => v.impact === 'critical' || v.impact === 'serious')).toEqual([]);
     await page.screenshot({
