@@ -270,7 +270,7 @@ test('Real Angular 21 Community Hub: 26 ClassFactory registrations, 4 tabs, PDF 
   await expect(page.locator('#mjc-digest-send-status')).toContainText('Community Test Email Driver');
   const replyIndicatorText = (await page.locator('#mjc-digest-reply-indicator').textContent()) ?? '';
   expect(replyIndicatorText).not.toContain('hmac_e2e_verified_token');
-  const replyMatch = replyIndicatorText.match(/reply\+[0-9a-f]{16}\.[A-Za-z0-9_-]{32}@reply\.bizapps\.local/);
+  const replyMatch = replyIndicatorText.match(/reply\+[A-Za-z0-9_-]{16}\.[A-Za-z0-9_-]{32}@reply\.bizapps\.local/);
   expect(replyMatch, `Expected compact HMAC reply address in: ${replyIndicatorText}`).toBeTruthy();
   const digestReplyLocalPart = replyMatch[0].split('@')[0];
   expect(Buffer.byteLength(digestReplyLocalPart, 'utf8')).toBeLessThanOrEqual(64);
@@ -441,11 +441,64 @@ test('Real Angular 21 Community Hub: 26 ClassFactory registrations, 4 tabs, PDF 
   ).toContain('Verified failover timing in staging cluster.');
   expect(
     Array.isArray(stateBeforeReload.digestOutbox) && stateBeforeReload.digestOutbox.length >= 1,
-    'SendPersonalizedDigest action must record outbound digest in harness outbox',
+    'SendPersonalizedDigest action must record outbound digest in real CommunityTestCommunicationProvider outbox',
   ).toBe(true);
   const outboxEntry = stateBeforeReload.digestOutbox[0];
-  expect(outboxEntry.replyTo).toMatch(/^reply\+[0-9a-f]{16}\.[A-Za-z0-9_-]{32}@reply\.bizapps\.local$/);
+  expect(outboxEntry.replyTo).toMatch(/^reply\+[A-Za-z0-9_-]{16}\.[A-Za-z0-9_-]{32}@reply\.bizapps\.local$/);
   expect(Buffer.byteLength(outboxEntry.replyTo.split('@')[0], 'utf8')).toBeLessThanOrEqual(64);
+
+  // Verify UserInfoEngine preferences were persisted through MJ: User Settings entity rows
+  expect(
+    Array.isArray(stateBeforeReload.userSettingRows) &&
+      stateBeforeReload.userSettingRows.some((s) => s.Setting === 'bizapps-community.digestCadence' && s.Value === 'daily'),
+    'UserInfoEngine digestCadence setting must persist as MJ: User Settings entity row',
+  ).toBe(true);
+
+  // CR-09: Verify ProcessInboundDigestReply via /api/harness/run-action using the real production
+  // ParseAndVerifyInboundEmailReply helper:
+  // (a) Tampered Reply-To token must be rejected with INVALID_SIGNATURE and 0 persisted reply posts
+  const [replyLocal, replyDomain] = outboxEntry.replyTo.split('@');
+  const tamperedReplyAddress = `${replyLocal.slice(0, -1)}${replyLocal.endsWith('A') ? 'B' : 'A'}@${replyDomain}`;
+  const postCountBeforeReply = stateBeforeReload.posts.length;
+  const tamperedInboundRes = await page.evaluate(
+    ([actionId, replyTo]) =>
+      window.__runGraphQLAction(actionId, [
+        { Name: 'ReplyToAddress', Value: replyTo, Type: 'Input' },
+        { Name: 'SenderEmail', Value: 'member@bizapps-community.local', Type: 'Input' },
+        { Name: 'RawBodyText', Value: 'Tampered token reply must not persist.', Type: 'Input' },
+      ]),
+    ['9A5B3D21-6C0F-4E8B-8D42-7F9C3E5A2B01', tamperedReplyAddress],
+  );
+  expect(tamperedInboundRes.Success).toBe(false);
+  expect(tamperedInboundRes.ResultCode).toBe('INVALID_SIGNATURE');
+  const stateAfterTampered = await (await page.request.get(new URL('/api/harness/state', harnessUrl).toString())).json();
+  expect(stateAfterTampered.posts.length).toBe(postCountBeforeReply);
+
+  // (b) Captured valid Reply-To token verifies via production helper, strips quoted email chrome,
+  // and persists exactly 1 new authorized reply post
+  const validInboundRes = await page.evaluate(
+    ([actionId, replyTo]) =>
+      window.__runGraphQLAction(actionId, [
+        { Name: 'ReplyToAddress', Value: replyTo, Type: 'Input' },
+        { Name: 'SenderEmail', Value: 'member@bizapps-community.local', Type: 'Input' },
+        {
+          Name: 'RawBodyText',
+          Value: 'Confirmed in staging — rotating keys cleanly.\n\nOn Thu, Nov 19, 2026 wrote:\n> Digest quote',
+          Type: 'Input',
+        },
+      ]),
+    ['9A5B3D21-6C0F-4E8B-8D42-7F9C3E5A2B01', outboxEntry.replyTo],
+  );
+  expect(validInboundRes.Success).toBe(true);
+  expect(validInboundRes.ResultCode).toBe('SUCCESS');
+  const stateAfterInbound = await (await page.request.get(new URL('/api/harness/state', harnessUrl).toString())).json();
+  expect(stateAfterInbound.posts.length).toBe(postCountBeforeReply + 1);
+  const inboundPersistedReply = stateAfterInbound.posts.find(
+    (p) =>
+      p.PostTypeID === replyPostType.ID &&
+      p.BodyMarkdown === 'Confirmed in staging — rotating keys cleanly.',
+  );
+  expect(inboundPersistedReply, 'Valid inbound email reply must persist 1 stripped reply post').toBeTruthy();
   expect(
     Array.isArray(stateBeforeReload.actionCalls) && stateBeforeReload.actionCalls.length >= 4,
     'Backend /api/harness/run-action endpoint must capture real RunAction invocations',
@@ -469,6 +522,9 @@ test('Real Angular 21 Community Hub: 26 ClassFactory registrations, 4 tabs, PDF 
   await expect(page.locator('#mjc-header-digest-btn')).toContainText('Personalized Digest (Daily)');
   await expect(page.locator('.mjc-active-filter-banner')).toContainText('#Multi-Region');
 
+  const expectedCreatedPostReplies =
+    1 + (inboundPersistedReply.RootPostID?.toLowerCase() === createdPostRow.ID.toLowerCase() ? 1 : 0);
+
   const reloadedCard = page.locator('.mjc-stream-card', {
     hasText: 'Multi-Region Eventual Consistency Benchmarks',
   });
@@ -479,13 +535,18 @@ test('Real Angular 21 Community Hub: 26 ClassFactory registrations, 4 tabs, PDF 
   await expect(reloadedCard).toContainText(`Space: ${createdPostRow.PromotedToSpaceID}`);
   await expect(reloadedCard.locator('.mjc-upvote-btn')).toHaveAttribute('aria-pressed', 'true');
   await expect(reloadedCard.locator('.mjc-upvote-btn')).toContainText('1');
-  await expect(reloadedCard.locator('.mjc-reply-count')).toContainText('(1)');
+  await expect(reloadedCard.locator('.mjc-reply-count')).toContainText(`(${expectedCreatedPostReplies})`);
 
   await reloadedCard.locator('.mjc-inspect-btn').click();
   const reloadedDialog = page.locator('#mjc-detail-sheet-backdrop [role="dialog"]');
   await expect(reloadedDialog).toBeVisible();
-  await expect(reloadedDialog.locator('.mjc-drawer-replies')).toContainText('Replies & Endorsements (1)');
+  await expect(reloadedDialog.locator('.mjc-drawer-replies')).toContainText(
+    `Replies & Endorsements (${expectedCreatedPostReplies})`,
+  );
   await expect(reloadedDialog.locator('.mjc-drawer-replies')).toContainText('Verified failover timing in staging cluster.');
+  if (expectedCreatedPostReplies === 2) {
+    await expect(reloadedDialog.locator('.mjc-drawer-replies')).toContainText('Confirmed in staging — rotating keys cleanly.');
+  }
   await expect(page.locator('#mjc-detail-upvote-btn')).toContainText('Endorse (1)');
   await expect(page.locator('#mjc-detail-promoted-space')).toContainText(createdPostRow.PromotedToSpaceID);
   await expect(page.locator('#mjc-detail-open-graduated-space-link')).toBeVisible();

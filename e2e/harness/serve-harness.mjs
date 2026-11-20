@@ -173,7 +173,7 @@ export async function StartHarnessServer() {
       }
       if (urlPath === '/api/harness/run-action' && req.method === 'POST') {
         const body = await readJsonBody(req);
-        const result = store.runAction(body?.actionID ?? '', Array.isArray(body?.params) ? body.params : []);
+        const result = await store.runAction(body?.actionID ?? '', Array.isArray(body?.params) ? body.params : []);
         sendJson(res, 200, result);
         return;
       }

@@ -227,14 +227,32 @@ const mockProvider = {
 Metadata.Provider = mockProvider;
 RunView.Provider = mockProvider;
 
+// Fixture-backed harness boundary: loads persisted 'MJ: User Settings' entity rows via
+// /api/harness/run-view (fallback /api/harness/user-settings) and routes UserInfoEngine writes
+// through GetEntityObject('MJ: User Settings') -> Save() + /api/harness/user-settings so both the
+// real MJ entity transaction path and harness settings endpoint stay synchronized across reloads.
 const userSettingsMap = new Map();
+const userSettingEntityIds = new Map();
 try {
-  const initialSettingsRes = await fetch('/api/harness/user-settings');
-  if (initialSettingsRes.ok) {
-    const parsed = await initialSettingsRes.json();
-    for (const [k, v] of Object.entries(parsed?.settings ?? {})) {
-      if (typeof v === 'string') {
-        userSettingsMap.set(k, v);
+  const settingsView = await mockProvider.RunView({
+    EntityName: 'MJ: User Settings',
+    ExtraFilter: `UserID = '${HARNESS_USER.ID}'`,
+    ResultType: 'simple',
+  });
+  for (const row of settingsView?.Results ?? []) {
+    if (typeof row?.Setting === 'string' && typeof row?.Value === 'string') {
+      userSettingsMap.set(row.Setting, row.Value);
+      if (row.ID) userSettingEntityIds.set(row.Setting, row.ID);
+    }
+  }
+  if (userSettingsMap.size === 0) {
+    const initialSettingsRes = await fetch('/api/harness/user-settings');
+    if (initialSettingsRes.ok) {
+      const parsed = await initialSettingsRes.json();
+      for (const [k, v] of Object.entries(parsed?.settings ?? {})) {
+        if (typeof v === 'string') {
+          userSettingsMap.set(k, v);
+        }
       }
     }
   }
@@ -242,16 +260,31 @@ try {
   // Ignore if harness settings endpoint is unavailable.
 }
 
-const uiEngine = UserInfoEngine.Instance;
-uiEngine.GetSetting = (key) => userSettingsMap.get(key);
-uiEngine.SetSetting = async (key, value) => {
+async function persistUserSettingViaEntity(key, value) {
   userSettingsMap.set(key, value);
+  const existingId = userSettingEntityIds.get(key);
+  const settingEntity = existingId
+    ? await mockProvider.GetEntityObject('MJ: User Settings', { ID: existingId })
+    : await mockProvider.GetEntityObject('MJ: User Settings');
+  if (settingEntity) {
+    if (!existingId) {
+      settingEntity.NewRecord();
+      settingEntity.UserID = HARNESS_USER.ID;
+      settingEntity.Setting = key;
+      userSettingEntityIds.set(key, settingEntity.ID);
+    }
+    settingEntity.Value = value;
+    await settingEntity.Save();
+  }
   await postHarnessJson('/api/harness/user-settings', { key, value });
   return true;
-};
+}
+
+const uiEngine = UserInfoEngine.Instance;
+uiEngine.GetSetting = (key) => userSettingsMap.get(key);
+uiEngine.SetSetting = async (key, value) => persistUserSettingViaEntity(key, value);
 uiEngine.SetSettingDebounced = (key, value) => {
-  userSettingsMap.set(key, value);
-  void postHarnessJson('/api/harness/user-settings', { key, value });
+  void persistUserSettingViaEntity(key, value);
 };
 
 GraphQLActionClient.prototype.RunAction = async function (actionName, params) {
