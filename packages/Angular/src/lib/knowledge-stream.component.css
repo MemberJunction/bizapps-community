@@ -928,10 +928,23 @@
 
 .mjc-inline-synthesis__head {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: var(--mj-space-2);
   font-size: var(--mj-text-xs);
   color: var(--mj-text-violet, var(--mj-brand-primary));
+}
+
+.mjc-inline-synthesis__actions {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.mjc-btn--xs {
+  padding: 2px 8px;
+  font-size: 0.7rem;
 }
 
 .mjc-inline-synthesis__body {

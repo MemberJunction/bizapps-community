@@ -68,6 +68,8 @@ export interface LivingThreadSynthesisView {
   openQuestions: string[];
   contributorCitations: LivingThreadSynthesisCitation[];
   synthesizedAtIso: string | null;
+  cacheHit?: boolean;
+  modelUsed?: string | null;
 }
 
 export interface SendDigestSummaryView {
@@ -643,6 +645,8 @@ export function ParseLivingSynthesisPayload(params: {
   const citations = parseCitationsArray(GetActionOutputValue(effectiveResult, 'ContributorCitations'));
   const countRaw = GetActionOutputValue(effectiveResult, 'ConsideredReplyCount');
   const atRaw = GetActionOutputValue(effectiveResult, 'AISynthesizedAt');
+  const cacheHitRaw = GetActionOutputValue(effectiveResult, 'CacheHit');
+  const modelUsedRaw = GetActionOutputValue(effectiveResult, 'ModelUsed');
 
   const parsedCount =
     typeof countRaw === 'number' && Number.isFinite(countRaw)
@@ -651,20 +655,25 @@ export function ParseLivingSynthesisPayload(params: {
         ? Number(countRaw)
         : params.replies.length;
 
+  const cacheHit = cacheHitRaw === true || (typeof cacheHitRaw === 'string' && cacheHitRaw.trim().toLowerCase() === 'true');
+  const modelUsed = typeof modelUsedRaw === 'string' && modelUsedRaw.trim() ? modelUsedRaw.trim() : null;
   const effectiveMessage = params.actionResult?.Message ?? params.actionMessage;
 
   if (takeaways.length > 0 || citations.length > 0 || typeof execRaw === 'string') {
+    const cleanExec =
+      typeof execRaw === 'string' && execRaw.trim()
+        ? execRaw.replace(/\s*<!--\s*mjc-synthesis-cache:[\s\S]*?-->\s*/g, '').trim()
+        : '';
     return {
       rootPostId: params.rootPostId,
-      executiveSummary:
-        typeof execRaw === 'string' && execRaw.trim()
-          ? execRaw.trim()
-          : effectiveMessage?.trim() || `Living synthesis for "${params.title}".`,
+      executiveSummary: cleanExec || effectiveMessage?.trim() || `Living synthesis for "${params.title}".`,
       consideredReplyCount: parsedCount,
       keyTakeaways: takeaways,
       openQuestions,
       contributorCitations: citations,
       synthesizedAtIso: typeof atRaw === 'string' && atRaw.trim() ? atRaw : null,
+      cacheHit,
+      modelUsed,
     };
   }
 

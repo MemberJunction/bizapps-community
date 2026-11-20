@@ -2778,7 +2778,7 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
     this.threadSynthesisResult = null;
   }
 
-  public async SynthesizeFeedThread(postId: string): Promise<void> {
+  public async SynthesizeFeedThread(postId: string, forceRegenerate = false): Promise<void> {
     if (this.isSynthesizingFeed) return;
     this.isSynthesizingFeed = true;
     this.threadSynthesisResult = null;
@@ -2807,9 +2807,13 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
           this.structuredThreadSynthesis = null;
           return;
         }
-        const res = await actionClient.RunAction(actionId, [
+        const actionInputs: Array<{ Name: string; Value: string; Type: 'Input' }> = [
           { Name: 'RootPostID', Value: postId, Type: 'Input' },
-        ]);
+        ];
+        if (forceRegenerate) {
+          actionInputs.push({ Name: 'ForceRegenerate', Value: 'true', Type: 'Input' });
+        }
+        const res = await actionClient.RunAction(actionId, actionInputs);
         if (res?.Success !== true) {
           const errMsg = res?.Message || 'Living thread synthesis failed.';
           this.detailErrorMessage = errMsg;

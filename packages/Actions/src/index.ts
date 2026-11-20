@@ -50,6 +50,7 @@ export * from './custom/AskFirstDeflectionAction.ts';
 export * from './custom/epistemic-answer-grading.ts';
 export * from './custom/EpistemicAnswerGradingAction.ts';
 export * from './custom/living-thread-synthesis.ts';
+export * from './custom/living-thread-synthesis-cache.ts';
 export * from './custom/LivingThreadSynthesisAction.ts';
 export * from './custom/export-community-digest-pdf.ts';
 export * from './custom/ExportCommunityDigestPDFAction.ts';

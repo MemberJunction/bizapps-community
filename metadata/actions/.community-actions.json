@@ -25,7 +25,13 @@
             "IsRequired": true,
             "Description": "The member's draft question text to search against."
           },
-          "primaryKey": { "ID": "326FBCE4-49F8-4A0B-9961-1EFDEF3DB1B0" }
+          "primaryKey": {
+            "ID": "326FBCE4-49F8-4A0B-9961-1EFDEF3DB1B0"
+          },
+          "sync": {
+            "lastModified": "2026-11-20T21:17:59.805Z",
+            "checksum": "1228f4e686851c619d7488bff1d01907169642f66639271d063afc7859297022"
+          }
         },
         {
           "fields": {
@@ -37,7 +43,13 @@
             "IsRequired": true,
             "Description": "Comma-separated list of Forum IDs the requesting member may read. Computed by the caller; this action performs no permission checks of its own."
           },
-          "primaryKey": { "ID": "5A9FFB91-8E9E-43BD-BB5C-07A36A7FCF0A" }
+          "primaryKey": {
+            "ID": "5A9FFB91-8E9E-43BD-BB5C-07A36A7FCF0A"
+          },
+          "sync": {
+            "lastModified": "2026-11-20T21:17:59.846Z",
+            "checksum": "ddca49240b2624a604e5d86239835ddebb0bbe2613fc1922460b9166cbd32bf6"
+          }
         },
         {
           "fields": {
@@ -49,7 +61,13 @@
             "IsRequired": false,
             "Description": "Minimum confidence (0-1) required to deflect. Default 0.35."
           },
-          "primaryKey": { "ID": "354CE838-BC29-4368-8A91-80B09076B03B" }
+          "primaryKey": {
+            "ID": "354CE838-BC29-4368-8A91-80B09076B03B"
+          },
+          "sync": {
+            "lastModified": "2026-11-20T21:17:59.886Z",
+            "checksum": "c8fe9f23d9ac24e7c488953ca2bb4c92673c14eb4a9d6e36df7b3385121bf581"
+          }
         },
         {
           "fields": {
@@ -61,7 +79,13 @@
             "IsRequired": false,
             "Description": "Maximum number of citations to return. Default 3."
           },
-          "primaryKey": { "ID": "1F0A9CFE-D803-40EF-BA55-BB547755E06D" }
+          "primaryKey": {
+            "ID": "1F0A9CFE-D803-40EF-BA55-BB547755E06D"
+          },
+          "sync": {
+            "lastModified": "2026-11-20T21:17:59.926Z",
+            "checksum": "4129e09140c91fa4c7769dad1cd9c5176ce25760b3b10d6376e11d4d68f85871"
+          }
         },
         {
           "fields": {
@@ -73,7 +97,13 @@
             "IsRequired": false,
             "Description": "Whether an existing answer was confident enough to deflect the new post."
           },
-          "primaryKey": { "ID": "534254CB-A510-4331-B0A6-F4BF6FDE3D1D" }
+          "primaryKey": {
+            "ID": "534254CB-A510-4331-B0A6-F4BF6FDE3D1D"
+          },
+          "sync": {
+            "lastModified": "2026-11-20T21:17:59.973Z",
+            "checksum": "926c2dddf38f11b38961a173eadfd476adacbe0d37c18ffc45f78cf1bb2f8992"
+          }
         },
         {
           "fields": {
@@ -85,7 +115,13 @@
             "IsRequired": false,
             "Description": "Confidence score (0-1) of the best match."
           },
-          "primaryKey": { "ID": "9A60178B-31A4-47E8-9231-C3418995E83B" }
+          "primaryKey": {
+            "ID": "9A60178B-31A4-47E8-9231-C3418995E83B"
+          },
+          "sync": {
+            "lastModified": "2026-11-20T21:18:00.028Z",
+            "checksum": "a32f39800c0926e97796265806e2fed79d4decdefb2908e9baeb22246ef42107"
+          }
         },
         {
           "fields": {
@@ -97,7 +133,13 @@
             "IsRequired": false,
             "Description": "The best-matching answer's body, when deflected; null otherwise."
           },
-          "primaryKey": { "ID": "094C46A7-320D-4776-8220-6C0DE94710E4" }
+          "primaryKey": {
+            "ID": "094C46A7-320D-4776-8220-6C0DE94710E4"
+          },
+          "sync": {
+            "lastModified": "2026-11-20T21:18:00.109Z",
+            "checksum": "a8980a6ea1a35b40569403754039d8e60d7e6464af6b877c9ec48f64307dab46"
+          }
         },
         {
           "fields": {
@@ -109,7 +151,13 @@
             "IsRequired": false,
             "Description": "JSON array of AskFirstCitation (postId, forumSlug, title, authorDisplayName, epistemicStatus, confidenceScore)."
           },
-          "primaryKey": { "ID": "A9929F13-F839-4CE9-B7E4-6042EF51B8D4" }
+          "primaryKey": {
+            "ID": "A9929F13-F839-4CE9-B7E4-6042EF51B8D4"
+          },
+          "sync": {
+            "lastModified": "2026-11-20T21:18:00.132Z",
+            "checksum": "52552fd2118e16e2326052775b8c8cd916bbdf156f4bec490d02b9f7447481bb"
+          }
         },
         {
           "fields": {
@@ -121,7 +169,13 @@
             "IsRequired": false,
             "Description": "PostType code to use if the member posts anyway."
           },
-          "primaryKey": { "ID": "3BA3A78A-7275-4967-A976-C4951840C539" }
+          "primaryKey": {
+            "ID": "3BA3A78A-7275-4967-A976-C4951840C539"
+          },
+          "sync": {
+            "lastModified": "2026-11-20T21:18:00.154Z",
+            "checksum": "8b23e0640be20192a1d01682e49c0865de7d46535525e50420a2daeaffb08f85"
+          }
         },
         {
           "fields": {
@@ -133,27 +187,81 @@
             "IsRequired": false,
             "Description": "Suggested title if the member posts anyway, derived from QueryText."
           },
-          "primaryKey": { "ID": "F4AB1B4E-F62C-4DAD-9D37-6CCBB1D8919D" }
+          "primaryKey": {
+            "ID": "F4AB1B4E-F62C-4DAD-9D37-6CCBB1D8919D"
+          },
+          "sync": {
+            "lastModified": "2026-11-20T21:18:00.175Z",
+            "checksum": "61e15b244985c8a0084e7a40947df00d21e02f1ac2da6e74724a8f777364e009"
+          }
         }
       ],
       "MJ: Action Result Codes": [
         {
-          "fields": { "ActionID": "@parent:ID", "ResultCode": "DEFLECTED", "IsSuccess": true, "Description": "A confident existing answer was found." },
-          "primaryKey": { "ID": "FAFB94F7-2815-49E1-895A-824673878473" }
+          "fields": {
+            "ActionID": "@parent:ID",
+            "ResultCode": "DEFLECTED",
+            "IsSuccess": true,
+            "Description": "A confident existing answer was found."
+          },
+          "primaryKey": {
+            "ID": "FAFB94F7-2815-49E1-895A-824673878473"
+          },
+          "sync": {
+            "lastModified": "2026-11-20T21:18:00.229Z",
+            "checksum": "c149d2df7d02e9da4df81035b391677d462fb6997f0ef047687641f8f6a82868"
+          }
         },
         {
-          "fields": { "ActionID": "@parent:ID", "ResultCode": "NOT_DEFLECTED", "IsSuccess": true, "Description": "No sufficiently confident match was found; the member should post." },
-          "primaryKey": { "ID": "15D2BD62-DA6D-4BF5-A904-E88ABB481EB5" }
+          "fields": {
+            "ActionID": "@parent:ID",
+            "ResultCode": "NOT_DEFLECTED",
+            "IsSuccess": true,
+            "Description": "No sufficiently confident match was found; the member should post."
+          },
+          "primaryKey": {
+            "ID": "15D2BD62-DA6D-4BF5-A904-E88ABB481EB5"
+          },
+          "sync": {
+            "lastModified": "2026-11-20T21:18:00.242Z",
+            "checksum": "d36535508fc12d4955dd21e2a95ed7d3ea05d0e39a33538bf563b2638ab6d7b6"
+          }
         },
         {
-          "fields": { "ActionID": "@parent:ID", "ResultCode": "MISSING_QUERY", "IsSuccess": false, "Description": "QueryText was not supplied." },
-          "primaryKey": { "ID": "3ECE3C98-279F-4E8D-89F4-71E6D80FB374" }
+          "fields": {
+            "ActionID": "@parent:ID",
+            "ResultCode": "MISSING_QUERY",
+            "IsSuccess": false,
+            "Description": "QueryText was not supplied."
+          },
+          "primaryKey": {
+            "ID": "3ECE3C98-279F-4E8D-89F4-71E6D80FB374"
+          },
+          "sync": {
+            "lastModified": "2026-11-20T21:18:00.257Z",
+            "checksum": "5b570c3db3098d41cd37aacafa91c3fd15ea0073b3f9f3a73149691189fd5f47"
+          }
         },
         {
-          "fields": { "ActionID": "@parent:ID", "ResultCode": "ERROR", "IsSuccess": false, "Description": "No context user." },
-          "primaryKey": { "ID": "576C1109-94BE-4D2E-B72B-2A7E7F39450E" }
+          "fields": {
+            "ActionID": "@parent:ID",
+            "ResultCode": "ERROR",
+            "IsSuccess": false,
+            "Description": "No context user."
+          },
+          "primaryKey": {
+            "ID": "576C1109-94BE-4D2E-B72B-2A7E7F39450E"
+          },
+          "sync": {
+            "lastModified": "2026-11-20T21:18:00.270Z",
+            "checksum": "ef1ead6a0622a398d9c630271c77f95367010eadda7b7bb8577fa553c293175d"
+          }
         }
       ]
+    },
+    "sync": {
+      "lastModified": "2026-11-20T21:17:59.570Z",
+      "checksum": "4801035b6739ee8ff9ff089f59baaa41853ce2a949bcfcb6e33441f7602f4128"
     }
   },
   {
@@ -182,7 +290,13 @@
             "IsRequired": false,
             "Description": "ID of the Forum Answer Post to grade. When supplied, the action loads the authoritative Question/Answer body markdown from the database (QuestionBodyMarkdown/AnswerBodyMarkdown become optional overrides) and persists AIEpistemicStatus/AIConfidenceScore back onto this Answer Post."
           },
-          "primaryKey": { "ID": "2C9C7B9E-3B9A-4C2E-9E0F-2D7B6C5A4F31" }
+          "primaryKey": {
+            "ID": "2C9C7B9E-3B9A-4C2E-9E0F-2D7B6C5A4F31"
+          },
+          "sync": {
+            "lastModified": "2026-11-20T21:18:00.292Z",
+            "checksum": "5cb6a36aea7f306fc1ae137c81b6bf445b7a65eb4d80c4ef5280121db6da3380"
+          }
         },
         {
           "fields": {
@@ -194,7 +308,13 @@
             "IsRequired": false,
             "Description": "The question's body markdown. Required unless AnswerPostID is supplied, in which case it is loaded from the database and this is an optional override."
           },
-          "primaryKey": { "ID": "975EB3D6-796C-49D7-843D-C74677A8EA98" }
+          "primaryKey": {
+            "ID": "975EB3D6-796C-49D7-843D-C74677A8EA98"
+          },
+          "sync": {
+            "lastModified": "2026-11-20T21:18:00.314Z",
+            "checksum": "c3a308e5621bb5c62075163cb39959eb8380c917eed3c0c6b481b1698dbcf91b"
+          }
         },
         {
           "fields": {
@@ -206,7 +326,13 @@
             "IsRequired": false,
             "Description": "The answer's body markdown to grade. Required unless AnswerPostID is supplied, in which case it is loaded from the database and this is an optional override."
           },
-          "primaryKey": { "ID": "F6B3BD10-3FBC-402C-810A-56D544CE5011" }
+          "primaryKey": {
+            "ID": "F6B3BD10-3FBC-402C-810A-56D544CE5011"
+          },
+          "sync": {
+            "lastModified": "2026-11-20T21:18:00.337Z",
+            "checksum": "265a79d0092b1b6b0b6c63fe89d6e6ad4d439334c0f5a6754bafea61948c8fa3"
+          }
         },
         {
           "fields": {
@@ -218,7 +344,13 @@
             "IsRequired": false,
             "Description": "The question's existing accepted/canon answer, if any, used to detect a conflicting new answer."
           },
-          "primaryKey": { "ID": "1E11F2B1-C938-4EEE-8F73-FEB80763D165" }
+          "primaryKey": {
+            "ID": "1E11F2B1-C938-4EEE-8F73-FEB80763D165"
+          },
+          "sync": {
+            "lastModified": "2026-11-20T21:18:00.359Z",
+            "checksum": "ddba8f7e556929e6f93d3182b629d740f9875b55461ef1badf8af3ed1123cbcb"
+          }
         },
         {
           "fields": {
@@ -230,7 +362,13 @@
             "IsRequired": false,
             "Description": "Confidence score from 0.000 to 1.000."
           },
-          "primaryKey": { "ID": "D6AA0FEB-E15C-409F-8DB9-4D4EAD931ABE" }
+          "primaryKey": {
+            "ID": "D6AA0FEB-E15C-409F-8DB9-4D4EAD931ABE"
+          },
+          "sync": {
+            "lastModified": "2026-11-20T21:18:00.379Z",
+            "checksum": "386ca6f2bfa4655f30f81b93b177e74c59b464f363b39e4553c314cfb0eae530"
+          }
         },
         {
           "fields": {
@@ -242,7 +380,13 @@
             "IsRequired": false,
             "Description": "One of 'Canon Verified', 'Novel Insight', 'Partially Outdated', 'Conflicts With Canon'."
           },
-          "primaryKey": { "ID": "86B752D2-C379-473C-AAED-77277C0DEAB2" }
+          "primaryKey": {
+            "ID": "86B752D2-C379-473C-AAED-77277C0DEAB2"
+          },
+          "sync": {
+            "lastModified": "2026-11-20T21:18:00.399Z",
+            "checksum": "a666a7cbc391da60b25049ce779ddaa2ba9719f01521051cdf4ce9ceafa76a4c"
+          }
         },
         {
           "fields": {
@@ -254,7 +398,13 @@
             "IsRequired": false,
             "Description": "'AI_Verified' at or above 0.85 confidence; 'Needs_Human_Review' otherwise."
           },
-          "primaryKey": { "ID": "67055CE9-690B-432A-9B08-8D59440B4EAE" }
+          "primaryKey": {
+            "ID": "67055CE9-690B-432A-9B08-8D59440B4EAE"
+          },
+          "sync": {
+            "lastModified": "2026-11-20T21:18:00.422Z",
+            "checksum": "5af32dcf55acabd48b132e117e4a7be7606b70112b7dcc474e8971897fe22b7c"
+          }
         },
         {
           "fields": {
@@ -266,7 +416,13 @@
             "IsRequired": false,
             "Description": "JSON array of citation URLs extracted from the answer."
           },
-          "primaryKey": { "ID": "47216AF5-2242-419A-AA6D-4465ED1B59C3" }
+          "primaryKey": {
+            "ID": "47216AF5-2242-419A-AA6D-4465ED1B59C3"
+          },
+          "sync": {
+            "lastModified": "2026-11-20T21:18:00.445Z",
+            "checksum": "7ea2b3beb66ff7d5e6f99da691fff4e50e66cc3bfa8d03e9fde6128431df97e5"
+          }
         },
         {
           "fields": {
@@ -278,33 +434,76 @@
             "IsRequired": false,
             "Description": "Human-readable explanation of the grading."
           },
-          "primaryKey": { "ID": "4028B5F0-FF98-45A2-B827-1B219795EFA0" }
+          "primaryKey": {
+            "ID": "4028B5F0-FF98-45A2-B827-1B219795EFA0"
+          },
+          "sync": {
+            "lastModified": "2026-11-20T21:18:00.464Z",
+            "checksum": "aa76dcb352c95d2c9ddf669dc53331868e47a08463bd49202c196255b5311105"
+          }
         }
       ],
       "MJ: Action Result Codes": [
         {
-          "fields": { "ActionID": "@parent:ID", "ResultCode": "SUCCESS", "IsSuccess": true, "Description": "The answer was graded." },
-          "primaryKey": { "ID": "479F2831-3E7F-4A9C-8AAF-741B4B7D8B97" }
+          "fields": {
+            "ActionID": "@parent:ID",
+            "ResultCode": "SUCCESS",
+            "IsSuccess": true,
+            "Description": "The answer was graded."
+          },
+          "primaryKey": {
+            "ID": "479F2831-3E7F-4A9C-8AAF-741B4B7D8B97"
+          },
+          "sync": {
+            "lastModified": "2026-11-20T21:18:00.477Z",
+            "checksum": "ecabe0c30a5213b45c82cfd4805ba018401e1529e64f285cc73af4607d7b1caa"
+          }
         },
         {
-          "fields": { "ActionID": "@parent:ID", "ResultCode": "MISSING_CONTENT", "IsSuccess": false, "Description": "QuestionBodyMarkdown or AnswerBodyMarkdown was not supplied." },
-          "primaryKey": { "ID": "68E6E6F1-54AB-4FC8-BDA3-80386D1BD62E" }
+          "fields": {
+            "ActionID": "@parent:ID",
+            "ResultCode": "MISSING_CONTENT",
+            "IsSuccess": false,
+            "Description": "QuestionBodyMarkdown or AnswerBodyMarkdown was not supplied."
+          },
+          "primaryKey": {
+            "ID": "68E6E6F1-54AB-4FC8-BDA3-80386D1BD62E"
+          },
+          "sync": {
+            "lastModified": "2026-11-20T21:18:00.489Z",
+            "checksum": "46756d9bd069f7e82eb0c9103b2d183806c22fb5b2d4839c0911ca1150e8de6b"
+          }
         },
         {
-          "fields": { "ActionID": "@parent:ID", "ResultCode": "ERROR", "IsSuccess": false, "Description": "No context user." },
-          "primaryKey": { "ID": "A89DF851-012B-447E-8EEA-95E487EEC75B" }
+          "fields": {
+            "ActionID": "@parent:ID",
+            "ResultCode": "ERROR",
+            "IsSuccess": false,
+            "Description": "No context user."
+          },
+          "primaryKey": {
+            "ID": "A89DF851-012B-447E-8EEA-95E487EEC75B"
+          },
+          "sync": {
+            "lastModified": "2026-11-20T21:18:00.502Z",
+            "checksum": "ef1ead6a0622a398d9c630271c77f95367010eadda7b7bb8577fa553c293175d"
+          }
         }
       ]
+    },
+    "sync": {
+      "lastModified": "2026-11-20T21:17:59.600Z",
+      "checksum": "f34ec5b23658c4daf538d690247b622655ba663bb2a79dee3b57722556cbca8c"
     }
   },
   {
     "fields": {
       "Name": "Living Thread Synthesis",
-      "Description": "Regenerates a root post's executive summary (SummaryMarkdown / AIExecutiveSummary) and SummaryGeneratedAt (AISynthesizedAt) from the thread's replies, bounded by MaxReplyCount posts and MaxCharsPerPost characters each. Deterministic — no LLM call required.",
+      "Description": "Synthesizes a root post's executive summary (SummaryMarkdown / AIExecutiveSummary) using the managed 'Community: Living Thread Synthesis' AI Prompt (Gemini 3.5 Flash-Lite), caching the result on ForumPost and regenerating only when the thread content or replies change (or when ForceRegenerate is true).",
       "Type": "Custom",
       "DriverClass": "Community.LivingThreadSynthesis",
       "IconClass": "fa-solid fa-wand-magic-sparkles",
-      "UserPrompt": "Regenerate this thread's AI executive summary.",
+      "UserPrompt": "Generate or return the cached AI executive summary for this thread.",
       "CodeApprovalStatus": "Approved",
       "Status": "Active"
     },
@@ -323,7 +522,13 @@
             "IsRequired": true,
             "Description": "ID of the root ForumPost to synthesize."
           },
-          "primaryKey": { "ID": "12209481-EE13-4155-BCCB-1E70C28D3DDE" }
+          "primaryKey": {
+            "ID": "12209481-EE13-4155-BCCB-1E70C28D3DDE"
+          },
+          "sync": {
+            "lastModified": "2026-11-20T21:18:00.555Z",
+            "checksum": "d2611f931de2e106a4fd7dc20bcbd4ff1881eab8dd59f454c91ec7ba2eef6a0b"
+          }
         },
         {
           "fields": {
@@ -335,7 +540,13 @@
             "IsRequired": false,
             "Description": "ID of the thread's accepted answer, if any, surfaced first as a Key Resolution."
           },
-          "primaryKey": { "ID": "12F24BCA-CFC0-4451-AA3B-A9A52EF8389E" }
+          "primaryKey": {
+            "ID": "12F24BCA-CFC0-4451-AA3B-A9A52EF8389E"
+          },
+          "sync": {
+            "lastModified": "2026-11-20T21:18:00.576Z",
+            "checksum": "b825086096a4e48b97dadb9844856d63603bb98fe8abd0bf812065e135a817f4"
+          }
         },
         {
           "fields": {
@@ -347,7 +558,13 @@
             "IsRequired": false,
             "Description": "Bounds how many replies are considered. Default 50."
           },
-          "primaryKey": { "ID": "63D6DD4C-F5EE-4C6B-9D26-E6DDCFC53C2C" }
+          "primaryKey": {
+            "ID": "63D6DD4C-F5EE-4C6B-9D26-E6DDCFC53C2C"
+          },
+          "sync": {
+            "lastModified": "2026-11-20T21:18:00.597Z",
+            "checksum": "5f47a519220b8f7398fe507ac94158d8ff1ded20415e763a8393cef915826cf2"
+          }
         },
         {
           "fields": {
@@ -359,7 +576,31 @@
             "IsRequired": false,
             "Description": "Bounds how many characters of each post are included. Default 500."
           },
-          "primaryKey": { "ID": "4C44F57C-8CE8-4EA1-9D6B-12F7F7A4C65A" }
+          "primaryKey": {
+            "ID": "4C44F57C-8CE8-4EA1-9D6B-12F7F7A4C65A"
+          },
+          "sync": {
+            "lastModified": "2026-11-20T21:18:00.623Z",
+            "checksum": "72c9873b6676d89627ea93736e93ca25758364e1e0f98a58f59a644b3d1c8929"
+          }
+        },
+        {
+          "fields": {
+            "ActionID": "@parent:ID",
+            "Name": "ForceRegenerate",
+            "Type": "Input",
+            "ValueType": "Scalar",
+            "IsArray": false,
+            "IsRequired": false,
+            "Description": "When 'true', bypasses the cached summary on ForumPost and regenerates via AI Prompt."
+          },
+          "primaryKey": {
+            "ID": "86317309-6C0C-4492-903F-567E3406F644"
+          },
+          "sync": {
+            "lastModified": "2026-11-20T21:18:00.646Z",
+            "checksum": "8d7ac4f9d44afdeb18addeba1a64d828f3f2eeeedbfa71ea24ac0ca480061e6b"
+          }
         },
         {
           "fields": {
@@ -371,7 +612,13 @@
             "IsRequired": false,
             "Description": "The synthesized executive-summary markdown."
           },
-          "primaryKey": { "ID": "E2E3F3D4-5C8C-4C4E-8F1E-6B6A0F6F6A6B" }
+          "primaryKey": {
+            "ID": "E2E3F3D4-5C8C-4C4E-8F1E-6B6A0F6F6A6B"
+          },
+          "sync": {
+            "lastModified": "2026-11-20T21:18:00.673Z",
+            "checksum": "9200c0df274b0ee4f39437ab34905534d012d27feb129cd9b6766108d2af295e"
+          }
         },
         {
           "fields": {
@@ -383,7 +630,13 @@
             "IsRequired": false,
             "Description": "ISO timestamp of this synthesis run."
           },
-          "primaryKey": { "ID": "9F4A2B3C-6D5E-4F70-8A1B-2C3D4E5F6A7B" }
+          "primaryKey": {
+            "ID": "9F4A2B3C-6D5E-4F70-8A1B-2C3D4E5F6A7B"
+          },
+          "sync": {
+            "lastModified": "2026-11-20T21:18:00.697Z",
+            "checksum": "de5228d545da1eca779aa9ee30dacf8fac2341eb2be279db72077f1a3fb5f810"
+          }
         },
         {
           "fields": {
@@ -395,27 +648,171 @@
             "IsRequired": false,
             "Description": "How many replies were actually included after bounding."
           },
-          "primaryKey": { "ID": "7B6C5D4E-3F2A-4190-9B8C-1D2E3F4A5B6C" }
+          "primaryKey": {
+            "ID": "7B6C5D4E-3F2A-4190-9B8C-1D2E3F4A5B6C"
+          },
+          "sync": {
+            "lastModified": "2026-11-20T21:18:00.719Z",
+            "checksum": "236cf86d0f5f66ee5e1e4026bc510c1b47fde03d0985aea1a537c8f56a30359a"
+          }
+        },
+        {
+          "fields": {
+            "ActionID": "@parent:ID",
+            "Name": "KeyTakeaways",
+            "Type": "Output",
+            "ValueType": "Scalar",
+            "IsArray": false,
+            "IsRequired": false,
+            "Description": "JSON array of key takeaway bullet strings with inline contributor citations."
+          },
+          "primaryKey": {
+            "ID": "F05EC6DF-44F1-48B3-9E64-67B94085E5EF"
+          },
+          "sync": {
+            "lastModified": "2026-11-20T21:18:00.739Z",
+            "checksum": "d49f4b4df94951ef64a86816617df510e0dd8f11e3009e19647eab4010b03fc9"
+          }
+        },
+        {
+          "fields": {
+            "ActionID": "@parent:ID",
+            "Name": "OpenQuestions",
+            "Type": "Output",
+            "ValueType": "Scalar",
+            "IsArray": false,
+            "IsRequired": false,
+            "Description": "JSON array of open questions with inline contributor citations."
+          },
+          "primaryKey": {
+            "ID": "818404E3-70B1-401C-A7F4-1529203180D3"
+          },
+          "sync": {
+            "lastModified": "2026-11-20T21:18:00.759Z",
+            "checksum": "1d8f413cd272f773de1dd5447ad2b3bfd149f52cc13af36973b70f726b6a020a"
+          }
+        },
+        {
+          "fields": {
+            "ActionID": "@parent:ID",
+            "Name": "ContributorCitations",
+            "Type": "Output",
+            "ValueType": "Scalar",
+            "IsArray": false,
+            "IsRequired": false,
+            "Description": "JSON array of contributor citation objects ({ citationIndex, authorDisplayName, postId, roleLabel })."
+          },
+          "primaryKey": {
+            "ID": "C07D401D-3D47-4BB7-9F72-9B82EA54505C"
+          },
+          "sync": {
+            "lastModified": "2026-11-20T21:18:00.783Z",
+            "checksum": "eba645e3968707aed81d74e6e3c3447ebe0294289658f713c94f57fa4111664b"
+          }
+        },
+        {
+          "fields": {
+            "ActionID": "@parent:ID",
+            "Name": "CacheHit",
+            "Type": "Output",
+            "ValueType": "Scalar",
+            "IsArray": false,
+            "IsRequired": false,
+            "Description": "True when an up-to-date cached summary on ForumPost was returned without invoking the LLM."
+          },
+          "primaryKey": {
+            "ID": "65C09BE8-F7A8-4E1E-A63A-B315B54DCAA4"
+          },
+          "sync": {
+            "lastModified": "2026-11-20T21:18:00.806Z",
+            "checksum": "590c56bff46f0e88dcf629011824554d7b43cfddbe640c7a22f5147d7e9338fa"
+          }
+        },
+        {
+          "fields": {
+            "ActionID": "@parent:ID",
+            "Name": "ModelUsed",
+            "Type": "Output",
+            "ValueType": "Scalar",
+            "IsArray": false,
+            "IsRequired": false,
+            "Description": "Display name of the AI model used to synthesize the summary (or 'Deterministic' when offline)."
+          },
+          "primaryKey": {
+            "ID": "BA63D4AD-9C32-4AA2-8E65-A5DD65F370E8"
+          },
+          "sync": {
+            "lastModified": "2026-11-20T21:18:00.830Z",
+            "checksum": "a630a4f79a9c69866ddd6e46248bb929468434bb49e9f061346a1d15b1237732"
+          }
         }
       ],
       "MJ: Action Result Codes": [
         {
-          "fields": { "ActionID": "@parent:ID", "ResultCode": "SUCCESS", "IsSuccess": true, "Description": "The thread was synthesized." },
-          "primaryKey": { "ID": "2A3B4C5D-6E7F-4081-9192-A3B4C5D6E7F8" }
+          "fields": {
+            "ActionID": "@parent:ID",
+            "ResultCode": "SUCCESS",
+            "IsSuccess": true,
+            "Description": "The thread was synthesized."
+          },
+          "primaryKey": {
+            "ID": "2A3B4C5D-6E7F-4081-9192-A3B4C5D6E7F8"
+          },
+          "sync": {
+            "lastModified": "2026-11-20T21:18:00.845Z",
+            "checksum": "383695ffecf8babada6b511dfd8fa1638f278563a662ba4b54f3006939ce9db2"
+          }
         },
         {
-          "fields": { "ActionID": "@parent:ID", "ResultCode": "MISSING_ROOT_POST", "IsSuccess": false, "Description": "RootPostID was not supplied." },
-          "primaryKey": { "ID": "3B4C5D6E-7F80-4192-A2A3-B4C5D6E7F8A9" }
+          "fields": {
+            "ActionID": "@parent:ID",
+            "ResultCode": "MISSING_ROOT_POST",
+            "IsSuccess": false,
+            "Description": "RootPostID was not supplied."
+          },
+          "primaryKey": {
+            "ID": "3B4C5D6E-7F80-4192-A2A3-B4C5D6E7F8A9"
+          },
+          "sync": {
+            "lastModified": "2026-11-20T21:18:00.858Z",
+            "checksum": "161b4e387ed48d2c9212425a096ef7443be5eeeb462361d63051b0f9b4cf0eaa"
+          }
         },
         {
-          "fields": { "ActionID": "@parent:ID", "ResultCode": "ROOT_POST_NOT_FOUND", "IsSuccess": false, "Description": "No post exists with the given RootPostID." },
-          "primaryKey": { "ID": "4C5D6E7F-8091-42A3-B3B4-C5D6E7F8A9B0" }
+          "fields": {
+            "ActionID": "@parent:ID",
+            "ResultCode": "ROOT_POST_NOT_FOUND",
+            "IsSuccess": false,
+            "Description": "No post exists with the given RootPostID."
+          },
+          "primaryKey": {
+            "ID": "4C5D6E7F-8091-42A3-B3B4-C5D6E7F8A9B0"
+          },
+          "sync": {
+            "lastModified": "2026-11-20T21:18:00.870Z",
+            "checksum": "7fb22b4a40ad9ce14535a2f2e6188e765e09657206bba5bc0cfdf3c189635548"
+          }
         },
         {
-          "fields": { "ActionID": "@parent:ID", "ResultCode": "ERROR", "IsSuccess": false, "Description": "No context user." },
-          "primaryKey": { "ID": "5D6E7F80-91A2-43B4-C4C5-D6E7F8A9B0C1" }
+          "fields": {
+            "ActionID": "@parent:ID",
+            "ResultCode": "ERROR",
+            "IsSuccess": false,
+            "Description": "No context user."
+          },
+          "primaryKey": {
+            "ID": "5D6E7F80-91A2-43B4-C4C5-D6E7F8A9B0C1"
+          },
+          "sync": {
+            "lastModified": "2026-11-20T21:18:00.881Z",
+            "checksum": "ef1ead6a0622a398d9c630271c77f95367010eadda7b7bb8577fa553c293175d"
+          }
         }
       ]
+    },
+    "sync": {
+      "lastModified": "2026-11-20T21:17:59.632Z",
+      "checksum": "0339e02215654cb7e60775e2bac08c266dd1cf5cf987fb34f2127652e38b2725"
     }
   },
   {
@@ -444,7 +841,13 @@
             "IsRequired": true,
             "Description": "Display name of the Community Space, used in the PDF header."
           },
-          "primaryKey": { "ID": "7F8091A2-B3C4-45D6-E6E7-F8A9B0C1D2E3" }
+          "primaryKey": {
+            "ID": "7F8091A2-B3C4-45D6-E6E7-F8A9B0C1D2E3"
+          },
+          "sync": {
+            "lastModified": "2026-11-20T21:18:00.901Z",
+            "checksum": "79538ddf4e11026b11f43486394b5004bcbedf4107fb06d36de2453105ad3d88"
+          }
         },
         {
           "fields": {
@@ -456,7 +859,13 @@
             "IsRequired": false,
             "Description": "Comma-separated list of Forum IDs the requesting member may read. Computed by the caller; an empty list yields an empty digest rather than an error."
           },
-          "primaryKey": { "ID": "8091A2B3-C4D5-46E7-F7F8-A9B0C1D2E3F4" }
+          "primaryKey": {
+            "ID": "8091A2B3-C4D5-46E7-F7F8-A9B0C1D2E3F4"
+          },
+          "sync": {
+            "lastModified": "2026-11-20T21:18:00.920Z",
+            "checksum": "d07e40d79780d038b387f878262ed24e992cf1145a3e93098670d0f3793dd8f7"
+          }
         },
         {
           "fields": {
@@ -468,7 +877,13 @@
             "IsRequired": false,
             "Description": "Caller's own cap on included items; can only tighten, never widen, the hard 100-item ceiling."
           },
-          "primaryKey": { "ID": "91A2B3C4-D5E6-47F8-A8A9-B0C1D2E3F4A5" }
+          "primaryKey": {
+            "ID": "91A2B3C4-D5E6-47F8-A8A9-B0C1D2E3F4A5"
+          },
+          "sync": {
+            "lastModified": "2026-11-20T21:18:00.942Z",
+            "checksum": "8fccfc9d3e96bd6417d8ac18ac05a133cc65aefc355d53d4395bebc4b5101628"
+          }
         },
         {
           "fields": {
@@ -480,7 +895,13 @@
             "IsRequired": false,
             "Description": "The generated PDF, base64-encoded."
           },
-          "primaryKey": { "ID": "A2B3C4D5-E6F7-4809-B9BA-C1D2E3F4A5B6" }
+          "primaryKey": {
+            "ID": "A2B3C4D5-E6F7-4809-B9BA-C1D2E3F4A5B6"
+          },
+          "sync": {
+            "lastModified": "2026-11-20T21:18:00.961Z",
+            "checksum": "7648a65f9585bfc58739ad508c507aa32149e6bf92bec5aaf620fe638123e37e"
+          }
         },
         {
           "fields": {
@@ -492,7 +913,13 @@
             "IsRequired": false,
             "Description": "Number of digest items actually included (after the 100-item cap)."
           },
-          "primaryKey": { "ID": "B3C4D5E6-F708-491A-CACB-D2E3F4A5B6C7" }
+          "primaryKey": {
+            "ID": "B3C4D5E6-F708-491A-CACB-D2E3F4A5B6C7"
+          },
+          "sync": {
+            "lastModified": "2026-11-20T21:18:00.979Z",
+            "checksum": "12dab2aa9dafd9363207902fda6fdd2d963bdd49ca1882a5520c7fd5180482f2"
+          }
         },
         {
           "fields": {
@@ -504,23 +931,66 @@
             "IsRequired": false,
             "Description": "Size of the generated PDF in bytes."
           },
-          "primaryKey": { "ID": "C4D5E6F7-0819-42AB-DBDC-E3F4A5B6C7D8" }
+          "primaryKey": {
+            "ID": "C4D5E6F7-0819-42AB-DBDC-E3F4A5B6C7D8"
+          },
+          "sync": {
+            "lastModified": "2026-11-20T21:18:00.996Z",
+            "checksum": "a290126cab119aa7e8e0bd97adc4b09b4bf36414238161739fa13bce10db989b"
+          }
         }
       ],
       "MJ: Action Result Codes": [
         {
-          "fields": { "ActionID": "@parent:ID", "ResultCode": "SUCCESS", "IsSuccess": true, "Description": "The PDF was generated." },
-          "primaryKey": { "ID": "D5E6F708-192A-43BC-ECED-F4A5B6C7D8E9" }
+          "fields": {
+            "ActionID": "@parent:ID",
+            "ResultCode": "SUCCESS",
+            "IsSuccess": true,
+            "Description": "The PDF was generated."
+          },
+          "primaryKey": {
+            "ID": "D5E6F708-192A-43BC-ECED-F4A5B6C7D8E9"
+          },
+          "sync": {
+            "lastModified": "2026-11-20T21:18:01.007Z",
+            "checksum": "8e0fc90e907cfa49b5ad8896e610f2a6c53d34e25c50eefd1fec10076ea5c45c"
+          }
         },
         {
-          "fields": { "ActionID": "@parent:ID", "ResultCode": "MISSING_SPACE_NAME", "IsSuccess": false, "Description": "SpaceName was not supplied." },
-          "primaryKey": { "ID": "E6F70819-2A3B-44CD-FDFE-A5B6C7D8E9F0" }
+          "fields": {
+            "ActionID": "@parent:ID",
+            "ResultCode": "MISSING_SPACE_NAME",
+            "IsSuccess": false,
+            "Description": "SpaceName was not supplied."
+          },
+          "primaryKey": {
+            "ID": "E6F70819-2A3B-44CD-FDFE-A5B6C7D8E9F0"
+          },
+          "sync": {
+            "lastModified": "2026-11-20T21:18:01.018Z",
+            "checksum": "54052ae1d9d6144a37110701e478e7ec67be4d5af82071e6b891f13cfdc2aee0"
+          }
         },
         {
-          "fields": { "ActionID": "@parent:ID", "ResultCode": "ERROR", "IsSuccess": false, "Description": "No context user." },
-          "primaryKey": { "ID": "F708192A-3B4C-45DE-0E0F-B6C7D8E9F0A1" }
+          "fields": {
+            "ActionID": "@parent:ID",
+            "ResultCode": "ERROR",
+            "IsSuccess": false,
+            "Description": "No context user."
+          },
+          "primaryKey": {
+            "ID": "F708192A-3B4C-45DE-0E0F-B6C7D8E9F0A1"
+          },
+          "sync": {
+            "lastModified": "2026-11-20T21:18:01.029Z",
+            "checksum": "ef1ead6a0622a398d9c630271c77f95367010eadda7b7bb8577fa553c293175d"
+          }
         }
       ]
+    },
+    "sync": {
+      "lastModified": "2026-11-20T21:17:59.662Z",
+      "checksum": "f51939c16d3a59828f3a8879537326438b19f06b68a89f6afc7c06620c5b90f4"
     }
   },
   {
@@ -549,7 +1019,13 @@
             "IsRequired": false,
             "Description": "Optional Collaboration Space UUID to scope candidate forums."
           },
-          "primaryKey": { "ID": "10A1B2C3-D4E5-4F60-8172-8394A5B6C7D8" }
+          "primaryKey": {
+            "ID": "10A1B2C3-D4E5-4F60-8172-8394A5B6C7D8"
+          },
+          "sync": {
+            "lastModified": "2026-11-20T21:18:01.049Z",
+            "checksum": "65c53542e8fc74d443ab3e64066c0ed55e13b52c4faf8ab6846bb130357bfa81"
+          }
         },
         {
           "fields": {
@@ -561,7 +1037,13 @@
             "IsRequired": false,
             "Description": "Comma-separated list of Forum UUIDs eligible for digest ranking."
           },
-          "primaryKey": { "ID": "20B2C3D4-E5F6-4071-9283-94A5B6C7D8E9" }
+          "primaryKey": {
+            "ID": "20B2C3D4-E5F6-4071-9283-94A5B6C7D8E9"
+          },
+          "sync": {
+            "lastModified": "2026-11-20T21:18:01.067Z",
+            "checksum": "8fa68eedd4c37846349fd689cd289621fd87b770ae573c6e246c92475957e995"
+          }
         },
         {
           "fields": {
@@ -573,7 +1055,13 @@
             "IsRequired": false,
             "Description": "Comma-separated list of User UUIDs to receive personalized digests (defaults to ContextUser)."
           },
-          "primaryKey": { "ID": "30C3D4E5-F607-4182-A394-A5B6C7D8E9F0" }
+          "primaryKey": {
+            "ID": "30C3D4E5-F607-4182-A394-A5B6C7D8E9F0"
+          },
+          "sync": {
+            "lastModified": "2026-11-20T21:18:01.084Z",
+            "checksum": "b8c1617f052f35dfd9b75cce165949a8dce4970e1224399b5d11a04f728e9a7d"
+          }
         },
         {
           "fields": {
@@ -585,7 +1073,13 @@
             "IsRequired": false,
             "Description": "Whether to use the Community Test Email Driver when CommunicationEngine is unconfigured."
           },
-          "primaryKey": { "ID": "40D4E5F6-0718-4293-B4A5-B6C7D8E9F0A1" }
+          "primaryKey": {
+            "ID": "40D4E5F6-0718-4293-B4A5-B6C7D8E9F0A1"
+          },
+          "sync": {
+            "lastModified": "2026-11-20T21:18:01.102Z",
+            "checksum": "c2e033939891ffa236921c882218ec09753447b5b9c700bc0614dc41b85fbf55"
+          }
         },
         {
           "fields": {
@@ -597,7 +1091,13 @@
             "IsRequired": false,
             "Description": "When true, records DryRun=true on dispatched messages without external delivery."
           },
-          "primaryKey": { "ID": "50E5F607-1829-43A4-85B6-C7D8E9F0A1B2" }
+          "primaryKey": {
+            "ID": "50E5F607-1829-43A4-85B6-C7D8E9F0A1B2"
+          },
+          "sync": {
+            "lastModified": "2026-11-20T21:18:01.121Z",
+            "checksum": "5a5d6761fc0aa3f5baaea394ad848c16a6ba1360ef02cc5159ab63201c407b05"
+          }
         },
         {
           "fields": {
@@ -609,7 +1109,13 @@
             "IsRequired": false,
             "Description": "Communication provider name override (e.g., Community Test Email Driver or SendGrid)."
           },
-          "primaryKey": { "ID": "60F60718-293A-44B5-96C7-D8E9F0A1B2C3" }
+          "primaryKey": {
+            "ID": "60F60718-293A-44B5-96C7-D8E9F0A1B2C3"
+          },
+          "sync": {
+            "lastModified": "2026-11-20T21:18:01.139Z",
+            "checksum": "2758612dd54327634cf92ad57f6adfec9edc2de2db60c0c1ac0b06921b94ad68"
+          }
         },
         {
           "fields": {
@@ -621,7 +1127,13 @@
             "IsRequired": false,
             "Description": "Display name of the community used in the digest subject and header."
           },
-          "primaryKey": { "ID": "70071829-3A4B-45C6-A7D8-E9F0A1B2C3D4" }
+          "primaryKey": {
+            "ID": "70071829-3A4B-45C6-A7D8-E9F0A1B2C3D4"
+          },
+          "sync": {
+            "lastModified": "2026-11-20T21:18:01.158Z",
+            "checksum": "cea0f6ded477cbfc0fa2a513b99a3a0efdbd3fdefc121c98631a01f4602adec8"
+          }
         },
         {
           "fields": {
@@ -633,7 +1145,13 @@
             "IsRequired": false,
             "Description": "Maximum number of ranked threads to include per recipient digest (default 5, max 25)."
           },
-          "primaryKey": { "ID": "8018293A-4B5C-46D7-B8E9-F0A1B2C3D4E5" }
+          "primaryKey": {
+            "ID": "8018293A-4B5C-46D7-B8E9-F0A1B2C3D4E5"
+          },
+          "sync": {
+            "lastModified": "2026-11-20T21:18:01.176Z",
+            "checksum": "06a45a34228c2d7319f7bdfed34c271a05dd366b541b8d56731c2020d6e8be41"
+          }
         },
         {
           "fields": {
@@ -645,7 +1163,13 @@
             "IsRequired": false,
             "Description": "Number of personalized digests dispatched successfully."
           },
-          "primaryKey": { "ID": "90293A4B-5C6D-47E8-89F0-A1B2C3D4E5F6" }
+          "primaryKey": {
+            "ID": "90293A4B-5C6D-47E8-89F0-A1B2C3D4E5F6"
+          },
+          "sync": {
+            "lastModified": "2026-11-20T21:18:01.195Z",
+            "checksum": "2cd0fbadd099280c911ee73163e429aa073df47cd6404366bed518a82db412d8"
+          }
         },
         {
           "fields": {
@@ -657,7 +1181,13 @@
             "IsRequired": false,
             "Description": "Number of recipient deliveries that failed or were denied by permissions."
           },
-          "primaryKey": { "ID": "A03A4B5C-6D7E-48F9-9A01-B2C3D4E5F607" }
+          "primaryKey": {
+            "ID": "A03A4B5C-6D7E-48F9-9A01-B2C3D4E5F607"
+          },
+          "sync": {
+            "lastModified": "2026-11-20T21:18:01.217Z",
+            "checksum": "92af646543e075bd22f9289ae4f87d5ba43e372bdb44ceff8dd63165957c1873"
+          }
         },
         {
           "fields": {
@@ -669,7 +1199,13 @@
             "IsRequired": false,
             "Description": "Name of the communication provider used for dispatch."
           },
-          "primaryKey": { "ID": "B04B5C6D-7E8F-490A-AB12-C3D4E5F60718" }
+          "primaryKey": {
+            "ID": "B04B5C6D-7E8F-490A-AB12-C3D4E5F60718"
+          },
+          "sync": {
+            "lastModified": "2026-11-20T21:18:01.239Z",
+            "checksum": "e0a1965161a67ba9ddaafb2f772bec4aef8effe80d7d225c747bb94674930041"
+          }
         },
         {
           "fields": {
@@ -681,27 +1217,81 @@
             "IsRequired": false,
             "Description": "JSON array of per-recipient delivery summaries including issued Reply-To addresses."
           },
-          "primaryKey": { "ID": "C05C6D7E-8F90-4A1B-BC23-D4E5F6071829" }
+          "primaryKey": {
+            "ID": "C05C6D7E-8F90-4A1B-BC23-D4E5F6071829"
+          },
+          "sync": {
+            "lastModified": "2026-11-20T21:18:01.261Z",
+            "checksum": "9bdfc90d511b35cac89c4f2d2b2e7e6c29abb00cba7d1020db2c3139f6dee84f"
+          }
         }
       ],
       "MJ: Action Result Codes": [
         {
-          "fields": { "ActionID": "@parent:ID", "ResultCode": "SUCCESS", "IsSuccess": true, "Description": "At least one personalized digest was dispatched." },
-          "primaryKey": { "ID": "D06D7E8F-90A1-4B2C-8D34-E5F60718293A" }
+          "fields": {
+            "ActionID": "@parent:ID",
+            "ResultCode": "SUCCESS",
+            "IsSuccess": true,
+            "Description": "At least one personalized digest was dispatched."
+          },
+          "primaryKey": {
+            "ID": "D06D7E8F-90A1-4B2C-8D34-E5F60718293A"
+          },
+          "sync": {
+            "lastModified": "2026-11-20T21:18:01.275Z",
+            "checksum": "308b101afeeb324075dba505d932cb6e9ca4830fb85fcbe08259a6d396c9776a"
+          }
         },
         {
-          "fields": { "ActionID": "@parent:ID", "ResultCode": "NO_RECIPIENTS", "IsSuccess": false, "Description": "No eligible digest recipients with email addresses were resolved." },
-          "primaryKey": { "ID": "E07E8F90-A1B2-4C3D-9E45-F60718293A4B" }
+          "fields": {
+            "ActionID": "@parent:ID",
+            "ResultCode": "NO_RECIPIENTS",
+            "IsSuccess": false,
+            "Description": "No eligible digest recipients with email addresses were resolved."
+          },
+          "primaryKey": {
+            "ID": "E07E8F90-A1B2-4C3D-9E45-F60718293A4B"
+          },
+          "sync": {
+            "lastModified": "2026-11-20T21:18:01.289Z",
+            "checksum": "2efc1f0c388c39eae6624db3619725e56390c76687057d77719c225265aee797"
+          }
         },
         {
-          "fields": { "ActionID": "@parent:ID", "ResultCode": "DELIVERY_FAILED", "IsSuccess": false, "Description": "All recipient digest deliveries failed or were denied by permissions." },
-          "primaryKey": { "ID": "F08F90A1-B2C3-4D4E-AF56-0718293A4B5C" }
+          "fields": {
+            "ActionID": "@parent:ID",
+            "ResultCode": "DELIVERY_FAILED",
+            "IsSuccess": false,
+            "Description": "All recipient digest deliveries failed or were denied by permissions."
+          },
+          "primaryKey": {
+            "ID": "F08F90A1-B2C3-4D4E-AF56-0718293A4B5C"
+          },
+          "sync": {
+            "lastModified": "2026-11-20T21:18:01.300Z",
+            "checksum": "2554a124c864efe677fdac1fa68a95a5dfd0fa3df426f9f8f4cf22a231da8052"
+          }
         },
         {
-          "fields": { "ActionID": "@parent:ID", "ResultCode": "ERROR", "IsSuccess": false, "Description": "No context user or unexpected dispatch error." },
-          "primaryKey": { "ID": "0190A1B2-C3D4-4E5F-8067-18293A4B5C6D" }
+          "fields": {
+            "ActionID": "@parent:ID",
+            "ResultCode": "ERROR",
+            "IsSuccess": false,
+            "Description": "No context user or unexpected dispatch error."
+          },
+          "primaryKey": {
+            "ID": "0190A1B2-C3D4-4E5F-8067-18293A4B5C6D"
+          },
+          "sync": {
+            "lastModified": "2026-11-20T21:18:01.312Z",
+            "checksum": "f5fb23bf565394b6fae9c2bf536c8edc49ec8cff4b922f9be44980f5677a2c62"
+          }
         }
       ]
+    },
+    "sync": {
+      "lastModified": "2026-11-20T21:17:59.694Z",
+      "checksum": "04ed77be391355b40efb56ce59e96d65e5036e78bb054d6071278b01f1ab9289"
     }
   },
   {
@@ -730,7 +1320,13 @@
             "IsRequired": false,
             "Description": "Inbound Reply-To email address containing the signed compact reply token."
           },
-          "primaryKey": { "ID": "11A1B2C3-D4E5-4F61-8172-8394A5B6C7E0" }
+          "primaryKey": {
+            "ID": "11A1B2C3-D4E5-4F61-8172-8394A5B6C7E0"
+          },
+          "sync": {
+            "lastModified": "2026-11-20T21:18:01.332Z",
+            "checksum": "9e578e68323d13b43ecfb1a14b67cfef4bf40d6b6a4a6e9af7b9a4dc1093040f"
+          }
         },
         {
           "fields": {
@@ -742,7 +1338,13 @@
             "IsRequired": false,
             "Description": "Raw compact reply token if supplied outside a full email address."
           },
-          "primaryKey": { "ID": "21B2C3D4-E5F6-4072-9283-94A5B6C7D8E1" }
+          "primaryKey": {
+            "ID": "21B2C3D4-E5F6-4072-9283-94A5B6C7D8E1"
+          },
+          "sync": {
+            "lastModified": "2026-11-20T21:18:01.354Z",
+            "checksum": "1f95b89f58b6d3d75c04b2ace32811f3dffe073096e66afd9959c84547be9292"
+          }
         },
         {
           "fields": {
@@ -754,7 +1356,13 @@
             "IsRequired": true,
             "Description": "Raw inbound email body text before stripping quoted history and signatures."
           },
-          "primaryKey": { "ID": "31C3D4E5-F607-4183-A394-A5B6C7D8E9E2" }
+          "primaryKey": {
+            "ID": "31C3D4E5-F607-4183-A394-A5B6C7D8E9E2"
+          },
+          "sync": {
+            "lastModified": "2026-11-20T21:18:01.373Z",
+            "checksum": "2a8f6dcd937f9e561a310d38f5d5f9b277d35f6dde8c0f004315295b931fe984"
+          }
         },
         {
           "fields": {
@@ -766,7 +1374,13 @@
             "IsRequired": false,
             "Description": "Sender email address verified against the token recipient binding."
           },
-          "primaryKey": { "ID": "41D4E5F6-0718-4294-B4A5-B6C7D8E9F0E3" }
+          "primaryKey": {
+            "ID": "41D4E5F6-0718-4294-B4A5-B6C7D8E9F0E3"
+          },
+          "sync": {
+            "lastModified": "2026-11-20T21:18:01.393Z",
+            "checksum": "0eb8431140a98bc03156a9da4f8c96f2283782d8d5bb7221fc602b6c5961ef4f"
+          }
         },
         {
           "fields": {
@@ -778,7 +1392,13 @@
             "IsRequired": false,
             "Description": "UUID of the newly persisted child reply Forum Post."
           },
-          "primaryKey": { "ID": "51E5F607-1829-43A5-85B6-C7D8E9F0A1E4" }
+          "primaryKey": {
+            "ID": "51E5F607-1829-43A5-85B6-C7D8E9F0A1E4"
+          },
+          "sync": {
+            "lastModified": "2026-11-20T21:18:01.414Z",
+            "checksum": "08e863927b4ae7b962d6b9c09c9aaa7dcfd6da2d85977de64bc5aa9492df7c07"
+          }
         },
         {
           "fields": {
@@ -790,7 +1410,13 @@
             "IsRequired": false,
             "Description": "UUID of the target Forum."
           },
-          "primaryKey": { "ID": "61F60718-293A-44B6-96C7-D8E9F0A1B2E5" }
+          "primaryKey": {
+            "ID": "61F60718-293A-44B6-96C7-D8E9F0A1B2E5"
+          },
+          "sync": {
+            "lastModified": "2026-11-20T21:18:01.435Z",
+            "checksum": "0935fa8e8c3c648a5e94c904186de8669ccd61ce829b8ac190a6759616b0f796"
+          }
         },
         {
           "fields": {
@@ -802,7 +1428,13 @@
             "IsRequired": false,
             "Description": "UUID of the root thread Forum Post."
           },
-          "primaryKey": { "ID": "71071829-3A4B-45C7-A7D8-E9F0A1B2C3E6" }
+          "primaryKey": {
+            "ID": "71071829-3A4B-45C7-A7D8-E9F0A1B2C3E6"
+          },
+          "sync": {
+            "lastModified": "2026-11-20T21:18:01.454Z",
+            "checksum": "176491887fd3505e443cfd62207b32297faf88bec6c0905634c072515f48f184"
+          }
         },
         {
           "fields": {
@@ -814,31 +1446,96 @@
             "IsRequired": false,
             "Description": "Reply body markdown after stripping quoted history and email signatures."
           },
-          "primaryKey": { "ID": "8118293A-4B5C-46D8-B8E9-F0A1B2C3D4E7" }
+          "primaryKey": {
+            "ID": "8118293A-4B5C-46D8-B8E9-F0A1B2C3D4E7"
+          },
+          "sync": {
+            "lastModified": "2026-11-20T21:18:01.474Z",
+            "checksum": "b8d08b6a1ee25b3e4b68041e749ed273139cc1cc41233902a52f110d566b1a5e"
+          }
         }
       ],
       "MJ: Action Result Codes": [
         {
-          "fields": { "ActionID": "@parent:ID", "ResultCode": "SUCCESS", "IsSuccess": true, "Description": "The inbound reply was verified and persisted." },
-          "primaryKey": { "ID": "91293A4B-5C6D-47E9-89F0-A1B2C3D4E5E8" }
+          "fields": {
+            "ActionID": "@parent:ID",
+            "ResultCode": "SUCCESS",
+            "IsSuccess": true,
+            "Description": "The inbound reply was verified and persisted."
+          },
+          "primaryKey": {
+            "ID": "91293A4B-5C6D-47E9-89F0-A1B2C3D4E5E8"
+          },
+          "sync": {
+            "lastModified": "2026-11-20T21:18:01.488Z",
+            "checksum": "62f5d46674b2f40632cc99090977c5a8dfd63c2740a21018203aabae9bb0c194"
+          }
         },
         {
-          "fields": { "ActionID": "@parent:ID", "ResultCode": "INVALID_SIGNATURE", "IsSuccess": false, "Description": "HMAC-SHA256 token signature verification failed." },
-          "primaryKey": { "ID": "A13A4B5C-6D7E-48FA-9A01-B2C3D4E5F6E9" }
+          "fields": {
+            "ActionID": "@parent:ID",
+            "ResultCode": "INVALID_SIGNATURE",
+            "IsSuccess": false,
+            "Description": "HMAC-SHA256 token signature verification failed."
+          },
+          "primaryKey": {
+            "ID": "A13A4B5C-6D7E-48FA-9A01-B2C3D4E5F6E9"
+          },
+          "sync": {
+            "lastModified": "2026-11-20T21:18:01.502Z",
+            "checksum": "ba2c667f3a23076743f72904efa2c1e1eca79312ddb0351454b0b4e8a4fe92b3"
+          }
         },
         {
-          "fields": { "ActionID": "@parent:ID", "ResultCode": "UNKNOWN_TOKEN_HANDLE", "IsSuccess": false, "Description": "Reply token handle was not found in the durable token store." },
-          "primaryKey": { "ID": "B14B5C6D-7E8F-490B-AB12-C3D4E5F607EA" }
+          "fields": {
+            "ActionID": "@parent:ID",
+            "ResultCode": "UNKNOWN_TOKEN_HANDLE",
+            "IsSuccess": false,
+            "Description": "Reply token handle was not found in the durable token store."
+          },
+          "primaryKey": {
+            "ID": "B14B5C6D-7E8F-490B-AB12-C3D4E5F607EA"
+          },
+          "sync": {
+            "lastModified": "2026-11-20T21:18:01.513Z",
+            "checksum": "908164f282d4b1b585166b81735de9d14028ef27f461fa43b462bd9b9f75ce75"
+          }
         },
         {
-          "fields": { "ActionID": "@parent:ID", "ResultCode": "ACCESS_REVOKED", "IsSuccess": false, "Description": "Member lacks active Space/Forum/Role permission to reply." },
-          "primaryKey": { "ID": "C15C6D7E-8F90-4A1C-BC23-D4E5F60718EB" }
+          "fields": {
+            "ActionID": "@parent:ID",
+            "ResultCode": "ACCESS_REVOKED",
+            "IsSuccess": false,
+            "Description": "Member lacks active Space/Forum/Role permission to reply."
+          },
+          "primaryKey": {
+            "ID": "C15C6D7E-8F90-4A1C-BC23-D4E5F60718EB"
+          },
+          "sync": {
+            "lastModified": "2026-11-20T21:18:01.526Z",
+            "checksum": "28d7d6704e2190e2360da0eeba02698f0a6eed421951012696f43ea7a8f4e46e"
+          }
         },
         {
-          "fields": { "ActionID": "@parent:ID", "ResultCode": "ERROR", "IsSuccess": false, "Description": "No context user." },
-          "primaryKey": { "ID": "D16D7E8F-90A1-4B2D-8D34-E5F6071829EC" }
+          "fields": {
+            "ActionID": "@parent:ID",
+            "ResultCode": "ERROR",
+            "IsSuccess": false,
+            "Description": "No context user."
+          },
+          "primaryKey": {
+            "ID": "D16D7E8F-90A1-4B2D-8D34-E5F6071829EC"
+          },
+          "sync": {
+            "lastModified": "2026-11-20T21:18:01.538Z",
+            "checksum": "ef1ead6a0622a398d9c630271c77f95367010eadda7b7bb8577fa553c293175d"
+          }
         }
       ]
+    },
+    "sync": {
+      "lastModified": "2026-11-20T21:17:59.723Z",
+      "checksum": "50dc9e37ef7255fc1e6486b1f890b08c18a4185b6c90bcbb174ef2d1cd42f4e4"
     }
   }
 ]
