@@ -16,6 +16,7 @@ import {
   WORLD_POSTS,
   WORLD_TOPIC_TAGS,
 } from './seed-world.mjs';
+import { RegisterArchWorldIntegrationTests } from './world/arch-world-integration.mjs';
 
 const REQUIRED_SPACE_NAMES = [
   'Customer Community Portal',
@@ -186,3 +187,5 @@ describe('seed-world.sql / seed-world.pg.sql parity with seed-world.mjs', () => 
     }
   });
 });
+
+RegisterArchWorldIntegrationTests();
