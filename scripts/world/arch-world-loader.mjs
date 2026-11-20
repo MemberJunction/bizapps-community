@@ -9,12 +9,13 @@
  *     `entity.Save()` + `RunView` natural-key lookups across all ServerEntity subclasses), backed by
  *     an on-disk relational SQLite database (`.local-storage/arch-world.sqlite` with strict
  *     `FOREIGN KEY` enforcement) and JSON snapshot (`.local-storage/arch-world-state.json`).
- *  2. Complete 22-table FK-safe SQL generator (`BuildArchitectAssociationWorldSql(dialect, options)`)
- *     for `'sqlserver'`, `'postgres'`, and `'sqlite'` (including all 26 `__mj.User` rows, 64
- *     `SpaceMember` rows, 14 `ForumMember` rows, 26 `CommunityMemberProfile` rows, 10
- *     `ForumSubscription` rows, all IsA subtype tables, and cyclic-FK-safe `AcceptedAnswerPostID`
- *     updates), plus live SQL execution (`--apply-db` / `options.sqlPool` / `options.pgPool` /
- *     `options.sqlExecutor`).
+ *  2. Complete 27-table FK-safe SQL generator (`BuildArchitectAssociationWorldSql(dialect, options)`)
+ *     for `'sqlserver'`, `'postgres'`, and `'sqlite'` in identical topological dependency order
+ *     (including `SpaceType`, `SpaceRoleType`, `ForumType`, `PostType`, `ForumRoleType`, all 26
+ *     `__mj.User` rows, `Space`, 64 `SpaceMember` rows, `CommunitySpace`, `Forum`, 14 `ForumMember`
+ *     rows, 26 `CommunityMemberProfile` rows, 10 `ForumSubscription` rows, all IsA subtype tables,
+ *     and cyclic-FK-safe `AcceptedAnswerPostID` updates), plus live SQL execution (`--apply-db` /
+ *     `options.sqlPool` / `options.pgPool` / `options.sqlExecutor`).
  *  3. Cross-process verification (`--verify`) reading persisted relational SQLite tables with zero
  *     shared memory and no re-seeding.
  *
@@ -439,6 +440,19 @@ CREATE TABLE IF NOT EXISTS "SpaceType" (
   "ID" TEXT PRIMARY KEY,
   "Code" TEXT NOT NULL UNIQUE,
   "Name" TEXT NOT NULL,
+  "Description" TEXT NULL,
+  "Vocabulary" TEXT NOT NULL DEFAULT 'community',
+  "Discoverability" TEXT NOT NULL DEFAULT 'Listed',
+  "JoinMode" TEXT NOT NULL DEFAULT 'SelfServe',
+  "MessagingPanel" INTEGER NOT NULL DEFAULT 1,
+  "LibraryPanel" INTEGER NOT NULL DEFAULT 1,
+  "WorkPanel" INTEGER NOT NULL DEFAULT 1,
+  "DefaultAgentRetrieval" TEXT NOT NULL DEFAULT 'Included',
+  "DefaultBand" TEXT NOT NULL DEFAULT 'Shared',
+  "InviteApproval" TEXT NOT NULL DEFAULT 'Approve',
+  "DisplayRank" INTEGER NOT NULL DEFAULT 0,
+  "IsActive" INTEGER NOT NULL DEFAULT 1,
+  "DefaultAllowParentAssignees" INTEGER NOT NULL DEFAULT 1,
   "Configuration" TEXT NULL
 );
 
@@ -446,11 +460,15 @@ CREATE TABLE IF NOT EXISTS "SpaceRoleType" (
   "ID" TEXT PRIMARY KEY,
   "Code" TEXT NOT NULL UNIQUE,
   "Name" TEXT NOT NULL,
+  "Description" TEXT NULL,
+  "Level" INTEGER NOT NULL DEFAULT 100,
+  "MaxGrantableLevel" INTEGER NOT NULL DEFAULT 0,
+  "CanInvite" INTEGER NOT NULL DEFAULT 0,
   "CanSeeTeamBand" INTEGER NOT NULL DEFAULT 0,
   "CanContribute" INTEGER NOT NULL DEFAULT 1,
   "IsOwnerRole" INTEGER NOT NULL DEFAULT 0,
   "CanPromoteBand" INTEGER NOT NULL DEFAULT 0,
-  "Level" INTEGER NOT NULL DEFAULT 100,
+  "DisplayRank" INTEGER NOT NULL DEFAULT 0,
   "IsActive" INTEGER NOT NULL DEFAULT 1
 );
 
@@ -520,6 +538,8 @@ CREATE TABLE IF NOT EXISTS "ForumRoleType" (
   "ID" TEXT PRIMARY KEY,
   "Code" TEXT NOT NULL UNIQUE,
   "Name" TEXT NOT NULL UNIQUE,
+  "Description" TEXT NULL,
+  "Level" INTEGER NOT NULL DEFAULT 100,
   "CanConfigureForum" INTEGER NOT NULL DEFAULT 0,
   "CanModerateQueue" INTEGER NOT NULL DEFAULT 0,
   "CanPinOrLock" INTEGER NOT NULL DEFAULT 0,
@@ -530,6 +550,7 @@ CREATE TABLE IF NOT EXISTS "ForumRoleType" (
   "CanReply" INTEGER NOT NULL DEFAULT 1,
   "CanCoEditDocs" INTEGER NOT NULL DEFAULT 0,
   "VoteWeightMultiplier" REAL NOT NULL DEFAULT 1.0,
+  "Sequence" INTEGER NOT NULL DEFAULT 0,
   "IsActive" INTEGER NOT NULL DEFAULT 1
 );
 
@@ -608,12 +629,16 @@ CREATE TABLE IF NOT EXISTS "Task" (
 CREATE TABLE IF NOT EXISTS "Environment" (
   "ID" TEXT PRIMARY KEY,
   "Name" TEXT NOT NULL,
-  "IsDefault" INTEGER NOT NULL DEFAULT 1
+  "IsDefault" INTEGER NOT NULL DEFAULT 1,
+  "__mj_CreatedAt" TEXT NULL,
+  "__mj_UpdatedAt" TEXT NULL
 );
 
 CREATE TABLE IF NOT EXISTS "ArtifactType" (
   "ID" TEXT PRIMARY KEY,
-  "Name" TEXT NOT NULL
+  "Name" TEXT NOT NULL,
+  "__mj_CreatedAt" TEXT NULL,
+  "__mj_UpdatedAt" TEXT NULL
 );
 
 CREATE TABLE IF NOT EXISTS "Artifact" (
@@ -623,7 +648,9 @@ CREATE TABLE IF NOT EXISTS "Artifact" (
   "Description" TEXT NULL,
   "TypeID" TEXT NOT NULL REFERENCES "ArtifactType"("ID"),
   "UserID" TEXT NOT NULL REFERENCES "User"("ID"),
-  "Visibility" TEXT NOT NULL DEFAULT 'Always'
+  "Visibility" TEXT NOT NULL DEFAULT 'Always',
+  "__mj_CreatedAt" TEXT NULL,
+  "__mj_UpdatedAt" TEXT NULL
 );
 
 CREATE TABLE IF NOT EXISTS "ArtifactVersion" (
@@ -632,7 +659,9 @@ CREATE TABLE IF NOT EXISTS "ArtifactVersion" (
   "VersionNumber" INTEGER NOT NULL DEFAULT 1,
   "UserID" TEXT NOT NULL REFERENCES "User"("ID"),
   "ContentMode" TEXT NOT NULL DEFAULT 'Text',
-  "ForceToolsOnly" INTEGER NOT NULL DEFAULT 0
+  "ForceToolsOnly" INTEGER NOT NULL DEFAULT 0,
+  "__mj_CreatedAt" TEXT NULL,
+  "__mj_UpdatedAt" TEXT NULL
 );
 
 CREATE TABLE IF NOT EXISTS "ForumPost" (
@@ -822,14 +851,21 @@ const SQLITE_TABLE_SPECS = {
   'MJ_BizApps_Collaboration: Space Types': {
     table: 'SpaceType',
     storeKey: 'spaceTypes',
-    columns: ['ID', 'Code', 'Name', 'Configuration'],
-    booleans: new Set(),
+    columns: [
+      'ID', 'Code', 'Name', 'Description', 'Vocabulary', 'Discoverability', 'JoinMode',
+      'MessagingPanel', 'LibraryPanel', 'WorkPanel', 'DefaultAgentRetrieval', 'DefaultBand',
+      'InviteApproval', 'DisplayRank', 'IsActive', 'DefaultAllowParentAssignees', 'Configuration',
+    ],
+    booleans: new Set(['MessagingPanel', 'LibraryPanel', 'WorkPanel', 'IsActive', 'DefaultAllowParentAssignees']),
   },
   'MJ_BizApps_Collaboration: Space Role Types': {
     table: 'SpaceRoleType',
     storeKey: 'spaceRoleTypes',
-    columns: ['ID', 'Code', 'Name', 'CanSeeTeamBand', 'CanContribute', 'IsOwnerRole', 'CanPromoteBand', 'Level', 'IsActive'],
-    booleans: new Set(['CanSeeTeamBand', 'CanContribute', 'IsOwnerRole', 'CanPromoteBand', 'IsActive']),
+    columns: [
+      'ID', 'Code', 'Name', 'Description', 'Level', 'MaxGrantableLevel', 'CanInvite',
+      'CanSeeTeamBand', 'CanContribute', 'IsOwnerRole', 'CanPromoteBand', 'DisplayRank', 'IsActive',
+    ],
+    booleans: new Set(['CanInvite', 'CanSeeTeamBand', 'CanContribute', 'IsOwnerRole', 'CanPromoteBand', 'IsActive']),
   },
   'MJ_BizApps_Collaboration: Spaces': {
     table: 'Space',
@@ -864,7 +900,7 @@ const SQLITE_TABLE_SPECS = {
   [COMMUNITY_ENTITY_NAMES.ForumRoleTypes]: {
     table: 'ForumRoleType',
     storeKey: 'forumRoleTypes',
-    columns: ['ID', 'Code', 'Name', 'CanConfigureForum', 'CanModerateQueue', 'CanPinOrLock', 'CanAcceptAnswers', 'CanVerifyCanon', 'CanPromoteToSpace', 'CanCreateRootPost', 'CanReply', 'CanCoEditDocs', 'VoteWeightMultiplier', 'IsActive'],
+    columns: ['ID', 'Code', 'Name', 'Description', 'Level', 'CanConfigureForum', 'CanModerateQueue', 'CanPinOrLock', 'CanAcceptAnswers', 'CanVerifyCanon', 'CanPromoteToSpace', 'CanCreateRootPost', 'CanReply', 'CanCoEditDocs', 'VoteWeightMultiplier', 'Sequence', 'IsActive'],
     booleans: new Set(['CanConfigureForum', 'CanModerateQueue', 'CanPinOrLock', 'CanAcceptAnswers', 'CanVerifyCanon', 'CanPromoteToSpace', 'CanCreateRootPost', 'CanReply', 'CanCoEditDocs', 'IsActive']),
   },
   [COMMUNITY_ENTITY_NAMES.Forums]: {
@@ -1038,6 +1074,38 @@ function normalizeRowForSqlite(entityName, rawRow) {
     const derived = deriveMemberFields(row);
     return { ...row, ...derived };
   }
+  if (entityName === 'MJ_BizApps_Collaboration: Space Types') {
+    return {
+      ...row,
+      Vocabulary: row.Vocabulary ?? row.Code ?? 'community',
+      Discoverability: row.Discoverability ?? 'Listed',
+      JoinMode: row.JoinMode ?? 'SelfServe',
+      MessagingPanel: row.MessagingPanel ?? true,
+      LibraryPanel: row.LibraryPanel ?? true,
+      WorkPanel: row.WorkPanel ?? true,
+      DefaultAgentRetrieval: row.DefaultAgentRetrieval ?? 'Included',
+      DefaultBand: row.DefaultBand ?? 'Shared',
+      InviteApproval: row.InviteApproval ?? 'Approve',
+      DisplayRank: row.DisplayRank ?? 0,
+      IsActive: row.IsActive ?? true,
+      DefaultAllowParentAssignees: row.DefaultAllowParentAssignees ?? true,
+    };
+  }
+  if (entityName === 'MJ_BizApps_Collaboration: Space Role Types') {
+    const level = row.Level ?? 100;
+    return {
+      ...row,
+      Level: level,
+      MaxGrantableLevel: row.MaxGrantableLevel ?? (row.IsOwnerRole ? level : 0),
+      CanInvite: row.CanInvite ?? false,
+      CanSeeTeamBand: row.CanSeeTeamBand ?? false,
+      CanContribute: row.CanContribute ?? true,
+      IsOwnerRole: row.IsOwnerRole ?? false,
+      CanPromoteBand: row.CanPromoteBand ?? false,
+      DisplayRank: row.DisplayRank ?? 0,
+      IsActive: row.IsActive ?? true,
+    };
+  }
   if (entityName === 'MJ_BizApps_Collaboration: Spaces') {
     return {
       ...row,
@@ -1077,6 +1145,8 @@ function normalizeRowForSqlite(entityName, rawRow) {
   if (entityName === COMMUNITY_ENTITY_NAMES.ForumRoleTypes) {
     return {
       ...row,
+      Description: row.Description ?? null,
+      Level: row.Level ?? 100,
       CanConfigureForum: row.CanConfigureForum ?? false,
       CanModerateQueue: row.CanModerateQueue ?? false,
       CanPinOrLock: row.CanPinOrLock ?? false,
@@ -1087,6 +1157,7 @@ function normalizeRowForSqlite(entityName, rawRow) {
       CanReply: row.CanReply ?? true,
       CanCoEditDocs: row.CanCoEditDocs ?? false,
       VoteWeightMultiplier: row.VoteWeightMultiplier ?? 1.0,
+      Sequence: row.Sequence ?? 0,
       IsActive: row.IsActive ?? true,
     };
   }
@@ -1363,7 +1434,7 @@ export function LoadArchWorldStoreFromSqlite(sqliteFilePath = DEFAULT_ARCH_WORLD
   }
 }
 
-/** Returns exact SQLite `SELECT COUNT(*)` totals across all 22+ relational `ARCH-WORLD` tables. */
+/** Returns exact SQLite `SELECT COUNT(*)` totals across all 27+ relational `ARCH-WORLD` tables. */
 export function QueryArchWorldSqliteCounts(sqliteFilePathOrDb = DEFAULT_ARCH_WORLD_SQLITE_PATH) {
   const ownsDb = typeof sqliteFilePathOrDb === 'string';
   if (ownsDb && !existsSync(sqliteFilePathOrDb)) {
@@ -1371,19 +1442,21 @@ export function QueryArchWorldSqliteCounts(sqliteFilePathOrDb = DEFAULT_ARCH_WOR
   }
   const db = ownsDb ? openSqliteDatabase(sqliteFilePathOrDb) : sqliteFilePathOrDb;
   const tables = [
+    'SpaceType',
+    'SpaceRoleType',
+    'ForumType',
+    'PostType',
+    'ForumRoleType',
     'User',
     'Space',
     'SpaceMember',
     'CommunitySpace',
-    'ForumType',
-    'PostType',
-    'ForumRoleType',
     'Forum',
     'ForumMember',
     'CommunityMemberProfile',
-    'ForumSubscription',
     'ForumTopicTag',
     'ForumPost',
+    'ForumSubscription',
     'ForumQuestionPost',
     'ForumAnswerPost',
     'ForumIdeaCampaign',
@@ -1555,10 +1628,13 @@ const ARCH_ENTITY_INFOS = {
   'MJ: Tasks': buildEntityInfo('MJ: Tasks', ['ID', 'Name', 'Description', 'TypeID', 'UserID']),
   'MJ: Task Types': buildEntityInfo('MJ: Task Types', ['ID', 'Name']),
   'MJ_BizApps_Collaboration: Space Types': buildEntityInfo('MJ_BizApps_Collaboration: Space Types', [
-    'ID', 'Code', 'Name', 'Configuration',
+    'ID', 'Code', 'Name', 'Description', 'Vocabulary', 'Discoverability', 'JoinMode',
+    'MessagingPanel', 'LibraryPanel', 'WorkPanel', 'DefaultAgentRetrieval', 'DefaultBand',
+    'InviteApproval', 'DisplayRank', 'IsActive', 'DefaultAllowParentAssignees', 'Configuration',
   ]),
   'MJ_BizApps_Collaboration: Space Role Types': buildEntityInfo('MJ_BizApps_Collaboration: Space Role Types', [
-    'ID', 'Code', 'Name', 'CanSeeTeamBand', 'CanContribute', 'IsOwnerRole', 'CanPromoteBand', 'Level', 'IsActive',
+    'ID', 'Code', 'Name', 'Description', 'Level', 'MaxGrantableLevel', 'CanInvite',
+    'CanSeeTeamBand', 'CanContribute', 'IsOwnerRole', 'CanPromoteBand', 'DisplayRank', 'IsActive',
   ]),
   'MJ_BizApps_Collaboration: Spaces': buildEntityInfo('MJ_BizApps_Collaboration: Spaces', [
     'ID', 'SpaceTypeID', 'ParentID', 'Slug', 'Name', 'Description', 'OwnerID', 'InheritsMembership',
@@ -1578,9 +1654,9 @@ const ARCH_ENTITY_INFOS = {
     'AllowsNestedReplies', 'TriggersThreadSynthesis', 'IndexedInCorpus', 'Configuration', 'Sequence', 'IsActive',
   ]),
   [COMMUNITY_ENTITY_NAMES.ForumRoleTypes]: buildEntityInfo(COMMUNITY_ENTITY_NAMES.ForumRoleTypes, [
-    'ID', 'Code', 'Name', 'CanConfigureForum', 'CanModerateQueue', 'CanPinOrLock', 'CanAcceptAnswers',
+    'ID', 'Code', 'Name', 'Description', 'Level', 'CanConfigureForum', 'CanModerateQueue', 'CanPinOrLock', 'CanAcceptAnswers',
     'CanVerifyCanon', 'CanPromoteToSpace', 'CanCreateRootPost', 'CanReply', 'CanCoEditDocs',
-    'VoteWeightMultiplier', 'IsActive',
+    'VoteWeightMultiplier', 'Sequence', 'IsActive',
   ]),
   [COMMUNITY_ENTITY_NAMES.Forums]: buildEntityInfo(COMMUNITY_ENTITY_NAMES.Forums, [
     'ID', 'SpaceID', 'ParentForumID', 'ForumTypeID', 'Slug', 'Name', 'Description', 'Icon', 'ColorHex',
@@ -2374,11 +2450,11 @@ export function EnsureArchWorldServerEntitiesLoaded(dataset = GetArchWorldDatase
       Sequence: pt.Sequence ?? 10,
       IsActive: true,
     })),
-    forumRoleTypes: dataset.forumRoleTypes.map((fr) => ({
+    forumRoleTypes: dataset.forumRoleTypes.map((fr, idx) => ({
       ...fr,
-      Description: null,
-      Level: 100,
-      Sequence: 10,
+      Description: fr.Description ?? null,
+      Level: fr.Level ?? 100,
+      Sequence: fr.Sequence ?? (idx + 1) * 10,
     })),
   });
 }
@@ -2408,13 +2484,72 @@ function buildSqlServerScript(dataset) {
   const lines = [
     '-- =============================================================================',
     '--  ARCH-WORLD (American Guild of Practicing Architects) Seed Script (SQL Server)',
-    '--  Complete 22-table FK-safe idempotent upserts in topological dependency order.',
+    '--  Complete 27-table FK-safe idempotent upserts in topological dependency order.',
     '-- =============================================================================',
     'SET NOCOUNT ON;',
     '',
   ];
 
-  // 1. __mj.User (all 26 ARCH_MEMBERS)
+  // 1. __mj_BizAppsCollaboration.SpaceType (2 space types)
+  dataset.spaceTypes.forEach((st, idx) => {
+    lines.push(
+      `IF EXISTS (SELECT 1 FROM [__mj_BizAppsCollaboration].[SpaceType] WHERE [ID] = '${st.ID}')`,
+      `    UPDATE [__mj_BizAppsCollaboration].[SpaceType] SET [Name] = ${escapeSql(st.Name)}, [Description] = ${escapeSql(st.Description ?? null)}, [Configuration] = ${escapeSql(st.Configuration ?? null)}, [IsActive] = ${escapeSql(st.IsActive ?? true)} WHERE [ID] = '${st.ID}';`,
+      `ELSE IF NOT EXISTS (SELECT 1 FROM [__mj_BizAppsCollaboration].[SpaceType] WHERE [Code] = ${escapeSql(st.Code)})`,
+      `    INSERT INTO [__mj_BizAppsCollaboration].[SpaceType] ([ID], [Code], [Name], [Description], [Vocabulary], [Discoverability], [JoinMode], [MessagingPanel], [LibraryPanel], [WorkPanel], [DefaultAgentRetrieval], [DefaultBand], [InviteApproval], [DisplayRank], [IsActive], [DefaultAllowParentAssignees], [Configuration])`,
+      `    VALUES ('${st.ID}', ${escapeSql(st.Code)}, ${escapeSql(st.Name)}, ${escapeSql(st.Description ?? null)}, ${escapeSql(st.Vocabulary ?? st.Code)}, ${escapeSql(st.Discoverability ?? 'Listed')}, ${escapeSql(st.JoinMode ?? 'SelfServe')}, ${escapeSql(st.MessagingPanel ?? true)}, ${escapeSql(st.LibraryPanel ?? true)}, ${escapeSql(st.WorkPanel ?? true)}, ${escapeSql(st.DefaultAgentRetrieval ?? 'Included')}, ${escapeSql(st.DefaultBand ?? 'Shared')}, ${escapeSql(st.InviteApproval ?? 'Approve')}, ${st.DisplayRank ?? (idx + 1) * 10}, ${escapeSql(st.IsActive ?? true)}, ${escapeSql(st.DefaultAllowParentAssignees ?? true)}, ${escapeSql(st.Configuration ?? null)});`,
+    );
+  });
+
+  // 2. __mj_BizAppsCollaboration.SpaceRoleType (4 space role types, incl. ARCH-WORLD contributor)
+  dataset.spaceRoleTypes.forEach((srt, idx) => {
+    const level = srt.Level ?? 100;
+    const maxGrantable = srt.MaxGrantableLevel ?? (srt.IsOwnerRole ? level : 0);
+    lines.push(
+      `IF EXISTS (SELECT 1 FROM [__mj_BizAppsCollaboration].[SpaceRoleType] WHERE [ID] = '${srt.ID}')`,
+      `    UPDATE [__mj_BizAppsCollaboration].[SpaceRoleType] SET [Name] = ${escapeSql(srt.Name)}, [Description] = ${escapeSql(srt.Description ?? null)}, [Level] = ${level}, [MaxGrantableLevel] = ${maxGrantable}, [CanInvite] = ${escapeSql(srt.CanInvite ?? false)}, [CanPromoteBand] = ${escapeSql(srt.CanPromoteBand ?? false)}, [CanSeeTeamBand] = ${escapeSql(srt.CanSeeTeamBand ?? false)}, [IsOwnerRole] = ${escapeSql(srt.IsOwnerRole ?? false)}, [CanContribute] = ${escapeSql(srt.CanContribute ?? true)}, [DisplayRank] = ${srt.DisplayRank ?? (idx + 1) * 10}, [IsActive] = ${escapeSql(srt.IsActive ?? true)} WHERE [ID] = '${srt.ID}';`,
+      `ELSE IF NOT EXISTS (SELECT 1 FROM [__mj_BizAppsCollaboration].[SpaceRoleType] WHERE [Code] = ${escapeSql(srt.Code)})`,
+      `    INSERT INTO [__mj_BizAppsCollaboration].[SpaceRoleType] ([ID], [Code], [Name], [Description], [Level], [MaxGrantableLevel], [CanInvite], [CanPromoteBand], [CanSeeTeamBand], [IsOwnerRole], [DisplayRank], [IsActive], [CanContribute])`,
+      `    VALUES ('${srt.ID}', ${escapeSql(srt.Code)}, ${escapeSql(srt.Name)}, ${escapeSql(srt.Description ?? null)}, ${level}, ${maxGrantable}, ${escapeSql(srt.CanInvite ?? false)}, ${escapeSql(srt.CanPromoteBand ?? false)}, ${escapeSql(srt.CanSeeTeamBand ?? false)}, ${escapeSql(srt.IsOwnerRole ?? false)}, ${srt.DisplayRank ?? (idx + 1) * 10}, ${escapeSql(srt.IsActive ?? true)}, ${escapeSql(srt.CanContribute ?? true)});`,
+    );
+  });
+
+  // 3. __mj_BizAppsCommunity.ForumType (6)
+  dataset.forumTypes.forEach((ft, idx) => {
+    lines.push(
+      `IF NOT EXISTS (SELECT 1 FROM [__mj_BizAppsCommunity].[ForumType] WHERE [ID] = '${ft.ID}')`,
+      `    INSERT INTO [__mj_BizAppsCommunity].[ForumType] ([ID], [Code], [Name], [ServerDriverClass], [Sequence], [IsActive])`,
+      `    VALUES ('${ft.ID}', ${escapeSql(ft.Code)}, ${escapeSql(ft.Name)}, ${escapeSql(ft.ServerDriverClass ?? null)}, ${(idx + 1) * 10}, 1);`,
+      `ELSE`,
+      `    UPDATE [__mj_BizAppsCommunity].[ForumType] SET [Name] = ${escapeSql(ft.Name)}, [ServerDriverClass] = ${escapeSql(ft.ServerDriverClass ?? null)}, [Sequence] = ${(idx + 1) * 10}, [IsActive] = 1 WHERE [ID] = '${ft.ID}';`,
+    );
+  });
+
+  // 4. __mj_BizAppsCommunity.PostType (13)
+  dataset.postTypes.forEach((pt, idx) => {
+    lines.push(
+      `IF NOT EXISTS (SELECT 1 FROM [__mj_BizAppsCommunity].[PostType] WHERE [ID] = '${pt.ID}')`,
+      `    INSERT INTO [__mj_BizAppsCommunity].[PostType] ([ID], [Code], [Name], [ServerDriverClass], [PlacementRule], [AllowsNestedReplies], [Sequence], [IsActive])`,
+      `    VALUES ('${pt.ID}', ${escapeSql(pt.Code)}, ${escapeSql(pt.Name ?? pt.Code)}, ${escapeSql(pt.ServerDriverClass ?? null)}, ${escapeSql(pt.PlacementRule)}, ${escapeSql(pt.AllowsNestedReplies)}, ${pt.Sequence ?? (idx + 1) * 10}, 1);`,
+      `ELSE`,
+      `    UPDATE [__mj_BizAppsCommunity].[PostType] SET [Name] = ${escapeSql(pt.Name ?? pt.Code)}, [ServerDriverClass] = ${escapeSql(pt.ServerDriverClass ?? null)}, [PlacementRule] = ${escapeSql(pt.PlacementRule)}, [AllowsNestedReplies] = ${escapeSql(pt.AllowsNestedReplies)}, [Sequence] = ${pt.Sequence ?? (idx + 1) * 10}, [IsActive] = 1 WHERE [ID] = '${pt.ID}';`,
+    );
+  });
+
+  // 5. __mj_BizAppsCommunity.ForumRoleType (7)
+  dataset.forumRoleTypes.forEach((fr, idx) => {
+    const seq = fr.Sequence ?? (idx + 1) * 10;
+    const level = fr.Level ?? 100;
+    lines.push(
+      `IF NOT EXISTS (SELECT 1 FROM [__mj_BizAppsCommunity].[ForumRoleType] WHERE [ID] = '${fr.ID}')`,
+      `    INSERT INTO [__mj_BizAppsCommunity].[ForumRoleType] ([ID], [Code], [Name], [Description], [Level], [CanConfigureForum], [CanModerateQueue], [CanPinOrLock], [CanAcceptAnswers], [CanVerifyCanon], [CanPromoteToSpace], [CanCreateRootPost], [CanReply], [CanCoEditDocs], [VoteWeightMultiplier], [Sequence], [IsActive])`,
+      `    VALUES ('${fr.ID}', ${escapeSql(fr.Code)}, ${escapeSql(fr.Name)}, ${escapeSql(fr.Description ?? null)}, ${level}, ${escapeSql(fr.CanConfigureForum)}, ${escapeSql(fr.CanModerateQueue)}, ${escapeSql(fr.CanPinOrLock)}, ${escapeSql(fr.CanAcceptAnswers)}, ${escapeSql(fr.CanVerifyCanon)}, ${escapeSql(fr.CanPromoteToSpace)}, ${escapeSql(fr.CanCreateRootPost)}, ${escapeSql(fr.CanReply)}, ${escapeSql(fr.CanCoEditDocs)}, ${fr.VoteWeightMultiplier}, ${seq}, ${escapeSql(fr.IsActive)});`,
+      `ELSE`,
+      `    UPDATE [__mj_BizAppsCommunity].[ForumRoleType] SET [Name] = ${escapeSql(fr.Name)}, [Description] = ${escapeSql(fr.Description ?? null)}, [Level] = ${level}, [CanConfigureForum] = ${escapeSql(fr.CanConfigureForum)}, [CanModerateQueue] = ${escapeSql(fr.CanModerateQueue)}, [CanPinOrLock] = ${escapeSql(fr.CanPinOrLock)}, [CanAcceptAnswers] = ${escapeSql(fr.CanAcceptAnswers)}, [CanVerifyCanon] = ${escapeSql(fr.CanVerifyCanon)}, [CanPromoteToSpace] = ${escapeSql(fr.CanPromoteToSpace)}, [CanCreateRootPost] = ${escapeSql(fr.CanCreateRootPost)}, [CanReply] = ${escapeSql(fr.CanReply)}, [CanCoEditDocs] = ${escapeSql(fr.CanCoEditDocs)}, [VoteWeightMultiplier] = ${fr.VoteWeightMultiplier}, [Sequence] = ${seq}, [IsActive] = ${escapeSql(fr.IsActive)} WHERE [ID] = '${fr.ID}';`,
+    );
+  });
+
+  // 6. __mj.User (all 26 ARCH_MEMBERS)
   for (const member of dataset.Members) {
     const u = deriveMemberFields(member);
     lines.push(
@@ -2426,7 +2561,7 @@ function buildSqlServerScript(dataset) {
     );
   }
 
-  // 2. __mj_BizAppsCollaboration.Space (4 spaces)
+  // 7. __mj_BizAppsCollaboration.Space (4 spaces)
   const ownerId = dataset.Members[21].ID;
   for (const space of dataset.Spaces) {
     lines.push(
@@ -2438,7 +2573,7 @@ function buildSqlServerScript(dataset) {
     );
   }
 
-  // 3. __mj_BizAppsCollaboration.SpaceMember (64 memberships)
+  // 8. __mj_BizAppsCollaboration.SpaceMember (64 memberships)
   for (const sm of dataset.SpaceMembers) {
     lines.push(
       `IF NOT EXISTS (SELECT 1 FROM [__mj_BizAppsCollaboration].[SpaceMember] WHERE [ID] = '${sm.ID}')`,
@@ -2449,7 +2584,7 @@ function buildSqlServerScript(dataset) {
     );
   }
 
-  // 4. __mj_BizAppsCommunity.CommunitySpace (4 community spaces)
+  // 9. __mj_BizAppsCommunity.CommunitySpace (4 community spaces)
   for (const space of dataset.Spaces) {
     lines.push(
       `IF NOT EXISTS (SELECT 1 FROM [__mj_BizAppsCommunity].[CommunitySpace] WHERE [ID] = '${space.ID}')`,
@@ -2460,30 +2595,7 @@ function buildSqlServerScript(dataset) {
     );
   }
 
-  // 5. ForumType (6), PostType (13), ForumRoleType (7)
-  dataset.forumTypes.forEach((ft, idx) => {
-    lines.push(
-      `IF NOT EXISTS (SELECT 1 FROM [__mj_BizAppsCommunity].[ForumType] WHERE [ID] = '${ft.ID}')`,
-      `    INSERT INTO [__mj_BizAppsCommunity].[ForumType] ([ID], [Code], [Name], [ServerDriverClass], [Sequence], [IsActive])`,
-      `    VALUES ('${ft.ID}', ${escapeSql(ft.Code)}, ${escapeSql(ft.Name)}, ${escapeSql(ft.ServerDriverClass ?? null)}, ${(idx + 1) * 10}, 1);`,
-    );
-  });
-  dataset.postTypes.forEach((pt, idx) => {
-    lines.push(
-      `IF NOT EXISTS (SELECT 1 FROM [__mj_BizAppsCommunity].[PostType] WHERE [ID] = '${pt.ID}')`,
-      `    INSERT INTO [__mj_BizAppsCommunity].[PostType] ([ID], [Code], [Name], [ServerDriverClass], [PlacementRule], [AllowsNestedReplies], [Sequence], [IsActive])`,
-      `    VALUES ('${pt.ID}', ${escapeSql(pt.Code)}, ${escapeSql(pt.Name ?? pt.Code)}, ${escapeSql(pt.ServerDriverClass ?? null)}, ${escapeSql(pt.PlacementRule)}, ${escapeSql(pt.AllowsNestedReplies)}, ${pt.Sequence ?? (idx + 1) * 10}, 1);`,
-    );
-  });
-  dataset.forumRoleTypes.forEach((fr, idx) => {
-    lines.push(
-      `IF NOT EXISTS (SELECT 1 FROM [__mj_BizAppsCommunity].[ForumRoleType] WHERE [ID] = '${fr.ID}')`,
-      `    INSERT INTO [__mj_BizAppsCommunity].[ForumRoleType] ([ID], [Code], [Name], [CanConfigureForum], [CanModerateQueue], [CanPinOrLock], [CanAcceptAnswers], [CanVerifyCanon], [CanPromoteToSpace], [CanCreateRootPost], [CanReply], [CanCoEditDocs], [VoteWeightMultiplier], [Sequence], [IsActive])`,
-      `    VALUES ('${fr.ID}', ${escapeSql(fr.Code)}, ${escapeSql(fr.Name)}, ${escapeSql(fr.CanConfigureForum)}, ${escapeSql(fr.CanModerateQueue)}, ${escapeSql(fr.CanPinOrLock)}, ${escapeSql(fr.CanAcceptAnswers)}, ${escapeSql(fr.CanVerifyCanon)}, ${escapeSql(fr.CanPromoteToSpace)}, ${escapeSql(fr.CanCreateRootPost)}, ${escapeSql(fr.CanReply)}, ${escapeSql(fr.CanCoEditDocs)}, ${fr.VoteWeightMultiplier}, ${(idx + 1) * 10}, ${escapeSql(fr.IsActive)});`,
-    );
-  });
-
-  // 6. Forum (13 forums)
+  // 10. Forum (13 forums)
   for (const forum of dataset.Forums) {
     lines.push(
       `IF NOT EXISTS (SELECT 1 FROM [__mj_BizAppsCommunity].[Forum] WHERE [ID] = '${forum.ID}')`,
@@ -2494,7 +2606,7 @@ function buildSqlServerScript(dataset) {
     );
   }
 
-  // 7. ForumMember (14 memberships)
+  // 11. ForumMember (14 memberships)
   for (const fm of dataset.ForumMembers) {
     lines.push(
       `IF NOT EXISTS (SELECT 1 FROM [__mj_BizAppsCommunity].[ForumMember] WHERE [ID] = '${fm.ID}')`,
@@ -2505,7 +2617,7 @@ function buildSqlServerScript(dataset) {
     );
   }
 
-  // 8. CommunityMemberProfile (26 profiles)
+  // 12. CommunityMemberProfile (26 profiles)
   for (const p of dataset.MemberProfiles) {
     lines.push(
       `IF NOT EXISTS (SELECT 1 FROM [__mj_BizAppsCommunity].[CommunityMemberProfile] WHERE [ID] = '${p.ID}')`,
@@ -2516,7 +2628,27 @@ function buildSqlServerScript(dataset) {
     );
   }
 
-  // 9. ForumSubscription (10 subscriptions)
+  // 13. ForumTopicTag (22 space-local tags)
+  for (const tag of dataset.TopicTags) {
+    lines.push(
+      `IF NOT EXISTS (SELECT 1 FROM [__mj_BizAppsCommunity].[ForumTopicTag] WHERE [ID] = '${tag.ID}')`,
+      `    INSERT INTO [__mj_BizAppsCommunity].[ForumTopicTag] ([ID], [SpaceID], [Slug], [Name], [IsOfficial])`,
+      `    VALUES ('${tag.ID}', '${tag.SpaceID}', ${escapeSql(tag.Slug)}, ${escapeSql(tag.Name)}, ${escapeSql(tag.IsOfficial)});`,
+      `ELSE`,
+      `    UPDATE [__mj_BizAppsCommunity].[ForumTopicTag] SET [Name] = ${escapeSql(tag.Name)}, [IsOfficial] = ${escapeSql(tag.IsOfficial)} WHERE [ID] = '${tag.ID}';`,
+    );
+  }
+
+  // 14. ForumPost (68 posts in topological order)
+  for (const post of sortPostsTopologically(dataset.Posts)) {
+    lines.push(
+      `IF NOT EXISTS (SELECT 1 FROM [__mj_BizAppsCommunity].[ForumPost] WHERE [ID] = '${post.ID}')`,
+      `    INSERT INTO [__mj_BizAppsCommunity].[ForumPost] ([ID], [ForumID], [PostTypeID], [RootPostID], [ParentPostID], [ReplyDepth], [AuthorUserID], [Title], [Slug], [BodyMarkdown], [SummaryMarkdown], [VisibilityBand], [Status], [IsPinned], [IsLocked], [IsFeatured], [ReplyCount], [ParticipantCount], [ReactionScore], [ViewCount])`,
+      `    VALUES ('${post.ID}', '${post.ForumID}', '${post.PostTypeID}', ${post.RootPostID ? `'${post.RootPostID}'` : 'NULL'}, ${post.ParentPostID ? `'${post.ParentPostID}'` : 'NULL'}, ${post.ReplyDepth ?? 0}, '${post.AuthorUserID}', ${escapeSql(post.Title)}, ${escapeSql(post.Slug)}, ${escapeSql(post.BodyMarkdown)}, ${escapeSql(post.SummaryMarkdown)}, ${escapeSql(post.VisibilityBand)}, ${escapeSql(post.Status)}, ${escapeSql(post.IsPinned)}, ${escapeSql(post.IsLocked)}, ${escapeSql(post.IsFeatured)}, ${post.ReplyCount ?? 0}, ${post.ParticipantCount ?? 1}, ${post.ReactionScore ?? 0}, ${post.ViewCount ?? 0});`,
+    );
+  }
+
+  // 15. ForumSubscription (10 subscriptions — after User, Forum, ForumTopicTag, ForumPost)
   for (const sub of dataset.ForumSubscriptions) {
     const level = normalizeSubscriptionDeliveryLevel(sub);
     lines.push(
@@ -2528,27 +2660,7 @@ function buildSqlServerScript(dataset) {
     );
   }
 
-  // 10. ForumTopicTag (22 space-local tags)
-  for (const tag of dataset.TopicTags) {
-    lines.push(
-      `IF NOT EXISTS (SELECT 1 FROM [__mj_BizAppsCommunity].[ForumTopicTag] WHERE [ID] = '${tag.ID}')`,
-      `    INSERT INTO [__mj_BizAppsCommunity].[ForumTopicTag] ([ID], [SpaceID], [Slug], [Name], [IsOfficial])`,
-      `    VALUES ('${tag.ID}', '${tag.SpaceID}', ${escapeSql(tag.Slug)}, ${escapeSql(tag.Name)}, ${escapeSql(tag.IsOfficial)});`,
-      `ELSE`,
-      `    UPDATE [__mj_BizAppsCommunity].[ForumTopicTag] SET [Name] = ${escapeSql(tag.Name)}, [IsOfficial] = ${escapeSql(tag.IsOfficial)} WHERE [ID] = '${tag.ID}';`,
-    );
-  }
-
-  // 11. ForumPost (68 posts in topological order)
-  for (const post of sortPostsTopologically(dataset.Posts)) {
-    lines.push(
-      `IF NOT EXISTS (SELECT 1 FROM [__mj_BizAppsCommunity].[ForumPost] WHERE [ID] = '${post.ID}')`,
-      `    INSERT INTO [__mj_BizAppsCommunity].[ForumPost] ([ID], [ForumID], [PostTypeID], [RootPostID], [ParentPostID], [ReplyDepth], [AuthorUserID], [Title], [Slug], [BodyMarkdown], [SummaryMarkdown], [VisibilityBand], [Status], [IsPinned], [IsLocked], [IsFeatured], [ReplyCount], [ParticipantCount], [ReactionScore], [ViewCount])`,
-      `    VALUES ('${post.ID}', '${post.ForumID}', '${post.PostTypeID}', ${post.RootPostID ? `'${post.RootPostID}'` : 'NULL'}, ${post.ParentPostID ? `'${post.ParentPostID}'` : 'NULL'}, ${post.ReplyDepth ?? 0}, '${post.AuthorUserID}', ${escapeSql(post.Title)}, ${escapeSql(post.Slug)}, ${escapeSql(post.BodyMarkdown)}, ${escapeSql(post.SummaryMarkdown)}, ${escapeSql(post.VisibilityBand)}, ${escapeSql(post.Status)}, ${escapeSql(post.IsPinned)}, ${escapeSql(post.IsLocked)}, ${escapeSql(post.IsFeatured)}, ${post.ReplyCount ?? 0}, ${post.ParticipantCount ?? 1}, ${post.ReactionScore ?? 0}, ${post.ViewCount ?? 0});`,
-    );
-  }
-
-  // 12. ForumQuestionPost (cyclic-FK-safe: insert with AcceptedAnswerPostID = NULL first)
+  // 16. ForumQuestionPost (cyclic-FK-safe: insert with AcceptedAnswerPostID = NULL first)
   for (const q of dataset.QuestionPosts) {
     lines.push(
       `IF NOT EXISTS (SELECT 1 FROM [__mj_BizAppsCommunity].[ForumQuestionPost] WHERE [ID] = '${q.ID}')`,
@@ -2557,7 +2669,7 @@ function buildSqlServerScript(dataset) {
     );
   }
 
-  // 13. ForumAnswerPost (7 answers) + cyclic-FK-safe AcceptedAnswerPostID linkage
+  // 17. ForumAnswerPost (7 answers) + cyclic-FK-safe AcceptedAnswerPostID linkage
   for (const a of dataset.AnswerPosts) {
     lines.push(
       `IF NOT EXISTS (SELECT 1 FROM [__mj_BizAppsCommunity].[ForumAnswerPost] WHERE [ID] = '${a.ID}')`,
@@ -2575,7 +2687,7 @@ function buildSqlServerScript(dataset) {
     );
   }
 
-  // 14. ForumIdeaCampaign (1 campaign)
+  // 18. ForumIdeaCampaign (1 campaign)
   for (const camp of dataset.IdeaCampaigns) {
     lines.push(
       `IF NOT EXISTS (SELECT 1 FROM [__mj_BizAppsCommunity].[ForumIdeaCampaign] WHERE [ID] = '${camp.ID}')`,
@@ -2584,7 +2696,7 @@ function buildSqlServerScript(dataset) {
     );
   }
 
-  // 15. ForumIdeaPost (5 idea posts)
+  // 19. ForumIdeaPost (5 idea posts)
   for (const idea of dataset.IdeaPosts) {
     lines.push(
       `IF NOT EXISTS (SELECT 1 FROM [__mj_BizAppsCommunity].[ForumIdeaPost] WHERE [ID] = '${idea.ID}')`,
@@ -2593,7 +2705,7 @@ function buildSqlServerScript(dataset) {
     );
   }
 
-  // 16. ForumIdeaAllocation (25 allocations) + aggregate recomputation
+  // 20. ForumIdeaAllocation (25 allocations) + aggregate recomputation
   for (const alloc of dataset.IdeaAllocations) {
     lines.push(
       `IF NOT EXISTS (SELECT 1 FROM [__mj_BizAppsCommunity].[ForumIdeaAllocation] WHERE [ID] = '${alloc.ID}')`,
@@ -2611,7 +2723,7 @@ function buildSqlServerScript(dataset) {
     );
   }
 
-  // 17. ForumCasePost (2 case posts)
+  // 21. ForumCasePost (2 case posts)
   for (const c of dataset.CasePosts) {
     lines.push(
       `IF NOT EXISTS (SELECT 1 FROM [__mj_BizAppsCommunity].[ForumCasePost] WHERE [ID] = '${c.ID}')`,
@@ -2620,7 +2732,7 @@ function buildSqlServerScript(dataset) {
     );
   }
 
-  // 18. ForumAMAPost (2 AMA posts)
+  // 22. ForumAMAPost (2 AMA posts)
   for (const ama of dataset.AMAPosts) {
     lines.push(
       `IF NOT EXISTS (SELECT 1 FROM [__mj_BizAppsCommunity].[ForumAMAPost] WHERE [ID] = '${ama.ID}')`,
@@ -2629,7 +2741,7 @@ function buildSqlServerScript(dataset) {
     );
   }
 
-  // 19-20. ForumInteractivePost (1) & ForumInteractiveSession (6) — resolve core Environment & ArtifactType
+  // 23-24. ForumInteractivePost (1) & ForumInteractiveSession (6) — resolve core Environment & ArtifactType
   lines.push(
     'DECLARE @ArchEnvID UNIQUEIDENTIFIER;',
     'SELECT TOP 1 @ArchEnvID = [ID] FROM [__mj].[Environment] WHERE [IsDefault] = 1;',
@@ -2661,7 +2773,7 @@ function buildSqlServerScript(dataset) {
   }
   lines.push('END;');
 
-  // 21. ForumPostTag (38 post tags)
+  // 25. ForumPostTag (38 post tags)
   for (const pt of dataset.PostTags) {
     lines.push(
       `IF NOT EXISTS (SELECT 1 FROM [__mj_BizAppsCommunity].[ForumPostTag] WHERE [ID] = '${pt.ID}')`,
@@ -2669,7 +2781,7 @@ function buildSqlServerScript(dataset) {
     );
   }
 
-  // 22. ForumPostReaction (10 reactions) & ForumPostFlag (2 flags)
+  // 26-27. ForumPostReaction (10 reactions) & ForumPostFlag (2 flags)
   for (const rx of dataset.PostReactions) {
     lines.push(
       `IF NOT EXISTS (SELECT 1 FROM [__mj_BizAppsCommunity].[ForumPostReaction] WHERE [ID] = '${rx.ID}')`,
@@ -2697,7 +2809,7 @@ function buildPostgresScript(dataset) {
   const lines = [
     '-- =============================================================================',
     '--  ARCH-WORLD (American Guild of Practicing Architects) Seed Script (PostgreSQL)',
-    '--  Complete 22-table FK-safe idempotent upserts in topological dependency order.',
+    '--  Complete 27-table FK-safe idempotent upserts in topological dependency order.',
     '-- =============================================================================',
     'SET search_path TO __mj_BizAppsCommunity, public;',
     '',
@@ -2708,44 +2820,30 @@ function buildPostgresScript(dataset) {
     'BEGIN',
   ];
 
-  // 1. __mj."User" (all 26 ARCH_MEMBERS)
-  for (const member of dataset.Members) {
-    const u = deriveMemberFields(member);
+  // 1. __mj_BizAppsCollaboration."SpaceType" (2 space types)
+  dataset.spaceTypes.forEach((st, idx) => {
     lines.push(
-      `INSERT INTO __mj."User" ("ID", "Name", "FirstName", "LastName", "Email", "Type", "IsActive")`,
-      `VALUES ('${u.ID}', ${escapePg(u.Name)}, ${escapePg(u.FirstName)}, ${escapePg(u.LastName)}, ${escapePg(u.Email)}, ${escapePg(u.Type)}, ${escapePg(u.IsActive)})`,
-      `ON CONFLICT ("ID") DO UPDATE SET "Name" = EXCLUDED."Name", "FirstName" = EXCLUDED."FirstName", "LastName" = EXCLUDED."LastName", "Email" = EXCLUDED."Email", "Type" = EXCLUDED."Type", "IsActive" = EXCLUDED."IsActive";`,
+      `IF EXISTS (SELECT 1 FROM __mj_BizAppsCollaboration."SpaceType" WHERE "ID" = '${st.ID}') THEN`,
+      `    UPDATE __mj_BizAppsCollaboration."SpaceType" SET "Name" = ${escapePg(st.Name)}, "Description" = ${escapePg(st.Description ?? null)}, "Configuration" = ${escapePg(st.Configuration ?? null)}, "IsActive" = ${escapePg(st.IsActive ?? true)} WHERE "ID" = '${st.ID}';`,
+      `ELSIF NOT EXISTS (SELECT 1 FROM __mj_BizAppsCollaboration."SpaceType" WHERE "Code" = ${escapePg(st.Code)}) THEN`,
+      `    INSERT INTO __mj_BizAppsCollaboration."SpaceType" ("ID", "Code", "Name", "Description", "Vocabulary", "Discoverability", "JoinMode", "MessagingPanel", "LibraryPanel", "WorkPanel", "DefaultAgentRetrieval", "DefaultBand", "InviteApproval", "DisplayRank", "IsActive", "DefaultAllowParentAssignees", "Configuration")`,
+      `    VALUES ('${st.ID}', ${escapePg(st.Code)}, ${escapePg(st.Name)}, ${escapePg(st.Description ?? null)}, ${escapePg(st.Vocabulary ?? st.Code)}, ${escapePg(st.Discoverability ?? 'Listed')}, ${escapePg(st.JoinMode ?? 'SelfServe')}, ${escapePg(st.MessagingPanel ?? true)}, ${escapePg(st.LibraryPanel ?? true)}, ${escapePg(st.WorkPanel ?? true)}, ${escapePg(st.DefaultAgentRetrieval ?? 'Included')}, ${escapePg(st.DefaultBand ?? 'Shared')}, ${escapePg(st.InviteApproval ?? 'Approve')}, ${st.DisplayRank ?? (idx + 1) * 10}, ${escapePg(st.IsActive ?? true)}, ${escapePg(st.DefaultAllowParentAssignees ?? true)}, ${escapePg(st.Configuration ?? null)});`,
+      `END IF;`,
     );
-  }
+  });
 
-  // 2. __mj_BizAppsCollaboration."Space" (4 spaces)
-  for (const space of dataset.Spaces) {
+  // 2. __mj_BizAppsCollaboration."SpaceRoleType" (4 space role types, incl. ARCH-WORLD contributor)
+  dataset.spaceRoleTypes.forEach((srt, idx) => {
+    const level = srt.Level ?? 100;
+    const maxGrantable = srt.MaxGrantableLevel ?? (srt.IsOwnerRole ? level : 0);
     lines.push(
-      `INSERT INTO __mj_BizAppsCollaboration."Space" ("ID", "SpaceTypeID", "Name", "Description", "OwnerID", "InheritsMembership", "AgentRetrieval", "StartedAt", "AllowParentAssignees")`,
-      `VALUES ('${space.ID}', '${space.SpaceTypeID}', ${escapePg(space.Name)}, ${escapePg(space.Description)}, '${ownerId}', ${escapePg(space.InheritsMembership)}, 'Included', CURRENT_TIMESTAMP, TRUE)`,
-      `ON CONFLICT ("ID") DO UPDATE SET "Name" = EXCLUDED."Name", "Description" = EXCLUDED."Description", "OwnerID" = EXCLUDED."OwnerID", "InheritsMembership" = EXCLUDED."InheritsMembership";`,
+      `INSERT INTO __mj_BizAppsCollaboration."SpaceRoleType" ("ID", "Code", "Name", "Description", "Level", "MaxGrantableLevel", "CanInvite", "CanPromoteBand", "CanSeeTeamBand", "IsOwnerRole", "DisplayRank", "IsActive", "CanContribute")`,
+      `VALUES ('${srt.ID}', ${escapePg(srt.Code)}, ${escapePg(srt.Name)}, ${escapePg(srt.Description ?? null)}, ${level}, ${maxGrantable}, ${escapePg(srt.CanInvite ?? false)}, ${escapePg(srt.CanPromoteBand ?? false)}, ${escapePg(srt.CanSeeTeamBand ?? false)}, ${escapePg(srt.IsOwnerRole ?? false)}, ${srt.DisplayRank ?? (idx + 1) * 10}, ${escapePg(srt.IsActive ?? true)}, ${escapePg(srt.CanContribute ?? true)})`,
+      `ON CONFLICT ("ID") DO UPDATE SET "Name" = EXCLUDED."Name", "Description" = EXCLUDED."Description", "Level" = EXCLUDED."Level", "MaxGrantableLevel" = EXCLUDED."MaxGrantableLevel", "CanInvite" = EXCLUDED."CanInvite", "CanPromoteBand" = EXCLUDED."CanPromoteBand", "CanSeeTeamBand" = EXCLUDED."CanSeeTeamBand", "IsOwnerRole" = EXCLUDED."IsOwnerRole", "DisplayRank" = EXCLUDED."DisplayRank", "IsActive" = EXCLUDED."IsActive", "CanContribute" = EXCLUDED."CanContribute";`,
     );
-  }
+  });
 
-  // 3. __mj_BizAppsCollaboration."SpaceMember" (64 memberships)
-  for (const sm of dataset.SpaceMembers) {
-    lines.push(
-      `INSERT INTO __mj_BizAppsCollaboration."SpaceMember" ("ID", "SpaceID", "UserID", "SpaceRoleTypeID", "Band", "Status")`,
-      `VALUES ('${sm.ID}', '${sm.SpaceID}', '${sm.UserID}', '${sm.SpaceRoleTypeID}', ${escapePg(sm.Band)}, ${escapePg(sm.Status)})`,
-      `ON CONFLICT ("ID") DO UPDATE SET "SpaceRoleTypeID" = EXCLUDED."SpaceRoleTypeID", "Band" = EXCLUDED."Band", "Status" = EXCLUDED."Status";`,
-    );
-  }
-
-  // 4. "CommunitySpace" (4 community spaces)
-  for (const space of dataset.Spaces) {
-    lines.push(
-      `INSERT INTO "CommunitySpace" ("ID", "Slug", "CommunityKind", "AnonymousReadMode", "AskFirstEnabled", "DefaultDigestCadence")`,
-      `VALUES ('${space.ID}', ${escapePg(space.Slug)}, ${escapePg(space.CommunityKind)}, ${escapePg(space.AnonymousReadMode)}, ${escapePg(space.AskFirstEnabled)}, ${escapePg(space.DefaultDigestCadence)})`,
-      `ON CONFLICT ("ID") DO UPDATE SET "Slug" = EXCLUDED."Slug", "CommunityKind" = EXCLUDED."CommunityKind", "AnonymousReadMode" = EXCLUDED."AnonymousReadMode", "AskFirstEnabled" = EXCLUDED."AskFirstEnabled", "DefaultDigestCadence" = EXCLUDED."DefaultDigestCadence";`,
-    );
-  }
-
-  // 5. "ForumType" (6), "PostType" (13), "ForumRoleType" (7)
+  // 3-5. "ForumType" (6), "PostType" (13), "ForumRoleType" (7)
   dataset.forumTypes.forEach((ft, idx) => {
     lines.push(
       `INSERT INTO "ForumType" ("ID", "Code", "Name", "ServerDriverClass", "Sequence", "IsActive")`,
@@ -2761,14 +2859,53 @@ function buildPostgresScript(dataset) {
     );
   });
   dataset.forumRoleTypes.forEach((fr, idx) => {
+    const seq = fr.Sequence ?? (idx + 1) * 10;
+    const level = fr.Level ?? 100;
     lines.push(
-      `INSERT INTO "ForumRoleType" ("ID", "Code", "Name", "CanConfigureForum", "CanModerateQueue", "CanPinOrLock", "CanAcceptAnswers", "CanVerifyCanon", "CanPromoteToSpace", "CanCreateRootPost", "CanReply", "CanCoEditDocs", "VoteWeightMultiplier", "Sequence", "IsActive")`,
-      `VALUES ('${fr.ID}', ${escapePg(fr.Code)}, ${escapePg(fr.Name)}, ${escapePg(fr.CanConfigureForum)}, ${escapePg(fr.CanModerateQueue)}, ${escapePg(fr.CanPinOrLock)}, ${escapePg(fr.CanAcceptAnswers)}, ${escapePg(fr.CanVerifyCanon)}, ${escapePg(fr.CanPromoteToSpace)}, ${escapePg(fr.CanCreateRootPost)}, ${escapePg(fr.CanReply)}, ${escapePg(fr.CanCoEditDocs)}, ${fr.VoteWeightMultiplier}, ${(idx + 1) * 10}, ${escapePg(fr.IsActive)})`,
-      `ON CONFLICT ("ID") DO UPDATE SET "Name" = EXCLUDED."Name", "IsActive" = EXCLUDED."IsActive";`,
+      `INSERT INTO "ForumRoleType" ("ID", "Code", "Name", "Description", "Level", "CanConfigureForum", "CanModerateQueue", "CanPinOrLock", "CanAcceptAnswers", "CanVerifyCanon", "CanPromoteToSpace", "CanCreateRootPost", "CanReply", "CanCoEditDocs", "VoteWeightMultiplier", "Sequence", "IsActive")`,
+      `VALUES ('${fr.ID}', ${escapePg(fr.Code)}, ${escapePg(fr.Name)}, ${escapePg(fr.Description ?? null)}, ${level}, ${escapePg(fr.CanConfigureForum)}, ${escapePg(fr.CanModerateQueue)}, ${escapePg(fr.CanPinOrLock)}, ${escapePg(fr.CanAcceptAnswers)}, ${escapePg(fr.CanVerifyCanon)}, ${escapePg(fr.CanPromoteToSpace)}, ${escapePg(fr.CanCreateRootPost)}, ${escapePg(fr.CanReply)}, ${escapePg(fr.CanCoEditDocs)}, ${fr.VoteWeightMultiplier}, ${seq}, ${escapePg(fr.IsActive)})`,
+      `ON CONFLICT ("ID") DO UPDATE SET "Name" = EXCLUDED."Name", "Description" = EXCLUDED."Description", "Level" = EXCLUDED."Level", "CanConfigureForum" = EXCLUDED."CanConfigureForum", "CanModerateQueue" = EXCLUDED."CanModerateQueue", "CanPinOrLock" = EXCLUDED."CanPinOrLock", "CanAcceptAnswers" = EXCLUDED."CanAcceptAnswers", "CanVerifyCanon" = EXCLUDED."CanVerifyCanon", "CanPromoteToSpace" = EXCLUDED."CanPromoteToSpace", "CanCreateRootPost" = EXCLUDED."CanCreateRootPost", "CanReply" = EXCLUDED."CanReply", "CanCoEditDocs" = EXCLUDED."CanCoEditDocs", "VoteWeightMultiplier" = EXCLUDED."VoteWeightMultiplier", "Sequence" = EXCLUDED."Sequence", "IsActive" = EXCLUDED."IsActive";`,
     );
   });
 
-  // 6. "Forum" (13 forums)
+  // 6. __mj."User" (all 26 ARCH_MEMBERS)
+  for (const member of dataset.Members) {
+    const u = deriveMemberFields(member);
+    lines.push(
+      `INSERT INTO __mj."User" ("ID", "Name", "FirstName", "LastName", "Email", "Type", "IsActive")`,
+      `VALUES ('${u.ID}', ${escapePg(u.Name)}, ${escapePg(u.FirstName)}, ${escapePg(u.LastName)}, ${escapePg(u.Email)}, ${escapePg(u.Type)}, ${escapePg(u.IsActive)})`,
+      `ON CONFLICT ("ID") DO UPDATE SET "Name" = EXCLUDED."Name", "FirstName" = EXCLUDED."FirstName", "LastName" = EXCLUDED."LastName", "Email" = EXCLUDED."Email", "Type" = EXCLUDED."Type", "IsActive" = EXCLUDED."IsActive";`,
+    );
+  }
+
+  // 7. __mj_BizAppsCollaboration."Space" (4 spaces)
+  for (const space of dataset.Spaces) {
+    lines.push(
+      `INSERT INTO __mj_BizAppsCollaboration."Space" ("ID", "SpaceTypeID", "Name", "Description", "OwnerID", "InheritsMembership", "AgentRetrieval", "StartedAt", "AllowParentAssignees")`,
+      `VALUES ('${space.ID}', '${space.SpaceTypeID}', ${escapePg(space.Name)}, ${escapePg(space.Description)}, '${ownerId}', ${escapePg(space.InheritsMembership)}, 'Included', CURRENT_TIMESTAMP, TRUE)`,
+      `ON CONFLICT ("ID") DO UPDATE SET "Name" = EXCLUDED."Name", "Description" = EXCLUDED."Description", "OwnerID" = EXCLUDED."OwnerID", "InheritsMembership" = EXCLUDED."InheritsMembership";`,
+    );
+  }
+
+  // 8. __mj_BizAppsCollaboration."SpaceMember" (64 memberships)
+  for (const sm of dataset.SpaceMembers) {
+    lines.push(
+      `INSERT INTO __mj_BizAppsCollaboration."SpaceMember" ("ID", "SpaceID", "UserID", "SpaceRoleTypeID", "Band", "Status")`,
+      `VALUES ('${sm.ID}', '${sm.SpaceID}', '${sm.UserID}', '${sm.SpaceRoleTypeID}', ${escapePg(sm.Band)}, ${escapePg(sm.Status)})`,
+      `ON CONFLICT ("ID") DO UPDATE SET "SpaceRoleTypeID" = EXCLUDED."SpaceRoleTypeID", "Band" = EXCLUDED."Band", "Status" = EXCLUDED."Status";`,
+    );
+  }
+
+  // 9. "CommunitySpace" (4 community spaces)
+  for (const space of dataset.Spaces) {
+    lines.push(
+      `INSERT INTO "CommunitySpace" ("ID", "Slug", "CommunityKind", "AnonymousReadMode", "AskFirstEnabled", "DefaultDigestCadence")`,
+      `VALUES ('${space.ID}', ${escapePg(space.Slug)}, ${escapePg(space.CommunityKind)}, ${escapePg(space.AnonymousReadMode)}, ${escapePg(space.AskFirstEnabled)}, ${escapePg(space.DefaultDigestCadence)})`,
+      `ON CONFLICT ("ID") DO UPDATE SET "Slug" = EXCLUDED."Slug", "CommunityKind" = EXCLUDED."CommunityKind", "AnonymousReadMode" = EXCLUDED."AnonymousReadMode", "AskFirstEnabled" = EXCLUDED."AskFirstEnabled", "DefaultDigestCadence" = EXCLUDED."DefaultDigestCadence";`,
+    );
+  }
+
+  // 10. "Forum" (13 forums)
   for (const forum of dataset.Forums) {
     lines.push(
       `INSERT INTO "Forum" ("ID", "SpaceID", "ForumTypeID", "Slug", "Name", "Description", "VisibilityBand", "PostingPolicy", "InheritsSpaceMembers", "Sequence", "Status")`,
@@ -2777,7 +2914,7 @@ function buildPostgresScript(dataset) {
     );
   }
 
-  // 7. "ForumMember" (14 memberships)
+  // 11. "ForumMember" (14 memberships)
   for (const fm of dataset.ForumMembers) {
     lines.push(
       `INSERT INTO "ForumMember" ("ID", "ForumID", "UserID", "ForumRoleTypeID", "Status")`,
@@ -2786,7 +2923,7 @@ function buildPostgresScript(dataset) {
     );
   }
 
-  // 8. "CommunityMemberProfile" (26 profiles)
+  // 12. "CommunityMemberProfile" (26 profiles)
   for (const p of dataset.MemberProfiles) {
     lines.push(
       `INSERT INTO "CommunityMemberProfile" ("ID", "SpaceID", "UserID", "BioMarkdown", "ExpertiseTagsJSON", "HelpfulAnswerCount", "AcceptedAnswerCount", "ReputationScore", "DigestCadence", "OpenToPeerMentoring")`,
@@ -2795,17 +2932,7 @@ function buildPostgresScript(dataset) {
     );
   }
 
-  // 9. "ForumSubscription" (10 subscriptions)
-  for (const sub of dataset.ForumSubscriptions) {
-    const level = normalizeSubscriptionDeliveryLevel(sub);
-    lines.push(
-      `INSERT INTO "ForumSubscription" ("ID", "UserID", "ForumID", "DeliveryLevel")`,
-      `VALUES ('${sub.ID}', '${sub.UserID}', '${sub.ForumID}', ${escapePg(level)})`,
-      `ON CONFLICT ("ID") DO UPDATE SET "DeliveryLevel" = EXCLUDED."DeliveryLevel";`,
-    );
-  }
-
-  // 10. "ForumTopicTag" (22 space-local tags)
+  // 13. "ForumTopicTag" (22 space-local tags)
   for (const tag of dataset.TopicTags) {
     lines.push(
       `INSERT INTO "ForumTopicTag" ("ID", "SpaceID", "Slug", "Name", "IsOfficial")`,
@@ -2814,12 +2941,22 @@ function buildPostgresScript(dataset) {
     );
   }
 
-  // 11. "ForumPost" (68 posts in topological order)
+  // 14. "ForumPost" (68 posts in topological order)
   for (const post of sortPostsTopologically(dataset.Posts)) {
     lines.push(
       `INSERT INTO "ForumPost" ("ID", "ForumID", "PostTypeID", "RootPostID", "ParentPostID", "ReplyDepth", "AuthorUserID", "Title", "Slug", "BodyMarkdown", "SummaryMarkdown", "VisibilityBand", "Status", "IsPinned", "IsLocked", "IsFeatured", "ReplyCount", "ParticipantCount", "ReactionScore", "ViewCount")`,
       `VALUES ('${post.ID}', '${post.ForumID}', '${post.PostTypeID}', ${post.RootPostID ? `'${post.RootPostID}'` : 'NULL'}, ${post.ParentPostID ? `'${post.ParentPostID}'` : 'NULL'}, ${post.ReplyDepth ?? 0}, '${post.AuthorUserID}', ${escapePg(post.Title)}, ${escapePg(post.Slug)}, ${escapePg(post.BodyMarkdown)}, ${escapePg(post.SummaryMarkdown)}, ${escapePg(post.VisibilityBand)}, ${escapePg(post.Status)}, ${escapePg(post.IsPinned)}, ${escapePg(post.IsLocked)}, ${escapePg(post.IsFeatured)}, ${post.ReplyCount ?? 0}, ${post.ParticipantCount ?? 1}, ${post.ReactionScore ?? 0}, ${post.ViewCount ?? 0})`,
       `ON CONFLICT ("ID") DO UPDATE SET "Title" = EXCLUDED."Title", "BodyMarkdown" = EXCLUDED."BodyMarkdown", "Status" = EXCLUDED."Status", "IsPinned" = EXCLUDED."IsPinned", "IsLocked" = EXCLUDED."IsLocked", "IsFeatured" = EXCLUDED."IsFeatured";`,
+    );
+  }
+
+  // 15. "ForumSubscription" (10 subscriptions — after User, Forum, ForumTopicTag, ForumPost)
+  for (const sub of dataset.ForumSubscriptions) {
+    const level = normalizeSubscriptionDeliveryLevel(sub);
+    lines.push(
+      `INSERT INTO "ForumSubscription" ("ID", "UserID", "ForumID", "DeliveryLevel")`,
+      `VALUES ('${sub.ID}', '${sub.UserID}', '${sub.ForumID}', ${escapePg(level)})`,
+      `ON CONFLICT ("ID") DO UPDATE SET "DeliveryLevel" = EXCLUDED."DeliveryLevel";`,
     );
   }
 
@@ -2964,30 +3101,55 @@ function buildSqliteScript(dataset) {
   const lines = [
     '-- =============================================================================',
     '--  ARCH-WORLD (American Guild of Practicing Architects) Seed Script (SQLite)',
-    '--  Complete 22-table FK-safe idempotent upserts under PRAGMA foreign_keys = ON.',
+    '--  Complete 27-table FK-safe idempotent upserts in topological dependency order',
+    '--  under PRAGMA foreign_keys = ON.',
     '-- =============================================================================',
     'PRAGMA foreign_keys = ON;',
     '',
   ];
 
-  // Reference types required for strict FK enforcement in standalone SQLite
-  for (const st of dataset.spaceTypes) {
+  // 1. SpaceType (2)
+  dataset.spaceTypes.forEach((st, idx) => {
     lines.push(
-      `INSERT INTO "SpaceType" ("ID", "Code", "Name", "Configuration") VALUES ('${st.ID}', ${escapeSqlite(st.Code)}, ${escapeSqlite(st.Name)}, ${escapeSqlite(st.Configuration)}) ON CONFLICT("ID") DO UPDATE SET "Name" = excluded."Name";`,
+      `INSERT INTO "SpaceType" ("ID", "Code", "Name", "Description", "Vocabulary", "Discoverability", "JoinMode", "MessagingPanel", "LibraryPanel", "WorkPanel", "DefaultAgentRetrieval", "DefaultBand", "InviteApproval", "DisplayRank", "IsActive", "DefaultAllowParentAssignees", "Configuration") VALUES ('${st.ID}', ${escapeSqlite(st.Code)}, ${escapeSqlite(st.Name)}, ${escapeSqlite(st.Description ?? null)}, ${escapeSqlite(st.Vocabulary ?? st.Code)}, ${escapeSqlite(st.Discoverability ?? 'Listed')}, ${escapeSqlite(st.JoinMode ?? 'SelfServe')}, ${escapeSqlite(st.MessagingPanel ?? true)}, ${escapeSqlite(st.LibraryPanel ?? true)}, ${escapeSqlite(st.WorkPanel ?? true)}, ${escapeSqlite(st.DefaultAgentRetrieval ?? 'Included')}, ${escapeSqlite(st.DefaultBand ?? 'Shared')}, ${escapeSqlite(st.InviteApproval ?? 'Approve')}, ${st.DisplayRank ?? (idx + 1) * 10}, ${escapeSqlite(st.IsActive ?? true)}, ${escapeSqlite(st.DefaultAllowParentAssignees ?? true)}, ${escapeSqlite(st.Configuration ?? null)}) ON CONFLICT("ID") DO UPDATE SET "Name" = excluded."Name", "Configuration" = excluded."Configuration", "IsActive" = excluded."IsActive";`,
     );
-  }
-  for (const srt of dataset.spaceRoleTypes) {
+  });
+
+  // 2. SpaceRoleType (4)
+  dataset.spaceRoleTypes.forEach((srt, idx) => {
+    const level = srt.Level ?? 100;
+    const maxGrantable = srt.MaxGrantableLevel ?? (srt.IsOwnerRole ? level : 0);
     lines.push(
-      `INSERT INTO "SpaceRoleType" ("ID", "Code", "Name", "CanSeeTeamBand", "CanContribute", "IsOwnerRole", "CanPromoteBand", "Level", "IsActive") VALUES ('${srt.ID}', ${escapeSqlite(srt.Code)}, ${escapeSqlite(srt.Name)}, ${escapeSqlite(srt.CanSeeTeamBand)}, ${escapeSqlite(srt.CanContribute)}, ${escapeSqlite(srt.IsOwnerRole)}, ${escapeSqlite(srt.CanPromoteBand)}, ${srt.Level}, ${escapeSqlite(srt.IsActive)}) ON CONFLICT("ID") DO UPDATE SET "Name" = excluded."Name";`,
+      `INSERT INTO "SpaceRoleType" ("ID", "Code", "Name", "Description", "Level", "MaxGrantableLevel", "CanInvite", "CanSeeTeamBand", "CanContribute", "IsOwnerRole", "CanPromoteBand", "DisplayRank", "IsActive") VALUES ('${srt.ID}', ${escapeSqlite(srt.Code)}, ${escapeSqlite(srt.Name)}, ${escapeSqlite(srt.Description ?? null)}, ${level}, ${maxGrantable}, ${escapeSqlite(srt.CanInvite ?? false)}, ${escapeSqlite(srt.CanSeeTeamBand ?? false)}, ${escapeSqlite(srt.CanContribute ?? true)}, ${escapeSqlite(srt.IsOwnerRole ?? false)}, ${escapeSqlite(srt.CanPromoteBand ?? false)}, ${srt.DisplayRank ?? (idx + 1) * 10}, ${escapeSqlite(srt.IsActive ?? true)}) ON CONFLICT("ID") DO UPDATE SET "Name" = excluded."Name", "Level" = excluded."Level", "MaxGrantableLevel" = excluded."MaxGrantableLevel", "CanContribute" = excluded."CanContribute", "IsActive" = excluded."IsActive";`,
     );
-  }
+  });
+
+  // 3-5. ForumType (6), PostType (13), ForumRoleType (7)
+  dataset.forumTypes.forEach((ft, idx) => {
+    lines.push(
+      `INSERT INTO "ForumType" ("ID", "Code", "Name", "ServerDriverClass", "Sequence", "IsActive") VALUES ('${ft.ID}', ${escapeSqlite(ft.Code)}, ${escapeSqlite(ft.Name)}, ${escapeSqlite(ft.ServerDriverClass ?? null)}, ${(idx + 1) * 10}, 1) ON CONFLICT("ID") DO UPDATE SET "Name" = excluded."Name", "ServerDriverClass" = excluded."ServerDriverClass", "IsActive" = excluded."IsActive";`,
+    );
+  });
+  dataset.postTypes.forEach((pt, idx) => {
+    lines.push(
+      `INSERT INTO "PostType" ("ID", "Code", "Name", "ServerDriverClass", "PlacementRule", "AllowsNestedReplies", "Sequence", "IsActive") VALUES ('${pt.ID}', ${escapeSqlite(pt.Code)}, ${escapeSqlite(pt.Name ?? pt.Code)}, ${escapeSqlite(pt.ServerDriverClass ?? null)}, ${escapeSqlite(pt.PlacementRule)}, ${escapeSqlite(pt.AllowsNestedReplies)}, ${pt.Sequence ?? (idx + 1) * 10}, 1) ON CONFLICT("ID") DO UPDATE SET "Name" = excluded."Name", "ServerDriverClass" = excluded."ServerDriverClass", "PlacementRule" = excluded."PlacementRule", "AllowsNestedReplies" = excluded."AllowsNestedReplies";`,
+    );
+  });
+  dataset.forumRoleTypes.forEach((fr, idx) => {
+    const seq = fr.Sequence ?? (idx + 1) * 10;
+    const level = fr.Level ?? 100;
+    lines.push(
+      `INSERT INTO "ForumRoleType" ("ID", "Code", "Name", "Description", "Level", "CanConfigureForum", "CanModerateQueue", "CanPinOrLock", "CanAcceptAnswers", "CanVerifyCanon", "CanPromoteToSpace", "CanCreateRootPost", "CanReply", "CanCoEditDocs", "VoteWeightMultiplier", "Sequence", "IsActive") VALUES ('${fr.ID}', ${escapeSqlite(fr.Code)}, ${escapeSqlite(fr.Name)}, ${escapeSqlite(fr.Description ?? null)}, ${level}, ${escapeSqlite(fr.CanConfigureForum)}, ${escapeSqlite(fr.CanModerateQueue)}, ${escapeSqlite(fr.CanPinOrLock)}, ${escapeSqlite(fr.CanAcceptAnswers)}, ${escapeSqlite(fr.CanVerifyCanon)}, ${escapeSqlite(fr.CanPromoteToSpace)}, ${escapeSqlite(fr.CanCreateRootPost)}, ${escapeSqlite(fr.CanReply)}, ${escapeSqlite(fr.CanCoEditDocs)}, ${fr.VoteWeightMultiplier}, ${seq}, ${escapeSqlite(fr.IsActive)}) ON CONFLICT("ID") DO UPDATE SET "Name" = excluded."Name", "Description" = excluded."Description", "Level" = excluded."Level", "Sequence" = excluded."Sequence", "IsActive" = excluded."IsActive";`,
+    );
+  });
+
   lines.push(
     `INSERT INTO "TaskType" ("ID", "Name") VALUES ('${ARCH_TASK_TYPE_ID}', 'Community Action Item') ON CONFLICT("ID") DO NOTHING;`,
     `INSERT INTO "Environment" ("ID", "Name", "IsDefault") VALUES ('${ARCH_DEFAULT_ENVIRONMENT_ID}', 'Default', 1) ON CONFLICT("ID") DO NOTHING;`,
     `INSERT INTO "ArtifactType" ("ID", "Name") VALUES ('${ARCH_DEFAULT_ARTIFACT_TYPE_ID}', 'Component') ON CONFLICT("ID") DO NOTHING;`,
   );
 
-  // 1. User (26)
+  // 6. User (26)
   for (const member of dataset.Members) {
     const u = deriveMemberFields(member);
     lines.push(
@@ -2995,86 +3157,63 @@ function buildSqliteScript(dataset) {
     );
   }
 
-  // Interactive support Artifact & ArtifactVersion (after User exists)
-  lines.push(
-    `INSERT INTO "Artifact" ("ID", "EnvironmentID", "Name", "Description", "TypeID", "UserID", "Visibility") VALUES ('${ARCH_INTERACTIVE_ARTIFACT_ID}', '${ARCH_DEFAULT_ENVIRONMENT_ID}', 'IBC 2027 Mass Timber Readiness Challenge', 'Interactive AGPA Type IV-A/B/C readiness quiz component.', '${ARCH_DEFAULT_ARTIFACT_TYPE_ID}', '${ownerId}', 'Always') ON CONFLICT("ID") DO NOTHING;`,
-    `INSERT INTO "ArtifactVersion" ("ID", "ArtifactID", "VersionNumber", "UserID", "ContentMode", "ForceToolsOnly") VALUES ('${ARCH_INTERACTIVE_ARTIFACT_VERSION_ID}', '${ARCH_INTERACTIVE_ARTIFACT_ID}', 1, '${ownerId}', 'Text', 0) ON CONFLICT("ID") DO NOTHING;`,
-  );
-
-  // 2. Space (4)
+  // 7. Space (4)
   for (const space of dataset.Spaces) {
     lines.push(
       `INSERT INTO "Space" ("ID", "SpaceTypeID", "Slug", "Name", "Description", "OwnerID", "InheritsMembership", "AgentRetrieval", "AllowParentAssignees") VALUES ('${space.ID}', '${space.SpaceTypeID}', ${escapeSqlite(space.Slug)}, ${escapeSqlite(space.Name)}, ${escapeSqlite(space.Description)}, '${ownerId}', ${escapeSqlite(space.InheritsMembership)}, 'Included', 1) ON CONFLICT("ID") DO UPDATE SET "Name" = excluded."Name", "Description" = excluded."Description", "OwnerID" = excluded."OwnerID";`,
     );
   }
 
-  // 3. SpaceMember (64)
+  // 8. SpaceMember (64)
   for (const sm of dataset.SpaceMembers) {
     lines.push(
       `INSERT INTO "SpaceMember" ("ID", "SpaceID", "UserID", "SpaceRoleTypeID", "Band", "Status") VALUES ('${sm.ID}', '${sm.SpaceID}', '${sm.UserID}', '${sm.SpaceRoleTypeID}', ${escapeSqlite(sm.Band)}, ${escapeSqlite(sm.Status)}) ON CONFLICT("ID") DO UPDATE SET "SpaceRoleTypeID" = excluded."SpaceRoleTypeID", "Band" = excluded."Band", "Status" = excluded."Status";`,
     );
   }
 
-  // 4. CommunitySpace (4)
+  // 9. CommunitySpace (4)
   for (const space of dataset.Spaces) {
     lines.push(
       `INSERT INTO "CommunitySpace" ("ID", "Slug", "CommunityKind", "AnonymousReadMode", "AskFirstEnabled", "DefaultDigestCadence") VALUES ('${space.ID}', ${escapeSqlite(space.Slug)}, ${escapeSqlite(space.CommunityKind)}, ${escapeSqlite(space.AnonymousReadMode)}, ${escapeSqlite(space.AskFirstEnabled)}, ${escapeSqlite(space.DefaultDigestCadence)}) ON CONFLICT("ID") DO UPDATE SET "CommunityKind" = excluded."CommunityKind", "AnonymousReadMode" = excluded."AnonymousReadMode", "AskFirstEnabled" = excluded."AskFirstEnabled", "DefaultDigestCadence" = excluded."DefaultDigestCadence";`,
     );
   }
 
-  // 5. ForumType (6), PostType (13), ForumRoleType (7)
-  dataset.forumTypes.forEach((ft, idx) => {
-    lines.push(
-      `INSERT INTO "ForumType" ("ID", "Code", "Name", "ServerDriverClass", "Sequence", "IsActive") VALUES ('${ft.ID}', ${escapeSqlite(ft.Code)}, ${escapeSqlite(ft.Name)}, ${escapeSqlite(ft.ServerDriverClass ?? null)}, ${(idx + 1) * 10}, 1) ON CONFLICT("ID") DO UPDATE SET "Name" = excluded."Name";`,
-    );
-  });
-  dataset.postTypes.forEach((pt, idx) => {
-    lines.push(
-      `INSERT INTO "PostType" ("ID", "Code", "Name", "ServerDriverClass", "PlacementRule", "AllowsNestedReplies", "Sequence", "IsActive") VALUES ('${pt.ID}', ${escapeSqlite(pt.Code)}, ${escapeSqlite(pt.Name ?? pt.Code)}, ${escapeSqlite(pt.ServerDriverClass ?? null)}, ${escapeSqlite(pt.PlacementRule)}, ${escapeSqlite(pt.AllowsNestedReplies)}, ${pt.Sequence ?? (idx + 1) * 10}, 1) ON CONFLICT("ID") DO UPDATE SET "Name" = excluded."Name";`,
-    );
-  });
-  dataset.forumRoleTypes.forEach((fr) => {
-    lines.push(
-      `INSERT INTO "ForumRoleType" ("ID", "Code", "Name", "CanConfigureForum", "CanModerateQueue", "CanPinOrLock", "CanAcceptAnswers", "CanVerifyCanon", "CanPromoteToSpace", "CanCreateRootPost", "CanReply", "CanCoEditDocs", "VoteWeightMultiplier", "IsActive") VALUES ('${fr.ID}', ${escapeSqlite(fr.Code)}, ${escapeSqlite(fr.Name)}, ${escapeSqlite(fr.CanConfigureForum)}, ${escapeSqlite(fr.CanModerateQueue)}, ${escapeSqlite(fr.CanPinOrLock)}, ${escapeSqlite(fr.CanAcceptAnswers)}, ${escapeSqlite(fr.CanVerifyCanon)}, ${escapeSqlite(fr.CanPromoteToSpace)}, ${escapeSqlite(fr.CanCreateRootPost)}, ${escapeSqlite(fr.CanReply)}, ${escapeSqlite(fr.CanCoEditDocs)}, ${fr.VoteWeightMultiplier}, ${escapeSqlite(fr.IsActive)}) ON CONFLICT("ID") DO UPDATE SET "Name" = excluded."Name";`,
-    );
-  });
-
-  // 6. Forum (13)
+  // 10. Forum (13)
   for (const forum of dataset.Forums) {
     lines.push(
       `INSERT INTO "Forum" ("ID", "SpaceID", "ForumTypeID", "Slug", "Name", "Description", "VisibilityBand", "PostingPolicy", "InheritsSpaceMembers", "Sequence", "Status") VALUES ('${forum.ID}', '${forum.SpaceID}', '${forum.ForumTypeID}', ${escapeSqlite(forum.Slug)}, ${escapeSqlite(forum.Name)}, ${escapeSqlite(forum.Description)}, ${escapeSqlite(forum.VisibilityBand)}, ${escapeSqlite(forum.PostingPolicy)}, ${escapeSqlite(forum.InheritsSpaceMembers)}, ${forum.Sequence}, ${escapeSqlite(forum.Status)}) ON CONFLICT("ID") DO UPDATE SET "Name" = excluded."Name", "VisibilityBand" = excluded."VisibilityBand", "PostingPolicy" = excluded."PostingPolicy", "Status" = excluded."Status";`,
     );
   }
 
-  // 7. ForumMember (14)
+  // 11. ForumMember (14)
   for (const fm of dataset.ForumMembers) {
     lines.push(
       `INSERT INTO "ForumMember" ("ID", "ForumID", "UserID", "ForumRoleTypeID", "Status") VALUES ('${fm.ID}', '${fm.ForumID}', '${fm.UserID}', '${fm.ForumRoleTypeID}', ${escapeSqlite(fm.Status)}) ON CONFLICT("ID") DO UPDATE SET "ForumRoleTypeID" = excluded."ForumRoleTypeID", "Status" = excluded."Status";`,
     );
   }
 
-  // 8. CommunityMemberProfile (26)
+  // 12. CommunityMemberProfile (26)
   for (const p of dataset.MemberProfiles) {
     lines.push(
       `INSERT INTO "CommunityMemberProfile" ("ID", "SpaceID", "UserID", "BioMarkdown", "ExpertiseTagsJSON", "HelpfulAnswerCount", "AcceptedAnswerCount", "ReputationScore", "DigestCadence", "OpenToPeerMentoring") VALUES ('${p.ID}', '${p.SpaceID}', '${p.UserID}', ${escapeSqlite(p.BioMarkdown ?? p.Bio)}, ${escapeSqlite(p.ExpertiseTagsJSON)}, ${p.HelpfulAnswerCount}, ${p.AcceptedAnswerCount}, ${p.ReputationScore}, ${escapeSqlite(p.DigestCadence)}, ${escapeSqlite(Boolean(p.OpenToPeerMentoring))}) ON CONFLICT("ID") DO UPDATE SET "BioMarkdown" = excluded."BioMarkdown", "ReputationScore" = excluded."ReputationScore", "DigestCadence" = excluded."DigestCadence";`,
     );
   }
 
-  // 9. ForumTopicTag (22)
+  // 13. ForumTopicTag (22)
   for (const tag of dataset.TopicTags) {
     lines.push(
       `INSERT INTO "ForumTopicTag" ("ID", "SpaceID", "Slug", "Name", "IsOfficial") VALUES ('${tag.ID}', '${tag.SpaceID}', ${escapeSqlite(tag.Slug)}, ${escapeSqlite(tag.Name)}, ${escapeSqlite(tag.IsOfficial)}) ON CONFLICT("ID") DO UPDATE SET "Name" = excluded."Name", "IsOfficial" = excluded."IsOfficial";`,
     );
   }
 
-  // 10. ForumPost (68 topological)
+  // 14. ForumPost (68 topological)
   for (const post of sortPostsTopologically(dataset.Posts)) {
     lines.push(
       `INSERT INTO "ForumPost" ("ID", "ForumID", "PostTypeID", "RootPostID", "ParentPostID", "ReplyDepth", "AuthorUserID", "Title", "Slug", "BodyMarkdown", "SummaryMarkdown", "VisibilityBand", "Status", "IsPinned", "IsLocked", "IsFeatured", "ReplyCount", "ParticipantCount", "ReactionScore", "ViewCount", "LastActivityAt", "CreatedAt") VALUES ('${post.ID}', '${post.ForumID}', '${post.PostTypeID}', ${post.RootPostID ? `'${post.RootPostID}'` : 'NULL'}, ${post.ParentPostID ? `'${post.ParentPostID}'` : 'NULL'}, ${post.ReplyDepth ?? 0}, '${post.AuthorUserID}', ${escapeSqlite(post.Title)}, ${escapeSqlite(post.Slug)}, ${escapeSqlite(post.BodyMarkdown)}, ${escapeSqlite(post.SummaryMarkdown)}, ${escapeSqlite(post.VisibilityBand)}, ${escapeSqlite(post.Status)}, ${escapeSqlite(post.IsPinned)}, ${escapeSqlite(post.IsLocked)}, ${escapeSqlite(post.IsFeatured)}, ${post.ReplyCount ?? 0}, ${post.ParticipantCount ?? 1}, ${post.ReactionScore ?? 0}, ${post.ViewCount ?? 0}, ${escapeSqlite(post.LastActivityAt ?? null)}, ${escapeSqlite(post.CreatedAt ?? null)}) ON CONFLICT("ID") DO UPDATE SET "Title" = excluded."Title", "BodyMarkdown" = excluded."BodyMarkdown", "Status" = excluded."Status";`,
     );
   }
 
-  // 11. ForumSubscription (10)
+  // 15. ForumSubscription (10)
   for (const sub of dataset.ForumSubscriptions) {
     const level = normalizeSubscriptionDeliveryLevel(sub);
     lines.push(
@@ -3082,14 +3221,14 @@ function buildSqliteScript(dataset) {
     );
   }
 
-  // 12. ForumQuestionPost (cyclic-FK-safe: NULL AcceptedAnswerPostID first)
+  // 16. ForumQuestionPost (cyclic-FK-safe: NULL AcceptedAnswerPostID first)
   for (const q of dataset.QuestionPosts) {
     lines.push(
       `INSERT INTO "ForumQuestionPost" ("ID", "AcceptedAnswerPostID", "AICanonAnswerPostID", "BountyPoints", "ResolvedAt") VALUES ('${q.ID}', NULL, NULL, ${q.BountyPoints ?? 0}, ${escapeSqlite(q.ResolvedAt ?? null)}) ON CONFLICT("ID") DO UPDATE SET "BountyPoints" = excluded."BountyPoints", "ResolvedAt" = excluded."ResolvedAt";`,
     );
   }
 
-  // 13. ForumAnswerPost (7) + cyclic-FK-safe AcceptedAnswerPostID UPDATE
+  // 17. ForumAnswerPost (7) + cyclic-FK-safe AcceptedAnswerPostID UPDATE
   for (const a of dataset.AnswerPosts) {
     lines.push(
       `INSERT INTO "ForumAnswerPost" ("ID", "QuestionPostID", "IsAcceptedByAuthor", "IsVerifiedByModerator", "VerifiedByUserID", "AIEpistemicStatus", "AIConfidenceScore") VALUES ('${a.ID}', '${a.QuestionPostID}', ${escapeSqlite(a.IsAcceptedByAuthor)}, ${escapeSqlite(a.IsVerifiedByModerator)}, ${a.VerifiedByUserID ? `'${a.VerifiedByUserID}'` : 'NULL'}, ${escapeSqlite(a.AIEpistemicStatus)}, ${a.AIConfidenceScore}) ON CONFLICT("ID") DO UPDATE SET "IsAcceptedByAuthor" = excluded."IsAcceptedByAuthor", "IsVerifiedByModerator" = excluded."IsVerifiedByModerator", "AIEpistemicStatus" = excluded."AIEpistemicStatus", "AIConfidenceScore" = excluded."AIConfidenceScore";`,
@@ -3101,21 +3240,21 @@ function buildSqliteScript(dataset) {
     );
   }
 
-  // 14. ForumIdeaCampaign (1)
+  // 18. ForumIdeaCampaign (1)
   for (const camp of dataset.IdeaCampaigns) {
     lines.push(
       `INSERT INTO "ForumIdeaCampaign" ("ID", "DefaultBudgetPoints", "AllocationMode", "MaxPointsPerIdea") VALUES ('${camp.ID}', ${camp.DefaultBudgetPoints}, ${escapeSqlite(camp.AllocationMode)}, ${camp.MaxPointsPerIdea}) ON CONFLICT("ID") DO UPDATE SET "DefaultBudgetPoints" = excluded."DefaultBudgetPoints", "AllocationMode" = excluded."AllocationMode", "MaxPointsPerIdea" = excluded."MaxPointsPerIdea";`,
     );
   }
 
-  // 15. ForumIdeaPost (5)
+  // 19. ForumIdeaPost (5)
   for (const idea of dataset.IdeaPosts) {
     lines.push(
       `INSERT INTO "ForumIdeaPost" ("ID", "IdeaStatus", "TotalPointsAllocated", "EffectiveQuadraticVotes", "UniqueBackerCount", "TargetReleaseOrQuarter") VALUES ('${idea.ID}', ${escapeSqlite(idea.IdeaStatus)}, 0, 0.0, 0, ${escapeSqlite(idea.TargetReleaseOrQuarter)}) ON CONFLICT("ID") DO UPDATE SET "IdeaStatus" = excluded."IdeaStatus", "TargetReleaseOrQuarter" = excluded."TargetReleaseOrQuarter";`,
     );
   }
 
-  // 16. ForumIdeaAllocation (25) + recompute
+  // 20. ForumIdeaAllocation (25) + recompute
   for (const alloc of dataset.IdeaAllocations) {
     lines.push(
       `INSERT INTO "ForumIdeaAllocation" ("ID", "IdeaPostID", "UserID", "PointsAllocated", "QuadraticVotes") VALUES ('${alloc.ID}', '${alloc.IdeaPostID}', '${alloc.UserID}', ${alloc.PointsAllocated}, ${alloc.QuadraticVotes}) ON CONFLICT("ID") DO UPDATE SET "PointsAllocated" = excluded."PointsAllocated", "QuadraticVotes" = excluded."QuadraticVotes";`,
@@ -3127,21 +3266,25 @@ function buildSqliteScript(dataset) {
     );
   }
 
-  // 17. ForumCasePost (2)
+  // 21. ForumCasePost (2)
   for (const c of dataset.CasePosts) {
     lines.push(
       `INSERT INTO "ForumCasePost" ("ID", "SituationMarkdown", "ActionTakenMarkdown", "OutcomeMarkdown", "IsAnonymized", "AnonymizedAuthorAlias") VALUES ('${c.ID}', ${escapeSqlite(c.SituationMarkdown)}, ${escapeSqlite(c.ActionTakenMarkdown)}, ${escapeSqlite(c.OutcomeMarkdown)}, ${escapeSqlite(c.IsAnonymized)}, ${escapeSqlite(c.AnonymizedAuthorAlias)}) ON CONFLICT("ID") DO UPDATE SET "SituationMarkdown" = excluded."SituationMarkdown", "ActionTakenMarkdown" = excluded."ActionTakenMarkdown", "OutcomeMarkdown" = excluded."OutcomeMarkdown";`,
     );
   }
 
-  // 18. ForumAMAPost (2)
+  // 22. ForumAMAPost (2)
   for (const ama of dataset.AMAPosts) {
     lines.push(
       `INSERT INTO "ForumAMAPost" ("ID", "HostUserID", "ScheduledStartAt", "ScheduledEndAt", "QuestionsOpenAt", "IsLiveNow", "RecapMarkdown") VALUES ('${ama.ID}', '${ama.HostUserID}', ${escapeSqlite(ama.ScheduledStartAt)}, ${escapeSqlite(ama.ScheduledEndAt)}, ${escapeSqlite(ama.QuestionsOpenAt)}, ${escapeSqlite(ama.IsLiveNow)}, ${escapeSqlite(ama.RecapMarkdown)}) ON CONFLICT("ID") DO UPDATE SET "IsLiveNow" = excluded."IsLiveNow", "RecapMarkdown" = excluded."RecapMarkdown";`,
     );
   }
 
-  // 19-20. ForumInteractivePost (1) & ForumInteractiveSession (6)
+  // 23-24. Artifact/ArtifactVersion + ForumInteractivePost (1) & ForumInteractiveSession (6)
+  lines.push(
+    `INSERT INTO "Artifact" ("ID", "EnvironmentID", "Name", "Description", "TypeID", "UserID", "Visibility") VALUES ('${ARCH_INTERACTIVE_ARTIFACT_ID}', '${ARCH_DEFAULT_ENVIRONMENT_ID}', 'IBC 2027 Mass Timber Readiness Challenge', 'Interactive AGPA Type IV-A/B/C readiness quiz component.', '${ARCH_DEFAULT_ARTIFACT_TYPE_ID}', '${ownerId}', 'Always') ON CONFLICT("ID") DO NOTHING;`,
+    `INSERT INTO "ArtifactVersion" ("ID", "ArtifactID", "VersionNumber", "UserID", "ContentMode", "ForceToolsOnly") VALUES ('${ARCH_INTERACTIVE_ARTIFACT_VERSION_ID}', '${ARCH_INTERACTIVE_ARTIFACT_ID}', 1, '${ownerId}', 'Text', 0) ON CONFLICT("ID") DO NOTHING;`,
+  );
   for (const inter of dataset.InteractivePosts) {
     lines.push(
       `INSERT INTO "ForumInteractivePost" ("ID", "ComponentArtifactID", "PinnedArtifactVersionID", "ExperienceKind", "ScoringMode", "ShowLeaderboard", "MaxAttemptsPerMember", "PlayCount") VALUES ('${inter.ID}', '${ARCH_INTERACTIVE_ARTIFACT_ID}', '${ARCH_INTERACTIVE_ARTIFACT_VERSION_ID}', ${escapeSqlite(inter.ExperienceKind)}, ${escapeSqlite(inter.ScoringMode)}, ${escapeSqlite(inter.ShowLeaderboard)}, ${inter.MaxAttemptsPerMember ?? 'NULL'}, ${inter.PlayCount ?? 0}) ON CONFLICT("ID") DO UPDATE SET "PlayCount" = excluded."PlayCount";`,
@@ -3153,14 +3296,14 @@ function buildSqliteScript(dataset) {
     );
   }
 
-  // 21. ForumPostTag (38)
+  // 25. ForumPostTag (38)
   for (const pt of dataset.PostTags) {
     lines.push(
       `INSERT INTO "ForumPostTag" ("ID", "PostID", "TopicTagID", "AssignedByAI") VALUES ('${pt.ID}', '${pt.PostID}', '${pt.TopicTagID}', 0) ON CONFLICT("ID") DO NOTHING;`,
     );
   }
 
-  // 22. ForumPostReaction (10) & ForumPostFlag (2)
+  // 26-27. ForumPostReaction (10) & ForumPostFlag (2)
   for (const rx of dataset.PostReactions) {
     lines.push(
       `INSERT INTO "ForumPostReaction" ("ID", "PostID", "UserID", "ReactionKind", "Weight") VALUES ('${rx.ID}', '${rx.PostID}', '${rx.UserID}', ${escapeSqlite(rx.ReactionKind)}, ${rx.Weight ?? 1.0}) ON CONFLICT("ID") DO UPDATE SET "Weight" = excluded."Weight";`,
@@ -3178,8 +3321,8 @@ function buildSqliteScript(dataset) {
 }
 
 /**
- * Generates deterministic, idempotent 22-table SQL seed scripts for `ARCH-WORLD` in strict FK
- * dependency order.
+ * Generates deterministic, idempotent 27-table SQL seed scripts for `ARCH-WORLD` in identical
+ * strict FK topological dependency order across SQL Server, PostgreSQL, and SQLite.
  *
  * Calling conventions:
  *  - `BuildArchitectAssociationWorldSql('sqlserver' | 'postgres' | 'sqlite', options)` -> SQL string
@@ -3242,7 +3385,7 @@ export function SeedArchWorldSqliteSync(options = {}) {
 }
 
 /**
- * Executes the generated 22-table `ARCH-WORLD` SQL script against a relational SQL database:
+ * Executes the generated 27-table `ARCH-WORLD` SQL script against a relational SQL database:
  *  - `'sqlite'`: creates/opens `options.sqliteFilePath` via `node:sqlite` (`DatabaseSync` with
  *    `PRAGMA foreign_keys = ON;`), executes `BuildArchitectAssociationWorldSql('sqlite')` in a
  *    transaction, and returns verified row counts across all tables.
@@ -3398,7 +3541,7 @@ async function upsertViaEntityProvider({
 /**
  * Idempotent natural-key loader for the American Guild of Practicing Architects (`ARCH-WORLD`) dataset.
  * Executes every entity through `RunView` natural-key lookup + `Metadata.GetEntityObject(...)` +
- * `ValidateAsync()` + `entity.Save()`, persists all 22+ relational tables to SQLite (`PRAGMA foreign_keys = ON`)
+ * `ValidateAsync()` + `entity.Save()`, persists all 27+ relational tables to SQLite (`PRAGMA foreign_keys = ON`)
  * and JSON snapshot, and optionally applies the SQL script to a live SQL Server / PostgreSQL connection.
  */
 export async function LoadArchitectAssociationWorld(options = {}) {
@@ -3432,18 +3575,25 @@ export async function LoadArchitectAssociationWorld(options = {}) {
   }
 
   // Optional direct SQL Server / PostgreSQL execution when an external pool or sqlExecutor is passed
+  const sqlExecutions = [];
   if (options.sqlPool) {
-    await ExecuteArchitectAssociationWorldSql({ dialect: 'sqlserver', dataset, sqlPool: options.sqlPool });
+    sqlExecutions.push(
+      await ExecuteArchitectAssociationWorldSql({ dialect: 'sqlserver', dataset, sqlPool: options.sqlPool }),
+    );
   }
   if (options.pgPool) {
-    await ExecuteArchitectAssociationWorldSql({ dialect: 'postgres', dataset, pgPool: options.pgPool });
+    sqlExecutions.push(
+      await ExecuteArchitectAssociationWorldSql({ dialect: 'postgres', dataset, pgPool: options.pgPool }),
+    );
   }
   if (options.sqlExecutor) {
-    await ExecuteArchitectAssociationWorldSql({
-      dialect: options.dialect ?? 'sqlserver',
-      dataset,
-      sqlExecutor: options.sqlExecutor,
-    });
+    sqlExecutions.push(
+      await ExecuteArchitectAssociationWorldSql({
+        dialect: options.dialect ?? 'sqlserver',
+        dataset,
+        sqlExecutor: options.sqlExecutor,
+      }),
+    );
   }
 
   const prevMetadataProvider = Metadata.Provider;
@@ -3635,7 +3785,7 @@ export async function LoadArchitectAssociationWorld(options = {}) {
       });
     }
 
-    // 6. Forum Members, Member Profiles & Topic Tags (needed before ForumSubscriptions)
+    // 6. Forum Members & Member Profiles
     for (const fm of dataset.ForumMembers) {
       await upsertViaEntityProvider({
         metadata,
@@ -3661,21 +3811,6 @@ export async function LoadArchitectAssociationWorld(options = {}) {
         },
         contextUser: defaultAdminUser,
         ignoredCompareFields: new Set(['HelpfulAnswerCount', 'AcceptedAnswerCount']),
-        counters,
-        validatedCounter,
-      });
-    }
-    for (const sub of dataset.ForumSubscriptions) {
-      await upsertViaEntityProvider({
-        metadata,
-        runView,
-        entityName: COMMUNITY_ENTITY_NAMES.ForumSubscriptions,
-        naturalFilter: `ForumID = '${escapeFilterValue(sub.ForumID)}' AND UserID = '${escapeFilterValue(sub.UserID)}'`,
-        desiredData: {
-          ...sub,
-          DeliveryLevel: normalizeSubscriptionDeliveryLevel(sub),
-        },
-        contextUser: defaultAdminUser,
         counters,
         validatedCounter,
       });
@@ -3726,6 +3861,23 @@ export async function LoadArchitectAssociationWorld(options = {}) {
         contextUser: postContextUser,
         preserveFields: postPreserveFields,
         ignoredCompareFields: postPreserveFields,
+        counters,
+        validatedCounter,
+      });
+    }
+
+    // 8b. Forum Subscriptions (after User, Forum, TopicTags, ForumPosts)
+    for (const sub of dataset.ForumSubscriptions) {
+      await upsertViaEntityProvider({
+        metadata,
+        runView,
+        entityName: COMMUNITY_ENTITY_NAMES.ForumSubscriptions,
+        naturalFilter: `ForumID = '${escapeFilterValue(sub.ForumID)}' AND UserID = '${escapeFilterValue(sub.UserID)}'`,
+        desiredData: {
+          ...sub,
+          DeliveryLevel: normalizeSubscriptionDeliveryLevel(sub),
+        },
+        contextUser: defaultAdminUser,
         counters,
         validatedCounter,
       });
@@ -3939,6 +4091,7 @@ export async function LoadArchitectAssociationWorld(options = {}) {
       store,
       provider,
       mode: usingCustomMetadata ? 'external-provider' : 'entity-provider-sqlite-persisted',
+      sqlExecutions,
       persistenceFilePath,
       sqliteFilePath,
       sqliteCounts: sqliteFilePath && existsSync(sqliteFilePath) ? QueryArchWorldSqliteCounts(sqliteFilePath) : null,
@@ -4103,7 +4256,39 @@ export function CreateArchWorldRuntimeBridge(store, options = {}) {
       return existing ? { ...existing, Save: async () => true } : null;
     }
 
-    if (entityName === 'MJ_BizApps_Collaboration: Spaces') {
+    if (entityName === 'MJ_BizApps_Collaboration: Space Types') {
+    return {
+      ...row,
+      Vocabulary: row.Vocabulary ?? row.Code ?? 'community',
+      Discoverability: row.Discoverability ?? 'Listed',
+      JoinMode: row.JoinMode ?? 'SelfServe',
+      MessagingPanel: row.MessagingPanel ?? true,
+      LibraryPanel: row.LibraryPanel ?? true,
+      WorkPanel: row.WorkPanel ?? true,
+      DefaultAgentRetrieval: row.DefaultAgentRetrieval ?? 'Included',
+      DefaultBand: row.DefaultBand ?? 'Shared',
+      InviteApproval: row.InviteApproval ?? 'Approve',
+      DisplayRank: row.DisplayRank ?? 0,
+      IsActive: row.IsActive ?? true,
+      DefaultAllowParentAssignees: row.DefaultAllowParentAssignees ?? true,
+    };
+  }
+  if (entityName === 'MJ_BizApps_Collaboration: Space Role Types') {
+    const level = row.Level ?? 100;
+    return {
+      ...row,
+      Level: level,
+      MaxGrantableLevel: row.MaxGrantableLevel ?? (row.IsOwnerRole ? level : 0),
+      CanInvite: row.CanInvite ?? false,
+      CanSeeTeamBand: row.CanSeeTeamBand ?? false,
+      CanContribute: row.CanContribute ?? true,
+      IsOwnerRole: row.IsOwnerRole ?? false,
+      CanPromoteBand: row.CanPromoteBand ?? false,
+      DisplayRank: row.DisplayRank ?? 0,
+      IsActive: row.IsActive ?? true,
+    };
+  }
+  if (entityName === 'MJ_BizApps_Collaboration: Spaces') {
       const spaceRecord = {
         ID: '',
         SpaceTypeID: '',
@@ -4286,7 +4471,7 @@ if (import.meta.url === `file://${process.argv[1]}`) {
       await client.connect();
       try {
         await ExecuteArchitectAssociationWorldSql({ dialect: 'postgres', pgPool: client });
-        console.log('[arch-world-loader] Applied PostgreSQL ARCH-WORLD 22-table seed cleanly.');
+        console.log('[arch-world-loader] Applied PostgreSQL ARCH-WORLD 27-table seed cleanly.');
       } finally {
         await client.end();
       }
@@ -4299,7 +4484,7 @@ if (import.meta.url === `file://${process.argv[1]}`) {
       const pool = await mssql.default.connect(mssqlConn);
       try {
         await ExecuteArchitectAssociationWorldSql({ dialect: 'sqlserver', sqlPool: pool });
-        console.log('[arch-world-loader] Applied SQL Server ARCH-WORLD 22-table seed cleanly.');
+        console.log('[arch-world-loader] Applied SQL Server ARCH-WORLD 27-table seed cleanly.');
       } finally {
         await pool.close();
       }

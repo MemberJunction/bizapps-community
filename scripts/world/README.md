@@ -45,30 +45,35 @@ flowchart TB
 
 ### Mode A: Live SQL Server / PostgreSQL Database Seeding (MJ Explorer)
 
-`BuildArchitectAssociationWorldSql(dialect, options)` emits a complete, **22-table FK-safe** idempotent SQL seed script (`IF NOT EXISTS ... INSERT ... ELSE UPDATE` for `'sqlserver'`, `INSERT ... ON CONFLICT ("ID") DO UPDATE SET ...` for `'postgres'`) in strict topological dependency order:
+`BuildArchitectAssociationWorldSql(dialect, options)` emits a complete, **27-table FK-safe** idempotent SQL seed script (`IF NOT EXISTS ... INSERT ... ELSE UPDATE` for `'sqlserver'`, `INSERT ... ON CONFLICT ("ID") DO UPDATE SET ...` for `'postgres'`, and `INSERT ... ON CONFLICT("ID") DO UPDATE SET ...` for `'sqlite'`) in **identical topological dependency order** across all three dialects:
 
-1. `__mj.User` (all 26 `ARCH_MEMBERS` with `ID`, `Name`, `FirstName`, `LastName`, `Email`, `Type`, `IsActive`)
-2. `__mj_BizAppsCollaboration.Space` (4 spaces)
-3. `__mj_BizAppsCollaboration.SpaceMember` (64 space memberships)
-4. `__mj_BizAppsCommunity.CommunitySpace` (4 community spaces)
-5. `__mj_BizAppsCommunity.ForumType` (6), `PostType` (13), & `ForumRoleType` (7)
-6. `__mj_BizAppsCommunity.Forum` (13 forums)
-7. `__mj_BizAppsCommunity.ForumMember` (14 forum memberships)
-8. `__mj_BizAppsCommunity.CommunityMemberProfile` (26 profiles)
-9. `__mj_BizAppsCommunity.ForumSubscription` (10 subscriptions)
-10. `__mj_BizAppsCommunity.ForumTopicTag` (22 space-local tags)
-11. `__mj_BizAppsCommunity.ForumPost` (68 posts in topological parent/root-before-child order)
-12. `__mj_BizAppsCommunity.ForumQuestionPost` (inserted initially with `AcceptedAnswerPostID = NULL` for cyclic-FK safety)
-13. `__mj_BizAppsCommunity.ForumAnswerPost` (7 answers) + cyclic-FK-safe `UPDATE ForumQuestionPost` linking `AcceptedAnswerPostID` and `AICanonAnswerPostID`
-14. `__mj_BizAppsCommunity.ForumIdeaCampaign` (1 campaign)
-15. `__mj_BizAppsCommunity.ForumIdeaPost` (5 proposals)
-16. `__mj_BizAppsCommunity.ForumIdeaAllocation` (25 allocations) + `UPDATE ForumIdeaPost` aggregate recomputation
-17. `__mj_BizAppsCommunity.ForumCasePost` (2 peer case reviews)
-18. `__mj_BizAppsCommunity.ForumAMAPost` (2 live AMAs)
-19. `__mj_BizAppsCommunity.ForumInteractivePost` (1 interactive quiz backed by `Artifact` + `ArtifactVersion`)
-20. `__mj_BizAppsCommunity.ForumInteractiveSession` (6 player attempts)
-21. `__mj_BizAppsCommunity.ForumPostTag` (38 space-scoped post tags)
-22. `__mj_BizAppsCommunity.ForumPostReaction` (10 reactions) & `__mj_BizAppsCommunity.ForumPostFlag` (2 flags)
+1. `__mj_BizAppsCollaboration.SpaceType` (2 space types)
+2. `__mj_BizAppsCollaboration.SpaceRoleType` (4 space role types, including `A7C40010-4E12-4B8F-9A10-000000000003` Contributor)
+3. `__mj_BizAppsCommunity.ForumType` (6 forum types)
+4. `__mj_BizAppsCommunity.PostType` (13 post types)
+5. `__mj_BizAppsCommunity.ForumRoleType` (7 forum role types)
+6. `__mj.User` (all 26 `ARCH_MEMBERS` with `ID`, `Name`, `FirstName`, `LastName`, `Email`, `Type`, `IsActive`)
+7. `__mj_BizAppsCollaboration.Space` (4 spaces)
+8. `__mj_BizAppsCollaboration.SpaceMember` (64 space memberships)
+9. `__mj_BizAppsCommunity.CommunitySpace` (4 community spaces)
+10. `__mj_BizAppsCommunity.Forum` (13 forums)
+11. `__mj_BizAppsCommunity.ForumMember` (14 forum memberships)
+12. `__mj_BizAppsCommunity.CommunityMemberProfile` (26 profiles)
+13. `__mj_BizAppsCommunity.ForumTopicTag` (22 space-local tags)
+14. `__mj_BizAppsCommunity.ForumPost` (68 posts in topological parent/root-before-child order)
+15. `__mj_BizAppsCommunity.ForumSubscription` (10 subscriptions)
+16. `__mj_BizAppsCommunity.ForumQuestionPost` (inserted initially with `AcceptedAnswerPostID = NULL` for cyclic-FK safety)
+17. `__mj_BizAppsCommunity.ForumAnswerPost` (7 answers) + cyclic-FK-safe `UPDATE ForumQuestionPost` linking `AcceptedAnswerPostID` and `AICanonAnswerPostID`
+18. `__mj_BizAppsCommunity.ForumIdeaCampaign` (1 campaign)
+19. `__mj_BizAppsCommunity.ForumIdeaPost` (5 proposals)
+20. `__mj_BizAppsCommunity.ForumIdeaAllocation` (25 allocations) + `UPDATE ForumIdeaPost` aggregate recomputation
+21. `__mj_BizAppsCommunity.ForumCasePost` (2 peer case reviews)
+22. `__mj_BizAppsCommunity.ForumAMAPost` (2 live AMAs)
+23. `__mj_BizAppsCommunity.ForumInteractivePost` (1 interactive quiz backed by `Artifact` + `ArtifactVersion`)
+24. `__mj_BizAppsCommunity.ForumInteractiveSession` (6 player attempts)
+25. `__mj_BizAppsCommunity.ForumPostTag` (38 space-scoped post tags)
+26. `__mj_BizAppsCommunity.ForumPostReaction` (10 reactions)
+27. `__mj_BizAppsCommunity.ForumPostFlag` (2 moderation flags)
 
 ```bash
 # Export SQL Server or PostgreSQL seed files
@@ -123,7 +128,7 @@ Calling `LoadArchitectAssociationWorld({ store })` twice in sequence produces `c
 
 Because `TeardownArchitectAssociationWorld()` retains the world after test execution, `scripts/world/arch-world-integration.mjs` explicitly verifies **two consecutive integration suite runs** against the exact same retained store and SQLite database:
 - Double-loading remains idempotent (`createdCount === 0`).
-- Double SQL execution (`ExecuteArchitectAssociationWorldSql`) against SQLite with `PRAGMA foreign_keys = ON` produces 0 FK violations and identical counts across all 22+ tables.
+- Double SQL execution (`ExecuteArchitectAssociationWorldSql`) across SQL Server, PostgreSQL, and SQLite with `PRAGMA foreign_keys = ON` produces 0 FK violations and identical counts across all 27 tables.
 - Thread graduation uses `BuildDeterministicGraduationUUID` and returns `alreadyGraduated: true` on run #2 with zero duplicate Spaces or Tasks.
 - Quadratic wallet updates use refund-on-revote (`CommunityRules.ValidateIdeaAllocationChange`) so consecutive runs never exhaust the 100-point member budget or violate `(IdeaPostID, UserID)` uniqueness.
 - Inbound email replies use deterministic message correlation IDs / idempotent check guards so repeat runs stay bounded and deterministic.
