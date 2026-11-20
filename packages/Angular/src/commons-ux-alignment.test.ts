@@ -14,9 +14,12 @@ import {
   COMMUNITY_TOPIC_TAGS,
   ComputeNextTrapFocusTarget,
   CreateAskShareStreamItem,
+  FilterAskShareTopicTagSuggestions,
+  FilterForumsForAskShareEntryType,
   FilterCommonsStream,
   FindMatchedCanonQuestion,
   GraduateStreamItem,
+  IsForumCompatibleWithAskShareEntryType,
   PersistAskSharePost,
   PersistDetailReply,
   ResolveAuthorizedForumTarget,
@@ -958,6 +961,211 @@ describe('Slice 3 — Live Thread Reply, Upvote Reaction, Dynamic Directories, T
     });
     assert.equal(offline.success, true);
     assert.equal(offline.offlineFallback, true);
+  });
+
+  it('filters Publication Forums by Entry Type compatibility and surfaces server validation errors on Ask/Share save', async () => {
+    const SPACE_A = '10000000-0000-4000-8000-000000000001';
+    const SPACE_B = '10000000-0000-4000-8000-000000000002';
+    const forums = [
+      { id: 'f-case', name: 'California Peer Case Rounds', spaceId: SPACE_A, dbSpaceId: SPACE_A, forumTypeCode: 'peer-case-rounds', status: 'Active', postingPolicy: 'Open' },
+      { id: 'f-idea', name: 'Grant Pool', spaceId: SPACE_A, dbSpaceId: SPACE_A, forumTypeCode: 'ideation-campaign', status: 'Active', postingPolicy: 'Open' },
+      { id: 'f-lounge-a', name: 'California Chapter Lounge', spaceId: SPACE_A, dbSpaceId: SPACE_A, forumTypeCode: 'general-discussion', status: 'Active', postingPolicy: 'Open' },
+      { id: 'f-qa-a', name: 'California Milk & Cave Q&A', spaceId: SPACE_A, dbSpaceId: SPACE_A, forumTypeCode: 'qa-knowledge-base', status: 'Active', postingPolicy: 'Open' },
+      { id: 'f-playbook-b', name: 'Living Creamery Playbooks', spaceId: SPACE_B, dbSpaceId: SPACE_B, forumTypeCode: 'playbooks-and-docs', status: 'Active', postingPolicy: 'Open' },
+      { id: 'f-readonly', name: 'Archived Announcements', spaceId: SPACE_A, dbSpaceId: SPACE_A, forumTypeCode: 'general-discussion', status: 'Active', postingPolicy: 'ReadOnly' },
+    ];
+
+    assert.equal(IsForumCompatibleWithAskShareEntryType(forums[0], 'Discussion Post'), false);
+    assert.equal(IsForumCompatibleWithAskShareEntryType(forums[0], 'Question'), false);
+    assert.equal(IsForumCompatibleWithAskShareEntryType(forums[2], 'Discussion Post'), true);
+    assert.equal(IsForumCompatibleWithAskShareEntryType(forums[3], 'Question'), true);
+    assert.equal(IsForumCompatibleWithAskShareEntryType(forums[3], 'Discussion Post'), false);
+    assert.equal(IsForumCompatibleWithAskShareEntryType(forums[4], 'Playbook Note'), true);
+    assert.equal(IsForumCompatibleWithAskShareEntryType(forums[5], 'Discussion Post'), false);
+
+    const discussionForums = FilterForumsForAskShareEntryType(forums, 'Discussion Post');
+    assert.deepEqual(discussionForums.map((f) => f.id), ['f-lounge-a']);
+
+    const questionForums = FilterForumsForAskShareEntryType(forums, 'Question');
+    assert.deepEqual(questionForums.map((f) => f.id), ['f-qa-a', 'f-lounge-a']);
+
+    const playbookForums = FilterForumsForAskShareEntryType(forums, 'Playbook Note');
+    assert.deepEqual(playbookForums.map((f) => f.id), ['f-playbook-b', 'f-lounge-a']);
+
+    const postTypes = new Map<string, string>([['discussion', REPLY_PT_ID]]);
+    let saveCalled = false;
+    const rejectedIncompatible = await PersistAskSharePost({
+      draft: {
+        entryType: 'Discussion Post',
+        title: 'Incompatible forum attempt',
+        spaceId: SPACE_A,
+        body: 'Should fail cleanly before save.',
+        tagsInput: '',
+      },
+      isOfflineDemoMode: false,
+      targetForumId: 'f-case',
+      allowedForumIDs: ['f-case', 'f-lounge-a'],
+      authorizedForums: forums,
+      postTypeIdByCode: postTypes,
+      currentUserId: USER_ID,
+      authorName: 'Ada',
+      createForumPostEntity: async () => ({
+        ID: POST_ID,
+        ForumID: '',
+        AuthorUserID: '',
+        PostTypeID: '',
+        Title: '',
+        BodyMarkdown: '',
+        Status: 'Draft',
+        Save: async () => {
+          saveCalled = true;
+          return true;
+        },
+      }),
+    });
+    assert.equal(rejectedIncompatible.success, false);
+    assert.equal(saveCalled, false);
+    assert.match(rejectedIncompatible.errorMessage ?? '', /does not accept "Discussion Post"/);
+
+    // Server LatestResult.CompleteMessage must be surfaced rather than swallowed
+    const serverErrorCase = await PersistAskSharePost({
+      draft: {
+        entryType: 'Discussion Post',
+        title: 'Server error surfacing check',
+        spaceId: SPACE_A,
+        body: 'Ensure real validation error propagates.',
+        tagsInput: '',
+      },
+      isOfflineDemoMode: false,
+      targetForumId: 'f-lounge-a',
+      allowedForumIDs: ['f-lounge-a'],
+      authorizedForums: forums,
+      postTypeIdByCode: postTypes,
+      currentUserId: USER_ID,
+      authorName: 'Ada',
+      createForumPostEntity: async () => ({
+        ID: POST_ID,
+        ForumID: '',
+        AuthorUserID: '',
+        PostTypeID: '',
+        Title: '',
+        BodyMarkdown: '',
+        Status: 'Draft',
+        LatestResult: { CompleteMessage: 'Role "Observer" does not allow creating root posts.' },
+        Save: async () => false,
+      }),
+    });
+    assert.equal(serverErrorCase.success, false);
+    assert.match(serverErrorCase.errorMessage ?? '', /Role "Observer" does not allow creating root posts/);
+
+    // Cross-Space tags must never be attached onto a post in a different Space
+    const otherSpaceTagId = '99999999-9999-4999-8999-999999999999';
+    let tagAttachAttempted = false;
+    const crossSpaceOk = await PersistAskSharePost({
+      draft: {
+        entryType: 'Discussion Post',
+        title: 'Space-scoped tag safety',
+        spaceId: SPACE_A,
+        body: 'Must skip tags belonging to another Space.',
+        tagsInput: 'Other Space Tag',
+      },
+      isOfflineDemoMode: false,
+      targetForumId: 'f-lounge-a',
+      allowedForumIDs: ['f-lounge-a'],
+      authorizedForums: forums,
+      postTypeIdByCode: postTypes,
+      currentUserId: USER_ID,
+      authorName: 'Ada',
+      selectedTopicTagIds: [otherSpaceTagId],
+      topicTags: [{ ID: otherSpaceTagId, SpaceID: SPACE_B, Name: 'Other Space Tag', PostCount: 10 }],
+      createForumPostEntity: async () => ({
+        ID: POST_ID,
+        ForumID: '',
+        AuthorUserID: '',
+        PostTypeID: '',
+        Title: '',
+        BodyMarkdown: '',
+        Status: 'Draft',
+        Save: async () => true,
+      }),
+      createPostTagEntity: async () => {
+        tagAttachAttempted = true;
+        return { PostID: '', TopicTagID: '', AssignedByAI: false, Save: async () => false };
+      },
+    });
+    assert.equal(crossSpaceOk.success, true);
+    assert.equal(tagAttachAttempted, false);
+  });
+
+  it('uses typing-based tag autocomplete instead of dumping all forum topic tags in the Ask/Share modal', () => {
+    const tags = [
+      { ID: '11111111-1111-4111-8111-111111111111', SpaceID: SPACE_ID, Slug: 'raw-milk-aging', Name: 'Raw-Milk Aging Rule', PostCount: 12 },
+      { ID: '22222222-2222-4222-8222-222222222222', SpaceID: SPACE_ID, Slug: 'cave-humidity', Name: 'Cave Humidity & Airflow', PostCount: 25 },
+      { ID: '33333333-3333-4333-8333-333333333333', SpaceID: SPACE_ID, Slug: 'milk-quality', Name: 'Milk Quality & SCC', PostCount: 8 },
+      { ID: '44444444-4444-4444-8444-444444444444', SpaceID: SPACE_ID, Slug: 'milk-surplus', Name: 'Milk Surplus Diversion', PostCount: 19 },
+    ];
+
+    // Empty input returns zero suggestions (never dumps the full catalog)
+    assert.deepEqual(
+      FilterAskShareTopicTagSuggestions({ availableTags: tags, query: '', selectedTagIds: [] }),
+      [],
+    );
+    assert.deepEqual(
+      FilterAskShareTopicTagSuggestions({ availableTags: tags, query: '   ', selectedTagIds: [] }),
+      [],
+    );
+
+    // Typing "milk" ranks prefix matches by PostCount, then substring matches, and excludes selected tags
+    const milkMatches = FilterAskShareTopicTagSuggestions({
+      availableTags: tags,
+      query: 'milk',
+      selectedTagIds: ['44444444-4444-4444-8444-444444444444'],
+    });
+    assert.deepEqual(
+      milkMatches.map((t) => t.Name),
+      ['Milk Quality & SCC', 'Raw-Milk Aging Rule'],
+    );
+
+    // Comma-separated input filters on the trailing active token only
+    const trailingMatches = FilterAskShareTopicTagSuggestions({
+      availableTags: tags,
+      query: 'Custom Tag, cave',
+      selectedTagIds: [],
+    });
+    assert.deepEqual(
+      trailingMatches.map((t) => t.Name),
+      ['Cave Humidity & Airflow'],
+    );
+
+    // Template renders combobox autocomplete and removable chips, not the raw tag button wall
+    assert.match(hubHtml, /id="mjc-ask-share-tags-input"[\s\S]*role="combobox"/);
+    assert.match(hubHtml, /id="mjc-ask-share-tag-suggestions"/);
+    assert.match(hubHtml, /@for \(forum of compatibleAskShareForums; track forum\.id\)/);
+    assert.doesNotMatch(hubHtml, /aria-label="Forum topic tags"/);
+  });
+
+  it('persists shared-PK ForumQuestionPost ID explicitly via CreateForumQuestionPostGraphQLAdapter', async () => {
+    const calls: Array<{ query: string; variables: CommunityHubMutations.CommunityGraphQLVariables }> = [];
+    const adapter = CommunityHubMutations.CreateForumQuestionPostGraphQLAdapter({
+      ExecuteGQL: async (query, variables) => {
+        calls.push({ query, variables });
+        if (query.includes('CreatemjBizAppsCommunityForumQuestionPost')) {
+          return { CreatemjBizAppsCommunityForumQuestionPost: { ID: POST_ID } };
+        }
+        return { DeletemjBizAppsCommunityForumQuestionPost: { ID: POST_ID } };
+      },
+    });
+    adapter.ID = POST_ID;
+    const saved = await adapter.Save();
+    assert.equal(saved, true);
+    assert.equal(calls.length, 1);
+    assert.match(calls[0].query, /CreatemjBizAppsCommunityForumQuestionPost/);
+    assert.deepEqual(calls[0].variables, { input: { ID: POST_ID } });
+
+    const deleted = await adapter.Delete();
+    assert.equal(deleted, true);
+    assert.equal(calls.length, 2);
+    assert.match(calls[1].query, /DeletemjBizAppsCommunityForumQuestionPost/);
   });
 
   it('wires KnowledgeStream inputs/errors cleanly and never applies seeded fallbacks inside live catch blocks', () => {

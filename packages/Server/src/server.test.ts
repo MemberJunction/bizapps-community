@@ -20,6 +20,7 @@ const {
   CommunityPublicEdgeService,
   DeduplicateUUIDsCaseInsensitive,
   LoadBizAppsCommunityServer,
+  RESOLVER_PATHS,
   SaveOrThrow,
   ThreadGraduationService,
   ValidateCanonPromotionCrossReferences,
@@ -1408,5 +1409,17 @@ describe('@mj-biz-apps/community-server services and document blocks', () => {
         mock.restoreAll();
       }
     });
+  });
+
+  it('exports RESOLVER_PATHS including generated entity GraphQL resolvers and custom Community resolvers', () => {
+    assert.ok(Array.isArray(RESOLVER_PATHS), 'RESOLVER_PATHS must be an array');
+    assert.ok(
+      RESOLVER_PATHS.some((p: string) => p.endsWith('/generated/generated.{js,ts}')),
+      `RESOLVER_PATHS must include generated/generated.{js,ts}: ${JSON.stringify(RESOLVER_PATHS)}`,
+    );
+    assert.ok(
+      RESOLVER_PATHS.some((p: string) => p.endsWith('/resolvers.{js,ts}')),
+      `RESOLVER_PATHS must include resolvers.{js,ts}: ${JSON.stringify(RESOLVER_PATHS)}`,
+    );
   });
 });

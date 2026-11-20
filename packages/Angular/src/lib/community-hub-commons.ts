@@ -143,6 +143,9 @@ export interface AuthorizedForumOption {
   name: string;
   spaceId: CommunitySpaceFilterId;
   dbSpaceId?: string | null;
+  forumTypeCode?: string | null;
+  status?: string | null;
+  postingPolicy?: string | null;
 }
 
 export interface LiveSpaceDirectoryRow {
@@ -168,6 +171,11 @@ export interface LiveForumTopicTagRow {
   PostCount?: number | null;
 }
 
+export interface EntitySaveResultLike {
+  CompleteMessage?: string | null;
+  Message?: string | null;
+}
+
 export interface AskSharePostEntityLike {
   ID: mjBizAppsCommunityForumPostEntity['ID'];
   ForumID: mjBizAppsCommunityForumPostEntity['ForumID'];
@@ -176,12 +184,14 @@ export interface AskSharePostEntityLike {
   Title: mjBizAppsCommunityForumPostEntity['Title'];
   BodyMarkdown: mjBizAppsCommunityForumPostEntity['BodyMarkdown'];
   Status: mjBizAppsCommunityForumPostEntity['Status'];
+  LatestResult?: EntitySaveResultLike | null;
   Save(): Promise<boolean>;
   Delete?(): Promise<boolean>;
 }
 
 export interface AskShareQuestionPostEntityLike {
   ID: mjBizAppsCommunityForumQuestionPostEntity['ID'];
+  LatestResult?: EntitySaveResultLike | null;
   Save(): Promise<boolean>;
   Delete?(): Promise<boolean>;
 }
@@ -191,6 +201,7 @@ export interface AskSharePostTagEntityLike {
   PostID: mjBizAppsCommunityForumPostTagEntity['PostID'];
   TopicTagID: mjBizAppsCommunityForumPostTagEntity['TopicTagID'];
   AssignedByAI: mjBizAppsCommunityForumPostTagEntity['AssignedByAI'];
+  LatestResult?: EntitySaveResultLike | null;
   Save(): Promise<boolean>;
 }
 
@@ -1115,6 +1126,162 @@ export function ResolveAskSharePostTypeCode(entryType: AskShareEntryType): strin
   return 'discussion';
 }
 
+/**
+ * Checks whether an authorized Forum accepts root posts for the chosen Ask/Share entry type,
+ * matching the authoritative server ForumType drivers (`QAForumServerDriver`,
+ * `PlaybooksForumServerDriver`, `CaseRoundsForumServerDriver`, `IdeaCampaignForumServerDriver`,
+ * `LiveEventsForumServerDriver`).
+ */
+export function IsForumCompatibleWithAskShareEntryType(
+  forum: AuthorizedForumOption,
+  entryType: AskShareEntryType,
+): boolean {
+  if (forum.status && forum.status !== 'Active') {
+    return false;
+  }
+  if (forum.postingPolicy === 'ReadOnly') {
+    return false;
+  }
+  const forumTypeCode = forum.forumTypeCode?.trim().toLowerCase() ?? '';
+  if (!forumTypeCode) {
+    return true;
+  }
+
+  const postTypeCode = ResolveAskSharePostTypeCode(entryType);
+  switch (forumTypeCode) {
+    case 'qa-knowledge-base':
+      return postTypeCode === 'question';
+    case 'live-events-and-amas':
+      return postTypeCode === 'question' || postTypeCode === 'live-ama';
+    case 'playbooks-and-docs':
+      return (
+        postTypeCode === 'collaborative-doc' ||
+        postTypeCode === 'collaborative-sheet' ||
+        postTypeCode === 'collaborative-deck'
+      );
+    case 'peer-case-rounds':
+      return postTypeCode === 'case-review';
+    case 'ideation-campaign':
+      return postTypeCode === 'idea-proposal' || postTypeCode === 'poll-or-form';
+    default:
+      return true;
+  }
+}
+
+function getForumTypeRankForEntryType(forumTypeCode: string | null | undefined, entryType: AskShareEntryType): number {
+  const code = forumTypeCode?.trim().toLowerCase() ?? '';
+  if (entryType === 'Question') {
+    if (code === 'qa-knowledge-base') return 0;
+    if (code === 'live-events-and-amas') return 1;
+    if (code === 'general-discussion' || !code) return 2;
+    return 3;
+  }
+  if (entryType === 'Playbook Note') {
+    if (code === 'playbooks-and-docs') return 0;
+    if (code === 'general-discussion' || !code) return 1;
+    return 2;
+  }
+  if (code === 'general-discussion' || !code) return 0;
+  return 1;
+}
+
+/**
+ * Filters and ranks authorized forums so the Publication Forum dropdown only shows forums that
+ * accept the selected `entryType`, prioritizing the active Space (if any) and best-fit ForumType.
+ */
+export function FilterForumsForAskShareEntryType(
+  forums: ReadonlyArray<AuthorizedForumOption>,
+  entryType: AskShareEntryType,
+  preferredSpaceId?: CommunitySpaceFilterId | null,
+): AuthorizedForumOption[] {
+  const normalizedSpace =
+    preferredSpaceId && preferredSpaceId !== 'all' ? preferredSpaceId.trim().toLowerCase() : null;
+
+  return forums
+    .filter((forum) => IsForumCompatibleWithAskShareEntryType(forum, entryType))
+    .sort((a, b) => {
+      if (normalizedSpace) {
+        const aInSpace =
+          a.spaceId.trim().toLowerCase() === normalizedSpace ||
+          (a.dbSpaceId?.trim().toLowerCase() ?? '') === normalizedSpace;
+        const bInSpace =
+          b.spaceId.trim().toLowerCase() === normalizedSpace ||
+          (b.dbSpaceId?.trim().toLowerCase() ?? '') === normalizedSpace;
+        if (aInSpace !== bInSpace) {
+          return aInSpace ? -1 : 1;
+        }
+      }
+      const rankDelta =
+        getForumTypeRankForEntryType(a.forumTypeCode, entryType) -
+        getForumTypeRankForEntryType(b.forumTypeCode, entryType);
+      if (rankDelta !== 0) {
+        return rankDelta;
+      }
+      return a.name.localeCompare(b.name);
+    });
+}
+
+/**
+ * Filters Space-scoped topic tags for the Ask/Share tag typeahead autocomplete.
+ * Returns an empty array when the active query token is blank so the dialog never dumps an
+ * overwhelming wall of tag buttons; matches on name or slug, excludes already-selected tags,
+ * deduplicates by display name, ranks prefix matches & popular tags first, and caps results.
+ */
+export function FilterAskShareTopicTagSuggestions(params: {
+  availableTags: ReadonlyArray<LiveForumTopicTagRow>;
+  query: string;
+  selectedTagIds: ReadonlyArray<string>;
+  maxResults?: number;
+}): LiveForumTopicTagRow[] {
+  const lastCommaIdx = params.query.lastIndexOf(',');
+  const activeToken = (lastCommaIdx >= 0 ? params.query.slice(lastCommaIdx + 1) : params.query)
+    .trim()
+    .replace(/^#+/, '')
+    .trim()
+    .toLowerCase();
+  if (!activeToken) {
+    return [];
+  }
+
+  const maxResults = params.maxResults ?? 8;
+  const seenNames = new Set<string>();
+  const matched: LiveForumTopicTagRow[] = [];
+
+  for (const tag of params.availableTags) {
+    const trimmedName = tag.Name.trim();
+    if (!trimmedName) continue;
+    if (params.selectedTagIds.some((id) => UUIDsEqual(id, tag.ID))) continue;
+    const lowerName = trimmedName.toLowerCase();
+    const lowerSlug = (tag.Slug ?? '').trim().toLowerCase();
+    if (!lowerName.includes(activeToken) && !lowerSlug.includes(activeToken)) {
+      continue;
+    }
+    if (seenNames.has(lowerName)) continue;
+    seenNames.add(lowerName);
+    matched.push(tag);
+  }
+
+  matched.sort((a, b) => {
+    const aStarts = a.Name.trim().toLowerCase().startsWith(activeToken);
+    const bStarts = b.Name.trim().toLowerCase().startsWith(activeToken);
+    if (aStarts !== bStarts) {
+      return aStarts ? -1 : 1;
+    }
+    const countDelta = (b.PostCount ?? 0) - (a.PostCount ?? 0);
+    if (countDelta !== 0) {
+      return countDelta;
+    }
+    return a.Name.localeCompare(b.Name);
+  });
+
+  return matched.slice(0, maxResults);
+}
+
+function extractEntitySaveError(entity: { LatestResult?: EntitySaveResultLike | null } | null | undefined): string | null {
+  const msg = entity?.LatestResult?.CompleteMessage?.trim() || entity?.LatestResult?.Message?.trim() || '';
+  return msg.length > 0 ? msg : null;
+}
+
 export function ResolveAuthorizedForumTarget(
   targetForumId: string | null | undefined,
   allowedForumIDs: ReadonlyArray<string>,
@@ -1138,10 +1305,9 @@ function resolveMatchedTopicTagsForPost(params: {
   forumSpaceId: string | null;
 }): Array<{ id: string; name: string }> {
   const catalog = params.topicTags ?? [];
-  const scoped = catalog.filter(
-    (t) => !params.forumSpaceId || !t.SpaceID || UUIDsEqual(t.SpaceID, params.forumSpaceId),
-  );
-  const candidates = scoped.length > 0 ? scoped : catalog;
+  const candidates = params.forumSpaceId
+    ? catalog.filter((t) => !t.SpaceID || UUIDsEqual(t.SpaceID, params.forumSpaceId!))
+    : catalog;
   const resolved = new Map<string, { id: string; name: string }>();
 
   for (const selectedId of params.selectedTopicTagIds ?? []) {
@@ -1234,6 +1400,17 @@ export async function PersistAskSharePost(params: PersistAskShareParams): Promis
     };
   }
 
+  if (matchedForum && !IsForumCompatibleWithAskShareEntryType(matchedForum, params.draft.entryType)) {
+    return {
+      success: false,
+      validationErrors: {},
+      errorMessage: `Forum "${matchedForum.name}" does not accept "${params.draft.entryType}" entries. Choose a compatible publication forum.`,
+      persistedPostId: null,
+      resolvedForumId: authorizedForumId,
+      createdItem: null,
+    };
+  }
+
   const typeCode = ResolveAskSharePostTypeCode(params.draft.entryType);
   const postTypeId = params.postTypeIdByCode.get(typeCode.toLowerCase()) ?? null;
   if (!postTypeId) {
@@ -1301,10 +1478,13 @@ export async function PersistAskSharePost(params: PersistAskShareParams): Promis
 
     const saved = await post.Save();
     if (!saved) {
+      const serverReason = extractEntitySaveError(post);
       return {
         success: false,
         validationErrors: {},
-        errorMessage: 'Failed to save Forum Post on server — draft was preserved so nothing was lost.',
+        errorMessage: serverReason
+          ? `Failed to save Forum Post: ${serverReason}`
+          : 'Failed to save Forum Post on server — draft was preserved so nothing was lost.',
         persistedPostId: null,
         resolvedForumId: authorizedForumId,
         createdItem: null,
@@ -1329,11 +1509,14 @@ export async function PersistAskSharePost(params: PersistAskShareParams): Promis
       qPost.ID = savedPostId;
       const qSaved = await qPost.Save();
       if (!qSaved) {
+        const qReason = extractEntitySaveError(qPost);
         await savedPostEntity.Delete?.().catch(() => false);
         return {
           success: false,
           validationErrors: {},
-          errorMessage: 'Failed to save Question subtype entity — rolled back base post.',
+          errorMessage: qReason
+            ? `Failed to save Question subtype: ${qReason} — rolled back base post.`
+            : 'Failed to save Question subtype entity — rolled back base post.',
           persistedPostId: null,
           resolvedForumId: authorizedForumId,
           createdItem: null,
@@ -1362,12 +1545,15 @@ export async function PersistAskSharePost(params: PersistAskShareParams): Promis
         postTag.AssignedByAI = false;
         const tagSaved = await postTag.Save();
         if (!tagSaved) {
+          const tagReason = extractEntitySaveError(postTag);
           await savedQuestionEntity?.Delete?.().catch(() => false);
           await savedPostEntity.Delete?.().catch(() => false);
           return {
             success: false,
             validationErrors: {},
-            errorMessage: `Failed saving topic tag "${topicTag.name}" — rolled back post.`,
+            errorMessage: tagReason
+              ? `Failed saving topic tag "${topicTag.name}": ${tagReason} — rolled back post.`
+              : `Failed saving topic tag "${topicTag.name}" — rolled back post.`,
             persistedPostId: null,
             resolvedForumId: authorizedForumId,
             createdItem: null,

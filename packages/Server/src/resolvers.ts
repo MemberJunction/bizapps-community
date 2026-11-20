@@ -305,7 +305,7 @@ export class ThreadGraduationService {
 
     const lockKey = params.request.questionPostId.trim().toLowerCase();
     const prior = ThreadGraduationService.inFlightCanonPromotions.get(lockKey);
-    const next = (prior ? prior.catch(() => undefined) : Promise.resolve()).then(() =>
+    const next = (prior ? prior.catch((): void => undefined) : Promise.resolve()).then(() =>
       this.executeApplyCanonPromotion(params),
     );
     ThreadGraduationService.inFlightCanonPromotions.set(lockKey, next);
@@ -501,7 +501,7 @@ export class ThreadGraduationService {
   }): Promise<ThreadGraduationResult> {
     const lockKey = params.request.rootPostId.trim().toLowerCase();
     const prior = ThreadGraduationService.inFlightGraduations.get(lockKey);
-    const run = (prior ? prior.catch(() => undefined) : Promise.resolve()).then(() =>
+    const run = (prior ? prior.catch((): void => undefined) : Promise.resolve()).then(() =>
       this.executeGraduateThreadToSpace(params),
     );
     ThreadGraduationService.inFlightGraduations.set(lockKey, run);
