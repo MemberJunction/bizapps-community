@@ -1,11 +1,15 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
+import { IsValidUUID } from '@memberjunction/global';
 import {
   CallbackCommunityEmbeddingProvider,
+  COMMUNITY_ACTION_DRIVER_CLASSES,
+  COMMUNITY_ACTION_IDS,
   CommunityEmbeddingPersonalizationService,
   CosineSimilarity,
   DeterministicSemanticEmbeddingProvider,
   NormalizeVector,
+  ResolveCommunityActionID,
   type CommunityMemberInteraction,
   type PersonalizationCandidatePost,
 } from './index.ts';
@@ -269,5 +273,35 @@ describe('@mj-biz-apps/community-core — CommunityEmbeddingPersonalizationServi
     });
     assert.equal(bounded.ranked.length, 1);
     assert.equal(bounded.ranked[0]?.post.postId, 'cold-low');
+  });
+});
+
+describe('@mj-biz-apps/community-core — ResolveCommunityActionID (CR-03)', () => {
+  it('defines canonical valid UUIDs for every action and resolves live ActionEngineBase catalog entries by DriverClass or Name', () => {
+    for (const [key, id] of Object.entries(COMMUNITY_ACTION_IDS)) {
+      assert.equal(IsValidUUID(id), true, `COMMUNITY_ACTION_IDS.${key} (${id}) must be a valid UUID`);
+    }
+
+    const liveDigestId = 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee';
+    const resolvedFromDriver = ResolveCommunityActionID('SendPersonalizedDigest', [
+      { ID: '11111111-1111-4111-8111-111111111111', DriverClass: 'Other.Action', Status: 'Active' },
+      {
+        ID: liveDigestId,
+        DriverClass: COMMUNITY_ACTION_DRIVER_CLASSES.SendPersonalizedDigest,
+        Name: 'Send Personalized Community Digest',
+        Status: 'Active',
+      },
+    ]);
+    assert.equal(resolvedFromDriver, liveDigestId);
+
+    // Ignores inactive entries and falls back to canonical UUID constant when absent
+    const fallback = ResolveCommunityActionID('SendPersonalizedDigest', [
+      {
+        ID: '22222222-2222-4222-8222-222222222222',
+        DriverClass: COMMUNITY_ACTION_DRIVER_CLASSES.SendPersonalizedDigest,
+        Status: 'Disabled',
+      },
+    ]);
+    assert.equal(fallback, COMMUNITY_ACTION_IDS.SendPersonalizedDigest);
   });
 });

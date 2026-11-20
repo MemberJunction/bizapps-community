@@ -204,7 +204,10 @@ describe('Slice 3 — Semantic Ask-First Deflection', () => {
     const action = new AskFirstDeflectionAction();
 
     try {
-      mock.method(RunView.prototype, 'RunView', async (params: { EntityName: string }) => {
+      mock.method(RunView.prototype, 'RunView', async (params: { EntityName: string; Fields?: string[]; ExtraFilter?: string }) => {
+        if (params.Fields?.includes('ForumPostID') || params.ExtraFilter?.includes('ForumPostID')) {
+          throw new Error(`Invalid schema query: ForumPostID does not exist on ${params.EntityName}; must use PostID.`);
+        }
         if (params.EntityName === COMMUNITY_ENTITY_NAMES.Forums) {
           return { Success: true, Results: [{ ID: FORUM_ID, Slug: 'tax-regulatory' }] };
         }
@@ -283,9 +286,11 @@ describe('Slice 3 — Semantic Ask-First Deflection', () => {
           };
         }
         if (params.EntityName === COMMUNITY_ENTITY_NAMES.ForumPostTags) {
+          assert.ok(params.Fields?.includes('PostID'), 'ForumPostTags query must select PostID');
+          assert.match(params.ExtraFilter ?? '', /\bPostID\b/);
           return {
             Success: true,
-            Results: [{ ForumPostID: QUESTION_ID, TopicTagID: TAG_NEXUS_ID }],
+            Results: [{ PostID: QUESTION_ID, TopicTagID: TAG_NEXUS_ID }],
           };
         }
         if (params.EntityName === COMMUNITY_ENTITY_NAMES.ForumTopicTags) {

@@ -9,14 +9,15 @@ import {
   type mjBizAppsCommunityForumPostEntity,
 } from '@mj-biz-apps/community-entities';
 import { CommunityEngineBase } from '@mj-biz-apps/community-engine-base';
-import type { ForumVisibilityBand } from '@mj-biz-apps/community-core';
+import { CommunityRules, type ForumVisibilityBand } from '@mj-biz-apps/community-core';
 import { SaveOrFail } from './save-or-fail.ts';
-import { ParseAndVerifyInboundEmailReply } from './digest-reply-loop.ts';
+import { ParseAndVerifyInboundEmailReply, ResolveDigestReplySigningSecret } from './digest-reply-loop.ts';
 
 const DEFAULT_REPLY_POST_TYPE_ID = 'C8A17200-4E12-4B8F-9A10-100000000002';
 
 interface AuthoritativeForumRow {
   ID: string;
+  SpaceID: string;
   Name: string;
   Status: ForumStatus;
   PostingPolicy: ForumPostingPolicy;
@@ -47,7 +48,30 @@ interface AuthoritativeRoleTypeRow {
   Name: string;
   CanConfigureForum: boolean;
   CanModerateQueue: boolean;
+  CanCreateRootPost?: boolean;
   CanReply: boolean;
+}
+
+interface CollaborationSpaceRow {
+  ID: string;
+  ParentID: string | null;
+  InheritsMembership: boolean;
+  ClosedAt?: Date | string | null;
+}
+
+interface CollaborationSpaceMemberRow {
+  ID: string;
+  SpaceID: string;
+  UserID: string;
+  SpaceRoleTypeID: string;
+  Status: 'Active' | 'Invited' | 'Removed';
+}
+
+interface CollaborationSpaceRoleTypeRow {
+  ID: string;
+  CanSeeTeamBand: boolean;
+  CanContribute: boolean;
+  IsActive?: boolean;
 }
 
 interface PostTypeIdRow {
@@ -61,28 +85,32 @@ function paramValue(params: RunActionParams, name: string): string | null {
   return typeof value === 'string' && value.trim() ? value.trim() : null;
 }
 
-function parseBoolParam(raw: string | null, defaultValue: boolean): boolean {
-  if (!raw) return defaultValue;
-  const norm = raw.trim().toLowerCase();
-  if (norm === 'true' || norm === '1' || norm === 'yes') return true;
-  if (norm === 'false' || norm === '0' || norm === 'no') return false;
-  return defaultValue;
-}
-
 /**
  * Action: Community.ProcessInboundDigestReply
  *
  * Inbound email reply-by-email loop:
- *  1. Cryptographically verifies the HMAC-SHA256 `Reply-To` token (fails closed on tampered,
- *     malformed, expired, or sender-mismatched tokens).
+ *  1. Cryptographically verifies the HMAC-SHA256 `Reply-To` token using ONLY trusted server
+ *     signing key resolution (ignoring any caller-supplied `ReplySigningSecret` or
+ *     `SkipSenderBindingCheck` parameters) and always enforces sender binding.
  *  2. Strips quoted email history and signature chrome via {@link ParseAndVerifyInboundEmailReply}.
- *  3. Enforces authoritative member binding (`ContextUser` == token member), forum status/policy,
- *     thread lock state, and current `ForumMember` / `ForumRoleType` posting permission.
+ *  3. Enforces authoritative member binding (`ContextUser` == token member), active Collaboration
+ *     Space membership & band access, active `ForumMember` status (rejecting `'Invited'`,
+ *     `'Muted'`, `'Removed'`), affirmative `ForumRoleType` resolution (`CanReply === true`),
+ *     forum status/policy, and thread lock state — failing closed before creating any entity.
  *  4. Persists the reply as a child `ForumPost` (`PostType = 'reply'`, `RootPostID`, `ParentPostID`,
  *     `ReplyDepth`).
  */
 @RegisterClass(BaseAction, 'Community.ProcessInboundDigestReply')
 export class ProcessInboundDigestReplyAction extends BaseAction {
+  /**
+   * Resolves the trusted HMAC signing secret exclusively from server configuration / environment /
+   * process-wide ephemeral store (never from action request parameters). Protected so isolated
+   * unit tests may subclass and override safely.
+   */
+  protected resolveSigningSecret(): string {
+    return ResolveDigestReplySigningSecret();
+  }
+
   protected async InternalRunAction(params: RunActionParams): Promise<ActionResultSimple> {
     const user = params.ContextUser;
     if (!user) return fail('ERROR', 'ContextUser is required');
@@ -98,15 +126,14 @@ export class ProcessInboundDigestReplyAction extends BaseAction {
     }
 
     const senderEmail = paramValue(params, 'SenderEmail') ?? user.Email ?? null;
-    const signingSecret = paramValue(params, 'ReplySigningSecret') ?? undefined;
-    const skipSenderBindingCheck = parseBoolParam(paramValue(params, 'SkipSenderBindingCheck'), false);
 
+    // Security invariant (CR-01): never honor caller-supplied ReplySigningSecret or SkipSenderBindingCheck.
     const parsed = ParseAndVerifyInboundEmailReply({
       replyToAddressOrToken: replyTarget,
       rawBodyText,
       senderEmail,
-      signingSecret,
-      skipSenderBindingCheck,
+      signingSecret: this.resolveSigningSecret(),
+      skipSenderBindingCheck: false,
     });
 
     if (!parsed.token.valid) {
@@ -188,6 +215,143 @@ export class ProcessInboundDigestReplyAction extends BaseAction {
     };
   }
 
+  private async verifyAuthoritativeSpaceAccess(
+    spaceId: string,
+    memberUserId: string,
+    user: UserInfo,
+  ): Promise<
+    | { allowed: true; canSeeTeamBand: boolean; isSpaceOpenForWrites: boolean }
+    | { allowed: false; errorCode: string; reason: string }
+  > {
+    const [spacesRes, spaceMembersRes, spaceRolesRes] = await Promise.all([
+      new RunView().RunView<CollaborationSpaceRow>(
+        {
+          EntityName: 'MJ_BizApps_Collaboration: Spaces',
+          ExtraFilter: '1=1',
+          Fields: ['ID', 'ParentID', 'InheritsMembership', 'ClosedAt'],
+          ResultType: 'simple',
+          MaxRows: 500,
+        },
+        user,
+      ),
+      new RunView().RunView<CollaborationSpaceMemberRow>(
+        {
+          EntityName: 'MJ_BizApps_Collaboration: Space Members',
+          ExtraFilter: `UserID = '${memberUserId}'`,
+          Fields: ['ID', 'SpaceID', 'UserID', 'SpaceRoleTypeID', 'Status'],
+          ResultType: 'simple',
+          MaxRows: 500,
+        },
+        user,
+      ),
+      new RunView().RunView<CollaborationSpaceRoleTypeRow>(
+        {
+          EntityName: 'MJ_BizApps_Collaboration: Space Role Types',
+          ExtraFilter: '1=1',
+          Fields: ['ID', 'CanSeeTeamBand', 'CanContribute', 'IsActive'],
+          ResultType: 'simple',
+          MaxRows: 200,
+        },
+        user,
+      ),
+    ]);
+
+    if (!spacesRes?.Success || !spaceMembersRes?.Success || !spaceRolesRes?.Success) {
+      return {
+        allowed: false,
+        errorCode: 'AUTHORITATIVE_LOAD_FAILED',
+        reason: 'Could not verify authoritative Collaboration Space membership and role.',
+      };
+    }
+
+    const spaceById = new Map<string, CollaborationSpaceRow>(
+      (spacesRes.Results ?? []).map((s) => [s.ID.toLowerCase(), s]),
+    );
+    const memberBySpaceId = new Map<string, CollaborationSpaceMemberRow>(
+      (spaceMembersRes.Results ?? []).map((m) => [m.SpaceID.toLowerCase(), m]),
+    );
+    const roleById = new Map<string, CollaborationSpaceRoleTypeRow>(
+      (spaceRolesRes.Results ?? []).map((r) => [r.ID.toLowerCase(), r]),
+    );
+
+    const targetSpace = spaceById.get(spaceId.toLowerCase());
+    if (!targetSpace) {
+      return {
+        allowed: false,
+        errorCode: 'ACCESS_REVOKED',
+        reason: `Target Collaboration Space ${spaceId} was not found.`,
+      };
+    }
+
+    const isSpaceOpenForWrites = targetSpace.ClosedAt == null;
+    if (!isSpaceOpenForWrites) {
+      return {
+        allowed: false,
+        errorCode: 'SPACE_CLOSED',
+        reason: 'Target Collaboration Space is closed and does not accept replies.',
+      };
+    }
+
+    let currentSpace: CollaborationSpaceRow | undefined = targetSpace;
+    let reachedMember: CollaborationSpaceMemberRow | null = null;
+    const visited = new Set<string>();
+
+    for (let depth = 0; depth < 32 && currentSpace; depth += 1) {
+      const key = currentSpace.ID.toLowerCase();
+      if (visited.has(key)) break;
+      visited.add(key);
+
+      const direct = memberBySpaceId.get(key);
+      if (direct) {
+        if (direct.Status !== 'Active') {
+          return {
+            allowed: false,
+            errorCode: 'ACCESS_REVOKED',
+            reason: `Space membership status "${direct.Status}" is not active.`,
+          };
+        }
+        reachedMember = direct;
+        break;
+      }
+
+      if (!currentSpace.InheritsMembership || !currentSpace.ParentID) {
+        break;
+      }
+      currentSpace = spaceById.get(currentSpace.ParentID.toLowerCase());
+    }
+
+    if (!reachedMember) {
+      return {
+        allowed: false,
+        errorCode: 'ACCESS_REVOKED',
+        reason: 'Active Collaboration Space membership is required to reply in this forum.',
+      };
+    }
+
+    const spaceRole = roleById.get(reachedMember.SpaceRoleTypeID.toLowerCase());
+    if (!spaceRole || spaceRole.IsActive === false) {
+      return {
+        allowed: false,
+        errorCode: 'ACCESS_REVOKED',
+        reason: 'Space role could not be resolved; reply access denied.',
+      };
+    }
+
+    if (spaceRole.CanContribute !== true) {
+      return {
+        allowed: false,
+        errorCode: 'ACCESS_REVOKED',
+        reason: 'Space role does not permit contributing replies.',
+      };
+    }
+
+    return {
+      allowed: true,
+      canSeeTeamBand: Boolean(spaceRole.CanSeeTeamBand),
+      isSpaceOpenForWrites,
+    };
+  }
+
   private async verifyAuthoritativeAccess(
     forumId: string,
     rootPostId: string,
@@ -209,7 +373,7 @@ export class ProcessInboundDigestReplyAction extends BaseAction {
         {
           EntityName: COMMUNITY_ENTITY_NAMES.Forums,
           ExtraFilter: `ID = '${forumId}'`,
-          Fields: ['ID', 'Name', 'Status', 'PostingPolicy', 'VisibilityBand', 'InheritsSpaceMembers'],
+          Fields: ['ID', 'SpaceID', 'Name', 'Status', 'PostingPolicy', 'VisibilityBand', 'InheritsSpaceMembers'],
           ResultType: 'simple',
           MaxRows: 1,
         },
@@ -312,6 +476,19 @@ export class ProcessInboundDigestReplyAction extends BaseAction {
       }
     }
 
+    const spaceAccess = await this.verifyAuthoritativeSpaceAccess(forum.SpaceID, memberUserId, user);
+    if (!spaceAccess.allowed) {
+      return spaceAccess;
+    }
+
+    if ((forum.VisibilityBand === 'Team' || rootPost.VisibilityBand === 'Team') && !spaceAccess.canSeeTeamBand) {
+      return {
+        allowed: false,
+        errorCode: 'ACCESS_REVOKED',
+        reason: 'Member does not have Team-band access to reply to this thread.',
+      };
+    }
+
     if (!memberRes?.Success) {
       return {
         allowed: false,
@@ -320,13 +497,16 @@ export class ProcessInboundDigestReplyAction extends BaseAction {
       };
     }
     const member = memberRes.Results?.[0] ?? null;
-    if (member && (member.Status === 'Muted' || member.Status === 'Removed')) {
+
+    // Fail closed (CR-05): any non-'Active' ForumMember row ('Invited', 'Muted', 'Removed', etc.) is rejected.
+    if (member && member.Status !== 'Active') {
       return {
         allowed: false,
         errorCode: 'ACCESS_REVOKED',
-        reason: `Member status "${member.Status}" is not permitted to reply in this forum.`,
+        reason: `Member status "${member.Status}" is not active and cannot reply in this forum.`,
       };
     }
+
     if (!member && (!forum.InheritsSpaceMembers || forum.VisibilityBand === 'PrivateForum')) {
       return {
         allowed: false,
@@ -335,52 +515,96 @@ export class ProcessInboundDigestReplyAction extends BaseAction {
       };
     }
 
-    let isModerator = false;
+    let resolvedRole: {
+      CanConfigureForum: boolean;
+      CanModerateQueue: boolean;
+      CanCreateRootPost?: boolean;
+      CanReply: boolean;
+    } | null = null;
+
     if (member) {
       const roleFromEngine = CommunityEngineBase.Instance.GetForumRoleTypeById(member.ForumRoleTypeID);
       if (roleFromEngine) {
-        if (!roleFromEngine.CanReply) {
-          return {
-            allowed: false,
-            errorCode: 'ACCESS_REVOKED',
-            reason: `Role "${roleFromEngine.Name}" does not permit replying in this forum.`,
-          };
-        }
-        isModerator = Boolean(roleFromEngine.CanModerateQueue || roleFromEngine.CanConfigureForum);
+        resolvedRole = roleFromEngine;
       } else {
         const roleRes = await new RunView().RunView<AuthoritativeRoleTypeRow>(
           {
             EntityName: COMMUNITY_ENTITY_NAMES.ForumRoleTypes,
             ExtraFilter: `ID = '${member.ForumRoleTypeID}'`,
-            Fields: ['ID', 'Name', 'CanConfigureForum', 'CanModerateQueue', 'CanReply'],
+            Fields: ['ID', 'Name', 'CanConfigureForum', 'CanModerateQueue', 'CanCreateRootPost', 'CanReply'],
             ResultType: 'simple',
             MaxRows: 1,
           },
           user,
         );
-        const role = roleRes?.Success ? roleRes.Results?.[0] : null;
-        if (role) {
-          if (!role.CanReply) {
-            return {
-              allowed: false,
-              errorCode: 'ACCESS_REVOKED',
-              reason: `Role "${role.Name}" does not permit replying in this forum.`,
-            };
-          }
-          isModerator = Boolean(role.CanModerateQueue || role.CanConfigureForum);
+        if (!roleRes?.Success) {
+          return {
+            allowed: false,
+            errorCode: 'AUTHORITATIVE_LOAD_FAILED',
+            reason: 'Could not resolve ForumRoleType for member.',
+          };
         }
+        resolvedRole = roleRes.Results?.[0] ?? null;
+      }
+
+      // Fail closed (CR-05): missing role or CanReply !== true must reject before any write.
+      if (!resolvedRole || resolvedRole.CanReply !== true) {
+        return {
+          allowed: false,
+          errorCode: 'ACCESS_REVOKED',
+          reason: resolvedRole
+            ? 'Member forum role does not permit replying in this forum.'
+            : 'Member forum role could not be resolved; reply access denied.',
+        };
       }
     }
 
-    if (forum.PostingPolicy === 'ReadOnly' && !isModerator) {
+    const decision = CommunityRules.EvaluateForumAccess({
+      spaceAccess: {
+        canReadSpace: true,
+        canSeeTeamBand: spaceAccess.canSeeTeamBand,
+        isSpaceOpenForWrites: spaceAccess.isSpaceOpenForWrites,
+      },
+      forum: {
+        visibilityBand: forum.VisibilityBand,
+        inheritsSpaceMembers: Boolean(forum.InheritsSpaceMembers),
+        postingPolicy: forum.PostingPolicy,
+        status: forum.Status,
+      },
+      forumMembership:
+        member && resolvedRole
+          ? {
+              status: member.Status,
+              canConfigureForum: Boolean(resolvedRole.CanConfigureForum),
+              canModerateQueue: Boolean(resolvedRole.CanModerateQueue),
+              canCreateRootPost: Boolean(resolvedRole.CanCreateRootPost ?? resolvedRole.CanReply),
+              canReply: Boolean(resolvedRole.CanReply),
+            }
+          : null,
+    });
+
+    if (!decision.canReply) {
+      if (forum.PostingPolicy === 'ReadOnly' && !decision.canModerateQueue) {
+        return {
+          allowed: false,
+          errorCode: 'FORUM_READ_ONLY',
+          reason: `Forum "${forum.Name}" has a ReadOnly posting policy.`,
+        };
+      }
       return {
         allowed: false,
-        errorCode: 'FORUM_READ_ONLY',
-        reason: `Forum "${forum.Name}" has a ReadOnly posting policy.`,
+        errorCode: 'ACCESS_REVOKED',
+        reason: 'Member is not authorized to reply in this forum.',
       };
     }
 
-    return { allowed: true, forum, rootPost, parentPost, isModerator };
+    return {
+      allowed: true,
+      forum,
+      rootPost,
+      parentPost,
+      isModerator: decision.canModerateQueue,
+    };
   }
 
   private async resolveReplyPostTypeId(user: UserInfo): Promise<string> {

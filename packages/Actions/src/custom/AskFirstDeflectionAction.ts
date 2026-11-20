@@ -40,7 +40,7 @@ interface QuestionLookupRow {
 }
 
 interface PostTagJoinRow {
-  ForumPostID: string;
+  PostID: string;
   TopicTagID: string;
 }
 
@@ -241,8 +241,8 @@ export class AskFirstDeflectionAction extends BaseAction {
       const joinRes = await new RunView().RunView<PostTagJoinRow>(
         {
           EntityName: COMMUNITY_ENTITY_NAMES.ForumPostTags,
-          ExtraFilter: `ForumPostID IN (${idList})`,
-          Fields: ['ForumPostID', 'TopicTagID'],
+          ExtraFilter: `PostID IN (${idList})`,
+          Fields: ['PostID', 'TopicTagID'],
           ResultType: 'simple',
           MaxRows: 500,
         },
@@ -269,7 +269,7 @@ export class AskFirstDeflectionAction extends BaseAction {
       for (const join of joins) {
         const tagName = tagNames.get(join.TopicTagID.toLowerCase());
         if (!tagName) continue;
-        const key = join.ForumPostID.toLowerCase();
+        const key = join.PostID.toLowerCase();
         const list = out.get(key) ?? [];
         if (!list.includes(tagName)) list.push(tagName);
         out.set(key, list);

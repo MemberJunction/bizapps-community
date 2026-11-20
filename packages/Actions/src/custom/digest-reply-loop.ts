@@ -3,7 +3,13 @@ import { GetGlobalObjectStore, IsValidUUID } from '@memberjunction/global';
 import type { PersonalizedPostScore } from '@mj-biz-apps/community-core';
 
 const EPHEMERAL_SECRET_GLOBAL_KEY = '___COMMUNITY_DIGEST_REPLY_SECRET__';
+const TOKEN_REGISTRY_GLOBAL_KEY = '___COMMUNITY_DIGEST_REPLY_TOKEN_REGISTRY__';
 const DEFAULT_TOKEN_TTL_SECONDS = 14 * 24 * 60 * 60; // 14 days
+const MAX_REGISTRY_ENTRIES = 50_000;
+const COMPACT_HANDLE_MAX_CHARS = 24;
+const COMPACT_HMAC_TAG_BYTES = 24; // 192-bit truncated HMAC-SHA256 tag -> 32 base64url chars
+export const RFC_5321_MAX_LOCAL_PART_OCTETS = 64;
+export const RFC_5321_MAX_ADDRESS_OCTETS = 254;
 
 export interface DigestReplyTokenPayload {
   /** Schema version. */
@@ -26,6 +32,12 @@ export interface DigestReplyTokenPayload {
   n: string;
 }
 
+interface StoredCompactReplyTokenEntry {
+  tokenId: string;
+  payloadB64: string;
+  exp: number;
+}
+
 export interface SignDigestReplyTokenInput {
   memberUserId: string;
   forumId: string;
@@ -43,6 +55,7 @@ export type VerifyDigestReplyTokenResult =
       valid: false;
       errorCode:
         | 'INVALID_TOKEN_FORMAT'
+        | 'UNKNOWN_TOKEN_HANDLE'
         | 'INVALID_SIGNATURE'
         | 'TOKEN_EXPIRED'
         | 'INVALID_PAYLOAD'
@@ -76,6 +89,43 @@ export interface RenderedPersonalizedDigest {
   itemCount: number;
 }
 
+const fallbackTokenRegistry = new Map<string, StoredCompactReplyTokenEntry>();
+
+function getTokenRegistryMap(): Map<string, StoredCompactReplyTokenEntry> {
+  const store = GetGlobalObjectStore();
+  if (!store) {
+    return fallbackTokenRegistry;
+  }
+  const existing = store[TOKEN_REGISTRY_GLOBAL_KEY];
+  if (existing instanceof Map) {
+    return existing as Map<string, StoredCompactReplyTokenEntry>;
+  }
+  const created = new Map<string, StoredCompactReplyTokenEntry>();
+  store[TOKEN_REGISTRY_GLOBAL_KEY] = created;
+  return created;
+}
+
+function pruneTokenRegistry(registry: Map<string, StoredCompactReplyTokenEntry>, nowEpoch: number): void {
+  if (registry.size < MAX_REGISTRY_ENTRIES) {
+    return;
+  }
+  for (const [key, entry] of registry.entries()) {
+    if (entry.exp < nowEpoch) {
+      registry.delete(key);
+    }
+  }
+  while (registry.size >= MAX_REGISTRY_ENTRIES) {
+    const oldestKey = registry.keys().next().value;
+    if (typeof oldestKey !== 'string') break;
+    registry.delete(oldestKey);
+  }
+}
+
+/** Clears the in-memory compact reply token registry (intended for isolated unit tests). */
+export function ClearDigestReplyTokenRegistry(): void {
+  getTokenRegistryMap().clear();
+}
+
 /**
  * Resolves the HMAC signing secret: explicit override -> `COMMUNITY_DIGEST_REPLY_SECRET` env ->
  * process-wide ephemeral random 32-byte key stored in GlobalObjectStore (never a static hardcoded string).
@@ -101,7 +151,7 @@ export function ResolveDigestReplySigningSecret(explicitSecret?: string): string
   return randomBytes(32).toString('base64url');
 }
 
-/** Extracts the raw `<payload>.<sig>` token from either a raw token or a `reply+<token>@domain` email address. */
+/** Extracts the raw `<id>.<sig>` (or `<payload>.<sig>`) token from a raw token or `reply+<token>@domain` address. */
 export function ExtractReplyTokenFromAddress(tokenOrAddress: string): string | null {
   const trimmed = tokenOrAddress.trim();
   if (!trimmed) return null;
@@ -122,13 +172,38 @@ export function ExtractReplyTokenFromAddress(tokenOrAddress: string): string | n
   return candidate;
 }
 
-/** Builds a `reply+<token>@<domain>` address for a signed digest reply token. */
+/**
+ * Builds a `reply+<token>@<domain>` address while strictly enforcing RFC 5321's 64-octet local-part
+ * and 254-octet total email address limits.
+ */
 export function BuildReplyToEmailAddress(token: string, replyDomain: string): string {
+  const cleanToken = token.trim();
+  if (!cleanToken) {
+    throw new Error('Reply token is required to build a Reply-To email address.');
+  }
   const cleanDomain = replyDomain.trim().replace(/^@+/, '') || 'reply.bizapps.local';
-  return `reply+${token}@${cleanDomain}`;
+  const localPart = `reply+${cleanToken}`;
+  const localOctets = Buffer.byteLength(localPart, 'utf8');
+  if (localOctets > RFC_5321_MAX_LOCAL_PART_OCTETS) {
+    throw new Error(
+      `Reply-To local-part (${localOctets} octets) exceeds RFC 5321 limit of ${RFC_5321_MAX_LOCAL_PART_OCTETS} octets.`,
+    );
+  }
+  const address = `${localPart}@${cleanDomain}`;
+  const totalOctets = Buffer.byteLength(address, 'utf8');
+  if (totalOctets > RFC_5321_MAX_ADDRESS_OCTETS) {
+    throw new Error(
+      `Reply-To address (${totalOctets} octets) exceeds RFC 5321 limit of ${RFC_5321_MAX_ADDRESS_OCTETS} octets.`,
+    );
+  }
+  return address;
 }
 
-/** Signs a member- and thread-bound digest reply token with HMAC-SHA256. */
+/**
+ * Signs a member- and thread-bound digest reply token with HMAC-SHA256 and registers its payload
+ * under a compact 16-char handle + 32-char (192-bit) HMAC tag (`<id>.<hmac>`, 49 chars) so
+ * `reply+<token>` is strictly <= 64 octets under RFC 5321.
+ */
 export function SignDigestReplyToken(input: SignDigestReplyTokenInput): string {
   if (!IsValidUUID(input.memberUserId)) {
     throw new Error('memberUserId must be a valid UUID.');
@@ -163,12 +238,26 @@ export function SignDigestReplyToken(input: SignDigestReplyTokenInput): string {
   };
 
   const payloadB64 = Buffer.from(JSON.stringify(payload), 'utf8').toString('base64url');
+  const tokenId = randomBytes(12).toString('base64url'); // 16 chars
   const secret = ResolveDigestReplySigningSecret(input.signingSecret);
-  const sigB64 = createHmac('sha256', secret).update(payloadB64).digest('base64url');
-  return `${payloadB64}.${sigB64}`;
+  const sigTag = createHmac('sha256', secret)
+    .update(`${tokenId}.${payloadB64}`)
+    .digest()
+    .subarray(0, COMPACT_HMAC_TAG_BYTES)
+    .toString('base64url'); // 32 chars -> reply+<16>.<32> = 55 octets <= 64 octets
+
+  const registry = getTokenRegistryMap();
+  pruneTokenRegistry(registry, nowEpoch);
+  registry.set(tokenId, {
+    tokenId,
+    payloadB64,
+    exp: payload.exp,
+  });
+
+  return `${tokenId}.${sigTag}`;
 }
 
-/** Verifies an HMAC-SHA256 digest reply token or `reply+<token>@...` address, failing closed on any anomaly. */
+/** Verifies an HMAC-SHA256 digest reply token (compact handle or full header token) and fails closed on any anomaly. */
 export function VerifyDigestReplyToken(
   tokenOrAddress: string,
   options?: VerifyDigestReplyTokenOptions,
@@ -187,13 +276,12 @@ export function VerifyDigestReplyToken(
     return {
       valid: false,
       errorCode: 'INVALID_TOKEN_FORMAT',
-      reason: 'Reply token must contain a base64url payload and signature separated by a dot.',
+      reason: 'Reply token must contain a handle/payload and signature separated by a dot.',
     };
   }
 
-  const [payloadB64, providedSigB64] = parts;
+  const [partA, providedSigB64] = parts;
   const secret = ResolveDigestReplySigningSecret(options?.signingSecret);
-  const expectedSigBuf = createHmac('sha256', secret).update(payloadB64).digest();
 
   let providedSigBuf: Buffer;
   try {
@@ -204,6 +292,29 @@ export function VerifyDigestReplyToken(
       errorCode: 'INVALID_SIGNATURE',
       reason: 'Reply token signature is not valid base64url.',
     };
+  }
+
+  let payloadB64: string;
+  let expectedSigBuf: Buffer;
+
+  if (partA.length <= COMPACT_HANDLE_MAX_CHARS) {
+    const entry = getTokenRegistryMap().get(partA);
+    if (!entry) {
+      return {
+        valid: false,
+        errorCode: 'UNKNOWN_TOKEN_HANDLE',
+        reason: 'Reply token handle is unknown or no longer registered.',
+      };
+    }
+    payloadB64 = entry.payloadB64;
+    expectedSigBuf = createHmac('sha256', secret)
+      .update(`${partA}.${payloadB64}`)
+      .digest()
+      .subarray(0, COMPACT_HMAC_TAG_BYTES);
+  } else {
+    // Support full <payloadB64>.<sigB64> verification when delivered via header/reference outside local-part.
+    payloadB64 = partA;
+    expectedSigBuf = createHmac('sha256', secret).update(payloadB64).digest();
   }
 
   if (
@@ -405,7 +516,9 @@ export function RenderPersonalizedDigestEmail(params: {
       }
       const excerpt = (p.summaryMarkdown ?? p.bodyMarkdown).replace(/\s+/g, ' ').trim().slice(0, 220);
       textLines.push(`   ${excerpt}`);
-      textLines.push(`   Reply directly via email: ${item.replyToAddress}`);
+      if (item.replyToAddress && item.replyToken) {
+        textLines.push(`   Reply directly via email: ${item.replyToAddress}`);
+      }
       textLines.push('');
     });
   }
@@ -420,7 +533,14 @@ export function RenderPersonalizedDigestEmail(params: {
       const epistemicChip = p.epistemicStatus
         ? `<span style="display:inline-block;padding:2px 8px;border-radius:999px;font-size:11px;font-weight:600;background:#ecfdf5;color:#047857;margin-left:6px;">${escapeHtml(p.epistemicStatus)}</span>`
         : '';
-      const mailtoHref = `mailto:${encodeURIComponent(item.replyToAddress)}?subject=${encodeURIComponent(`Re: ${p.title}`)}`;
+      const replyButton =
+        item.replyToAddress && item.replyToken
+          ? `<div>
+            <a href="mailto:${encodeURIComponent(item.replyToAddress)}?subject=${encodeURIComponent(`Re: ${p.title}`)}" style="display:inline-block;padding:8px 14px;border-radius:6px;background:#2563eb;color:#ffffff;text-decoration:none;font-size:13px;font-weight:600;">
+              Reply via Email
+            </a>
+          </div>`
+          : '';
       return `
         <div style="border:1px solid #e2e8f0;border-radius:10px;padding:16px 18px;margin-bottom:14px;background:#ffffff;">
           <div style="font-size:12px;color:#475569;margin-bottom:6px;">
@@ -432,11 +552,7 @@ export function RenderPersonalizedDigestEmail(params: {
             ${escapeHtml(item.ranked.explanation)}
           </div>
           <p style="margin:0 0 12px 0;font-size:14px;line-height:1.5;color:#334155;">${excerpt}</p>
-          <div>
-            <a href="${mailtoHref}" style="display:inline-block;padding:8px 14px;border-radius:6px;background:#2563eb;color:#ffffff;text-decoration:none;font-size:13px;font-weight:600;">
-              Reply via Email
-            </a>
-          </div>
+          ${replyButton}
         </div>
       `;
     })
