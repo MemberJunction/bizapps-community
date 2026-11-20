@@ -4,11 +4,14 @@ export type CommunityHubTabKey =
   | 'knowledge-stream'
   | 'qa-canon-workbench'
   | 'quadratic-ideation-wallet'
-  | 'living-co-authoring';
+  | 'living-co-authoring'
+  | 'media-library';
 
 export type CommunityHubFeedSort = 'recent' | 'top' | 'unanswered';
 export type CommunityHubDigestFormat = 'pdf' | 'markdown';
 export type CommunityHubDigestCadence = 'daily' | 'weekly' | 'off';
+export type MediaLibraryKindPreference = 'all' | 'image' | 'video' | 'audio' | 'artifact' | 'file';
+export type MediaLibraryScopePreference = 'all' | 'featured' | 'my-uploads';
 
 /** The minimal key/value preference surface CommunityHubPreferences depends on, so tests can
  * inject an in-memory fake instead of a live, configured UserInfoEngine. */
@@ -33,6 +36,8 @@ export const COMMUNITY_HUB_PREFERENCE_KEYS = {
   digestCadence: 'bizapps-community.digestCadence',
   activeTopicFilter: 'bizapps-community.activeTopicFilter',
   porchCollapsed: 'bizapps-community.porchCollapsed',
+  mediaLibraryKind: 'bizapps-community.mediaLibraryKind',
+  mediaLibraryScope: 'bizapps-community.mediaLibraryScope',
 } as const;
 
 /**
@@ -120,5 +125,44 @@ export class CommunityHubPreferences {
       return true;
     }
     return this.store.SetSetting(COMMUNITY_HUB_PREFERENCE_KEYS.activeTopicFilter, normalized);
+  }
+
+  public GetMediaLibraryKind(): MediaLibraryKindPreference | undefined {
+    const raw = this.store.GetSetting(COMMUNITY_HUB_PREFERENCE_KEYS.mediaLibraryKind)?.trim().toLowerCase();
+    if (
+      raw === 'all' ||
+      raw === 'image' ||
+      raw === 'video' ||
+      raw === 'audio' ||
+      raw === 'artifact' ||
+      raw === 'file'
+    ) {
+      return raw;
+    }
+    return undefined;
+  }
+
+  public async SetMediaLibraryKind(kind: MediaLibraryKindPreference): Promise<boolean> {
+    if (this.store.SetSettingDebounced) {
+      this.store.SetSettingDebounced(COMMUNITY_HUB_PREFERENCE_KEYS.mediaLibraryKind, kind);
+      return true;
+    }
+    return this.store.SetSetting(COMMUNITY_HUB_PREFERENCE_KEYS.mediaLibraryKind, kind);
+  }
+
+  public GetMediaLibraryScope(): MediaLibraryScopePreference | undefined {
+    const raw = this.store.GetSetting(COMMUNITY_HUB_PREFERENCE_KEYS.mediaLibraryScope)?.trim().toLowerCase();
+    if (raw === 'all' || raw === 'featured' || raw === 'my-uploads') {
+      return raw;
+    }
+    return undefined;
+  }
+
+  public async SetMediaLibraryScope(scope: MediaLibraryScopePreference): Promise<boolean> {
+    if (this.store.SetSettingDebounced) {
+      this.store.SetSettingDebounced(COMMUNITY_HUB_PREFERENCE_KEYS.mediaLibraryScope, scope);
+      return true;
+    }
+    return this.store.SetSetting(COMMUNITY_HUB_PREFERENCE_KEYS.mediaLibraryScope, scope);
   }
 }

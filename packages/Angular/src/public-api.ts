@@ -4,6 +4,8 @@ export * from './lib/community-attachment-gallery.ts';
 export * from './lib/community-attachment-gallery.component.ts';
 export * from './lib/community-attachment-picker.ts';
 export * from './lib/community-attachment-picker.component.ts';
+export * from './lib/community-media-library.ts';
+export * from './lib/community-media-library.component.ts';
 export * from './lib/community-hub-commons.ts';
 export * from './lib/community-hub-ideation.ts';
 export * from './lib/community-hub-mutations.ts';

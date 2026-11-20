@@ -947,6 +947,30 @@
               ></mjc-living-co-authoring>
             </section>
           }
+
+          @case ('media-library') {
+            <section
+              [id]="'mjc-hub-panel-media-library'"
+              class="mjc-community-hub__panel"
+              role="tabpanel"
+              [attr.aria-labelledby]="'mjc-hub-tab-media-library'"
+            >
+              <mjc-media-library
+                [entries]="mediaLibraryEntries"
+                [spaces]="streamSpaces"
+                [activeSpaceFilter]="activeSpaceFilter"
+                [kindFilter]="mediaLibraryKindFilter"
+                [scopeFilter]="mediaLibraryScopeFilter"
+                [searchQuery]="mediaLibrarySearchQuery"
+                (spaceFilterChange)="setSpaceFilter($event)"
+                (kindFilterChange)="setMediaLibraryKindFilter($event)"
+                (scopeFilterChange)="setMediaLibraryScopeFilter($event)"
+                (searchQueryChange)="setMediaLibrarySearchQuery($event)"
+                (viewInThread)="openMediaLibraryThread($event)"
+                (filtersReset)="resetMediaLibraryFilters()"
+              ></mjc-media-library>
+            </section>
+          }
         }
         }
       </div>

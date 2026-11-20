@@ -4,6 +4,7 @@ import {
   ChangeDetectorRef,
   Component,
   ElementRef,
+  HostListener,
   Input,
   ViewChild,
   inject,
@@ -344,16 +345,37 @@ export class CommunityAttachmentGalleryComponent {
     }, 0);
   }
 
+  @HostListener('document:keydown.escape', ['$event'])
+  public onDocumentEscape(event: Event): void {
+    if (this.fullPreviewArtifactId) {
+      event.stopPropagation();
+      this.closeArtifactFullPreview();
+      return;
+    }
+    if (this.lightboxIndex !== null) {
+      event.stopPropagation();
+      this.closeLightbox();
+    }
+  }
+
   private scheduleModalInitialFocus(kind: 'lightbox' | 'artifact'): void {
-    queueMicrotask(() => {
+    const focusDialog = (): boolean => {
       const dialogEl =
         kind === 'lightbox'
           ? this.lightboxDialog?.nativeElement
           : this.artifactModalDialog?.nativeElement;
-      if (!dialogEl) return;
+      if (!dialogEl) return false;
       const focusables = this.getFocusableElements(dialogEl);
       const target = focusables[0] ?? dialogEl;
       target.focus();
+      return true;
+    };
+    queueMicrotask(() => {
+      if (!focusDialog()) {
+        setTimeout(() => {
+          focusDialog();
+        }, 0);
+      }
     });
   }
 

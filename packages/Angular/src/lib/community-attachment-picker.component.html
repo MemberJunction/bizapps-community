@@ -10,6 +10,7 @@
     multiple
     class="mjc-picker__file-input"
     [attr.id]="'mjc-picker-file-input-' + instanceId"
+    [attr.aria-label]="'Upload media or files for ' + pickerLabel"
     [accept]="acceptedFileExtensions"
     [disabled]="disabled"
     (change)="onFileInputChange($event)"

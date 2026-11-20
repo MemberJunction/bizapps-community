@@ -1,0 +1,499 @@
+<section id="mjc-media-library-view" class="mjc-lib-shell" aria-label="Space Media and Artifacts Library">
+  <header class="mjc-lib-header">
+    <div class="mjc-lib-header__copy">
+      <span class="mjc-lib-kicker">Auto-Indexed Space Library</span>
+      <h2 class="mjc-lib-title">Media, Files &amp; Embedded MJ Artifacts</h2>
+      <p class="mjc-lib-subtitle">
+        Every image, video, audio clip, MJ Artifact, and document attached across threads and replies is indexed automatically with thread attribution.
+      </p>
+    </div>
+
+    <div class="mjc-lib-header__controls">
+      @if (spaces.length > 1) {
+        <div class="mjc-lib-control">
+          <label for="mjc-media-library-space-select" class="mjc-lib-sr-only">Filter by Space</label>
+          <select
+            id="mjc-media-library-space-select"
+            class="mjc-lib-select"
+            aria-label="Filter library by Space"
+            [ngModel]="activeSpaceFilter"
+            (ngModelChange)="onSpaceSelect($event)"
+          >
+            @for (sp of spaces; track sp.id) {
+              <option [value]="sp.id">{{ sp.name }}</option>
+            }
+          </select>
+        </div>
+      }
+
+      <div class="mjc-lib-search">
+        <i class="fa-solid fa-magnifying-glass mjc-lib-search__icon" aria-hidden="true"></i>
+        <label for="mjc-media-library-search" class="mjc-lib-sr-only">
+          Search media library by filename, artifact title, caption, or source post title
+        </label>
+        <input
+          id="mjc-media-library-search"
+          type="search"
+          class="mjc-lib-search__input"
+          placeholder="Search filename, artifact title, caption, or thread..."
+          [ngModel]="searchQuery"
+          (ngModelChange)="onSearchInput($event)"
+        />
+        @if (searchQuery.trim()) {
+          <button
+            type="button"
+            id="mjc-media-library-search-clear-btn"
+            class="mjc-lib-search__clear"
+            aria-label="Clear library search"
+            (click)="clearSearch()"
+          >
+            ✕
+          </button>
+        }
+      </div>
+    </div>
+  </header>
+
+  <div class="mjc-lib-filters">
+    <div class="mjc-lib-pill-group" role="group" aria-label="Filter library by media type">
+      @for (opt of kindOptions; track opt.key) {
+        <button
+          type="button"
+          [id]="'mjc-lib-kind-' + opt.key"
+          class="mjc-lib-pill"
+          [class.mjc-lib-pill--active]="kindFilter === opt.key"
+          [attr.aria-pressed]="kindFilter === opt.key"
+          (click)="selectKind(opt.key)"
+        >
+          <i [class]="opt.icon" aria-hidden="true"></i>
+          <span>{{ opt.label }}</span>
+          <span class="mjc-lib-pill__count">{{ getKindCount(opt.key) }}</span>
+        </button>
+      }
+    </div>
+
+    <div class="mjc-lib-pill-group" role="group" aria-label="Filter library by scope">
+      @for (scopeOpt of scopeOptions; track scopeOpt.key) {
+        <button
+          type="button"
+          [id]="'mjc-lib-scope-' + scopeOpt.key"
+          class="mjc-lib-pill mjc-lib-pill--scope"
+          [class.mjc-lib-pill--active]="scopeFilter === scopeOpt.key"
+          [attr.aria-pressed]="scopeFilter === scopeOpt.key"
+          (click)="selectScope(scopeOpt.key)"
+        >
+          <i [class]="scopeOpt.icon" aria-hidden="true"></i>
+          <span>{{ scopeOpt.label }}</span>
+          <span class="mjc-lib-pill__count">{{ getScopeCount(scopeOpt.key) }}</span>
+        </button>
+      }
+    </div>
+  </div>
+
+  @if (filteredEntries.length === 0) {
+    <div id="mjc-media-library-empty" class="mjc-lib-empty" role="status">
+      <i class="fa-solid fa-photo-film mjc-lib-empty__icon" aria-hidden="true"></i>
+      <h3 class="mjc-lib-empty__title">No matching media, files, or MJ Artifacts</h3>
+      <p class="mjc-lib-empty__body">
+        Attach images, video, audio, documents, or MJ Artifacts to any post or reply and they will appear here automatically.
+      </p>
+      @if (hasActiveFilters) {
+        <button
+          type="button"
+          id="mjc-media-library-reset-btn"
+          class="mjc-lib-btn mjc-lib-btn--primary"
+          (click)="resetFilters()"
+        >
+          Reset Library Filters
+        </button>
+      }
+    </div>
+  } @else {
+    @if (visualGridEntries.length > 0) {
+      <section class="mjc-lib-section" aria-label="Visual media thumbnails">
+        <div class="mjc-lib-section__head">
+          <h3 class="mjc-lib-section__title">
+            <i class="fa-solid fa-images" aria-hidden="true"></i>
+            <span>Visual Media ({{ visualGridEntries.length }})</span>
+          </h3>
+          <span class="mjc-lib-section__hint">Click any image or video thumbnail to inspect in Lightbox.</span>
+        </div>
+
+        <div class="mjc-lib-visual-grid">
+          @for (entry of visualGridEntries; track entry.id; let idx = $index) {
+            <article class="mjc-lib-visual-card" [attr.data-attachment-id]="entry.id">
+              <button
+                type="button"
+                class="mjc-lib-thumb-btn"
+                [attr.aria-label]="'Open ' + entry.title + ' in lightbox'"
+                (click)="openLightbox(idx)"
+              >
+                @if (entry.kind === 'image' && entry.safeUrl) {
+                  <img
+                    class="mjc-lib-thumb-media"
+                    [src]="entry.safeUrl"
+                    [alt]="entry.caption || entry.title"
+                    loading="lazy"
+                  />
+                } @else if (entry.kind === 'video' && entry.safePosterUrl) {
+                  <img
+                    class="mjc-lib-thumb-media"
+                    [src]="entry.safePosterUrl"
+                    [alt]="entry.caption || entry.title"
+                    loading="lazy"
+                  />
+                  <span class="mjc-lib-video-overlay" aria-hidden="true">
+                    <i class="fa-solid fa-play"></i>
+                  </span>
+                } @else if (entry.kind === 'video' && entry.safeUrl) {
+                  <video
+                    class="mjc-lib-thumb-media"
+                    preload="metadata"
+                    muted
+                    [src]="entry.safeUrl"
+                    aria-hidden="true"
+                  ></video>
+                  <span class="mjc-lib-video-overlay" aria-hidden="true">
+                    <i class="fa-solid fa-play"></i>
+                  </span>
+                } @else {
+                  <span class="mjc-lib-thumb-fallback" aria-hidden="true">
+                    <i [class]="entry.iconClass"></i>
+                  </span>
+                }
+                <span class="mjc-lib-thumb-kind-pill">{{ entry.typeLabel }}</span>
+                @if (entry.formattedDuration; as dur) {
+                  <span class="mjc-lib-thumb-dur-pill">{{ dur }}</span>
+                }
+              </button>
+
+              <div class="mjc-lib-card-body">
+                <div class="mjc-lib-badges">
+                  <span class="mjc-lib-badge">{{ entry.spaceLabel }}</span>
+                  @if (entry.featureInLibrary) {
+                    <span class="mjc-lib-badge mjc-lib-badge--success">
+                      <i class="fa-solid fa-bookmark" aria-hidden="true"></i>
+                      <span>Featured</span>
+                    </span>
+                  }
+                  @if (entry.isReplyAttachment) {
+                    <span class="mjc-lib-badge">Reply</span>
+                  }
+                </div>
+
+                <h4 class="mjc-lib-card-title">{{ entry.title }}</h4>
+                @if (entry.caption) {
+                  <p class="mjc-lib-card-caption">{{ entry.caption }}</p>
+                }
+                <p class="mjc-lib-card-source">
+                  Thread: <strong>{{ entry.postTitle }}</strong> · {{ entry.authorName }}
+                </p>
+
+                <div class="mjc-lib-card-footer">
+                  @if (entry.formattedSize; as sz) {
+                    <span class="mjc-lib-meta-text">{{ sz }}</span>
+                  }
+                  <button
+                    type="button"
+                    class="mjc-lib-thread-btn"
+                    (click)="openEntryThread(entry.sourceItemId)"
+                  >
+                    <span>View in Thread →</span>
+                  </button>
+                </div>
+              </div>
+            </article>
+          }
+        </div>
+      </section>
+    }
+
+    @if (resourceCardEntries.length > 0) {
+      <section class="mjc-lib-section" aria-label="Embedded MJ Artifacts, audio tracks, and files">
+        <div class="mjc-lib-section__head">
+          <h3 class="mjc-lib-section__title">
+            <i class="fa-solid fa-cubes" aria-hidden="true"></i>
+            <span>Artifacts, Audio &amp; Files ({{ resourceCardEntries.length }})</span>
+          </h3>
+        </div>
+
+        <div class="mjc-lib-cards-grid">
+          @for (entry of resourceCardEntries; track entry.id) {
+            <article class="mjc-lib-resource-card" [attr.data-attachment-id]="entry.id">
+              <div class="mjc-lib-resource-card__top">
+                <span class="mjc-lib-resource-icon" aria-hidden="true">
+                  <i [class]="entry.iconClass"></i>
+                </span>
+                <div class="mjc-lib-resource-card__head">
+                  <div class="mjc-lib-badges">
+                    <span class="mjc-lib-badge mjc-lib-badge--brand">{{ entry.typeLabel }}</span>
+                    @if (entry.versionBadge; as ver) {
+                      <span class="mjc-lib-badge">{{ ver }}</span>
+                    }
+                    @if (entry.featureInLibrary) {
+                      <span class="mjc-lib-badge mjc-lib-badge--success">
+                        <i class="fa-solid fa-bookmark" aria-hidden="true"></i>
+                        <span>Featured</span>
+                      </span>
+                    }
+                    <span class="mjc-lib-badge">{{ entry.spaceLabel }}</span>
+                  </div>
+                  <h4 class="mjc-lib-card-title">{{ entry.title }}</h4>
+                </div>
+              </div>
+
+              @if (entry.caption) {
+                <p class="mjc-lib-card-caption">{{ entry.caption }}</p>
+              }
+
+              @if (entry.kind === 'audio' && entry.safeUrl) {
+                <audio
+                  class="mjc-lib-audio-player"
+                  controls
+                  preload="metadata"
+                  [src]="entry.safeUrl"
+                  [attr.aria-label]="entry.title"
+                >
+                  Your browser cannot play this audio inline.
+                </audio>
+              }
+
+              <p class="mjc-lib-card-source">
+                Thread: <strong>{{ entry.postTitle }}</strong> · {{ entry.authorName }}
+                @if (entry.isReplyAttachment) {
+                  <span> (Reply)</span>
+                }
+              </p>
+
+              <div class="mjc-lib-card-footer">
+                <div class="mjc-lib-card-actions">
+                  @if (entry.kind === 'artifact' && entry.artifactPreview?.hasPreview) {
+                    <button
+                      type="button"
+                      class="mjc-lib-btn mjc-lib-btn--sm"
+                      (click)="openArtifactPreview(entry.id)"
+                    >
+                      <i class="fa-solid fa-eye" aria-hidden="true"></i>
+                      <span>Preview</span>
+                    </button>
+                  } @else if (entry.kind === 'file' && entry.safeUrl) {
+                    <a
+                      class="mjc-lib-btn mjc-lib-btn--sm"
+                      [href]="entry.safeUrl"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      [attr.download]="entry.fileName || entry.title"
+                    >
+                      <i class="fa-solid fa-download" aria-hidden="true"></i>
+                      <span>Open</span>
+                    </a>
+                  }
+                  @if (entry.formattedSize; as sz) {
+                    <span class="mjc-lib-meta-text">{{ sz }}</span>
+                  }
+                  @if (entry.formattedDuration; as dur) {
+                    <span class="mjc-lib-meta-text">{{ dur }}</span>
+                  }
+                </div>
+
+                <button
+                  type="button"
+                  class="mjc-lib-thread-btn"
+                  (click)="openEntryThread(entry.sourceItemId)"
+                >
+                  <span>View in Thread →</span>
+                </button>
+              </div>
+            </article>
+          }
+        </div>
+      </section>
+    }
+  }
+</section>
+
+<!-- VISUAL LIGHTBOX MODAL -->
+@if (lightboxEntry; as lbEntry) {
+  <div class="mjc-lib-modal-backdrop" role="presentation" (click)="closeLightbox()">
+    <div
+      #lightboxDialog
+      id="mjc-lib-lightbox-dialog"
+      class="mjc-lib-modal-dialog"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="mjc-lib-lightbox-title"
+      tabindex="-1"
+      (keydown)="onLightboxKeydown($event)"
+      (click)="$event.stopPropagation()"
+    >
+      <div class="mjc-lib-modal-header">
+        <div class="mjc-lib-modal-header__copy">
+          @if (visualGridEntries.length > 1 && lightboxIndex !== null) {
+            <span class="mjc-lib-badge mjc-lib-badge--brand">
+              {{ lightboxIndex + 1 }} / {{ visualGridEntries.length }}
+            </span>
+          }
+          <h3 id="mjc-lib-lightbox-title" class="mjc-lib-modal-title">
+            {{ lbEntry.caption || lbEntry.title }}
+          </h3>
+        </div>
+        <button
+          type="button"
+          class="mjc-lib-modal-close"
+          aria-label="Close library lightbox"
+          (click)="closeLightbox()"
+        >
+          ✕
+        </button>
+      </div>
+
+      <div class="mjc-lib-lightbox-body">
+        @if (visualGridEntries.length > 1) {
+          <button
+            type="button"
+            class="mjc-lib-lightbox-nav"
+            aria-label="Previous media item"
+            (click)="prevLightboxItem()"
+          >
+            <i class="fa-solid fa-chevron-left" aria-hidden="true"></i>
+          </button>
+        }
+
+        <div class="mjc-lib-lightbox-stage">
+          @if (lbEntry.kind === 'image' && lbEntry.safeUrl) {
+            <img
+              class="mjc-lib-lightbox-img"
+              [src]="lbEntry.safeUrl"
+              [alt]="lbEntry.caption || lbEntry.title"
+            />
+          } @else if (lbEntry.kind === 'video' && lbEntry.safeUrl) {
+            <video
+              class="mjc-lib-lightbox-video"
+              controls
+              preload="metadata"
+              [attr.poster]="lbEntry.safePosterUrl"
+              [src]="lbEntry.safeUrl"
+              [attr.aria-label]="lbEntry.caption || lbEntry.title"
+            ></video>
+          } @else {
+            <p class="mjc-lib-meta-text">Media preview is unavailable for this item.</p>
+          }
+        </div>
+
+        @if (visualGridEntries.length > 1) {
+          <button
+            type="button"
+            class="mjc-lib-lightbox-nav"
+            aria-label="Next media item"
+            (click)="nextLightboxItem()"
+          >
+            <i class="fa-solid fa-chevron-right" aria-hidden="true"></i>
+          </button>
+        }
+      </div>
+
+      <div class="mjc-lib-modal-footer">
+        <span class="mjc-lib-meta-text">
+          {{ lbEntry.title }} · {{ lbEntry.spaceLabel }} · {{ lbEntry.postTitle }}
+        </span>
+        <button
+          type="button"
+          class="mjc-lib-thread-btn"
+          (click)="openEntryThread(lbEntry.sourceItemId)"
+        >
+          <span>View in Thread →</span>
+        </button>
+      </div>
+    </div>
+  </div>
+}
+
+<!-- SANDBOXED MJ ARTIFACT PREVIEW MODAL -->
+@if (previewArtifactEntry; as artEntry) {
+  <div class="mjc-lib-modal-backdrop" role="presentation" (click)="closeArtifactPreview()">
+    <div
+      #artifactModalDialog
+      id="mjc-lib-artifact-dialog"
+      class="mjc-lib-modal-dialog"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="mjc-lib-artifact-modal-title"
+      tabindex="-1"
+      (keydown)="onArtifactModalKeydown($event)"
+      (click)="$event.stopPropagation()"
+    >
+      <div class="mjc-lib-modal-header">
+        <div class="mjc-lib-modal-header__copy">
+          <span class="mjc-lib-badge mjc-lib-badge--brand">{{ artEntry.typeLabel }}</span>
+          @if (artEntry.versionBadge; as ver) {
+            <span class="mjc-lib-badge">{{ ver }}</span>
+          }
+          <h3 id="mjc-lib-artifact-modal-title" class="mjc-lib-modal-title">{{ artEntry.title }}</h3>
+        </div>
+        <button
+          type="button"
+          class="mjc-lib-modal-close"
+          aria-label="Close artifact preview"
+          (click)="closeArtifactPreview()"
+        >
+          ✕
+        </button>
+      </div>
+
+      <div class="mjc-lib-artifact-modal-body">
+        @if (artEntry.artifactPreview; as preview) {
+          @switch (preview.format) {
+            @case ('markdown') {
+              <div class="mjc-lib-artifact-md mjc-markdown" [innerHTML]="preview.renderedMarkdownHtml"></div>
+            }
+            @case ('html') {
+              <iframe
+                class="mjc-lib-artifact-iframe"
+                sandbox="allow-scripts"
+                [srcdoc]="getTrustedSrcdoc(artEntry)"
+                [title]="artEntry.title + ' sandboxed preview'"
+              ></iframe>
+            }
+            @case ('svg') {
+              <iframe
+                class="mjc-lib-artifact-iframe"
+                sandbox="allow-scripts"
+                [srcdoc]="getTrustedSrcdoc(artEntry)"
+                [title]="artEntry.title + ' diagram preview'"
+              ></iframe>
+            }
+            @case ('json') {
+              <pre class="mjc-lib-artifact-code"><code>{{ preview.formattedCode }}</code></pre>
+            }
+            @case ('code') {
+              <pre class="mjc-lib-artifact-code"><code>{{ preview.formattedCode }}</code></pre>
+            }
+            @default {
+              <dl class="mjc-lib-artifact-dl">
+                @for (row of preview.structuredEntries; track row.key) {
+                  <div class="mjc-lib-artifact-dl__row">
+                    <dt>{{ row.key }}</dt>
+                    <dd>{{ row.value }}</dd>
+                  </div>
+                }
+              </dl>
+            }
+          }
+        }
+      </div>
+
+      <div class="mjc-lib-modal-footer">
+        <span class="mjc-lib-meta-text">
+          {{ artEntry.spaceLabel }} · {{ artEntry.postTitle }}
+        </span>
+        <button
+          type="button"
+          class="mjc-lib-thread-btn"
+          (click)="openEntryThread(artEntry.sourceItemId)"
+        >
+          <span>View in Thread →</span>
+        </button>
+      </div>
+    </div>
+  </div>
+}
