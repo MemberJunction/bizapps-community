@@ -18,6 +18,7 @@ import {
 } from './community-hub-commons.ts';
 import type { CommunityHubDigestCadence, CommunityHubTabKey } from './community-hub-preferences.ts';
 import type { LivingThreadSynthesisView } from './community-hub-wedge.ts';
+import { RenderSafeMarkdownHtml } from './community-markdown.ts';
 import { AskFirstDeflectionWidgetComponent } from './widgets/ask-first-deflection-widget.component.ts';
 
 export interface KnowledgeStreamWalletSummaryItem {
@@ -80,8 +81,50 @@ export class KnowledgeStreamComponent {
   @Output() public readonly digestPreviewRequested = new EventEmitter<void>();
 
   public canonLookupQuery = '';
+  public showAllTopics = false;
+  private readonly defaultVisibleTopicLimit = 10;
   private readonly expandedItemIds = new Set<string>();
   private readonly inlineReplyDrafts = new Map<string, string>();
+
+  public get visibleTopics(): ReadonlyArray<string> {
+    if (this.showAllTopics || this.topics.length <= this.defaultVisibleTopicLimit) {
+      return this.topics;
+    }
+    const base = this.topics.slice(0, this.defaultVisibleTopicLimit);
+    if (this.activeTopicFilter && !base.includes(this.activeTopicFilter) && this.topics.includes(this.activeTopicFilter)) {
+      return [...base, this.activeTopicFilter];
+    }
+    return base;
+  }
+
+  public get hiddenTopicsCount(): number {
+    return Math.max(0, this.topics.length - this.visibleTopics.length);
+  }
+
+  public toggleShowAllTopics(): void {
+    this.showAllTopics = !this.showAllTopics;
+  }
+
+  public renderMarkdown(markdown: string | null | undefined): string {
+    return RenderSafeMarkdownHtml(markdown);
+  }
+
+  public showTimestamp(item: CommunityCommonsItem): boolean {
+    const ts = item.timestampLabel?.trim().toLowerCase() ?? '';
+    const status = item.statusBadge?.trim().toLowerCase() ?? '';
+    return ts.length > 0 && ts !== status;
+  }
+
+  public spaceDotTone(index: number): 'brand' | 'success' | 'violet' | 'warning' | 'info' {
+    const tones: ReadonlyArray<'brand' | 'success' | 'violet' | 'warning' | 'info'> = [
+      'brand',
+      'success',
+      'violet',
+      'warning',
+      'info',
+    ];
+    return tones[index % tones.length];
+  }
 
   public get filteredItems(): CommunityCommonsItem[] {
     return FilterCommonsStream(this.items, {

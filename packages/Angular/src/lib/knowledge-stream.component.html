@@ -1,10 +1,10 @@
 <div class="mjc-commons">
   <!-- LEFT NAVIGATION RAIL: Spaces Directory & Topic Filters -->
   <aside class="mjc-commons__left-rail" aria-label="Spaces and topic filters">
-    <div class="mjc-rail-card">
+    <div class="mjc-sidebar-section">
       <div class="mjc-rail-card__heading">Spaces &amp; Chapters</div>
       <div class="mjc-rail-nav" role="navigation" aria-label="Community Spaces">
-        @for (space of spaces; track space.id) {
+        @for (space of spaces; track space.id; let idx = $index) {
           <button
             type="button"
             class="mjc-rail-nav__item"
@@ -12,14 +12,29 @@
             [attr.aria-pressed]="space.id === activeSpaceFilter"
             (click)="selectSpace(space.id)"
           >
-            <span class="mjc-rail-nav__name">{{ space.name }}</span>
+            <span class="mjc-rail-nav__left">
+              @if (space.id === 'all') {
+                <i class="fa-solid fa-layer-group mjc-rail-nav__all-icon" aria-hidden="true"></i>
+              } @else {
+                <span
+                  class="mjc-space-dot"
+                  [class.mjc-space-dot--brand]="spaceDotTone(idx) === 'brand'"
+                  [class.mjc-space-dot--success]="spaceDotTone(idx) === 'success'"
+                  [class.mjc-space-dot--violet]="spaceDotTone(idx) === 'violet'"
+                  [class.mjc-space-dot--warning]="spaceDotTone(idx) === 'warning'"
+                  [class.mjc-space-dot--info]="spaceDotTone(idx) === 'info'"
+                  aria-hidden="true"
+                ></span>
+              }
+              <span class="mjc-rail-nav__name">{{ space.name }}</span>
+            </span>
             <span class="mjc-rail-nav__count">{{ countForSpace(space.id) }}</span>
           </button>
         }
       </div>
     </div>
 
-    <div class="mjc-rail-card">
+    <div class="mjc-sidebar-section">
       <div class="mjc-rail-card__header">
         <span class="mjc-rail-card__heading">Topics</span>
         @if (hasActiveFilters) {
@@ -37,7 +52,7 @@
         @if (topics.length === 0) {
           <p class="mjc-rail-card__sub">No topic tags configured yet.</p>
         } @else {
-          @for (topic of topics; track topic) {
+          @for (topic of visibleTopics; track topic) {
             <button
               type="button"
               class="mjc-topic-pill"
@@ -50,6 +65,15 @@
           }
         }
       </div>
+      @if (topics.length > 10) {
+        <button
+          type="button"
+          class="mjc-topics-toggle"
+          (click)="toggleShowAllTopics()"
+        >
+          {{ showAllTopics ? 'Show fewer topics' : '+ Show all ' + topics.length + ' topics' }}
+        </button>
+      }
     </div>
   </aside>
 
@@ -57,19 +81,21 @@
   <section class="mjc-commons__stream" aria-label="Community Feed">
     <!-- Quick Composer Prompt Bar -->
     <div class="mjc-quick-composer">
+      <span class="mjc-composer-avatar" aria-hidden="true">
+        <i class="fa-solid fa-pen-to-square"></i>
+      </span>
       <button
         type="button"
         id="mjc-quick-composer-btn"
         class="mjc-quick-composer__trigger"
         (click)="openComposer()"
       >
-        <i class="fa-solid fa-plus" aria-hidden="true"></i>
         <span>Ask a question or share an update with the community...</span>
       </button>
       <button
         type="button"
         id="mjc-feed-synthesize-btn"
-        class="mjc-btn mjc-btn--secondary"
+        class="mjc-btn mjc-ai-summary-btn"
         [disabled]="isSynthesizing || !synthesizeTargetSourcePostId"
         (click)="synthesizeActiveThread()"
       >
@@ -135,7 +161,7 @@
       <div class="mjc-empty-stream">
         <h3 class="mjc-empty-stream__title">No matching threads in this view</h3>
         <p class="mjc-empty-stream__desc">
-          Try clearing active space or topic filters, or publish a new question or pattern.
+          Try clearing active space or topic filters, or start a new post.
         </p>
         <div class="mjc-empty-stream__actions">
           <button type="button" class="mjc-btn mjc-btn--secondary" (click)="resetAllFilters()">
@@ -154,97 +180,115 @@
             [class.mjc-stream-card--selected]="item.id === selectedItemId"
             [class.mjc-stream-card--expanded]="isItemExpanded(item.id)"
           >
-            <div class="mjc-stream-card__meta">
-              <div class="mjc-stream-card__badges">
-                <span
-                  class="mjc-badge"
-                  [class.mjc-badge--success]="item.statusTone === 'success'"
-                  [class.mjc-badge--warning]="item.statusTone === 'warning'"
-                  [class.mjc-badge--danger]="item.statusTone === 'danger'"
-                  [class.mjc-badge--brand]="item.statusTone === 'brand'"
-                >
-                  {{ item.statusBadge }}
-                </span>
-                <span class="mjc-space-chip">{{ item.spaceLabel }}</span>
-                @if (item.promotedToSpaceId) {
-                  <span class="mjc-badge mjc-badge--success" title="Working Group Space ID">
-                    Space: {{ item.promotedToSpaceId }}
-                  </span>
-                }
-                <span class="mjc-entry-type">{{ item.entryTypeLabel }}</span>
-              </div>
-              <span class="mjc-timestamp">{{ item.timestampLabel }}</span>
-            </div>
-
-            <h3 class="mjc-stream-card__title">
-              <button type="button" class="mjc-stream-card__title-btn" (click)="inspectItem(item.id)">
-                {{ item.title }}
-              </button>
-            </h3>
-            <p class="mjc-stream-card__excerpt">{{ isItemExpanded(item.id) ? item.bodyMarkdown : item.excerpt }}</p>
-
-            @if (item.tags.length > 0) {
-              <div class="mjc-tag-row">
-                @for (tag of item.tags; track tag) {
-                  <button
-                    type="button"
-                    class="mjc-tag-chip"
-                    [class.mjc-tag-chip--active]="tag === activeTopicFilter"
-                    (click)="selectTopic(tag)"
-                  >
-                    #{{ tag }}
-                  </button>
-                }
-              </div>
-            }
-
-            <div class="mjc-stream-card__footer">
-              <div class="mjc-author">
-                <span class="mjc-avatar" aria-hidden="true">{{ item.authorInitials }}</span>
-                <div class="mjc-author__text">
-                  <span class="mjc-author__name">{{ item.authorName }}</span>
-                  <span class="mjc-author__role">{{ item.authorRole }}</span>
-                </div>
-              </div>
-              <div class="mjc-card-actions">
+            <div class="mjc-stream-card__main">
+              <!-- LEFT VERTICAL UPVOTE COLUMN (matches Modern Commons mockup) -->
+              <div class="mjc-stream-card__vote-col">
                 <button
                   type="button"
                   class="mjc-upvote-btn"
                   [class.mjc-upvote-btn--active]="item.upvotedByMe"
                   [attr.aria-pressed]="item.upvotedByMe"
+                  [attr.title]="'Upvote ' + item.title"
                   (click)="upvoteItem($event, item.id)"
                 >
-                  <span aria-hidden="true">▲</span>
-                  <span>{{ item.upvoteCount }}</span>
+                  <span class="mjc-upvote-btn__arrow" aria-hidden="true">▲</span>
+                  <span class="mjc-sr-only">Upvote </span>
+                  <span class="mjc-upvote-btn__count">{{ item.upvoteCount }}</span>
                 </button>
-                <button
-                  type="button"
-                  class="mjc-btn mjc-btn--ghost mjc-expand-btn"
-                  [class.mjc-expand-btn--active]="isItemExpanded(item.id)"
-                  [attr.aria-expanded]="isItemExpanded(item.id)"
-                  (click)="toggleItemExpanded(item.id)"
-                >
-                  <i [class]="isItemExpanded(item.id) ? 'fa-solid fa-chevron-up' : 'fa-solid fa-chevron-down'" aria-hidden="true"></i>
-                  <span>{{ isItemExpanded(item.id) ? 'Collapse' : 'Expand' }}</span>
-                  <span class="mjc-reply-count">({{ item.replyCount }})</span>
-                </button>
-                <button
-                  type="button"
-                  class="mjc-btn mjc-btn--ghost mjc-ai-summary-btn"
-                  [disabled]="isSynthesizing"
-                  (click)="expandAndSynthesize(item)"
-                >
-                  <i class="fa-solid fa-wand-magic-sparkles" aria-hidden="true"></i>
-                  <span>AI Summary</span>
-                </button>
-                <button
-                  type="button"
-                  class="mjc-btn mjc-btn--ghost mjc-inspect-btn"
-                  (click)="inspectItem(item.id)"
-                >
-                  <i class="fa-solid fa-up-right-and-down-left-from-center" aria-hidden="true"></i>
-                  <span>Full Page</span>
-                </button>
+              </div>
+
+              <!-- RIGHT CONTENT COLUMN -->
+              <div class="mjc-stream-card__content">
+                <div class="mjc-stream-card__meta">
+                  <div class="mjc-stream-card__badges">
+                    <span
+                      class="mjc-badge"
+                      [class.mjc-badge--success]="item.statusTone === 'success'"
+                      [class.mjc-badge--warning]="item.statusTone === 'warning'"
+                      [class.mjc-badge--danger]="item.statusTone === 'danger'"
+                      [class.mjc-badge--brand]="item.statusTone === 'brand'"
+                    >
+                      {{ item.statusBadge }}
+                    </span>
+                    <span class="mjc-space-chip">{{ item.spaceLabel }}</span>
+                    @if (item.promotedToSpaceId) {
+                      <span class="mjc-badge mjc-badge--success" title="Working Group Space ID">
+                        Space: {{ item.promotedToSpaceId }}
+                      </span>
+                    }
+                    <span class="mjc-entry-type">{{ item.entryTypeLabel }}</span>
+                  </div>
+                  @if (showTimestamp(item)) {
+                    <span class="mjc-timestamp">{{ item.timestampLabel }}</span>
+                  }
+                </div>
+
+                <h3 class="mjc-stream-card__title">
+                  <button type="button" class="mjc-stream-card__title-btn" (click)="inspectItem(item.id)">
+                    {{ item.title }}
+                  </button>
+                </h3>
+
+                @if (isItemExpanded(item.id)) {
+                  <div class="mjc-stream-card__body mjc-markdown" [innerHTML]="renderMarkdown(item.bodyMarkdown)"></div>
+                } @else {
+                  <p class="mjc-stream-card__excerpt">{{ item.excerpt }}</p>
+                }
+
+                @if (item.tags.length > 0) {
+                  <div class="mjc-tag-row">
+                    @for (tag of item.tags; track tag) {
+                      <button
+                        type="button"
+                        class="mjc-tag-chip"
+                        [class.mjc-tag-chip--active]="tag === activeTopicFilter"
+                        (click)="selectTopic(tag)"
+                      >
+                        #{{ tag }}
+                      </button>
+                    }
+                  </div>
+                }
+
+                <div class="mjc-stream-card__footer">
+                  <div class="mjc-author">
+                    <span class="mjc-avatar" aria-hidden="true">{{ item.authorInitials }}</span>
+                    <div class="mjc-author__text">
+                      <span class="mjc-author__name">{{ item.authorName }}</span>
+                      <span class="mjc-author__role">{{ item.authorRole }}</span>
+                    </div>
+                  </div>
+                  <div class="mjc-card-actions">
+                    <button
+                      type="button"
+                      class="mjc-btn mjc-btn--ghost mjc-expand-btn"
+                      [class.mjc-expand-btn--active]="isItemExpanded(item.id)"
+                      [attr.aria-expanded]="isItemExpanded(item.id)"
+                      (click)="toggleItemExpanded(item.id)"
+                    >
+                      <i [class]="isItemExpanded(item.id) ? 'fa-solid fa-chevron-up' : 'fa-solid fa-chevron-down'" aria-hidden="true"></i>
+                      <span>{{ isItemExpanded(item.id) ? 'Collapse' : 'Expand' }}</span>
+                      <span class="mjc-reply-count">({{ item.replyCount }})</span>
+                    </button>
+                    <button
+                      type="button"
+                      class="mjc-btn mjc-btn--ghost mjc-ai-summary-btn"
+                      [disabled]="isSynthesizing"
+                      (click)="expandAndSynthesize(item)"
+                    >
+                      <i class="fa-solid fa-wand-magic-sparkles" aria-hidden="true"></i>
+                      <span>AI Summary</span>
+                    </button>
+                    <button
+                      type="button"
+                      class="mjc-btn mjc-btn--ghost mjc-inspect-btn"
+                      (click)="inspectItem(item.id)"
+                    >
+                      <i class="fa-solid fa-up-right-and-down-left-from-center" aria-hidden="true"></i>
+                      <span>Full Page</span>
+                    </button>
+                  </div>
+                </div>
               </div>
             </div>
 
@@ -284,11 +328,11 @@
                         <strong>AI Summary</strong>
                         <span class="mjc-badge mjc-badge--brand">{{ synth.consideredReplyCount }} replies</span>
                       </div>
-                      <p class="mjc-inline-synthesis__body">{{ synth.executiveSummary }}</p>
+                      <div class="mjc-inline-synthesis__body mjc-markdown" [innerHTML]="renderMarkdown(synth.executiveSummary)"></div>
                       @if (synth.keyTakeaways.length > 0) {
                         <ul class="mjc-inline-synthesis__list">
                           @for (takeaway of synth.keyTakeaways; track takeaway) {
-                            <li>{{ takeaway }}</li>
+                            <li [innerHTML]="renderMarkdown(takeaway)"></li>
                           }
                         </ul>
                       }
@@ -303,13 +347,14 @@
                     @for (reply of item.replies; track reply.id) {
                       <div class="mjc-inline-reply" [class.mjc-inline-reply--accepted]="reply.isAccepted">
                         <div class="mjc-inline-reply__head">
+                          <span class="mjc-avatar mjc-avatar--sm" aria-hidden="true">{{ reply.authorInitials }}</span>
                           <strong>{{ reply.authorName }}</strong>
-                          <span>{{ reply.authorRole }} · {{ reply.timestampLabel }}</span>
+                          <span>{{ reply.authorRole }}</span>
                           @if (reply.isAccepted) {
                             <span class="mjc-badge mjc-badge--success">✓ Verified Answer</span>
                           }
                         </div>
-                        <p class="mjc-inline-reply__body">{{ reply.bodyMarkdown }}</p>
+                        <div class="mjc-inline-reply__body mjc-markdown" [innerHTML]="renderMarkdown(reply.bodyMarkdown)"></div>
                       </div>
                     }
                   </div>
@@ -344,28 +389,15 @@
 
   <!-- RIGHT CONTEXT RAIL -->
   <aside class="mjc-commons__right-rail" aria-label="Instant answers, digest, and open voting">
-    <!-- Instant Answers Lookup Card -->
+    <!-- Instant Answers Lookup Card (single unified search) -->
     <div class="mjc-rail-card mjc-rail-card--elevated">
-      <div class="mjc-rail-card__heading">Instant Answers</div>
+      <div class="mjc-rail-card__header">
+        <span class="mjc-rail-card__heading">
+          <i class="fa-solid fa-sparkles" aria-hidden="true"></i>
+          Instant Answers
+        </span>
+      </div>
       <p class="mjc-rail-card__sub">Check verified community answers before starting a new post.</p>
-      <label class="mjc-sr-only" for="mjc-canon-quick-lookup">Search verified answers</label>
-      <input
-        id="mjc-canon-quick-lookup"
-        type="search"
-        class="mjc-input"
-        placeholder="Search verified answers..."
-        [(ngModel)]="canonLookupQuery"
-      />
-      @if (canonLookupMatches.length > 0) {
-        <div class="mjc-canon-matches">
-          @for (match of canonLookupMatches; track match.id) {
-            <button type="button" class="mjc-canon-match-btn" (click)="inspectItem(match.id)">
-              <span class="mjc-canon-match-btn__badge">{{ match.statusBadge }}</span>
-              <span class="mjc-canon-match-btn__title">{{ match.title }}</span>
-            </button>
-          }
-        </div>
-      }
       <div class="mjc-ask-first-embed">
         <mjc-ask-first-deflection-widget
           [allowedForumIDs]="allowedForumIDs"

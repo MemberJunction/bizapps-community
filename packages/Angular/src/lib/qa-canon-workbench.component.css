@@ -328,8 +328,7 @@
 .mjc-qa-inspector__body {
   font-size: var(--mj-text-sm);
   color: var(--mj-text-secondary);
-  line-height: 1.6;
-  white-space: pre-wrap;
+  line-height: 1.65;
 }
 
 .mjc-qa-answer-form {
@@ -402,7 +401,49 @@
   padding: var(--mj-space-3);
   border: 1px solid var(--mj-border-subtle, var(--mj-border-default));
   border-radius: var(--mj-radius-md);
-  background: var(--mj-bg-surface-sunken);
+  background: color-mix(in srgb, var(--mj-bg-page) 65%, var(--mj-bg-surface));
   color: var(--mj-text-primary);
   font-size: var(--mj-text-sm);
+}
+
+.mjc-markdown :first-child {
+  margin-top: 0;
+}
+
+.mjc-markdown :last-child {
+  margin-bottom: 0;
+}
+
+.mjc-markdown ::ng-deep .mjc-md-heading {
+  margin: 12px 0 4px;
+  font-size: var(--mj-text-xs);
+  font-weight: var(--mj-font-bold, 700);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--mj-text-primary);
+}
+
+.mjc-markdown ::ng-deep .mjc-md-p {
+  margin: 0 0 8px;
+  line-height: 1.65;
+}
+
+.mjc-markdown ::ng-deep strong {
+  color: var(--mj-text-primary);
+  font-weight: var(--mj-font-semibold);
+}
+
+.mjc-markdown ::ng-deep .mjc-md-list {
+  margin: 4px 0 8px;
+  padding-left: 20px;
+}
+
+.mjc-markdown ::ng-deep .mjc-md-code {
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--mj-bg-page) 65%, var(--mj-bg-surface));
+  border: 1px solid var(--mj-border-default);
+  font-family: var(--mj-font-mono, monospace);
+  font-size: 0.85em;
+  color: var(--mj-text-primary);
 }

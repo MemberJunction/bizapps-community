@@ -1,11 +1,11 @@
 <div class="mjc-ask-first">
-  <label class="mjc-ask-first__label" for="mjc-ask-first-input">Ask-First: search before you post</label>
+  <label class="mjc-ask-first__label mjc-sr-only" for="mjc-ask-first-input">Search verified answers before posting</label>
   <div class="mjc-ask-first__row">
     <input
       id="mjc-ask-first-input"
       class="mjc-ask-first__input"
       type="text"
-      placeholder="What's your question?"
+      placeholder="Ask a question..."
       [ngModel]="queryText"
       (ngModelChange)="onQueryChange($event)"
       (keyup.enter)="Search()"

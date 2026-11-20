@@ -12,6 +12,7 @@ import {
   type QaCanonStats,
 } from './community-hub-workbench.ts';
 import type { CommunityBadgeTone } from './community-hub-commons.ts';
+import { RenderSafeMarkdownHtml, StripMarkdownToPlainText } from './community-markdown.ts';
 
 export interface QaFilterPillOption {
   key: QaCanonFilterKey;
@@ -100,6 +101,16 @@ export class QaCanonWorkbenchComponent {
       return null;
     }
     return Math.round(item.confidenceScore * 100);
+  }
+
+  public renderMarkdown(markdown: string | null | undefined): string {
+    return RenderSafeMarkdownHtml(markdown);
+  }
+
+  public excerptFor(markdown: string | null | undefined): string {
+    const plain = StripMarkdownToPlainText(markdown);
+    if (!plain) return 'Awaiting verified answer.';
+    return plain.length > 110 ? `${plain.slice(0, 110).trimEnd()}...` : plain;
   }
 
   public setFilter(key: QaCanonFilterKey): void {
