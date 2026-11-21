@@ -23,7 +23,7 @@ jobs:
     # install Chromium on an OS version it doesn't recognize, with no override, and 24.04 is a
     # long-established, fully-supported target.
     runs-on: ubuntu-24.04
-    timeout-minutes: 25
+    timeout-minutes: 60
     steps:
       - name: Checkout bizapps-community
         uses: actions/checkout@v4
@@ -116,8 +116,13 @@ jobs:
           );
           NODE
 
+      # PRs into next (and next itself) build against MJ next and the sibling apps' next, from
+      # source, in one generated pnpm workspace; release PRs and lts/* lines install the committed
+      # lockfile, i.e. the published versions. See .github/actions/ci-install/action.yml.
       - name: Install dependencies
-        run: pnpm install --no-frozen-lockfile
+        uses: ./.github/actions/ci-install
+        with:
+          published-install: pnpm install --no-frozen-lockfile
 
       - name: Build upstream bizapps-collaboration libraries
         run: |
