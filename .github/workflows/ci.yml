@@ -23,7 +23,7 @@ jobs:
     # install Chromium on an OS version it doesn't recognize, with no override, and 24.04 is a
     # long-established, fully-supported target.
     runs-on: ubuntu-24.04
-    timeout-minutes: 25
+    timeout-minutes: 60
     steps:
       - name: Checkout bizapps-community
         uses: actions/checkout@v4
@@ -31,6 +31,9 @@ jobs:
           fetch-depth: 0
 
       - name: Checkout upstream bizapps-collaboration
+        # Published mode only: on next, ci-install brings bizapps-collaboration's next (and MJ next) into
+        # the workspace itself, so this repo's own joined-workspace setup would only collide with it.
+        if: ${{ github.base_ref != 'next' && github.ref != 'refs/heads/next' }}
         uses: actions/checkout@v4
         with:
           repository: MemberJunction/bizapps-collaboration
@@ -48,6 +51,9 @@ jobs:
           node-version: 24
 
       - name: Configure joined CI workspace for upstream dependencies
+        # Published mode only: on next, ci-install brings bizapps-collaboration's next (and MJ next) into
+        # the workspace itself, so this repo's own joined-workspace setup would only collide with it.
+        if: ${{ github.base_ref != 'next' && github.ref != 'refs/heads/next' }}
         run: |
           node - <<'NODE'
           const fs = require('node:fs');
@@ -116,10 +122,18 @@ jobs:
           );
           NODE
 
+      # PRs into next (and next itself) build against MJ next and the sibling apps' next, from
+      # source, in one generated pnpm workspace; release PRs and lts/* lines install the committed
+      # lockfile, i.e. the published versions. See .github/actions/ci-install/action.yml.
       - name: Install dependencies
-        run: pnpm install --no-frozen-lockfile
+        uses: ./.github/actions/ci-install
+        with:
+          published-install: pnpm install --no-frozen-lockfile
 
       - name: Build upstream bizapps-collaboration libraries
+        # Published mode only: on next, ci-install brings bizapps-collaboration's next (and MJ next) into
+        # the workspace itself, so this repo's own joined-workspace setup would only collide with it.
+        if: ${{ github.base_ref != 'next' && github.ref != 'refs/heads/next' }}
         run: |
           pnpm \
             --filter @mj-biz-apps/collaboration-core... \
