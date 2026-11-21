@@ -341,5 +341,86 @@ describe('@mj-biz-apps/community-core media & artifact attachments', () => {
     );
     assert.equal(validTextArtifact.valid, true);
     assert.equal(validTextArtifact.sizeBytes, Buffer.byteLength('<div><strong>Benchmark</strong></div>', 'utf8'));
+
+    // CR-4: File-backed ArtifactVersion must validate linkedFileRow and reject Deleted, forbidden ContentType,
+    // oversized linked file, or MIME/size mismatches; real-schema MJ: Files with ProviderKey derives /api/files/<ID>
+    const validRealSchemaFile = {
+      ID: '11111111-1111-4111-8111-111111111112',
+      Name: 'blueprint.png',
+      ContentType: 'image/png',
+      ProviderKey: 'spaces/community/blueprint.png',
+      Status: 'Uploaded',
+    };
+    const validBoundVer = ValidateAuthoritativeArtifactVersionRecord(
+      {
+        ID: '22222222-2222-4222-8222-222222222224',
+        ArtifactID: ARTIFACT_ID,
+        FileID: validRealSchemaFile.ID,
+        ContentMode: 'File',
+        MimeType: 'image/png',
+        ContentSizeBytes: 8192,
+        Content: null,
+      },
+      {
+        targetEntityName: 'MJ: Files',
+        targetRecordUuid: validRealSchemaFile.ID,
+        linkedFileRow: validRealSchemaFile,
+      },
+    );
+    assert.equal(validBoundVer.valid, true);
+    assert.equal(validBoundVer.url, `/api/files/${validRealSchemaFile.ID}`);
+    assert.equal(validBoundVer.sizeBytes, 8192);
+    assert.equal(validBoundVer.mimeType, 'image/png');
+
+    const deletedLinkedFile = ValidateAuthoritativeArtifactVersionRecord(
+      {
+        ID: '22222222-2222-4222-8222-222222222225',
+        ArtifactID: ARTIFACT_ID,
+        FileID: validRealSchemaFile.ID,
+        ContentMode: 'File',
+        MimeType: 'image/png',
+        ContentSizeBytes: 8192,
+        Content: 'https://cdn.example.com/blueprint.png',
+      },
+      {
+        linkedFileRow: { ...validRealSchemaFile, Size: 8192, DownloadURL: 'https://cdn.example.com/blueprint.png', Status: 'Deleted' },
+      },
+    );
+    assert.equal(deletedLinkedFile.valid, false);
+    assert.match(deletedLinkedFile.error ?? '', /Deleted/);
+
+    const forbiddenLinkedMime = ValidateAuthoritativeArtifactVersionRecord(
+      {
+        ID: '22222222-2222-4222-8222-222222222226',
+        ArtifactID: ARTIFACT_ID,
+        FileID: validRealSchemaFile.ID,
+        ContentMode: 'File',
+        MimeType: 'image/png',
+        ContentSizeBytes: 512,
+        Content: 'https://cdn.example.com/payload.exe',
+      },
+      {
+        linkedFileRow: { ...validRealSchemaFile, ContentType: 'application/x-msdownload', Size: 512, DownloadURL: 'https://cdn.example.com/payload.exe' },
+      },
+    );
+    assert.equal(forbiddenLinkedMime.valid, false);
+    assert.match(forbiddenLinkedMime.error ?? '', /not permitted/);
+
+    const conflictingSizeVer = ValidateAuthoritativeArtifactVersionRecord(
+      {
+        ID: '22222222-2222-4222-8222-222222222227',
+        ArtifactID: ARTIFACT_ID,
+        FileID: validRealSchemaFile.ID,
+        ContentMode: 'File',
+        MimeType: 'image/png',
+        ContentSizeBytes: 512,
+        Content: 'https://cdn.example.com/blueprint.png',
+      },
+      {
+        linkedFileRow: { ...validRealSchemaFile, Size: 8192, DownloadURL: 'https://cdn.example.com/blueprint.png' },
+      },
+    );
+    assert.equal(conflictingSizeVer.valid, false);
+    assert.match(conflictingSizeVer.error ?? '', /conflicts with linked MJ: Files/);
   });
 });

@@ -130,6 +130,15 @@ interface StoredMJArtifactVersion {
   deleted?: boolean;
 }
 
+function projectRowFields<T extends object>(row: T, fields?: string[]): T {
+  if (!fields || fields.length === 0) {
+    return { ...row };
+  }
+  const allowed = new Set(fields);
+  const entries = Object.entries(row).filter(([key]) => allowed.has(key));
+  return Object.fromEntries(entries) as T;
+}
+
 interface MockWorldOptions {
   failSpaceItemSave?: boolean;
   failAttachmentSave?: boolean;
@@ -303,6 +312,7 @@ function buildMockWorld(options: MockWorldOptions = {}) {
     ContentType: string | null;
     Size?: number | null;
     DownloadURL?: string | null;
+    ProviderKey?: string | null;
     Status?: string | null;
   }> = [
     {
@@ -652,7 +662,7 @@ function buildMockWorld(options: MockWorldOptions = {}) {
   mock.method(
     RunView.prototype,
     'RunView',
-    async (query: { EntityName: string; ExtraFilter?: string }, contextUser?: UserInfo) => {
+    async (query: { EntityName: string; ExtraFilter?: string; Fields?: string[] }, contextUser?: UserInfo) => {
       const entity = query.EntityName;
       const filter = query.ExtraFilter ?? '';
 
@@ -660,11 +670,26 @@ function buildMockWorld(options: MockWorldOptions = {}) {
         return { Success: false, ErrorMessage: `Simulated failure for ${entity}`, Results: [] };
       }
 
+      const project = <T extends object>(rows: T[]): T[] => rows.map((r) => projectRowFields(r, query.Fields));
+
+      if (entity === 'MJ: Entities') {
+        const allEntities = [
+          { ID: ENTITY_ARTIFACTS_ID, Name: 'MJ: Artifacts' },
+          { ID: ENTITY_FILES_ID, Name: 'MJ: Files' },
+        ];
+        const match = allEntities.filter(
+          (e) =>
+            filter.toLowerCase().includes(e.ID.toLowerCase()) ||
+            filter.toLowerCase().includes(e.Name.toLowerCase()),
+        );
+        return { Success: true, Results: project(match) };
+      }
+
       if (entity === 'MJ_BizApps_Collaboration: Spaces') {
         const match = [
           { ID: SPACE_ID, OwnerID: OWNER_USER_ID, Name: 'Product Community' },
         ].filter((s) => filter.toLowerCase().includes(s.ID.toLowerCase()));
-        return { Success: true, Results: match };
+        return { Success: true, Results: project(match) };
       }
 
       if (entity === 'MJ_BizApps_Collaboration: Space Members') {
@@ -672,7 +697,7 @@ function buildMockWorld(options: MockWorldOptions = {}) {
         const match = spaceMembers.filter(
           (m) => filter.toLowerCase().includes(m.SpaceID.toLowerCase()) && m.UserID.toLowerCase() === uid,
         );
-        return { Success: true, Results: match };
+        return { Success: true, Results: project(match) };
       }
 
       if (entity === 'MJ_BizApps_Collaboration: Space Items') {
@@ -686,19 +711,19 @@ function buildMockWorld(options: MockWorldOptions = {}) {
           }
           return filter.toLowerCase().includes(si.SpaceID.toLowerCase());
         });
-        return { Success: true, Results: filtered };
+        return { Success: true, Results: project(filtered) };
       }
 
       if (entity === COMMUNITY_ENTITY_NAMES.Forums) {
         if (filter.trimStart().startsWith('ID =')) {
           return {
             Success: true,
-            Results: forums.filter((f) => filter.toLowerCase().includes(f.ID.toLowerCase())),
+            Results: project(forums.filter((f) => filter.toLowerCase().includes(f.ID.toLowerCase()))),
           };
         }
         return {
           Success: true,
-          Results: forums.filter((f) => filter.toLowerCase().includes(f.SpaceID.toLowerCase())),
+          Results: project(forums.filter((f) => filter.toLowerCase().includes(f.SpaceID.toLowerCase()))),
         };
       }
 
@@ -706,8 +731,10 @@ function buildMockWorld(options: MockWorldOptions = {}) {
         const uid = contextUser?.ID?.toLowerCase() ?? '';
         return {
           Success: true,
-          Results: forumMembers.filter(
-            (m) => filter.toLowerCase().includes(m.ForumID.toLowerCase()) && m.UserID.toLowerCase() === uid,
+          Results: project(
+            forumMembers.filter(
+              (m) => filter.toLowerCase().includes(m.ForumID.toLowerCase()) && m.UserID.toLowerCase() === uid,
+            ),
           ),
         };
       }
@@ -715,14 +742,14 @@ function buildMockWorld(options: MockWorldOptions = {}) {
       if (entity === COMMUNITY_ENTITY_NAMES.ForumRoleTypes) {
         return {
           Success: true,
-          Results: roleTypes.filter((r) => filter.toLowerCase().includes(r.ID.toLowerCase())),
+          Results: project(roleTypes.filter((r) => filter.toLowerCase().includes(r.ID.toLowerCase()))),
         };
       }
 
       if (entity === COMMUNITY_ENTITY_NAMES.ForumPosts) {
         return {
           Success: true,
-          Results: posts.filter((p) => filter.toLowerCase().includes(p.ID.toLowerCase())),
+          Results: project(posts.filter((p) => filter.toLowerCase().includes(p.ID.toLowerCase()))),
         };
       }
 
@@ -731,29 +758,31 @@ function buildMockWorld(options: MockWorldOptions = {}) {
         if (filter.includes('PostID =')) {
           return {
             Success: true,
-            Results: active.filter((a) => filter.toLowerCase().includes(a.PostID.toLowerCase())),
+            Results: project(active.filter((a) => filter.toLowerCase().includes(a.PostID.toLowerCase()))),
           };
         }
         if (filter.includes('SpaceItemID IN')) {
           return {
             Success: true,
-            Results: active.filter((a) => filter.toLowerCase().includes(a.SpaceItemID.toLowerCase())),
+            Results: project(active.filter((a) => filter.toLowerCase().includes(a.SpaceItemID.toLowerCase()))),
           };
         }
-        return { Success: true, Results: active };
+        return { Success: true, Results: project(active) };
       }
 
       if (entity === COMMUNITY_ENTITY_NAMES.ForumArtifactPosts) {
         return {
           Success: true,
-          Results: artifactPosts.filter((ap) => !ap.deleted && filter.toLowerCase().includes(ap.ID.toLowerCase())),
+          Results: project(
+            artifactPosts.filter((ap) => !ap.deleted && filter.toLowerCase().includes(ap.ID.toLowerCase())),
+          ),
         };
       }
 
       if (entity === 'MJ: Artifact Types') {
         return {
           Success: true,
-          Results: artifactTypes,
+          Results: project(artifactTypes),
         };
       }
 
@@ -763,18 +792,21 @@ function buildMockWorld(options: MockWorldOptions = {}) {
         }
         return {
           Success: true,
-          Results: artifacts.filter((a) => !a.deleted && filter.toLowerCase().includes(a.ID.toLowerCase())),
+          Results: project(artifacts.filter((a) => !a.deleted && filter.toLowerCase().includes(a.ID.toLowerCase()))),
         };
       }
 
       if (entity === 'MJ: Artifact Versions') {
         return {
           Success: true,
-          Results: artifactVersions.filter(
-            (v) =>
-              !v.deleted &&
-              (filter.toLowerCase().includes(v.ID.toLowerCase()) ||
-                filter.toLowerCase().includes(v.ArtifactID.toLowerCase())),
+          Results: project(
+            artifactVersions.filter(
+              (v) =>
+                !v.deleted &&
+                (filter.toLowerCase().includes(v.ID.toLowerCase()) ||
+                  filter.toLowerCase().includes(v.ArtifactID.toLowerCase()) ||
+                  (v.FileID !== null && filter.toLowerCase().includes(v.FileID.toLowerCase()))),
+            ),
           ),
         };
       }
@@ -782,7 +814,7 @@ function buildMockWorld(options: MockWorldOptions = {}) {
       if (entity === 'MJ: Files') {
         return {
           Success: true,
-          Results: files.filter((f) => filter.toLowerCase().includes(f.ID.toLowerCase())),
+          Results: project(files.filter((f) => filter.toLowerCase().includes(f.ID.toLowerCase()))),
         };
       }
 
@@ -1469,7 +1501,7 @@ describe('@mj-biz-apps/community-server media/artifact attachments & SpaceItem l
         FileID: FILE_ID_1,
         FileName: 'architecture.png',
         MimeType: 'image/png',
-        ContentSizeBytes: 1024,
+        ContentSizeBytes: 4096,
       });
       await assert.rejects(
         () =>
@@ -1867,7 +1899,7 @@ describe('@mj-biz-apps/community-server media/artifact attachments & SpaceItem l
         Name: 'missing-size-ver.png',
         ContentMode: 'File',
         Content: 'https://cdn.example.com/missing-size-ver.png',
-        FileID: FILE_ID_1,
+        FileID: null,
         FileName: 'missing-size-ver.png',
         MimeType: 'image/png',
         ContentSizeBytes: null,
@@ -1880,11 +1912,10 @@ describe('@mj-biz-apps/community-server media/artifact attachments & SpaceItem l
             attachments: [
               {
                 kind: 'image',
-                fileId: FILE_ID_1,
-                artifactVersionId: noSizeVerId,
                 fileName: 'missing-size-ver.png',
                 mimeType: 'image/png',
                 sizeBytes: 1024,
+                artifactVersionId: noSizeVerId,
               },
             ],
           }),
@@ -1939,6 +1970,320 @@ describe('@mj-biz-apps/community-server media/artifact attachments & SpaceItem l
         assert.equal(hydrated[1].caption, 'Large 1.6 MB blueprint');
         assert.equal(hydrated[1].featureInLibrary, true);
       }
+    } finally {
+      mock.restoreAll();
+    }
+  });
+
+  it('CR-4, CR-7 & CR-8: validates linked MJ: Files on ArtifactVersions, supports real-schema MJ: Files round-trip under field projection, and enforces unpinned artifact batch limits', async () => {
+    const world = buildMockWorld();
+    try {
+      const svc = new CommunityAttachmentServerService();
+      const sharedMember = makeUser(SHARED_USER_ID, 'Shared Member');
+
+      // CR-4: ArtifactVersion bound to Deleted / forbidden-ContentType / oversized / MIME-conflicting MJ: Files must reject
+      const deletedFileId = 'ffffffff-7777-4777-8777-000000000001';
+      const forbiddenFileId = 'ffffffff-7777-4777-8777-000000000002';
+      const oversizedFileId = 'ffffffff-7777-4777-8777-000000000003';
+      world.files.push(
+        {
+          ID: deletedFileId,
+          Name: 'deleted.png',
+          ContentType: 'image/png',
+          Size: 2048,
+          DownloadURL: 'https://cdn.example.com/deleted.png',
+          Status: 'Deleted',
+        },
+        {
+          ID: forbiddenFileId,
+          Name: 'payload.exe',
+          ContentType: 'application/x-msdownload',
+          Size: 2048,
+          DownloadURL: 'https://cdn.example.com/payload.exe',
+          Status: 'Uploaded',
+        },
+        {
+          ID: oversizedFileId,
+          Name: 'huge.png',
+          ContentType: 'image/png',
+          Size: COMMUNITY_ATTACHMENT_MAX_FILE_BYTES + 1,
+          DownloadURL: 'https://cdn.example.com/huge.png',
+          Status: 'Uploaded',
+        },
+      );
+
+      const verDeleted = 'ffff2222-0000-4000-8000-000000000001';
+      const verForbidden = 'ffff2222-0000-4000-8000-000000000002';
+      const verOversized = 'ffff2222-0000-4000-8000-000000000003';
+      const verConflictMime = 'ffff2222-0000-4000-8000-000000000004';
+      const verConflictSize = 'ffff2222-0000-4000-8000-000000000005';
+      world.artifactVersions.push(
+        {
+          ID: verDeleted,
+          ArtifactID: ARTIFACT_ID,
+          VersionNumber: 10,
+          Name: 'deleted.png',
+          ContentMode: 'File',
+          Content: 'https://cdn.example.com/deleted.png',
+          FileID: deletedFileId,
+          FileName: 'deleted.png',
+          MimeType: 'image/png',
+          ContentSizeBytes: 2048,
+        },
+        {
+          ID: verForbidden,
+          ArtifactID: ARTIFACT_ID,
+          VersionNumber: 11,
+          Name: 'innocent.png',
+          ContentMode: 'File',
+          Content: 'https://cdn.example.com/payload.exe',
+          FileID: forbiddenFileId,
+          FileName: 'innocent.png',
+          MimeType: 'image/png',
+          ContentSizeBytes: 2048,
+        },
+        {
+          ID: verOversized,
+          ArtifactID: ARTIFACT_ID,
+          VersionNumber: 12,
+          Name: 'huge.png',
+          ContentMode: 'File',
+          Content: 'https://cdn.example.com/huge.png',
+          FileID: oversizedFileId,
+          FileName: 'huge.png',
+          MimeType: 'image/png',
+          ContentSizeBytes: 2048,
+        },
+        {
+          ID: verConflictMime,
+          ArtifactID: ARTIFACT_ID,
+          VersionNumber: 13,
+          Name: 'mismatch.pdf',
+          ContentMode: 'File',
+          Content: 'https://cdn.example.com/architecture.png',
+          FileID: FILE_ID_1,
+          FileName: 'mismatch.pdf',
+          MimeType: 'application/pdf',
+          ContentSizeBytes: 4096,
+        },
+        {
+          ID: verConflictSize,
+          ArtifactID: ARTIFACT_ID,
+          VersionNumber: 14,
+          Name: 'mismatch-size.png',
+          ContentMode: 'File',
+          Content: 'https://cdn.example.com/architecture.png',
+          FileID: FILE_ID_1,
+          FileName: 'mismatch-size.png',
+          MimeType: 'image/png',
+          ContentSizeBytes: 512,
+        },
+      );
+
+      await assert.rejects(
+        () =>
+          svc.PersistPostAttachments({
+            postId: SHARED_POST_ID,
+            contextUser: sharedMember,
+            attachments: [
+              {
+                kind: 'image',
+                fileId: deletedFileId,
+                artifactVersionId: verDeleted,
+                fileName: 'deleted.png',
+                mimeType: 'image/png',
+                sizeBytes: 2048,
+              },
+            ],
+          }),
+        /Deleted/,
+      );
+
+      await assert.rejects(
+        () =>
+          svc.PersistPostAttachments({
+            postId: SHARED_POST_ID,
+            contextUser: sharedMember,
+            attachments: [
+              {
+                kind: 'image',
+                fileId: forbiddenFileId,
+                artifactVersionId: verForbidden,
+                fileName: 'innocent.png',
+                mimeType: 'image/png',
+                sizeBytes: 2048,
+              },
+            ],
+          }),
+        /not permitted/,
+      );
+
+      await assert.rejects(
+        () =>
+          svc.PersistPostAttachments({
+            postId: SHARED_POST_ID,
+            contextUser: sharedMember,
+            attachments: [
+              {
+                kind: 'image',
+                fileId: oversizedFileId,
+                artifactVersionId: verOversized,
+                fileName: 'huge.png',
+                mimeType: 'image/png',
+                sizeBytes: 2048,
+              },
+            ],
+          }),
+        /exceeds the maximum allowed/,
+      );
+
+      await assert.rejects(
+        () =>
+          svc.PersistPostAttachments({
+            postId: SHARED_POST_ID,
+            contextUser: sharedMember,
+            attachments: [
+              {
+                kind: 'image',
+                fileId: FILE_ID_1,
+                artifactVersionId: verConflictMime,
+                fileName: 'mismatch.pdf',
+                mimeType: 'image/png',
+                sizeBytes: 4096,
+              },
+            ],
+          }),
+        /conflicts with linked MJ: Files/,
+      );
+
+      await assert.rejects(
+        () =>
+          svc.PersistPostAttachments({
+            postId: SHARED_POST_ID,
+            contextUser: sharedMember,
+            attachments: [
+              {
+                kind: 'image',
+                fileId: FILE_ID_1,
+                artifactVersionId: verConflictSize,
+                fileName: 'mismatch-size.png',
+                mimeType: 'image/png',
+                sizeBytes: 4096,
+              },
+            ],
+          }),
+        /conflicts with linked MJ: Files/,
+      );
+      assert.equal(world.spaceItems.length, 0);
+
+      // CR-7: Real-schema MJ: Files row (only ID, Name, ContentType, ProviderKey, Status; no Size/DownloadURL)
+      // paired with companion MJ: Artifact Versions row via FileID persists and hydrates cleanly in Library
+      const realSchemaFileId = 'ffffffff-8888-4888-8888-000000000001';
+      world.files.push({
+        ID: realSchemaFileId,
+        Name: 'topology-real.png',
+        ContentType: 'image/png',
+        ProviderKey: 'community/spaces/topology-real.png',
+        Status: 'Uploaded',
+      });
+      world.artifactVersions.push({
+        ID: 'ffff3333-0000-4000-8000-000000000001',
+        ArtifactID: ARTIFACT_ID,
+        VersionNumber: 15,
+        Name: 'topology-real.png',
+        ContentMode: 'File',
+        Content: `/api/files/${realSchemaFileId}`,
+        FileID: realSchemaFileId,
+        FileName: 'topology-real.png',
+        MimeType: 'image/png',
+        ContentSizeBytes: 16384,
+      });
+
+      const realFilePersisted = await svc.PersistPostAttachments({
+        postId: SHARED_POST_ID,
+        contextUser: sharedMember,
+        attachments: [
+          {
+            kind: 'image',
+            fileId: realSchemaFileId,
+            fileName: 'topology-real.png',
+            mimeType: 'image/png',
+            sizeBytes: 16384,
+            featureInLibrary: true,
+          },
+        ],
+      });
+      assert.equal(realFilePersisted.length, 1);
+      if (realFilePersisted[0].kind === 'image') {
+        assert.equal(realFilePersisted[0].sizeBytes, 16384);
+        assert.equal(realFilePersisted[0].url, `/api/files/${realSchemaFileId}`);
+      }
+
+      const libraryRes = await svc.QuerySpaceMediaLibrary({
+        spaceId: SPACE_ID,
+        contextUser: sharedMember,
+        folder: 'Library',
+      });
+      assert.equal(libraryRes.totalCount, 1);
+      if (libraryRes.items[0].kind === 'image') {
+        assert.equal(libraryRes.items[0].sizeBytes, 16384);
+        assert.equal(libraryRes.items[0].url, `/api/files/${realSchemaFileId}`);
+      }
+
+      // CR-8: 6 sequential unpinned 9 MiB MJ: Artifacts calls (54 MiB > 50 MiB) fail closed on the 6th call
+      const largeArtifactId = 'eeeeeeee-9999-4999-8999-000000000001';
+      world.artifacts.push({
+        ID: largeArtifactId,
+        Name: 'Large 9 MiB Pack',
+        Description: null,
+        TypeID: 'type-binary',
+        Type: 'PDF',
+        Visibility: 'Always',
+      });
+      world.artifactVersions.push({
+        ID: 'ffff4444-0000-4000-8000-000000000001',
+        ArtifactID: largeArtifactId,
+        VersionNumber: 1,
+        Name: 'Large 9 MiB Pack v1',
+        ContentMode: 'File',
+        Content: 'https://cdn.example.com/large-9mib.pdf',
+        FileID: null,
+        FileName: 'large-9mib.pdf',
+        MimeType: 'application/pdf',
+        ContentSizeBytes: 9 * 1024 * 1024,
+      });
+
+      for (let i = 0; i < 5; i += 1) {
+        const res = await svc.PersistPostAttachments({
+          postId: SHARED_REPLY_ID,
+          contextUser: sharedMember,
+          attachments: [
+            {
+              kind: 'artifact',
+              artifactId: largeArtifactId,
+              artifactName: 'Large 9 MiB Pack',
+            },
+          ],
+        });
+        assert.equal(res.length, 1);
+      }
+      const spaceItemsBefore6th = world.spaceItems.length;
+      await assert.rejects(
+        () =>
+          svc.PersistPostAttachments({
+            postId: SHARED_REPLY_ID,
+            contextUser: sharedMember,
+            attachments: [
+              {
+                kind: 'artifact',
+                artifactId: largeArtifactId,
+                artifactName: 'Large 9 MiB Pack',
+              },
+            ],
+          }),
+        /aggregate limit/,
+      );
+      assert.equal(world.spaceItems.length, spaceItemsBefore6th);
     } finally {
       mock.restoreAll();
     }

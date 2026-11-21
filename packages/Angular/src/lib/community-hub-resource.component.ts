@@ -41,6 +41,7 @@ import {
   EscapeSqlLiteral,
   IsFeaturedLibraryFolder,
   NormalizeAttachmentMimeType,
+  ResolveAuthoritativeFileUrl,
   SanitizeCommunityAttachmentUrl,
   type CommunityArtifactAttachmentItem,
   type CommunityAttachmentEntryType,
@@ -1632,6 +1633,13 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
       ID: string;
       Name: string;
       ContentType: string | null;
+      ProviderKey?: string | null;
+      Status?: string | null;
+      Size?: number | null;
+      ContentSizeBytes?: number | null;
+      DownloadURL?: string | null;
+      Url?: string | null;
+      Content?: string | null;
     }
 
     try {
@@ -1704,9 +1712,9 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
         if (ver?.FileID) fileIds.add(ver.FileID);
         try {
           AssertValidUUID(recordUuid, 'recordUuid');
-          if (!ver || ver.ContentMode !== 'File') {
+          if (isDirectArtifact || (ver && ver.ContentMode !== 'File')) {
             artifactIds.add(recordUuid);
-          } else if (!isDirectArtifact) {
+          } else {
             fileIds.add(recordUuid);
           }
         } catch {
@@ -1734,11 +1742,31 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
           runView: rv,
           entityName: 'MJ: Files',
           extraFilter: `ID IN (${this.buildUuidInClause(Array.from(fileIds), 'fileId')})`,
-          fields: ['ID', 'Name', 'ContentType'],
           user,
         });
         if (fileRes.success) {
           for (const f of fileRes.rows) fileById.set(f.ID.toLowerCase(), f);
+        }
+      }
+
+      const companionVersionByFileId = new Map<string, LiveArtifactVersionRow>();
+      if (fileIds.size > 0) {
+        const compVerRes = await LoadAllPaginatedRows<LiveArtifactVersionRow>({
+          runView: rv,
+          entityName: 'MJ: Artifact Versions',
+          extraFilter: `FileID IN (${this.buildUuidInClause(Array.from(fileIds), 'companionFileId')})`,
+          fields: ['ID', 'ArtifactID', 'VersionNumber', 'Name', 'ContentMode', 'Content', 'FileID', 'FileName', 'MimeType', 'ContentSizeBytes'],
+          user,
+        });
+        if (compVerRes.success) {
+          for (const v of compVerRes.rows) {
+            if (!v.FileID) continue;
+            const key = v.FileID.toLowerCase();
+            const existing = companionVersionByFileId.get(key);
+            if (!existing || (v.VersionNumber ?? 0) > (existing.VersionNumber ?? 0)) {
+              companionVersionByFileId.set(key, v);
+            }
+          }
         }
       }
 
@@ -1751,7 +1779,7 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
         const isFileBackedVersion = Boolean(ver && ver.ContentMode === 'File');
         const artifact =
           (ver?.ArtifactID && !isFileBackedVersion ? artifactById.get(ver.ArtifactID.toLowerCase()) : undefined) ??
-          (!isFileBackedVersion ? artifactById.get(recordUuid.toLowerCase()) : undefined) ??
+          (!isFileBackedVersion && isDirectArtifact ? artifactById.get(recordUuid.toLowerCase()) : undefined) ??
           null;
         const featureInLibrary = IsFeaturedLibraryFolder(si.Folder);
         const authoredByCurrentUser = this.authoredPostIds.has(att.PostID.toLowerCase());
@@ -1787,15 +1815,30 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
           mapped = item;
         } else {
           const fileId = ver?.FileID ?? (isDirectArtifact ? null : recordUuid);
-          const resolvedArtifactId = ver?.ArtifactID ?? (isDirectArtifact ? recordUuid : null);
+          const companionVer = fileId ? companionVersionByFileId.get(fileId.toLowerCase()) ?? null : null;
+          const resolvedArtifactId = ver?.ArtifactID ?? companionVer?.ArtifactID ?? (isDirectArtifact ? recordUuid : null);
           const fileRow = fileId ? fileById.get(fileId.toLowerCase()) ?? null : null;
-          const fileName = ver?.FileName || fileRow?.Name || att.Caption || 'attachment';
-          const mimeType = NormalizeAttachmentMimeType(ver?.MimeType || fileRow?.ContentType || 'application/octet-stream');
+          const fileName = ver?.FileName || fileRow?.Name || companionVer?.FileName || att.Caption || 'attachment';
+          const mimeType = NormalizeAttachmentMimeType(
+            ver?.MimeType || fileRow?.ContentType || companionVer?.MimeType || 'application/octet-stream',
+          );
           const kind = ClassifyAttachmentKind(mimeType, false);
-          const safeUrl = SanitizeCommunityAttachmentUrl(ver?.Content ?? null, kind === 'artifact' ? 'file' : kind) ?? '';
+          const normalizedKind = kind === 'artifact' ? 'file' : kind;
+          const candidateUrl =
+            ver?.Content ??
+            (fileRow ? ResolveAuthoritativeFileUrl(fileRow, normalizedKind) : null) ??
+            companionVer?.Content ??
+            null;
+          const safeUrl = SanitizeCommunityAttachmentUrl(candidateUrl, normalizedKind) ?? '';
+          const resolvedSizeBytes =
+            ver?.ContentSizeBytes ??
+            fileRow?.ContentSizeBytes ??
+            fileRow?.Size ??
+            companionVer?.ContentSizeBytes ??
+            0;
           const fileItem: CommunityFileAttachmentItem = {
             id: att.ID,
-            kind: kind === 'artifact' ? 'file' : kind,
+            kind: normalizedKind,
             spaceId: si.SpaceID,
             postId: att.PostID,
             spaceItemId: si.ID,
@@ -1803,10 +1846,10 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
             fileId,
             fileName,
             mimeType,
-            sizeBytes: ver?.ContentSizeBytes ?? 0,
+            sizeBytes: resolvedSizeBytes,
             url: safeUrl,
             artifactId: resolvedArtifactId,
-            artifactVersionId: ver?.ID ?? si.ArtifactVersionID,
+            artifactVersionId: ver?.ID ?? si.ArtifactVersionID ?? companionVer?.ID ?? null,
             caption: att.Caption,
             sequence: att.Sequence,
             featureInLibrary,

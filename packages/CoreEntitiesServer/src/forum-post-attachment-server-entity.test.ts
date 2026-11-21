@@ -47,6 +47,10 @@ const ARTIFACT_VERSION_ID = '88888888-8888-4888-8888-888888888802';
 const FILE_ID = '88888888-8888-4888-8888-888888888803';
 const FILE_2_ID = '88888888-8888-4888-8888-888888888804';
 const FILE_MISSING_META_ID = '88888888-8888-4888-8888-888888888805';
+const FILE_REAL_SCHEMA_ID = '88888888-8888-4888-8888-888888888806';
+const FILE_DELETED_ID = '88888888-8888-4888-8888-888888888807';
+const FILE_FORBIDDEN_MIME_ID = '88888888-8888-4888-8888-888888888808';
+const FILE_OVERSIZED_ID = '88888888-8888-4888-8888-888888888809';
 
 const VER_BOUND_FILE_ID = '88888888-8888-4888-8888-888888888811';
 const VER_NULL_FILE_ID = '88888888-8888-4888-8888-888888888812';
@@ -54,6 +58,14 @@ const VER_BAD_MIME_ID = '88888888-8888-4888-8888-888888888813';
 const VER_MISSING_SIZE_ID = '88888888-8888-4888-8888-888888888814';
 const VER_BLOB_URL_ID = '88888888-8888-4888-8888-888888888815';
 const VER_9MIB_ID = '88888888-8888-4888-8888-888888888816';
+const VER_REAL_SCHEMA_COMP_ID = '88888888-8888-4888-8888-888888888817';
+const VER_SPOOFED_DELETED_FILE_ID = '88888888-8888-4888-8888-888888888818';
+const VER_SPOOFED_FORBIDDEN_FILE_ID = '88888888-8888-4888-8888-888888888819';
+const VER_SPOOFED_OVERSIZED_FILE_ID = '88888888-8888-4888-8888-88888888881a';
+const VER_CONFLICT_MIME_FILE_ID = '88888888-8888-4888-8888-88888888881b';
+const VER_CONFLICT_SIZE_FILE_ID = '88888888-8888-4888-8888-88888888881c';
+const ARTIFACT_UNPINNED_9MIB_ID = '88888888-8888-4888-8888-888888888820';
+const VER_UNPINNED_9MIB_ID = '88888888-8888-4888-8888-888888888821';
 
 const SI_VALID_SHARED_ART_ID = '99999999-9999-4999-8999-999999999901';
 const SI_VALID_TEAM_ART_ID = '99999999-9999-4999-8999-999999999902';
@@ -68,6 +80,13 @@ const SI_VER_BAD_MIME_ID = '99999999-9999-4999-8999-999999999910';
 const SI_VER_MISSING_SIZE_ID = '99999999-9999-4999-8999-999999999911';
 const SI_VER_BLOB_URL_ID = '99999999-9999-4999-8999-999999999912';
 const SI_VER_9MIB_ID = '99999999-9999-4999-8999-999999999913';
+const SI_FILE_ONLY_REAL_SCHEMA_ID = '99999999-9999-4999-8999-999999999914';
+const SI_VER_SPOOFED_DELETED_FILE_ID = '99999999-9999-4999-8999-999999999915';
+const SI_VER_SPOOFED_FORBIDDEN_FILE_ID = '99999999-9999-4999-8999-999999999916';
+const SI_VER_SPOOFED_OVERSIZED_FILE_ID = '99999999-9999-4999-8999-999999999917';
+const SI_VER_CONFLICT_MIME_FILE_ID = '99999999-9999-4999-8999-999999999918';
+const SI_VER_CONFLICT_SIZE_FILE_ID = '99999999-9999-4999-8999-999999999919';
+const SI_UNPINNED_9MIB_ART_ID = '99999999-9999-4999-8999-999999999920';
 
 function makeUser(id: string): UserInfo {
   return new UserInfo(undefined, {
@@ -196,14 +215,25 @@ class MockAttachmentProvider implements IEntityDataProvider, IRunViewProvider {
   }
 }
 
-describe('CR-2 & CR-4: ForumPostAttachmentServerEntity server-side validation guard', () => {
+function projectRowFields<T extends object>(row: T, fields?: string[]): T {
+  if (!fields || fields.length === 0) {
+    return { ...row };
+  }
+  const allowed = new Set(fields);
+  const entries = Object.entries(row).filter(([key]) => allowed.has(key));
+  return Object.fromEntries(entries) as T;
+}
+
+describe('CR-2, CR-4, CR-7 & CR-8: ForumPostAttachmentServerEntity server-side validation guard', () => {
   const entityInfo = buildAttachmentEntityInfo();
   let existingAttachments: MockSavedAttachmentRow[];
   let provider: MockAttachmentProvider;
+  let simulateRunViewFailureEntity: string | null = null;
 
   beforeEach(() => {
     LoadBizAppsCommunityCoreEntitiesServer();
     existingAttachments = [];
+    simulateRunViewFailureEntity = null;
 
     const posts = [
       {
@@ -441,12 +471,75 @@ describe('CR-2 & CR-4: ForumPostAttachmentServerEntity server-side validation gu
         Folder: 'Library',
         ArtifactVersionID: VER_9MIB_ID,
       },
+      {
+        ID: SI_FILE_ONLY_REAL_SCHEMA_ID,
+        SpaceID: SPACE_1_ID,
+        EntityID: ENTITY_FILES_ID,
+        RecordID: `ID|${FILE_REAL_SCHEMA_ID}`,
+        Band: 'Shared',
+        Folder: 'Post Media',
+        ArtifactVersionID: null,
+      },
+      {
+        ID: SI_VER_SPOOFED_DELETED_FILE_ID,
+        SpaceID: SPACE_1_ID,
+        EntityID: ENTITY_FILES_ID,
+        RecordID: `ID|${FILE_DELETED_ID}`,
+        Band: 'Shared',
+        Folder: 'Post Media',
+        ArtifactVersionID: VER_SPOOFED_DELETED_FILE_ID,
+      },
+      {
+        ID: SI_VER_SPOOFED_FORBIDDEN_FILE_ID,
+        SpaceID: SPACE_1_ID,
+        EntityID: ENTITY_FILES_ID,
+        RecordID: `ID|${FILE_FORBIDDEN_MIME_ID}`,
+        Band: 'Shared',
+        Folder: 'Post Media',
+        ArtifactVersionID: VER_SPOOFED_FORBIDDEN_FILE_ID,
+      },
+      {
+        ID: SI_VER_SPOOFED_OVERSIZED_FILE_ID,
+        SpaceID: SPACE_1_ID,
+        EntityID: ENTITY_FILES_ID,
+        RecordID: `ID|${FILE_OVERSIZED_ID}`,
+        Band: 'Shared',
+        Folder: 'Post Media',
+        ArtifactVersionID: VER_SPOOFED_OVERSIZED_FILE_ID,
+      },
+      {
+        ID: SI_VER_CONFLICT_MIME_FILE_ID,
+        SpaceID: SPACE_1_ID,
+        EntityID: ENTITY_FILES_ID,
+        RecordID: `ID|${FILE_ID}`,
+        Band: 'Shared',
+        Folder: 'Post Media',
+        ArtifactVersionID: VER_CONFLICT_MIME_FILE_ID,
+      },
+      {
+        ID: SI_VER_CONFLICT_SIZE_FILE_ID,
+        SpaceID: SPACE_1_ID,
+        EntityID: ENTITY_FILES_ID,
+        RecordID: `ID|${FILE_ID}`,
+        Band: 'Shared',
+        Folder: 'Post Media',
+        ArtifactVersionID: VER_CONFLICT_SIZE_FILE_ID,
+      },
+      {
+        ID: SI_UNPINNED_9MIB_ART_ID,
+        SpaceID: SPACE_1_ID,
+        EntityID: ENTITY_ARTIFACTS_ID,
+        RecordID: `ID|${ARTIFACT_UNPINNED_9MIB_ID}`,
+        Band: 'Shared',
+        Folder: 'Library',
+        ArtifactVersionID: null,
+      },
     ];
     const entities = [
       { ID: ENTITY_ARTIFACTS_ID, Name: 'MJ: Artifacts' },
       { ID: ENTITY_FILES_ID, Name: 'MJ: Files' },
     ];
-    const mjArtifacts = [{ ID: ARTIFACT_ID }];
+    const mjArtifacts = [{ ID: ARTIFACT_ID }, { ID: ARTIFACT_UNPINNED_9MIB_ID }];
     const mjArtifactVersions = [
       {
         ID: ARTIFACT_VERSION_ID,
@@ -525,6 +618,83 @@ describe('CR-2 & CR-4: ForumPostAttachmentServerEntity server-side validation gu
         FileName: 'large-pack.pdf',
         VersionNumber: 7,
       },
+      {
+        ID: VER_REAL_SCHEMA_COMP_ID,
+        ArtifactID: ARTIFACT_ID,
+        FileID: FILE_REAL_SCHEMA_ID,
+        ContentMode: 'File',
+        MimeType: 'image/png',
+        ContentSizeBytes: 12288,
+        Content: `/api/files/${FILE_REAL_SCHEMA_ID}`,
+        FileName: 'real-schema.png',
+        VersionNumber: 8,
+      },
+      {
+        ID: VER_SPOOFED_DELETED_FILE_ID,
+        ArtifactID: ARTIFACT_ID,
+        FileID: FILE_DELETED_ID,
+        ContentMode: 'File',
+        MimeType: 'image/png',
+        ContentSizeBytes: 2048,
+        Content: 'https://cdn.example.com/spoofed.png',
+        FileName: 'spoofed.png',
+        VersionNumber: 9,
+      },
+      {
+        ID: VER_SPOOFED_FORBIDDEN_FILE_ID,
+        ArtifactID: ARTIFACT_ID,
+        FileID: FILE_FORBIDDEN_MIME_ID,
+        ContentMode: 'File',
+        MimeType: 'image/png',
+        ContentSizeBytes: 2048,
+        Content: 'https://cdn.example.com/spoofed-exe.png',
+        FileName: 'spoofed-exe.png',
+        VersionNumber: 10,
+      },
+      {
+        ID: VER_SPOOFED_OVERSIZED_FILE_ID,
+        ArtifactID: ARTIFACT_ID,
+        FileID: FILE_OVERSIZED_ID,
+        ContentMode: 'File',
+        MimeType: 'image/png',
+        ContentSizeBytes: 2048,
+        Content: 'https://cdn.example.com/spoofed-huge.png',
+        FileName: 'spoofed-huge.png',
+        VersionNumber: 11,
+      },
+      {
+        ID: VER_CONFLICT_MIME_FILE_ID,
+        ArtifactID: ARTIFACT_ID,
+        FileID: FILE_ID,
+        ContentMode: 'File',
+        MimeType: 'application/pdf',
+        ContentSizeBytes: 8192,
+        Content: 'https://cdn.example.com/bound.png',
+        FileName: 'conflict-mime.pdf',
+        VersionNumber: 12,
+      },
+      {
+        ID: VER_CONFLICT_SIZE_FILE_ID,
+        ArtifactID: ARTIFACT_ID,
+        FileID: FILE_ID,
+        ContentMode: 'File',
+        MimeType: 'image/png',
+        ContentSizeBytes: 1024,
+        Content: 'https://cdn.example.com/bound.png',
+        FileName: 'conflict-size.png',
+        VersionNumber: 13,
+      },
+      {
+        ID: VER_UNPINNED_9MIB_ID,
+        ArtifactID: ARTIFACT_UNPINNED_9MIB_ID,
+        FileID: null,
+        ContentMode: 'File',
+        MimeType: 'application/pdf',
+        ContentSizeBytes: 9 * 1024 * 1024,
+        Content: 'https://cdn.example.com/unpinned-large.pdf',
+        FileName: 'unpinned-large.pdf',
+        VersionNumber: 1,
+      },
     ];
     const mjFiles = [
       {
@@ -551,13 +721,61 @@ describe('CR-2 & CR-4: ForumPostAttachmentServerEntity server-side validation gu
         DownloadURL: null,
         Status: 'Uploaded',
       },
+      // Real MJ core schema row (no Size / DownloadURL columns; ProviderKey + companion ArtifactVersion)
+      {
+        ID: FILE_REAL_SCHEMA_ID,
+        Name: 'real-schema.png',
+        Description: null,
+        CategoryID: null,
+        ProviderID: '00000000-0000-4000-8000-000000000099',
+        ContentType: 'image/png',
+        ProviderKey: 'community/spaces/real-schema.png',
+        Status: 'Uploaded',
+      },
+      {
+        ID: FILE_DELETED_ID,
+        Name: 'deleted.png',
+        ContentType: 'image/png',
+        Size: 2048,
+        DownloadURL: 'https://cdn.example.com/deleted.png',
+        Status: 'Deleted',
+      },
+      {
+        ID: FILE_FORBIDDEN_MIME_ID,
+        Name: 'installer.exe',
+        ContentType: 'application/x-msdownload',
+        Size: 2048,
+        DownloadURL: 'https://cdn.example.com/installer.exe',
+        Status: 'Uploaded',
+      },
+      {
+        ID: FILE_OVERSIZED_ID,
+        Name: 'too-big.png',
+        ContentType: 'image/png',
+        Size: COMMUNITY_ATTACHMENT_MAX_FILE_BYTES + 512,
+        DownloadURL: 'https://cdn.example.com/too-big.png',
+        Status: 'Uploaded',
+      },
     ];
 
     const runViewHandler = async <T>(params: RunViewParams): Promise<RunViewResult<T>> => {
+      if (simulateRunViewFailureEntity && params.EntityName === simulateRunViewFailureEntity) {
+        return {
+          Success: false,
+          Results: [],
+          UserView: null,
+          TotalRowCount: 0,
+          ExecutionTime: 0,
+          ErrorMessage: `Simulated failure for ${params.EntityName}`,
+        };
+      }
       const filter = params.ExtraFilter ?? '';
       const idEq = extractFilterValue(filter, 'ID');
       const idIn = extractInValues(filter, 'ID');
       const artEq = extractFilterValue(filter, 'ArtifactID');
+      const artIn = extractInValues(filter, 'ArtifactID');
+      const fileEq = extractFilterValue(filter, 'FileID');
+      const fileIn = extractInValues(filter, 'FileID');
       const spaceEq = extractFilterValue(filter, 'SpaceID');
       const userEq = extractFilterValue(filter, 'UserID');
       const forumEq = extractFilterValue(filter, 'ForumID');
@@ -566,6 +784,16 @@ describe('CR-2 & CR-4: ForumPostAttachmentServerEntity server-side validation gu
       const matchId = (rowId: string): boolean => {
         if (idIn) return idIn.some((id) => UUIDsEqual(rowId, id));
         if (idEq) return UUIDsEqual(rowId, idEq);
+        return true;
+      };
+      const matchArt = (artId: string): boolean => {
+        if (artIn) return artIn.some((id) => UUIDsEqual(artId, id));
+        if (artEq) return UUIDsEqual(artId, artEq);
+        return true;
+      };
+      const matchFile = (fid: string | null): boolean => {
+        if (fileIn) return fid !== null && fileIn.some((id) => UUIDsEqual(fid, id));
+        if (fileEq) return fid !== null && UUIDsEqual(fid, fileEq);
         return true;
       };
 
@@ -608,7 +836,7 @@ describe('CR-2 & CR-4: ForumPostAttachmentServerEntity server-side validation gu
           break;
         case 'MJ: Artifact Versions':
           rows = mjArtifactVersions.filter(
-            (v) => matchId(v.ID) && (!artEq || UUIDsEqual(v.ArtifactID, artEq)),
+            (v) => matchId(v.ID) && matchArt(v.ArtifactID) && matchFile(v.FileID),
           );
           break;
         case 'MJ: Files':
@@ -620,11 +848,13 @@ describe('CR-2 & CR-4: ForumPostAttachmentServerEntity server-side validation gu
         default:
           rows = [];
       }
+      // CR-7: Strictly enforce params.Fields projection whenever params.Fields is passed
+      const projectedRows = rows.map((r) => projectRowFields(r, params.Fields));
       return {
         Success: true,
-        Results: rows as T[],
+        Results: projectedRows as T[],
         UserView: null,
-        TotalRowCount: rows.length,
+        TotalRowCount: projectedRows.length,
         ExecutionTime: 0,
         ErrorMessage: '',
       };
@@ -749,6 +979,57 @@ describe('CR-2 & CR-4: ForumPostAttachmentServerEntity server-side validation gu
     sixth9Mib.Sequence = 6;
     assert.equal(await sixth9Mib.Save(), false);
     assert.match(sixth9Mib.LatestResult?.Message ?? '', /aggregate limit/i);
+    assert.equal(provider.saveCallCount, 5);
+  });
+
+  it('CR-4: rejects version bound to Deleted, forbidden-ContentType, oversized, or MIME/size-conflicting MJ: Files via Save() with 0 provider writes', async () => {
+    const deletedLinked = createEntity(makeUser(SHARED_USER_ID), SHARED_POST_ID, SI_VER_SPOOFED_DELETED_FILE_ID);
+    assert.equal(await deletedLinked.Save(), false);
+    assert.match(deletedLinked.LatestResult?.Message ?? '', /Deleted/i);
+
+    const forbiddenLinked = createEntity(makeUser(SHARED_USER_ID), SHARED_POST_ID, SI_VER_SPOOFED_FORBIDDEN_FILE_ID);
+    assert.equal(await forbiddenLinked.Save(), false);
+    assert.match(forbiddenLinked.LatestResult?.Message ?? '', /not permitted/i);
+
+    const oversizedLinked = createEntity(makeUser(SHARED_USER_ID), SHARED_POST_ID, SI_VER_SPOOFED_OVERSIZED_FILE_ID);
+    assert.equal(await oversizedLinked.Save(), false);
+    assert.match(oversizedLinked.LatestResult?.Message ?? '', /exceeds the maximum allowed/i);
+
+    const conflictMime = createEntity(makeUser(SHARED_USER_ID), SHARED_POST_ID, SI_VER_CONFLICT_MIME_FILE_ID);
+    assert.equal(await conflictMime.Save(), false);
+    assert.match(conflictMime.LatestResult?.Message ?? '', /conflicts with linked MJ: Files/i);
+
+    const conflictSize = createEntity(makeUser(SHARED_USER_ID), SHARED_POST_ID, SI_VER_CONFLICT_SIZE_FILE_ID);
+    assert.equal(await conflictSize.Save(), false);
+    assert.match(conflictSize.LatestResult?.Message ?? '', /conflicts with linked MJ: Files/i);
+
+    assert.equal(provider.saveCallCount, 0);
+  });
+
+  it('CR-7: allows valid real-schema MJ: Files-only Save() using ProviderKey + companion ArtifactVersion under field-projecting RunView', async () => {
+    const realSchemaFileOnly = createEntity(makeUser(SHARED_USER_ID), SHARED_POST_ID, SI_FILE_ONLY_REAL_SCHEMA_ID);
+    assert.equal(await realSchemaFileOnly.Save(), true);
+    assert.equal(provider.saveCallCount, 1);
+  });
+
+  it('CR-8: enforces aggregate byte limit across 6 sequential unpinned 9 MiB artifact Save() calls and fails closed if existing lookup fails', async () => {
+    for (let i = 0; i < 5; i += 1) {
+      const okUnpinned = createEntity(makeUser(SHARED_USER_ID), SHARED_POST_ID, SI_UNPINNED_9MIB_ART_ID);
+      okUnpinned.Sequence = i + 1;
+      assert.equal(await okUnpinned.Save(), true);
+    }
+    assert.equal(provider.saveCallCount, 5);
+
+    const sixthUnpinned = createEntity(makeUser(SHARED_USER_ID), SHARED_POST_ID, SI_UNPINNED_9MIB_ART_ID);
+    sixthUnpinned.Sequence = 6;
+    assert.equal(await sixthUnpinned.Save(), false);
+    assert.match(sixthUnpinned.LatestResult?.Message ?? '', /aggregate limit/i);
+    assert.equal(provider.saveCallCount, 5);
+
+    // Failed existing-attachment size lookup must fail closed (never skip existing attachments)
+    simulateRunViewFailureEntity = 'MJ_BizApps_Collaboration: Space Items';
+    const failLookup = createEntity(makeUser(SHARED_USER_ID), SHARED_POST_ID, SI_VALID_SHARED_ART_ID);
+    assert.equal(await failLookup.Save(), false);
     assert.equal(provider.saveCallCount, 5);
   });
 });

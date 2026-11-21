@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { describe, it } from 'node:test';
 import { fileURLToPath } from 'node:url';
+import { ResolveAuthoritativeFileUrl, SanitizeCommunityAttachmentUrl } from '@mj-biz-apps/community-core';
 import type { CommunityCommonsItem } from './lib/community-hub-commons.ts';
 import {
   COMMUNITY_HUB_PREFERENCE_KEYS,
@@ -411,5 +412,26 @@ describe('Slice 4 — UserInfoEngine Preference Persistence & Media Library Arch
     ]) {
       assert.deepEqual(content.match(rawColorPattern) ?? [], [], `${name} must use --mj-* tokens exclusively`);
     }
+  });
+
+  it('CR-7: resolves real-schema MJ: Files ProviderKey URLs (/api/files/<ID>) and omits truncated MJ: Files Fields in hub hydration', () => {
+    const fileId = 'ffffffff-8888-4888-8888-000000000009';
+    const resolvedUrl = ResolveAuthoritativeFileUrl(
+      {
+        ID: fileId,
+        Name: 'real-schema.png',
+        ContentType: 'image/png',
+        ProviderKey: 'community/spaces/real-schema.png',
+        Status: 'Uploaded',
+      },
+      'image',
+    );
+    assert.equal(resolvedUrl, `/api/files/${fileId}`);
+    assert.equal(SanitizeCommunityAttachmentUrl(resolvedUrl, 'image'), `/api/files/${fileId}`);
+
+    const hubTs = readFileSync(join(LIB_DIR, 'community-hub-resource.component.ts'), 'utf8');
+    assert.match(hubTs, /ResolveAuthoritativeFileUrl/);
+    assert.match(hubTs, /companionVersionByFileId/);
+    assert.doesNotMatch(hubTs, /entityName:\s*'MJ: Files',\s*[\r\n]+[^\}]*fields:\s*\[/);
   });
 });
