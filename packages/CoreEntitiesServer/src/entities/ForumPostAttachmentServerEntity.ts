@@ -438,7 +438,8 @@ export class ForumPostAttachmentServerEntity extends mjBizAppsCommunityForumPost
           'MJ: Artifact Versions',
           `FileID = '${recordUuid}'`,
           ARTIFACT_VERSION_FIELDS,
-          50,
+          1,
+          'VersionNumber DESC',
         );
         if (!compRes.success) {
           return failValidation(result, 'SpaceItemID', `Unable to verify metadata versions for File ${recordUuid}.`);
@@ -459,7 +460,8 @@ export class ForumPostAttachmentServerEntity extends mjBizAppsCommunityForumPost
         'MJ: Artifact Versions',
         `ArtifactID = '${recordUuid}'`,
         ARTIFACT_VERSION_FIELDS,
-        50,
+        1,
+        'VersionNumber DESC',
       );
       if (!latestVerRes.success) {
         return failValidation(result, 'SpaceItemID', `Unable to verify versions for Artifact ${recordUuid}.`);
@@ -663,21 +665,28 @@ export class ForumPostAttachmentServerEntity extends mjBizAppsCommunityForumPost
 
     const latestVersionByArtifactId = new Map<string, AttachmentArtifactVersionRow>();
     if (unpinnedArtifactIds.size > 0) {
-      const artVerRes = await loadRows<AttachmentArtifactVersionRow>(
-        this,
-        'MJ: Artifact Versions',
-        `ArtifactID IN (${Array.from(unpinnedArtifactIds).map((id) => `'${id}'`).join(', ')})`,
-        ARTIFACT_VERSION_FIELDS,
-        (unpinnedArtifactIds.size + 1) * 50,
+      const perArtifactResults = await Promise.all(
+        Array.from(unpinnedArtifactIds).map((artId) =>
+          loadRows<AttachmentArtifactVersionRow>(
+            this,
+            'MJ: Artifact Versions',
+            `ArtifactID = '${artId}'`,
+            ARTIFACT_VERSION_FIELDS,
+            1,
+            'VersionNumber DESC',
+          ),
+        ),
       );
-      if (!artVerRes.success) {
-        return { ok: false, error: 'Unable to load latest Artifact Versions for existing unpinned artifact attachments.' };
-      }
-      for (const v of artVerRes.rows) {
-        const key = v.ArtifactID.toLowerCase();
-        const existing = latestVersionByArtifactId.get(key);
-        if (!existing || (v.VersionNumber ?? 0) > (existing.VersionNumber ?? 0)) {
-          latestVersionByArtifactId.set(key, v);
+      for (const artVerRes of perArtifactResults) {
+        if (!artVerRes.success) {
+          return { ok: false, error: 'Unable to load latest Artifact Versions for existing unpinned artifact attachments.' };
+        }
+        for (const v of artVerRes.rows) {
+          const key = v.ArtifactID.toLowerCase();
+          const existing = latestVersionByArtifactId.get(key);
+          if (!existing || (v.VersionNumber ?? 0) > (existing.VersionNumber ?? 0)) {
+            latestVersionByArtifactId.set(key, v);
+          }
         }
       }
     }
@@ -725,22 +734,29 @@ export class ForumPostAttachmentServerEntity extends mjBizAppsCommunityForumPost
     });
     const companionByFileId = new Map<string, AttachmentArtifactVersionRow>();
     if (filesNeedingCompanion.length > 0) {
-      const compRes = await loadRows<AttachmentArtifactVersionRow>(
-        this,
-        'MJ: Artifact Versions',
-        `FileID IN (${filesNeedingCompanion.map((id) => `'${id}'`).join(', ')})`,
-        ARTIFACT_VERSION_FIELDS,
-        (filesNeedingCompanion.length + 1) * 50,
+      const perFileResults = await Promise.all(
+        filesNeedingCompanion.map((fid) =>
+          loadRows<AttachmentArtifactVersionRow>(
+            this,
+            'MJ: Artifact Versions',
+            `FileID = '${fid}'`,
+            ARTIFACT_VERSION_FIELDS,
+            1,
+            'VersionNumber DESC',
+          ),
+        ),
       );
-      if (!compRes.success) {
-        return { ok: false, error: 'Unable to load companion Artifact Versions for existing MJ: Files attachments.' };
-      }
-      for (const v of compRes.rows) {
-        if (!v.FileID) continue;
-        const key = v.FileID.toLowerCase();
-        const existing = companionByFileId.get(key);
-        if (!existing || (v.VersionNumber ?? 0) > (existing.VersionNumber ?? 0)) {
-          companionByFileId.set(key, v);
+      for (const compRes of perFileResults) {
+        if (!compRes.success) {
+          return { ok: false, error: 'Unable to load companion Artifact Versions for existing MJ: Files attachments.' };
+        }
+        for (const v of compRes.rows) {
+          if (!v.FileID) continue;
+          const key = v.FileID.toLowerCase();
+          const existing = companionByFileId.get(key);
+          if (!existing || (v.VersionNumber ?? 0) > (existing.VersionNumber ?? 0)) {
+            companionByFileId.set(key, v);
+          }
         }
       }
     }

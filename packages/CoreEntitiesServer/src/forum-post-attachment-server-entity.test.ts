@@ -758,6 +758,43 @@ describe('CR-2, CR-4, CR-7 & CR-8: ForumPostAttachmentServerEntity server-side v
       },
     ];
 
+    const manyVerArtId = 'aaaaaaaa-8888-4888-8888-000000000065';
+    const manyVerSpaceItemId = 'bbbbbbbb-8888-4888-8888-000000000065';
+    mjArtifacts.push({ ID: manyVerArtId, Name: 'High-Churn 65-Version Spec' });
+    spaceItems.push({
+      ID: manyVerSpaceItemId,
+      SpaceID: SPACE_1_ID,
+      EntityID: ENTITY_ARTIFACTS_ID,
+      RecordID: `ID|${manyVerArtId}`,
+      Band: 'Shared',
+      Folder: 'Library',
+      ArtifactVersionID: null,
+    });
+    for (let v = 1; v <= 64; v += 1) {
+      mjArtifactVersions.push({
+        ID: `cccccccc-8888-4888-8888-${String(v).padStart(12, '0')}`,
+        ArtifactID: manyVerArtId,
+        FileID: null,
+        ContentMode: 'File',
+        MimeType: 'application/pdf',
+        ContentSizeBytes: 1024,
+        Content: `https://cdn.example.com/spec-v${v}.pdf`,
+        FileName: `spec-v${v}.pdf`,
+        VersionNumber: v,
+      });
+    }
+    mjArtifactVersions.push({
+      ID: 'cccccccc-8888-4888-8888-000000000065',
+      ArtifactID: manyVerArtId,
+      FileID: null,
+      ContentMode: 'File',
+      MimeType: 'application/pdf',
+      ContentSizeBytes: 9 * 1024 * 1024,
+      Content: 'https://cdn.example.com/spec-v65.pdf',
+      FileName: 'spec-v65.pdf',
+      VersionNumber: 65,
+    });
+
     const runViewHandler = async <T>(params: RunViewParams): Promise<RunViewResult<T>> => {
       if (simulateRunViewFailureEntity && params.EntityName === simulateRunViewFailureEntity) {
         return {
@@ -834,11 +871,20 @@ describe('CR-2, CR-4, CR-7 & CR-8: ForumPostAttachmentServerEntity server-side v
         case 'MJ: Artifacts':
           rows = mjArtifacts.filter((a) => matchId(a.ID));
           break;
-        case 'MJ: Artifact Versions':
-          rows = mjArtifactVersions.filter(
+        case 'MJ: Artifact Versions': {
+          const matchedVersions = mjArtifactVersions.filter(
             (v) => matchId(v.ID) && matchArt(v.ArtifactID) && matchFile(v.FileID),
           );
+          const orderedVersions =
+            typeof params.OrderBy === 'string' && /VersionNumber\s+DESC/i.test(params.OrderBy)
+              ? [...matchedVersions].sort((a, b) => (b.VersionNumber ?? 0) - (a.VersionNumber ?? 0))
+              : matchedVersions;
+          rows =
+            typeof params.MaxRows === 'number' && params.MaxRows > 0
+              ? orderedVersions.slice(0, params.MaxRows)
+              : orderedVersions;
           break;
+        }
         case 'MJ: Files':
           rows = mjFiles.filter((f) => matchId(f.ID));
           break;
@@ -1030,6 +1076,22 @@ describe('CR-2, CR-4, CR-7 & CR-8: ForumPostAttachmentServerEntity server-side v
     simulateRunViewFailureEntity = 'MJ_BizApps_Collaboration: Space Items';
     const failLookup = createEntity(makeUser(SHARED_USER_ID), SHARED_POST_ID, SI_VALID_SHARED_ART_ID);
     assert.equal(await failLookup.Save(), false);
+    assert.equal(provider.saveCallCount, 5);
+  });
+
+  it('CR-8 (>50 historical versions): resolves exact latest VersionNumber DESC even when an unpinned artifact has 65 historical versions', async () => {
+    const manyVerSpaceItemId = 'bbbbbbbb-8888-4888-8888-000000000065';
+    for (let i = 0; i < 5; i += 1) {
+      const ok = createEntity(makeUser(SHARED_USER_ID), SHARED_POST_ID, manyVerSpaceItemId);
+      ok.Sequence = i + 1;
+      assert.equal(await ok.Save(), true);
+    }
+    assert.equal(provider.saveCallCount, 5);
+
+    const sixth = createEntity(makeUser(SHARED_USER_ID), SHARED_POST_ID, manyVerSpaceItemId);
+    sixth.Sequence = 6;
+    assert.equal(await sixth.Save(), false);
+    assert.match(sixth.LatestResult?.Message ?? '', /aggregate limit/i);
     assert.equal(provider.saveCallCount, 5);
   });
 });

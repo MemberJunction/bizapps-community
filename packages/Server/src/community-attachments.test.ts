@@ -662,7 +662,10 @@ function buildMockWorld(options: MockWorldOptions = {}) {
   mock.method(
     RunView.prototype,
     'RunView',
-    async (query: { EntityName: string; ExtraFilter?: string; Fields?: string[] }, contextUser?: UserInfo) => {
+    async (
+      query: { EntityName: string; ExtraFilter?: string; Fields?: string[]; OrderBy?: string; MaxRows?: number },
+      contextUser?: UserInfo,
+    ) => {
       const entity = query.EntityName;
       const filter = query.ExtraFilter ?? '';
 
@@ -797,17 +800,22 @@ function buildMockWorld(options: MockWorldOptions = {}) {
       }
 
       if (entity === 'MJ: Artifact Versions') {
+        const matched = artifactVersions.filter(
+          (v) =>
+            !v.deleted &&
+            (filter.toLowerCase().includes(v.ID.toLowerCase()) ||
+              filter.toLowerCase().includes(v.ArtifactID.toLowerCase()) ||
+              (v.FileID !== null && filter.toLowerCase().includes(v.FileID.toLowerCase()))),
+        );
+        const ordered =
+          typeof query.OrderBy === 'string' && /VersionNumber\s+DESC/i.test(query.OrderBy)
+            ? [...matched].sort((a, b) => (b.VersionNumber ?? 0) - (a.VersionNumber ?? 0))
+            : matched;
+        const limited =
+          typeof query.MaxRows === 'number' && query.MaxRows > 0 ? ordered.slice(0, query.MaxRows) : ordered;
         return {
           Success: true,
-          Results: project(
-            artifactVersions.filter(
-              (v) =>
-                !v.deleted &&
-                (filter.toLowerCase().includes(v.ID.toLowerCase()) ||
-                  filter.toLowerCase().includes(v.ArtifactID.toLowerCase()) ||
-                  (v.FileID !== null && filter.toLowerCase().includes(v.FileID.toLowerCase()))),
-            ),
-          ),
+          Results: project(limited),
         };
       }
 
@@ -2284,6 +2292,81 @@ describe('@mj-biz-apps/community-server media/artifact attachments & SpaceItem l
         /aggregate limit/,
       );
       assert.equal(world.spaceItems.length, spaceItemsBefore6th);
+
+      // CR-8 (>50 historical versions): existing unpinned SpaceItem pointing to an artifact with 65 versions
+      // (v1..v64 = 1 KB, v65 = 9 MiB) must resolve v65 via OrderBy: VersionNumber DESC instead of undercounting
+      const highChurnArtId = 'eeeeeeee-9999-4999-8999-000000000065';
+      const highChurnSiId = 'dddddddd-9999-4999-8999-000000000065';
+      world.artifacts.push({
+        ID: highChurnArtId,
+        Name: 'High-Churn 65-Version Spec',
+        Description: null,
+        TypeID: 'type-binary',
+        Type: 'PDF',
+        Visibility: 'Always',
+      });
+      for (let v = 1; v <= 64; v += 1) {
+        world.artifactVersions.push({
+          ID: `ffff5555-0000-4000-8000-${String(v).padStart(12, '0')}`,
+          ArtifactID: highChurnArtId,
+          VersionNumber: v,
+          Name: `High-Churn v${v}`,
+          ContentMode: 'File',
+          Content: `https://cdn.example.com/high-churn-v${v}.pdf`,
+          FileID: null,
+          FileName: `high-churn-v${v}.pdf`,
+          MimeType: 'application/pdf',
+          ContentSizeBytes: 1024,
+        });
+      }
+      world.artifactVersions.push({
+        ID: 'ffff5555-0000-4000-8000-000000000065',
+        ArtifactID: highChurnArtId,
+        VersionNumber: 65,
+        Name: 'High-Churn v65',
+        ContentMode: 'File',
+        Content: 'https://cdn.example.com/high-churn-v65.pdf',
+        FileID: null,
+        FileName: 'high-churn-v65.pdf',
+        MimeType: 'application/pdf',
+        ContentSizeBytes: 9 * 1024 * 1024,
+      });
+      world.spaceItems.push({
+        ID: highChurnSiId,
+        SpaceID: SPACE_ID,
+        EntityID: ENTITY_ARTIFACTS_ID,
+        RecordID: `ID|${highChurnArtId}`,
+        Band: 'Shared',
+        PromotedAt: null,
+        PromotedByUserID: null,
+        Folder: 'Library',
+        ArtifactVersionID: null,
+      });
+      for (let i = 0; i < 5; i += 1) {
+        world.attachments.push({
+          ID: `aaaa7777-0000-4000-8000-00000000000${i + 1}`,
+          PostID: SHARED_POST_ID,
+          SpaceItemID: highChurnSiId,
+          Caption: `Existing unpinned #${i + 1}`,
+          Sequence: i + 1,
+        });
+      }
+      // 5 * 9 MiB = 45 MiB already on SHARED_POST_ID; attaching one more 9 MiB artifact (54 MiB > 50 MiB) must fail closed
+      await assert.rejects(
+        () =>
+          svc.PersistPostAttachments({
+            postId: SHARED_POST_ID,
+            contextUser: sharedMember,
+            attachments: [
+              {
+                kind: 'artifact',
+                artifactId: highChurnArtId,
+                artifactName: 'High-Churn 65-Version Spec',
+              },
+            ],
+          }),
+        /aggregate limit/,
+      );
     } finally {
       mock.restoreAll();
     }

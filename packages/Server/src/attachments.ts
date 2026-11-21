@@ -1473,24 +1473,31 @@ export class CommunityAttachmentServerService {
 
     const latestVersionByArtifactId = new Map<string, MJArtifactVersionRow>();
     if (unpinnedArtifactIds.size > 0) {
-      const artVerRes = await rv.RunView<MJArtifactVersionRow>(
-        {
-          EntityName: MJ_ARTIFACT_VERSIONS_ENTITY,
-          ExtraFilter: `ArtifactID IN (${buildSqlInUuidList(Array.from(unpinnedArtifactIds), 'existingArtifactIds')})`,
-          Fields: ['ID', 'ArtifactID', 'VersionNumber', 'Name', 'ContentMode', 'Content', 'FileID', 'FileName', 'MimeType', 'ContentSizeBytes'],
-          ResultType: 'simple',
-          MaxRows: MAX_ATTACHMENTS_SCAN,
-        },
-        contextUser,
+      const perArtifactResults = await Promise.all(
+        Array.from(unpinnedArtifactIds).map((artId) =>
+          rv.RunView<MJArtifactVersionRow>(
+            {
+              EntityName: MJ_ARTIFACT_VERSIONS_ENTITY,
+              ExtraFilter: `ArtifactID = '${AssertValidUUID(artId, 'existingArtifactId')}'`,
+              Fields: ['ID', 'ArtifactID', 'VersionNumber', 'Name', 'ContentMode', 'Content', 'FileID', 'FileName', 'MimeType', 'ContentSizeBytes'],
+              OrderBy: 'VersionNumber DESC',
+              ResultType: 'simple',
+              MaxRows: 1,
+            },
+            contextUser,
+          ),
+        ),
       );
-      if (!artVerRes?.Success) {
-        throw new Error(`Unable to load Artifact Versions for existing unpinned artifacts: ${artVerRes?.ErrorMessage ?? 'query failed'}.`);
-      }
-      for (const v of artVerRes.Results ?? []) {
-        const key = v.ArtifactID.toLowerCase();
-        const existing = latestVersionByArtifactId.get(key);
-        if (!existing || (v.VersionNumber ?? 0) > (existing.VersionNumber ?? 0)) {
-          latestVersionByArtifactId.set(key, v);
+      for (const artVerRes of perArtifactResults) {
+        if (!artVerRes?.Success) {
+          throw new Error(`Unable to load Artifact Versions for existing unpinned artifacts: ${artVerRes?.ErrorMessage ?? 'query failed'}.`);
+        }
+        for (const v of artVerRes.Results ?? []) {
+          const key = v.ArtifactID.toLowerCase();
+          const existing = latestVersionByArtifactId.get(key);
+          if (!existing || (v.VersionNumber ?? 0) > (existing.VersionNumber ?? 0)) {
+            latestVersionByArtifactId.set(key, v);
+          }
         }
       }
     }
@@ -1532,25 +1539,32 @@ export class CommunityAttachmentServerService {
     });
     const companionByFileId = new Map<string, MJArtifactVersionRow>();
     if (filesNeedingCompanion.length > 0) {
-      const compRes = await rv.RunView<MJArtifactVersionRow>(
-        {
-          EntityName: MJ_ARTIFACT_VERSIONS_ENTITY,
-          ExtraFilter: `FileID IN (${buildSqlInUuidList(filesNeedingCompanion, 'existingCompanionFileIds')})`,
-          Fields: ['ID', 'ArtifactID', 'VersionNumber', 'Name', 'ContentMode', 'Content', 'FileID', 'FileName', 'MimeType', 'ContentSizeBytes'],
-          ResultType: 'simple',
-          MaxRows: MAX_ATTACHMENTS_SCAN,
-        },
-        contextUser,
+      const perFileResults = await Promise.all(
+        filesNeedingCompanion.map((fid) =>
+          rv.RunView<MJArtifactVersionRow>(
+            {
+              EntityName: MJ_ARTIFACT_VERSIONS_ENTITY,
+              ExtraFilter: `FileID = '${AssertValidUUID(fid, 'existingCompanionFileId')}'`,
+              Fields: ['ID', 'ArtifactID', 'VersionNumber', 'Name', 'ContentMode', 'Content', 'FileID', 'FileName', 'MimeType', 'ContentSizeBytes'],
+              OrderBy: 'VersionNumber DESC',
+              ResultType: 'simple',
+              MaxRows: 1,
+            },
+            contextUser,
+          ),
+        ),
       );
-      if (!compRes?.Success) {
-        throw new Error(`Unable to load companion Artifact Versions for existing MJ: Files attachments: ${compRes?.ErrorMessage ?? 'query failed'}.`);
-      }
-      for (const v of compRes.Results ?? []) {
-        if (!v.FileID) continue;
-        const key = v.FileID.toLowerCase();
-        const existing = companionByFileId.get(key);
-        if (!existing || (v.VersionNumber ?? 0) > (existing.VersionNumber ?? 0)) {
-          companionByFileId.set(key, v);
+      for (const compRes of perFileResults) {
+        if (!compRes?.Success) {
+          throw new Error(`Unable to load companion Artifact Versions for existing MJ: Files attachments: ${compRes?.ErrorMessage ?? 'query failed'}.`);
+        }
+        for (const v of compRes.Results ?? []) {
+          if (!v.FileID) continue;
+          const key = v.FileID.toLowerCase();
+          const existing = companionByFileId.get(key);
+          if (!existing || (v.VersionNumber ?? 0) > (existing.VersionNumber ?? 0)) {
+            companionByFileId.set(key, v);
+          }
         }
       }
     }
@@ -2331,6 +2345,7 @@ export class CommunityAttachmentServerService {
           EntityName: MJ_ARTIFACT_VERSIONS_ENTITY,
           ExtraFilter: `FileID IN (${buildSqlInUuidList(Array.from(fileIds), 'companionFileIds')})`,
           Fields: ['ID', 'ArtifactID', 'VersionNumber', 'Name', 'ContentMode', 'Content', 'FileID', 'FileName', 'MimeType', 'ContentSizeBytes'],
+          OrderBy: 'VersionNumber DESC',
           ResultType: 'simple',
           MaxRows: MAX_ATTACHMENTS_SCAN,
         },
