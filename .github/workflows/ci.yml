@@ -31,6 +31,9 @@ jobs:
           fetch-depth: 0
 
       - name: Checkout upstream bizapps-collaboration
+        # Published mode only: on next, ci-install brings bizapps-collaboration's next (and MJ next) into
+        # the workspace itself, so this repo's own joined-workspace setup would only collide with it.
+        if: ${{ github.base_ref != 'next' && github.ref != 'refs/heads/next' }}
         uses: actions/checkout@v4
         with:
           repository: MemberJunction/bizapps-collaboration
@@ -48,6 +51,9 @@ jobs:
           node-version: 24
 
       - name: Configure joined CI workspace for upstream dependencies
+        # Published mode only: on next, ci-install brings bizapps-collaboration's next (and MJ next) into
+        # the workspace itself, so this repo's own joined-workspace setup would only collide with it.
+        if: ${{ github.base_ref != 'next' && github.ref != 'refs/heads/next' }}
         run: |
           node - <<'NODE'
           const fs = require('node:fs');
@@ -125,6 +131,9 @@ jobs:
           published-install: pnpm install --no-frozen-lockfile
 
       - name: Build upstream bizapps-collaboration libraries
+        # Published mode only: on next, ci-install brings bizapps-collaboration's next (and MJ next) into
+        # the workspace itself, so this repo's own joined-workspace setup would only collide with it.
+        if: ${{ github.base_ref != 'next' && github.ref != 'refs/heads/next' }}
         run: |
           pnpm \
             --filter @mj-biz-apps/collaboration-core... \
