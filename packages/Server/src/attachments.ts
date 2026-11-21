@@ -21,6 +21,7 @@ import {
   IsTemporaryOrPlaceholderAttachmentUrl,
   NormalizeAttachmentMimeType,
   ResolveAttachmentSpaceItemFolder,
+  ResolveAuthoritativeFileUrl,
   ResolveDefaultFeatureInLibrary,
   SanitizeCommunityAttachmentUrl,
   SanitizePersistedAttachmentUrl,
@@ -659,23 +660,15 @@ export class CommunityAttachmentServerService {
     const existingAttachments = existingAttRes.Results ?? [];
     const existingCount = existingAttachments.length;
 
-    const incomingSizeEntries: Array<{ sizeBytes?: number | null }> = params.attachments.map((item) => ({
-      sizeBytes: item.kind === 'artifact' ? null : item.sizeBytes,
-    }));
-    const existingSizeEntries = await this.resolveExistingAttachmentSizes(existingAttachments, params.contextUser);
-    const batchCheck = ValidateAttachmentBatchLimits(
-      [...existingSizeEntries, ...incomingSizeEntries],
-      {
-        maxFileBytes: COMMUNITY_ATTACHMENT_MAX_FILE_BYTES,
-        maxCountPerPost: COMMUNITY_ATTACHMENT_MAX_COUNT_PER_POST,
-        maxAggregateBytesPerPost: COMMUNITY_ATTACHMENT_MAX_AGGREGATE_BYTES_PER_POST,
-      },
-    );
-    if (!batchCheck.valid) {
-      throw new Error(batchCheck.errors.join(' '));
+    if (existingCount + params.attachments.length > COMMUNITY_ATTACHMENT_MAX_COUNT_PER_POST) {
+      throw new Error(
+        `Attachment count (${existingCount + params.attachments.length}) exceeds the maximum of ${COMMUNITY_ATTACHMENT_MAX_COUNT_PER_POST} attachments per post.`,
+      );
     }
 
-    // Validate every attachment and verify ContextUser-scoped target access BEFORE writing any record
+    const existingSizeEntries = await this.resolveExistingAttachmentSizes(existingAttachments, params.contextUser);
+
+    // Validate every attachment and verify ContextUser-scoped target access (and aggregate byte limits) BEFORE writing any record
     const preparedItems = await this.validateAndPrepareAttachments({
       attachments: params.attachments,
       post,
@@ -1394,17 +1387,17 @@ export class CommunityAttachmentServerService {
   private async resolveExistingAttachmentSizes(
     existingAttachments: ReadonlyArray<ForumPostAttachmentRow>,
     contextUser: UserInfo,
-  ): Promise<Array<{ sizeBytes?: number | null }>> {
+  ): Promise<Array<{ sizeBytes: number }>> {
     if (existingAttachments.length === 0) {
       return [];
     }
     const rv = new RunView();
     const spaceItemIds = Array.from(new Set(existingAttachments.map((a) => a.SpaceItemID)));
-    const siRes = await rv.RunView<Pick<CollaborationSpaceItemRow, 'ID' | 'RecordID' | 'ArtifactVersionID'>>(
+    const siRes = await rv.RunView<Pick<CollaborationSpaceItemRow, 'ID' | 'EntityID' | 'RecordID' | 'ArtifactVersionID'>>(
       {
         EntityName: COLLABORATION_SPACE_ITEMS_ENTITY,
         ExtraFilter: `ID IN (${buildSqlInUuidList(spaceItemIds, 'existingSpaceItemIds')})`,
-        Fields: ['ID', 'RecordID', 'ArtifactVersionID'],
+        Fields: ['ID', 'EntityID', 'RecordID', 'ArtifactVersionID'],
         ResultType: 'simple',
         MaxRows: MAX_ATTACHMENTS_SCAN,
       },
@@ -1413,73 +1406,232 @@ export class CommunityAttachmentServerService {
     if (!siRes?.Success) {
       throw new Error(`Unable to resolve existing SpaceItems for attachment size checks: ${siRes?.ErrorMessage ?? 'query failed'}.`);
     }
-
-    const versionIds = Array.from(
-      new Set(
-        (siRes.Results ?? [])
-          .map((si) => si.ArtifactVersionID)
-          .filter((v): v is string => typeof v === 'string' && v.trim().length > 0),
-      ),
+    const siById = new Map<string, Pick<CollaborationSpaceItemRow, 'ID' | 'EntityID' | 'RecordID' | 'ArtifactVersionID'>>(
+      (siRes.Results ?? []).map((si) => [si.ID.toLowerCase(), si]),
     );
-    const sizeByVersion = new Map<string, number | null>();
-    if (versionIds.length > 0) {
-      const verRes = await rv.RunView<Pick<MJArtifactVersionRow, 'ID' | 'ContentSizeBytes' | 'Content' | 'ContentMode'>>(
+    for (const siId of spaceItemIds) {
+      if (!siById.has(siId.toLowerCase())) {
+        throw new Error(`Existing attachment SpaceItem ${siId} was not found or access is denied.`);
+      }
+    }
+
+    const entityIds = Array.from(new Set((siRes.Results ?? []).map((si) => si.EntityID)));
+    const entRes = await rv.RunView<MJEntityRow>(
+      {
+        EntityName: MJ_ENTITIES_ENTITY,
+        ExtraFilter: `ID IN (${buildSqlInUuidList(entityIds, 'existingEntityIds')})`,
+        Fields: ['ID', 'Name'],
+        ResultType: 'simple',
+        MaxRows: entityIds.length + 5,
+      },
+      contextUser,
+    );
+    if (!entRes?.Success) {
+      throw new Error(`Unable to resolve Entity metadata for existing attachments: ${entRes?.ErrorMessage ?? 'query failed'}.`);
+    }
+    const entityNameById = new Map<string, string>(
+      (entRes.Results ?? []).map((e) => [e.ID.toLowerCase(), e.Name]),
+    );
+
+    const pinnedVersionIds = new Set<string>();
+    const unpinnedArtifactIds = new Set<string>();
+    const unpinnedFileIds = new Set<string>();
+    for (const si of siRes.Results ?? []) {
+      const targetEntityName = entityNameById.get(si.EntityID.toLowerCase());
+      const recUuid = extractRecordUuid(si.RecordID);
+      if ((targetEntityName !== MJ_FILES_ENTITY && targetEntityName !== MJ_ARTIFACTS_ENTITY) || !recUuid) {
+        throw new Error(`Existing SpaceItem ${si.ID} has an unsupported or invalid target (${targetEntityName ?? 'unknown'}).`);
+      }
+      if (si.ArtifactVersionID) {
+        pinnedVersionIds.add(AssertValidUUID(si.ArtifactVersionID, 'existingArtifactVersionId'));
+      } else if (targetEntityName === MJ_ARTIFACTS_ENTITY) {
+        unpinnedArtifactIds.add(recUuid);
+      } else {
+        unpinnedFileIds.add(recUuid);
+      }
+    }
+
+    const versionById = new Map<string, MJArtifactVersionRow>();
+    if (pinnedVersionIds.size > 0) {
+      const verRes = await rv.RunView<MJArtifactVersionRow>(
         {
           EntityName: MJ_ARTIFACT_VERSIONS_ENTITY,
-          ExtraFilter: `ID IN (${buildSqlInUuidList(versionIds, 'existingArtifactVersionIds')})`,
-          Fields: ['ID', 'ContentSizeBytes', 'Content', 'ContentMode'],
+          ExtraFilter: `ID IN (${buildSqlInUuidList(Array.from(pinnedVersionIds), 'existingArtifactVersionIds')})`,
+          Fields: ['ID', 'ArtifactID', 'VersionNumber', 'Name', 'ContentMode', 'Content', 'FileID', 'FileName', 'MimeType', 'ContentSizeBytes'],
           ResultType: 'simple',
           MaxRows: MAX_ATTACHMENTS_SCAN,
         },
         contextUser,
       );
-      for (const v of verRes?.Success ? verRes.Results ?? [] : []) {
-        const sz =
-          v.ContentSizeBytes != null
-            ? v.ContentSizeBytes
-            : ComputeAttachmentContentByteLength(v.Content, v.ContentMode);
-        sizeByVersion.set(v.ID.toLowerCase(), sz);
+      if (!verRes?.Success) {
+        throw new Error(`Unable to load pinned Artifact Versions for existing attachments: ${verRes?.ErrorMessage ?? 'query failed'}.`);
+      }
+      for (const v of verRes.Results ?? []) {
+        versionById.set(v.ID.toLowerCase(), v);
       }
     }
 
-    const fileIds = Array.from(
-      new Set(
-        (siRes.Results ?? [])
-          .filter((si) => !si.ArtifactVersionID)
-          .map((si) => extractRecordUuid(si.RecordID))
-          .filter((id): id is string => id !== null),
-      ),
-    );
-    const sizeByFile = new Map<string, number | null>();
-    if (fileIds.length > 0) {
+    const latestVersionByArtifactId = new Map<string, MJArtifactVersionRow>();
+    if (unpinnedArtifactIds.size > 0) {
+      const artVerRes = await rv.RunView<MJArtifactVersionRow>(
+        {
+          EntityName: MJ_ARTIFACT_VERSIONS_ENTITY,
+          ExtraFilter: `ArtifactID IN (${buildSqlInUuidList(Array.from(unpinnedArtifactIds), 'existingArtifactIds')})`,
+          Fields: ['ID', 'ArtifactID', 'VersionNumber', 'Name', 'ContentMode', 'Content', 'FileID', 'FileName', 'MimeType', 'ContentSizeBytes'],
+          ResultType: 'simple',
+          MaxRows: MAX_ATTACHMENTS_SCAN,
+        },
+        contextUser,
+      );
+      if (!artVerRes?.Success) {
+        throw new Error(`Unable to load Artifact Versions for existing unpinned artifacts: ${artVerRes?.ErrorMessage ?? 'query failed'}.`);
+      }
+      for (const v of artVerRes.Results ?? []) {
+        const key = v.ArtifactID.toLowerCase();
+        const existing = latestVersionByArtifactId.get(key);
+        if (!existing || (v.VersionNumber ?? 0) > (existing.VersionNumber ?? 0)) {
+          latestVersionByArtifactId.set(key, v);
+        }
+      }
+    }
+
+    const allFileIdsToLoad = new Set<string>(unpinnedFileIds);
+    for (const v of versionById.values()) {
+      if (v.FileID) {
+        allFileIdsToLoad.add(AssertValidUUID(v.FileID, 'existingVersion.FileID'));
+      }
+    }
+    for (const v of latestVersionByArtifactId.values()) {
+      if (v.FileID) {
+        allFileIdsToLoad.add(AssertValidUUID(v.FileID, 'existingLatestVersion.FileID'));
+      }
+    }
+
+    const fileById = new Map<string, MJFileRow>();
+    if (allFileIdsToLoad.size > 0) {
       const fileRes = await rv.RunView<MJFileRow>(
         {
           EntityName: MJ_FILES_ENTITY,
-          ExtraFilter: `ID IN (${buildSqlInUuidList(fileIds, 'existingFileIds')})`,
-          Fields: ['ID', 'Name', 'ContentType', 'ProviderKey', 'Status'],
+          ExtraFilter: `ID IN (${buildSqlInUuidList(Array.from(allFileIdsToLoad), 'existingFileIds')})`,
           ResultType: 'simple',
           MaxRows: MAX_ATTACHMENTS_SCAN,
         },
         contextUser,
       );
-      for (const f of fileRes?.Success ? fileRes.Results ?? [] : []) {
-        sizeByFile.set(f.ID.toLowerCase(), f.ContentSizeBytes ?? f.Size ?? null);
+      if (!fileRes?.Success) {
+        throw new Error(`Unable to load MJ: Files records for existing attachments: ${fileRes?.ErrorMessage ?? 'query failed'}.`);
+      }
+      for (const f of fileRes.Results ?? []) {
+        fileById.set(f.ID.toLowerCase(), f);
       }
     }
 
-    const sizeBySpaceItem = new Map<string, number | null>();
+    const filesNeedingCompanion = Array.from(unpinnedFileIds).filter((fid) => {
+      const f = fileById.get(fid.toLowerCase());
+      return f != null && f.ContentSizeBytes == null && f.Size == null;
+    });
+    const companionByFileId = new Map<string, MJArtifactVersionRow>();
+    if (filesNeedingCompanion.length > 0) {
+      const compRes = await rv.RunView<MJArtifactVersionRow>(
+        {
+          EntityName: MJ_ARTIFACT_VERSIONS_ENTITY,
+          ExtraFilter: `FileID IN (${buildSqlInUuidList(filesNeedingCompanion, 'existingCompanionFileIds')})`,
+          Fields: ['ID', 'ArtifactID', 'VersionNumber', 'Name', 'ContentMode', 'Content', 'FileID', 'FileName', 'MimeType', 'ContentSizeBytes'],
+          ResultType: 'simple',
+          MaxRows: MAX_ATTACHMENTS_SCAN,
+        },
+        contextUser,
+      );
+      if (!compRes?.Success) {
+        throw new Error(`Unable to load companion Artifact Versions for existing MJ: Files attachments: ${compRes?.ErrorMessage ?? 'query failed'}.`);
+      }
+      for (const v of compRes.Results ?? []) {
+        if (!v.FileID) continue;
+        const key = v.FileID.toLowerCase();
+        const existing = companionByFileId.get(key);
+        if (!existing || (v.VersionNumber ?? 0) > (existing.VersionNumber ?? 0)) {
+          companionByFileId.set(key, v);
+        }
+      }
+    }
+
+    const sizeBySpaceItem = new Map<string, number>();
     for (const si of siRes.Results ?? []) {
+      const targetEntityName = entityNameById.get(si.EntityID.toLowerCase()) as 'MJ: Files' | 'MJ: Artifacts';
+      const recUuid = extractRecordUuid(si.RecordID)!;
+
       if (si.ArtifactVersionID) {
-        sizeBySpaceItem.set(si.ID.toLowerCase(), sizeByVersion.get(si.ArtifactVersionID.toLowerCase()) ?? null);
+        const ver = versionById.get(si.ArtifactVersionID.toLowerCase());
+        if (!ver) {
+          throw new Error(`Existing attachment Artifact Version ${si.ArtifactVersionID} was not found or access is denied.`);
+        }
+        let linkedFile: MJFileRow | null = null;
+        if (targetEntityName === MJ_FILES_ENTITY) {
+          linkedFile = fileById.get(recUuid.toLowerCase()) ?? null;
+          if (!linkedFile) {
+            throw new Error(`Existing attachment File ${recUuid} was not found or access is denied.`);
+          }
+        } else if (ver.FileID) {
+          linkedFile = fileById.get(ver.FileID.toLowerCase()) ?? null;
+          if (!linkedFile) {
+            throw new Error(`Existing attachment File ${ver.FileID} was not found or access is denied.`);
+          }
+        }
+        const verCheck = ValidateAuthoritativeArtifactVersionRecord(ver, {
+          targetEntityName,
+          targetRecordUuid: recUuid,
+          expectedFileId: targetEntityName === MJ_FILES_ENTITY ? recUuid : null,
+          linkedFileRow: linkedFile,
+        });
+        if (!verCheck.valid || typeof verCheck.sizeBytes !== 'number' || verCheck.sizeBytes <= 0) {
+          throw new Error(verCheck.error ?? `Unable to resolve authoritative size for existing SpaceItem ${si.ID}.`);
+        }
+        sizeBySpaceItem.set(si.ID.toLowerCase(), verCheck.sizeBytes);
+      } else if (targetEntityName === MJ_ARTIFACTS_ENTITY) {
+        const latestVer = latestVersionByArtifactId.get(recUuid.toLowerCase());
+        if (!latestVer) {
+          throw new Error(`Existing unpinned Artifact ${recUuid} has no Artifact Version to resolve authoritative size.`);
+        }
+        let linkedFile: MJFileRow | null = null;
+        if (latestVer.FileID) {
+          linkedFile = fileById.get(latestVer.FileID.toLowerCase()) ?? null;
+          if (!linkedFile) {
+            throw new Error(`Existing attachment File ${latestVer.FileID} was not found or access is denied.`);
+          }
+        }
+        const verCheck = ValidateAuthoritativeArtifactVersionRecord(latestVer, {
+          targetEntityName: 'MJ: Artifacts',
+          targetRecordUuid: recUuid,
+          linkedFileRow: linkedFile,
+        });
+        if (!verCheck.valid || typeof verCheck.sizeBytes !== 'number' || verCheck.sizeBytes <= 0) {
+          throw new Error(verCheck.error ?? `Unable to resolve authoritative size for existing Artifact ${recUuid}.`);
+        }
+        sizeBySpaceItem.set(si.ID.toLowerCase(), verCheck.sizeBytes);
       } else {
-        const fileUuid = extractRecordUuid(si.RecordID);
-        sizeBySpaceItem.set(si.ID.toLowerCase(), fileUuid ? sizeByFile.get(fileUuid.toLowerCase()) ?? null : null);
+        const fileRow = fileById.get(recUuid.toLowerCase());
+        if (!fileRow) {
+          throw new Error(`Existing attachment File ${recUuid} was not found or access is denied.`);
+        }
+        const companionVer =
+          fileRow.ContentSizeBytes == null && fileRow.Size == null
+            ? companionByFileId.get(fileRow.ID.toLowerCase()) ?? null
+            : null;
+        const fileCheck = ValidateAuthoritativeFileRecord(fileRow, undefined, companionVer);
+        if (!fileCheck.valid || typeof fileCheck.sizeBytes !== 'number' || fileCheck.sizeBytes <= 0) {
+          throw new Error(fileCheck.error ?? `Unable to resolve authoritative size for existing File ${recUuid}.`);
+        }
+        sizeBySpaceItem.set(si.ID.toLowerCase(), fileCheck.sizeBytes);
       }
     }
 
-    return existingAttachments.map((a) => ({
-      sizeBytes: sizeBySpaceItem.get(a.SpaceItemID.toLowerCase()) ?? null,
-    }));
+    return existingAttachments.map((a) => {
+      const sz = sizeBySpaceItem.get(a.SpaceItemID.toLowerCase());
+      if (typeof sz !== 'number' || !Number.isFinite(sz) || sz <= 0) {
+        throw new Error(`Unable to resolve authoritative size for existing ForumPostAttachment ${a.ID}.`);
+      }
+      return { sizeBytes: sz };
+    });
   }
 
   private async validateAndPrepareAttachments(params: {
@@ -1505,6 +1657,7 @@ export class CommunityAttachmentServerService {
           previewContent: string | null;
           contentType: string | null;
           versionNumber: number | null;
+          sizeBytes: number;
           targetEntityId: string;
           targetRecordId: string;
           existingSpaceItemId: string | null;
@@ -1563,6 +1716,7 @@ export class CommunityAttachmentServerService {
           previewContent: string | null;
           contentType: string | null;
           versionNumber: number | null;
+          sizeBytes: number;
           targetEntityId: string;
           targetRecordId: string;
           existingSpaceItemId: string | null;
@@ -1655,40 +1809,47 @@ export class CommunityAttachmentServerService {
             },
             params.contextUser,
           );
-          if (latestRes?.Success && latestRes.Results?.[0]) {
+          if (!latestRes?.Success) {
+            throw new Error(`Unable to verify versions for Artifact ${validArtifactId}: ${latestRes?.ErrorMessage ?? 'query failed'}.`);
+          }
+          if (latestRes.Results?.[0]) {
             versionRow = latestRes.Results[0];
           }
         }
 
-        if (versionRow) {
-          let linkedFileForArt: MJFileRow | null = null;
-          if (versionRow.FileID) {
-            const validVerFileId = AssertValidUUID(versionRow.FileID, 'versionRow.FileID');
-            const linkedFileRes = await rv.RunView<MJFileRow>(
-              {
-                EntityName: MJ_FILES_ENTITY,
-                ExtraFilter: `ID = '${validVerFileId}'`,
-                Fields: ['ID', 'Name', 'ContentType', 'ProviderKey', 'Status'],
-                ResultType: 'simple',
-                MaxRows: 1,
-              },
-              params.contextUser,
-            );
-            if (!linkedFileRes?.Success || !linkedFileRes.Results?.[0]) {
-              throw new Error(`File ${validVerFileId} for Artifact Version ${versionRow.ID} was not found or access is denied.`);
-            }
-            linkedFileForArt = linkedFileRes.Results[0];
-          }
-          const verCheck = ValidateAuthoritativeArtifactVersionRecord(versionRow, {
-            targetEntityName: 'MJ: Artifacts',
-            targetRecordUuid: validArtifactId,
-            expectedKind: 'artifact',
-            linkedFileRow: linkedFileForArt,
-          });
-          if (!verCheck.valid) {
-            throw new Error(`attachments[${idx}]: ${verCheck.error}`);
-          }
+        if (!versionRow) {
+          throw new Error(
+            `attachments[${idx}]: Artifact ${validArtifactId} has no published Artifact Version to resolve authoritative size and content.`,
+          );
         }
+
+        let linkedFileForArt: MJFileRow | null = null;
+        if (versionRow.FileID) {
+          const validVerFileId = AssertValidUUID(versionRow.FileID, 'versionRow.FileID');
+          const linkedFileRes = await rv.RunView<MJFileRow>(
+            {
+              EntityName: MJ_FILES_ENTITY,
+              ExtraFilter: `ID = '${validVerFileId}'`,
+              ResultType: 'simple',
+              MaxRows: 1,
+            },
+            params.contextUser,
+          );
+          if (!linkedFileRes?.Success || !linkedFileRes.Results?.[0]) {
+            throw new Error(`File ${validVerFileId} for Artifact Version ${versionRow.ID} was not found or access is denied.`);
+          }
+          linkedFileForArt = linkedFileRes.Results[0];
+        }
+        const verCheck = ValidateAuthoritativeArtifactVersionRecord(versionRow, {
+          targetEntityName: 'MJ: Artifacts',
+          targetRecordUuid: validArtifactId,
+          expectedKind: 'artifact',
+          linkedFileRow: linkedFileForArt,
+        });
+        if (!verCheck.valid || typeof verCheck.sizeBytes !== 'number' || verCheck.sizeBytes <= 0) {
+          throw new Error(`attachments[${idx}]: ${verCheck.error ?? 'Artifact Version lacks a valid positive authoritative byte size.'}`);
+        }
+        const artifactSizeBytes = verCheck.sizeBytes;
 
         const artifactName = raw.artifactName?.trim() || artifactRow.Name;
         const validation = ValidateCommunityAttachmentInput({
@@ -1708,12 +1869,13 @@ export class CommunityAttachmentServerService {
         prepared.push({
           kind: 'artifact',
           artifactId: validArtifactId,
-          artifactVersionId: versionRow?.ID ?? null,
+          artifactVersionId: versionRow.ID,
           artifactName,
           artifactTypeName: raw.artifactTypeName?.trim() || artifactRow.Type?.trim() || 'Artifact',
-          previewContent: versionRow?.Content ?? null,
-          contentType: versionRow?.MimeType ?? null,
-          versionNumber: versionRow?.VersionNumber ?? null,
+          previewContent: versionRow.Content ?? null,
+          contentType: verCheck.mimeType ?? versionRow.MimeType ?? null,
+          versionNumber: versionRow.VersionNumber ?? null,
+          sizeBytes: artifactSizeBytes,
           targetEntityId: artifactsEntityId,
           targetRecordId: validArtifactId,
           existingSpaceItemId,
@@ -1760,7 +1922,6 @@ export class CommunityAttachmentServerService {
             {
               EntityName: MJ_FILES_ENTITY,
               ExtraFilter: `ID = '${validFileId}'`,
-              Fields: ['ID', 'Name', 'ContentType', 'ProviderKey', 'Status'],
               ResultType: 'simple',
               MaxRows: 1,
             },
@@ -1825,7 +1986,6 @@ export class CommunityAttachmentServerService {
               {
                 EntityName: MJ_FILES_ENTITY,
                 ExtraFilter: `ID = '${linkedFileId}'`,
-                Fields: ['ID', 'Name', 'ContentType', 'ProviderKey', 'Status'],
                 ResultType: 'simple',
                 MaxRows: 1,
               },
@@ -1853,7 +2013,25 @@ export class CommunityAttachmentServerService {
           effectiveSizeBytes = verCheck.sizeBytes ?? effectiveSizeBytes;
           effectiveUrl = verCheck.url ?? '';
         } else if (validFileId) {
-          const fileCheck = ValidateAuthoritativeFileRecord(fileRow!, raw.kind);
+          let companionVer: MJArtifactVersionRow | null = null;
+          if (fileRow!.ContentSizeBytes == null && fileRow!.Size == null) {
+            const compRes = await rv.RunView<MJArtifactVersionRow>(
+              {
+                EntityName: MJ_ARTIFACT_VERSIONS_ENTITY,
+                ExtraFilter: `FileID = '${validFileId}'`,
+                Fields: ['ID', 'ArtifactID', 'VersionNumber', 'Name', 'ContentMode', 'Content', 'FileID', 'FileName', 'MimeType', 'ContentSizeBytes'],
+                OrderBy: 'VersionNumber DESC',
+                ResultType: 'simple',
+                MaxRows: 1,
+              },
+              params.contextUser,
+            );
+            if (!compRes?.Success) {
+              throw new Error(`Unable to verify metadata versions for File ${validFileId}: ${compRes?.ErrorMessage ?? 'query failed'}.`);
+            }
+            companionVer = compRes.Results?.[0] ?? null;
+          }
+          const fileCheck = ValidateAuthoritativeFileRecord(fileRow!, raw.kind, companionVer);
           if (!fileCheck.valid) {
             throw new Error(`attachments[${idx}]: ${fileCheck.error ?? 'Invalid MJ: Files target.'}`);
           }
@@ -1913,9 +2091,9 @@ export class CommunityAttachmentServerService {
       }
     }
 
-    // Re-verify combined post count & aggregate byte limits using authoritative sizes from Artifact Versions
-    const preparedSizeEntries: Array<{ sizeBytes?: number | null }> = prepared.map((item) => ({
-      sizeBytes: item.kind === 'artifact' ? null : item.sizeBytes,
+    // Re-verify combined post count & aggregate byte limits using authoritative sizes for BOTH artifacts and files
+    const preparedSizeEntries: Array<{ sizeBytes: number }> = prepared.map((item) => ({
+      sizeBytes: item.sizeBytes,
     }));
     const authoritativeBatchCheck = ValidateAttachmentBatchLimits(
       [...params.existingSizeEntries, ...preparedSizeEntries],
@@ -2134,7 +2312,6 @@ export class CommunityAttachmentServerService {
         {
           EntityName: MJ_FILES_ENTITY,
           ExtraFilter: `ID IN (${buildSqlInUuidList(Array.from(fileIds), 'fileIds')})`,
-          Fields: ['ID', 'Name', 'ContentType', 'ProviderKey', 'Status'],
           ResultType: 'simple',
           MaxRows: MAX_ATTACHMENTS_SCAN,
         },
@@ -2143,6 +2320,30 @@ export class CommunityAttachmentServerService {
       if (fileRes?.Success) {
         for (const f of fileRes.Results ?? []) {
           fileMap.set(f.ID.toLowerCase(), f);
+        }
+      }
+    }
+
+    const companionVersionByFileId = new Map<string, MJArtifactVersionRow>();
+    if (fileIds.size > 0) {
+      const compRes = await rv.RunView<MJArtifactVersionRow>(
+        {
+          EntityName: MJ_ARTIFACT_VERSIONS_ENTITY,
+          ExtraFilter: `FileID IN (${buildSqlInUuidList(Array.from(fileIds), 'companionFileIds')})`,
+          Fields: ['ID', 'ArtifactID', 'VersionNumber', 'Name', 'ContentMode', 'Content', 'FileID', 'FileName', 'MimeType', 'ContentSizeBytes'],
+          ResultType: 'simple',
+          MaxRows: MAX_ATTACHMENTS_SCAN,
+        },
+        params.contextUser,
+      );
+      if (compRes?.Success) {
+        for (const v of compRes.Results ?? []) {
+          if (!v.FileID) continue;
+          const key = v.FileID.toLowerCase();
+          const existing = companionVersionByFileId.get(key);
+          if (!existing || (v.VersionNumber ?? 0) > (existing.VersionNumber ?? 0)) {
+            companionVersionByFileId.set(key, v);
+          }
         }
       }
     }
@@ -2224,33 +2425,37 @@ export class CommunityAttachmentServerService {
       }
 
       const fileId = version?.FileID ?? (isDirectArtifact ? null : recordUuid);
-      const artifactId = version?.ArtifactID ?? (isDirectArtifact ? recordUuid : null);
+      const companionVer = fileId ? companionVersionByFileId.get(fileId.toLowerCase()) ?? null : null;
+      const artifactId = version?.ArtifactID ?? companionVer?.ArtifactID ?? (isDirectArtifact ? recordUuid : null);
       const fileRow = fileId ? fileMap.get(fileId.toLowerCase()) ?? null : null;
-      const fileName = version?.FileName || fileRow?.Name || att.Caption || 'attachment';
-      const mimeType = NormalizeAttachmentMimeType(version?.MimeType || fileRow?.ContentType || 'application/octet-stream');
+      const fileName = version?.FileName || fileRow?.Name || companionVer?.FileName || att.Caption || 'attachment';
+      const mimeType = NormalizeAttachmentMimeType(
+        version?.MimeType || fileRow?.ContentType || companionVer?.MimeType || 'application/octet-stream',
+      );
       const kind = ClassifyAttachmentKind(mimeType, false);
+      const normalizedKind = kind === 'artifact' ? 'file' : kind;
       const rawContentOrFileUrl =
         version?.Content ??
-        fileRow?.DownloadURL ??
-        fileRow?.Url ??
-        fileRow?.Content ??
-        fileRow?.ProviderKey ??
+        (fileRow ? ResolveAuthoritativeFileUrl(fileRow, normalizedKind) : null) ??
+        companionVer?.Content ??
         null;
       const safeUrl =
         SanitizePersistedAttachmentUrl(
           rawContentOrFileUrl,
-          kind === 'artifact' ? 'file' : kind,
+          normalizedKind,
         ) ?? '';
       const resolvedSizeBytes =
         version?.ContentSizeBytes ??
         ComputeAttachmentContentByteLength(version?.Content, version?.ContentMode) ??
         fileRow?.ContentSizeBytes ??
         fileRow?.Size ??
+        companionVer?.ContentSizeBytes ??
+        ComputeAttachmentContentByteLength(companionVer?.Content, companionVer?.ContentMode) ??
         0;
 
       const item: CommunityFileAttachmentItem = {
         id: att.ID,
-        kind: kind === 'artifact' ? 'file' : kind,
+        kind: normalizedKind,
         spaceId: si.SpaceID,
         postId: post.ID,
         spaceItemId: si.ID,
@@ -2261,7 +2466,7 @@ export class CommunityAttachmentServerService {
         sizeBytes: resolvedSizeBytes,
         url: safeUrl,
         artifactId,
-        artifactVersionId: version?.ID ?? si.ArtifactVersionID,
+        artifactVersionId: version?.ID ?? si.ArtifactVersionID ?? companionVer?.ID ?? null,
         caption: att.Caption,
         sequence: att.Sequence,
         featureInLibrary,

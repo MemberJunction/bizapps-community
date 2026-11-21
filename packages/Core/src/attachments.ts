@@ -480,6 +480,14 @@ export function SanitizeCommunityAttachmentUrl(
     }
   }
 
+  if (trimmed.startsWith('/api/files/')) {
+    const fileIdPart = trimmed.slice('/api/files/'.length);
+    if (IsValidUUID(fileIdPart)) {
+      return `/api/files/${fileIdPart}`;
+    }
+    return null;
+  }
+
   return null;
 }
 
@@ -603,16 +611,56 @@ export interface AuthoritativeFileValidationResult {
 }
 
 /**
- * Validates an `MJ: Files` record for `MJ: Files`-only attachment targets under `ContextUser`.
- * Derives authoritative MIME type, positive byte size, and durable URL — failing closed if any
- * authoritative field is missing, disallowed, or unsafe.
+ * Resolves a durable, sanitized download URL for an `MJ: Files` record from explicit URL fields
+ * (`DownloadURL`, `Url`, `Content`) or synthesizes a canonical `/api/files/<ID>` route when a valid
+ * `ProviderKey` storage reference is present. Fails closed if an explicit URL is unsafe/temporary.
+ */
+export function ResolveAuthoritativeFileUrl(
+  fileRow: AuthoritativeFileRowInput,
+  kind?: CommunityAttachmentKind,
+): string | null {
+  const explicitUrl = fileRow.DownloadURL ?? fileRow.Url ?? fileRow.Content ?? null;
+  if (typeof explicitUrl === 'string' && explicitUrl.trim().length > 0) {
+    return SanitizePersistedAttachmentUrl(explicitUrl, kind);
+  }
+
+  if (typeof fileRow.ProviderKey === 'string') {
+    const trimmedKey = fileRow.ProviderKey.trim();
+    if (trimmedKey.length > 0 && !containsControlCharacters(trimmedKey)) {
+      const lowerKey = trimmedKey.toLowerCase();
+      if (lowerKey.startsWith('https://') || lowerKey.startsWith('http://')) {
+        return SanitizePersistedAttachmentUrl(trimmedKey, kind);
+      }
+      if (
+        !lowerKey.startsWith('javascript:') &&
+        !lowerKey.startsWith('vbscript:') &&
+        !lowerKey.startsWith('data:') &&
+        !lowerKey.startsWith('blob:') &&
+        !trimmedKey.startsWith('//') &&
+        !trimmedKey.includes('..') &&
+        IsValidUUID(fileRow.ID?.trim() ?? '')
+      ) {
+        return `/api/files/${fileRow.ID.trim()}`;
+      }
+    }
+  }
+
+  return null;
+}
+
+/**
+ * Validates an `MJ: Files` record under `ContextUser`.
+ * Derives authoritative MIME type, positive byte size (from the file row or an optional companion
+ * `MJ: Artifact Versions` record linked via `FileID`), and durable URL — failing closed if any
+ * authoritative field is missing, disallowed, conflicting, or unsafe.
  */
 export function ValidateAuthoritativeFileRecord(
   fileRow: AuthoritativeFileRowInput,
   expectedKind?: 'image' | 'video' | 'audio' | 'file',
+  companionVersionRow?: AuthoritativeArtifactVersionRowInput | null,
 ): AuthoritativeFileValidationResult {
   const status = typeof fileRow.Status === 'string' ? fileRow.Status.trim().toLowerCase() : '';
-  if (status === 'deleting' || status === 'deleted') {
+  if (status === 'deleting' || status === 'deleted' || status === 'failed' || status === 'error') {
     return {
       valid: false,
       error: `Referenced MJ: Files record ${fileRow.ID} has status "${fileRow.Status}" and cannot be attached.`,
@@ -641,7 +689,19 @@ export function ValidateAuthoritativeFileRecord(
     };
   }
 
-  const rawSize = fileRow.ContentSizeBytes ?? fileRow.Size ?? null;
+  const fileOwnSize = fileRow.ContentSizeBytes ?? fileRow.Size ?? null;
+  let rawSize: number | null = fileOwnSize;
+  if (
+    rawSize == null &&
+    companionVersionRow &&
+    idsMatchCaseInsensitive(companionVersionRow.FileID, fileRow.ID)
+  ) {
+    rawSize =
+      companionVersionRow.ContentSizeBytes != null
+        ? companionVersionRow.ContentSizeBytes
+        : ComputeAttachmentContentByteLength(companionVersionRow.Content, companionVersionRow.ContentMode);
+  }
+
   if (typeof rawSize !== 'number' || !Number.isFinite(rawSize) || rawSize <= 0) {
     return {
       valid: false,
@@ -655,8 +715,39 @@ export function ValidateAuthoritativeFileRecord(
     };
   }
 
-  const rawUrl = fileRow.DownloadURL ?? fileRow.Url ?? fileRow.Content ?? fileRow.ProviderKey ?? null;
-  const safeUrl = SanitizePersistedAttachmentUrl(rawUrl, classified);
+  if (companionVersionRow && idsMatchCaseInsensitive(companionVersionRow.FileID, fileRow.ID)) {
+    if (companionVersionRow.MimeType && companionVersionRow.MimeType.trim()) {
+      const compMime = NormalizeAttachmentMimeType(companionVersionRow.MimeType);
+      if (!IsAllowedAttachmentMimeType(compMime)) {
+        return {
+          valid: false,
+          error: `Artifact Version ${companionVersionRow.ID} MIME type "${companionVersionRow.MimeType}" is not permitted by the Community attachment allowlist.`,
+        };
+      }
+      if (compMime !== mimeType) {
+        return {
+          valid: false,
+          error: `Artifact Version ${companionVersionRow.ID} MIME type "${compMime}" conflicts with linked MJ: Files ${fileRow.ID} ContentType "${mimeType}".`,
+        };
+      }
+    }
+    if (fileOwnSize != null && companionVersionRow.ContentSizeBytes != null) {
+      if (companionVersionRow.ContentSizeBytes > COMMUNITY_ATTACHMENT_MAX_FILE_BYTES) {
+        return {
+          valid: false,
+          error: `Artifact Version ${companionVersionRow.ID} size (${companionVersionRow.ContentSizeBytes} bytes) exceeds the maximum allowed (${COMMUNITY_ATTACHMENT_MAX_FILE_BYTES} bytes).`,
+        };
+      }
+      if (companionVersionRow.ContentSizeBytes !== fileOwnSize) {
+        return {
+          valid: false,
+          error: `Artifact Version ${companionVersionRow.ID} ContentSizeBytes (${companionVersionRow.ContentSizeBytes}) conflicts with linked MJ: Files ${fileRow.ID} authoritative size (${fileOwnSize} bytes).`,
+        };
+      }
+    }
+  }
+
+  const safeUrl = ResolveAuthoritativeFileUrl(fileRow, classified);
   if (!safeUrl) {
     return {
       valid: false,
@@ -777,7 +868,88 @@ export function ValidateAuthoritativeArtifactVersionRecord(
   }
 
   if (mode === 'File') {
-    const mimeType = NormalizeAttachmentMimeType(version.MimeType || options.linkedFileRow?.ContentType || '');
+    const hasFileId = typeof version.FileID === 'string' && version.FileID.trim().length > 0;
+    if (hasFileId) {
+      if (!IsValidUUID(version.FileID!.trim())) {
+        return {
+          valid: false,
+          error: `Artifact Version ${version.ID} has invalid FileID "${version.FileID}".`,
+        };
+      }
+      if (!options.linkedFileRow || !idsMatchCaseInsensitive(options.linkedFileRow.ID, version.FileID)) {
+        return {
+          valid: false,
+          error: `Artifact Version ${version.ID} references FileID ${version.FileID}, but the linked MJ: Files record was not loaded or does not match.`,
+        };
+      }
+    } else if (options.linkedFileRow) {
+      return {
+        valid: false,
+        error: `Artifact Version ${version.ID} has null FileID and cannot bind to MJ: Files ${options.linkedFileRow.ID}.`,
+      };
+    }
+
+    if (options.linkedFileRow) {
+      const expectedFileKind =
+        options.expectedKind && options.expectedKind !== 'artifact' ? options.expectedKind : undefined;
+      const fileCheck = ValidateAuthoritativeFileRecord(options.linkedFileRow, expectedFileKind, version);
+      if (!fileCheck.valid) {
+        return {
+          valid: false,
+          error: fileCheck.error,
+        };
+      }
+
+      if (version.Content && version.Content.trim()) {
+        if (IsTemporaryOrPlaceholderAttachmentUrl(version.Content)) {
+          return {
+            valid: false,
+            error: `Artifact Version ${version.ID} content URL uses a temporary or placeholder scheme (blob:/attachments.local).`,
+          };
+        }
+        if (!SanitizePersistedAttachmentUrl(version.Content, fileCheck.kind)) {
+          return {
+            valid: false,
+            error: `Artifact Version ${version.ID} content URL uses an unsafe or unsupported scheme.`,
+          };
+        }
+      }
+
+      if (version.ContentSizeBytes != null) {
+        if (!Number.isFinite(version.ContentSizeBytes) || version.ContentSizeBytes <= 0) {
+          return {
+            valid: false,
+            error: `Artifact Version ${version.ID} is missing a valid positive authoritative ContentSizeBytes.`,
+          };
+        }
+        if (version.ContentSizeBytes > COMMUNITY_ATTACHMENT_MAX_FILE_BYTES) {
+          return {
+            valid: false,
+            error: `Artifact Version ${version.ID} size (${version.ContentSizeBytes} bytes) exceeds the maximum allowed (${COMMUNITY_ATTACHMENT_MAX_FILE_BYTES} bytes).`,
+          };
+        }
+        if (version.ContentSizeBytes !== fileCheck.sizeBytes) {
+          return {
+            valid: false,
+            error: `Artifact Version ${version.ID} ContentSizeBytes (${version.ContentSizeBytes}) conflicts with linked MJ: Files ${fileCheck.fileId} authoritative size (${fileCheck.sizeBytes} bytes).`,
+          };
+        }
+      }
+
+      return {
+        valid: true,
+        versionId: version.ID,
+        artifactId: version.ArtifactID,
+        fileId: version.FileID,
+        contentMode: 'File',
+        mimeType: fileCheck.mimeType!,
+        sizeBytes: fileCheck.sizeBytes!,
+        url: fileCheck.url!,
+        fileName: options.linkedFileRow.Name?.trim() || version.FileName?.trim() || 'attachment',
+      };
+    }
+
+    const mimeType = NormalizeAttachmentMimeType(version.MimeType || '');
     if (!mimeType || !IsAllowedAttachmentMimeType(mimeType)) {
       return {
         valid: false,
@@ -814,21 +986,7 @@ export function ValidateAuthoritativeArtifactVersionRecord(
           error: `Artifact Version ${version.ID} content URL uses an unsafe or unsupported scheme.`,
         };
       }
-    } else if (options.linkedFileRow) {
-      const fallbackFileUrl =
-        options.linkedFileRow.DownloadURL ??
-        options.linkedFileRow.Url ??
-        options.linkedFileRow.Content ??
-        options.linkedFileRow.ProviderKey ??
-        null;
-      safeUrl = SanitizePersistedAttachmentUrl(fallbackFileUrl, classified);
-      if (!safeUrl) {
-        return {
-          valid: false,
-          error: `Artifact Version ${version.ID} lacks durable Content URL and linked MJ: Files record lacks a valid URL.`,
-        };
-      }
-    } else if (!version.FileID) {
+    } else {
       return {
         valid: false,
         error: `Artifact Version ${version.ID} requires either a valid FileID or a durable safe Content URL.`,
@@ -862,11 +1020,17 @@ export function ValidateAuthoritativeArtifactVersionRecord(
       mimeType,
       sizeBytes: authoritativeSize,
       url: safeUrl,
-      fileName: version.FileName?.trim() || options.linkedFileRow?.Name?.trim() || 'attachment',
+      fileName: version.FileName?.trim() || 'attachment',
     };
   }
 
   // ContentMode === 'Text': sandboxed HTML / SVG / Markdown / JSON / Code artifacts
+  if (typeof version.FileID === 'string' && version.FileID.trim().length > 0) {
+    return {
+      valid: false,
+      error: `Artifact Version ${version.ID} has ContentMode "Text" and cannot bind FileID ${version.FileID}.`,
+    };
+  }
   const textMime = NormalizeAttachmentMimeType(version.MimeType ?? '');
   if (!textMime || !IsAllowedTextArtifactMimeType(textMime)) {
     return {

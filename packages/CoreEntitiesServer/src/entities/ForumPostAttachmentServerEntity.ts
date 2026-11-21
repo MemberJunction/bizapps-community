@@ -11,7 +11,6 @@ import {
   COMMUNITY_ATTACHMENT_MAX_COUNT_PER_POST,
   COMMUNITY_ATTACHMENT_MAX_FILE_BYTES,
   CommunityRules,
-  ComputeAttachmentContentByteLength,
   ValidateAttachmentBatchLimits,
   ValidateAuthoritativeArtifactVersionRecord,
   ValidateAuthoritativeFileRecord,
@@ -110,8 +109,6 @@ const ARTIFACT_VERSION_FIELDS: string[] = [
   'FileName',
   'VersionNumber',
 ];
-
-const MJ_FILE_FIELDS: string[] = ['ID', 'Name', 'ContentType', 'ProviderKey', 'Status'];
 
 function extractRecordUuid(recordId: string | null | undefined): string | null {
   if (typeof recordId !== 'string') return null;
@@ -344,7 +341,6 @@ export class ForumPostAttachmentServerEntity extends mjBizAppsCommunityForumPost
         this,
         'MJ: Files',
         `ID = '${recordUuid}'`,
-        MJ_FILE_FIELDS,
       );
       if (!fileRes.success || !fileRes.row) {
         return failValidation(result, 'SpaceItemID', `Referenced File ${recordUuid} was not found or access is denied.`);
@@ -413,7 +409,6 @@ export class ForumPostAttachmentServerEntity extends mjBizAppsCommunityForumPost
           this,
           'MJ: Files',
           `ID = '${validLinkedFileId}'`,
-          MJ_FILE_FIELDS,
         );
         if (!linkedFileRes.success || !linkedFileRes.row) {
           return failValidation(
@@ -436,7 +431,24 @@ export class ForumPostAttachmentServerEntity extends mjBizAppsCommunityForumPost
       }
       currentAttachmentBytes = verCheck.sizeBytes ?? null;
     } else if (targetEntityName === 'MJ: Files') {
-      const fileCheck = ValidateAuthoritativeFileRecord(loadedFileRow!);
+      let companionVer: AttachmentArtifactVersionRow | null = null;
+      if (loadedFileRow!.ContentSizeBytes == null && loadedFileRow!.Size == null) {
+        const compRes = await loadRows<AttachmentArtifactVersionRow>(
+          this,
+          'MJ: Artifact Versions',
+          `FileID = '${recordUuid}'`,
+          ARTIFACT_VERSION_FIELDS,
+          50,
+        );
+        if (!compRes.success) {
+          return failValidation(result, 'SpaceItemID', `Unable to verify metadata versions for File ${recordUuid}.`);
+        }
+        const sortedComp = [...compRes.rows].sort(
+          (a, b) => (b.VersionNumber ?? 0) - (a.VersionNumber ?? 0),
+        );
+        companionVer = sortedComp[0] ?? null;
+      }
+      const fileCheck = ValidateAuthoritativeFileRecord(loadedFileRow!, undefined, companionVer);
       if (!fileCheck.valid) {
         return failValidation(result, 'SpaceItemID', fileCheck.error ?? 'Invalid MJ: Files target.');
       }
@@ -456,38 +468,54 @@ export class ForumPostAttachmentServerEntity extends mjBizAppsCommunityForumPost
         (a, b) => (b.VersionNumber ?? 0) - (a.VersionNumber ?? 0),
       );
       const latestVer = sortedVersions[0];
-      if (latestVer) {
-        let linkedFileForLatest: AttachmentFileRow | null = null;
-        if (latestVer.FileID) {
-          const validLinkedFileId = validUuidOrNull(latestVer.FileID);
-          if (!validLinkedFileId) {
-            return failValidation(result, 'SpaceItemID', `Artifact Version ${latestVer.ID} has an invalid FileID.`);
-          }
-          const linkedFileRes = await loadSingleRow<AttachmentFileRow>(
-            this,
-            'MJ: Files',
-            `ID = '${validLinkedFileId}'`,
-            MJ_FILE_FIELDS,
-          );
-          if (!linkedFileRes.success || !linkedFileRes.row) {
-            return failValidation(
-              result,
-              'SpaceItemID',
-              `Referenced File ${validLinkedFileId} for Artifact Version ${latestVer.ID} was not found or access is denied.`,
-            );
-          }
-          linkedFileForLatest = linkedFileRes.row;
-        }
-        const verCheck = ValidateAuthoritativeArtifactVersionRecord(latestVer, {
-          targetEntityName: 'MJ: Artifacts',
-          targetRecordUuid: recordUuid,
-          linkedFileRow: linkedFileForLatest,
-        });
-        if (!verCheck.valid) {
-          return failValidation(result, 'SpaceItemID', verCheck.error ?? 'Invalid Artifact Version target.');
-        }
-        currentAttachmentBytes = verCheck.sizeBytes ?? null;
+      if (!latestVer) {
+        return failValidation(
+          result,
+          'SpaceItemID',
+          `Artifact ${recordUuid} has no published Artifact Version to resolve authoritative size and content.`,
+        );
       }
+      let linkedFileForLatest: AttachmentFileRow | null = null;
+      if (latestVer.FileID) {
+        const validLinkedFileId = validUuidOrNull(latestVer.FileID);
+        if (!validLinkedFileId) {
+          return failValidation(result, 'SpaceItemID', `Artifact Version ${latestVer.ID} has an invalid FileID.`);
+        }
+        const linkedFileRes = await loadSingleRow<AttachmentFileRow>(
+          this,
+          'MJ: Files',
+          `ID = '${validLinkedFileId}'`,
+        );
+        if (!linkedFileRes.success || !linkedFileRes.row) {
+          return failValidation(
+            result,
+            'SpaceItemID',
+            `Referenced File ${validLinkedFileId} for Artifact Version ${latestVer.ID} was not found or access is denied.`,
+          );
+        }
+        linkedFileForLatest = linkedFileRes.row;
+      }
+      const verCheck = ValidateAuthoritativeArtifactVersionRecord(latestVer, {
+        targetEntityName: 'MJ: Artifacts',
+        targetRecordUuid: recordUuid,
+        linkedFileRow: linkedFileForLatest,
+      });
+      if (!verCheck.valid) {
+        return failValidation(result, 'SpaceItemID', verCheck.error ?? 'Invalid Artifact Version target.');
+      }
+      currentAttachmentBytes = verCheck.sizeBytes ?? null;
+    }
+
+    if (
+      typeof currentAttachmentBytes !== 'number' ||
+      !Number.isFinite(currentAttachmentBytes) ||
+      currentAttachmentBytes <= 0
+    ) {
+      return failValidation(
+        result,
+        'SpaceItemID',
+        'Attachment target lacks a valid positive authoritative byte size.',
+      );
     }
 
     const existingAttsRes = await loadRows<ExistingAttachmentRow>(
@@ -505,9 +533,12 @@ export class ForumPostAttachmentServerEntity extends mjBizAppsCommunityForumPost
       ? existingAttsRes.rows.filter((a) => !UUIDsEqual(a.ID, this.ID))
       : existingAttsRes.rows;
 
-    const existingSizeEntries = await this.resolveExistingAttachmentSizes(otherAttachments);
+    const existingSizeResult = await this.resolveExistingAttachmentSizes(otherAttachments);
+    if (!existingSizeResult.ok) {
+      return failValidation(result, 'PostID', existingSizeResult.error);
+    }
     const batchCheck = ValidateAttachmentBatchLimits(
-      [...existingSizeEntries, { sizeBytes: currentAttachmentBytes }],
+      [...existingSizeResult.entries, { sizeBytes: currentAttachmentBytes }],
       {
         maxFileBytes: COMMUNITY_ATTACHMENT_MAX_FILE_BYTES,
         maxCountPerPost: COMMUNITY_ATTACHMENT_MAX_COUNT_PER_POST,
@@ -523,22 +554,24 @@ export class ForumPostAttachmentServerEntity extends mjBizAppsCommunityForumPost
 
   private async resolveExistingAttachmentSizes(
     existingAttachments: ReadonlyArray<ExistingAttachmentRow>,
-  ): Promise<Array<{ sizeBytes?: number | null }>> {
+  ): Promise<{ ok: true; entries: Array<{ sizeBytes: number }> } | { ok: false; error: string }> {
     if (existingAttachments.length === 0) {
-      return [];
+      return { ok: true, entries: [] };
     }
-    const spaceItemIds = Array.from(
-      new Set(
-        existingAttachments
-          .map((a) => validUuidOrNull(a.SpaceItemID))
-          .filter((id): id is string => id !== null),
-      ),
-    );
-    if (spaceItemIds.length === 0) {
-      return existingAttachments.map(() => ({ sizeBytes: null }));
+    const spaceItemIds: string[] = [];
+    for (const att of existingAttachments) {
+      const validSiId = validUuidOrNull(att.SpaceItemID);
+      if (!validSiId) {
+        return {
+          ok: false,
+          error: `Existing ForumPostAttachment ${att.ID} has an invalid SpaceItemID; cannot verify aggregate byte limits.`,
+        };
+      }
+      spaceItemIds.push(validSiId);
     }
+    const uniqueSpaceItemIds = Array.from(new Set(spaceItemIds));
 
-    const siFilter = `ID IN (${spaceItemIds.map((id) => `'${id}'`).join(', ')})`;
+    const siFilter = `ID IN (${uniqueSpaceItemIds.map((id) => `'${id}'`).join(', ')})`;
     const siRes = await loadRows<AttachmentSpaceItemRow>(
       this,
       'MJ_BizApps_Collaboration: Space Items',
@@ -547,73 +580,271 @@ export class ForumPostAttachmentServerEntity extends mjBizAppsCommunityForumPost
       COMMUNITY_ATTACHMENT_MAX_COUNT_PER_POST + 5,
     );
     if (!siRes.success) {
-      return existingAttachments.map(() => ({ sizeBytes: null }));
+      return { ok: false, error: 'Unable to load existing attachment SpaceItems to verify aggregate byte limits.' };
+    }
+    const siById = new Map<string, AttachmentSpaceItemRow>(
+      siRes.rows.map((si) => [si.ID.toLowerCase(), si]),
+    );
+    for (const siId of uniqueSpaceItemIds) {
+      if (!siById.has(siId.toLowerCase())) {
+        return {
+          ok: false,
+          error: `Existing attachment SpaceItem ${siId} was not found or access is denied.`,
+        };
+      }
     }
 
-    const versionIds = Array.from(
+    const entityIds = Array.from(
       new Set(
         siRes.rows
-          .map((si) => validUuidOrNull(si.ArtifactVersionID))
+          .map((si) => validUuidOrNull(si.EntityID))
           .filter((id): id is string => id !== null),
       ),
     );
-    const sizeByVersion = new Map<string, number | null>();
-    if (versionIds.length > 0) {
+    if (entityIds.length !== new Set(siRes.rows.map((si) => si.EntityID.toLowerCase())).size) {
+      return { ok: false, error: 'Existing attachment SpaceItem has an invalid EntityID.' };
+    }
+    const entRes = await loadRows<AttachmentEntityRow>(
+      this,
+      'MJ: Entities',
+      `ID IN (${entityIds.map((id) => `'${id}'`).join(', ')})`,
+      ['ID', 'Name'],
+      entityIds.length + 5,
+    );
+    if (!entRes.success) {
+      return { ok: false, error: 'Unable to resolve Entity metadata for existing post attachments.' };
+    }
+    const entityNameById = new Map<string, string>(
+      entRes.rows.map((e) => [e.ID.toLowerCase(), e.Name]),
+    );
+
+    const pinnedVersionIds = new Set<string>();
+    const unpinnedArtifactIds = new Set<string>();
+    const unpinnedFileIds = new Set<string>();
+
+    for (const si of siRes.rows) {
+      const targetEntityName = entityNameById.get(si.EntityID.toLowerCase());
+      const recUuid = extractRecordUuid(si.RecordID);
+      if ((targetEntityName !== 'MJ: Files' && targetEntityName !== 'MJ: Artifacts') || !recUuid) {
+        return {
+          ok: false,
+          error: `Existing SpaceItem ${si.ID} has an unsupported or invalid target (${targetEntityName ?? 'unknown'}).`,
+        };
+      }
+      if (si.ArtifactVersionID) {
+        const validVerId = validUuidOrNull(si.ArtifactVersionID);
+        if (!validVerId) {
+          return { ok: false, error: `Existing SpaceItem ${si.ID} has an invalid ArtifactVersionID.` };
+        }
+        pinnedVersionIds.add(validVerId);
+      } else if (targetEntityName === 'MJ: Artifacts') {
+        unpinnedArtifactIds.add(recUuid);
+      } else {
+        unpinnedFileIds.add(recUuid);
+      }
+    }
+
+    const versionById = new Map<string, AttachmentArtifactVersionRow>();
+    if (pinnedVersionIds.size > 0) {
       const verRes = await loadRows<AttachmentArtifactVersionRow>(
         this,
         'MJ: Artifact Versions',
-        `ID IN (${versionIds.map((id) => `'${id}'`).join(', ')})`,
+        `ID IN (${Array.from(pinnedVersionIds).map((id) => `'${id}'`).join(', ')})`,
         ARTIFACT_VERSION_FIELDS,
         COMMUNITY_ATTACHMENT_MAX_COUNT_PER_POST + 5,
       );
-      if (verRes.success) {
-        for (const v of verRes.rows) {
-          const sz =
-            v.ContentSizeBytes != null
-              ? v.ContentSizeBytes
-              : ComputeAttachmentContentByteLength(v.Content, v.ContentMode);
-          sizeByVersion.set(v.ID.toLowerCase(), sz);
+      if (!verRes.success) {
+        return { ok: false, error: 'Unable to load pinned Artifact Versions for existing post attachments.' };
+      }
+      for (const v of verRes.rows) {
+        versionById.set(v.ID.toLowerCase(), v);
+      }
+    }
+
+    const latestVersionByArtifactId = new Map<string, AttachmentArtifactVersionRow>();
+    if (unpinnedArtifactIds.size > 0) {
+      const artVerRes = await loadRows<AttachmentArtifactVersionRow>(
+        this,
+        'MJ: Artifact Versions',
+        `ArtifactID IN (${Array.from(unpinnedArtifactIds).map((id) => `'${id}'`).join(', ')})`,
+        ARTIFACT_VERSION_FIELDS,
+        (unpinnedArtifactIds.size + 1) * 50,
+      );
+      if (!artVerRes.success) {
+        return { ok: false, error: 'Unable to load latest Artifact Versions for existing unpinned artifact attachments.' };
+      }
+      for (const v of artVerRes.rows) {
+        const key = v.ArtifactID.toLowerCase();
+        const existing = latestVersionByArtifactId.get(key);
+        if (!existing || (v.VersionNumber ?? 0) > (existing.VersionNumber ?? 0)) {
+          latestVersionByArtifactId.set(key, v);
         }
       }
     }
 
-    const fileIds = Array.from(
-      new Set(
-        siRes.rows
-          .filter((si) => !si.ArtifactVersionID)
-          .map((si) => extractRecordUuid(si.RecordID))
-          .filter((id): id is string => id !== null),
-      ),
-    );
-    const sizeByFile = new Map<string, number | null>();
-    if (fileIds.length > 0) {
+    const allFileIdsToLoad = new Set<string>(unpinnedFileIds);
+    for (const v of versionById.values()) {
+      if (v.FileID) {
+        const validFid = validUuidOrNull(v.FileID);
+        if (!validFid) {
+          return { ok: false, error: `Existing Artifact Version ${v.ID} has an invalid FileID.` };
+        }
+        allFileIdsToLoad.add(validFid);
+      }
+    }
+    for (const v of latestVersionByArtifactId.values()) {
+      if (v.FileID) {
+        const validFid = validUuidOrNull(v.FileID);
+        if (!validFid) {
+          return { ok: false, error: `Existing Artifact Version ${v.ID} has an invalid FileID.` };
+        }
+        allFileIdsToLoad.add(validFid);
+      }
+    }
+
+    const fileById = new Map<string, AttachmentFileRow>();
+    if (allFileIdsToLoad.size > 0) {
       const fileRes = await loadRows<AttachmentFileRow>(
         this,
         'MJ: Files',
-        `ID IN (${fileIds.map((id) => `'${id}'`).join(', ')})`,
-        MJ_FILE_FIELDS,
-        COMMUNITY_ATTACHMENT_MAX_COUNT_PER_POST + 5,
+        `ID IN (${Array.from(allFileIdsToLoad).map((id) => `'${id}'`).join(', ')})`,
+        undefined,
+        allFileIdsToLoad.size + 5,
       );
-      if (fileRes.success) {
-        for (const f of fileRes.rows) {
-          sizeByFile.set(f.ID.toLowerCase(), f.ContentSizeBytes ?? f.Size ?? null);
+      if (!fileRes.success) {
+        return { ok: false, error: 'Unable to load MJ: Files records for existing post attachments.' };
+      }
+      for (const f of fileRes.rows) {
+        fileById.set(f.ID.toLowerCase(), f);
+      }
+    }
+
+    const filesNeedingCompanion = Array.from(unpinnedFileIds).filter((fid) => {
+      const f = fileById.get(fid.toLowerCase());
+      return f != null && f.ContentSizeBytes == null && f.Size == null;
+    });
+    const companionByFileId = new Map<string, AttachmentArtifactVersionRow>();
+    if (filesNeedingCompanion.length > 0) {
+      const compRes = await loadRows<AttachmentArtifactVersionRow>(
+        this,
+        'MJ: Artifact Versions',
+        `FileID IN (${filesNeedingCompanion.map((id) => `'${id}'`).join(', ')})`,
+        ARTIFACT_VERSION_FIELDS,
+        (filesNeedingCompanion.length + 1) * 50,
+      );
+      if (!compRes.success) {
+        return { ok: false, error: 'Unable to load companion Artifact Versions for existing MJ: Files attachments.' };
+      }
+      for (const v of compRes.rows) {
+        if (!v.FileID) continue;
+        const key = v.FileID.toLowerCase();
+        const existing = companionByFileId.get(key);
+        if (!existing || (v.VersionNumber ?? 0) > (existing.VersionNumber ?? 0)) {
+          companionByFileId.set(key, v);
         }
       }
     }
 
-    const sizeBySpaceItem = new Map<string, number | null>();
+    const sizeBySpaceItem = new Map<string, number>();
     for (const si of siRes.rows) {
+      const targetEntityName = entityNameById.get(si.EntityID.toLowerCase()) as 'MJ: Files' | 'MJ: Artifacts';
+      const recUuid = extractRecordUuid(si.RecordID)!;
+
       if (si.ArtifactVersionID) {
-        sizeBySpaceItem.set(si.ID.toLowerCase(), sizeByVersion.get(si.ArtifactVersionID.toLowerCase()) ?? null);
+        const ver = versionById.get(si.ArtifactVersionID.toLowerCase());
+        if (!ver) {
+          return {
+            ok: false,
+            error: `Existing attachment Artifact Version ${si.ArtifactVersionID} was not found or access is denied.`,
+          };
+        }
+        let linkedFile: AttachmentFileRow | null = null;
+        if (targetEntityName === 'MJ: Files') {
+          linkedFile = fileById.get(recUuid.toLowerCase()) ?? null;
+          if (!linkedFile) {
+            return { ok: false, error: `Existing attachment File ${recUuid} was not found or access is denied.` };
+          }
+        } else if (ver.FileID) {
+          linkedFile = fileById.get(ver.FileID.toLowerCase()) ?? null;
+          if (!linkedFile) {
+            return { ok: false, error: `Existing attachment File ${ver.FileID} was not found or access is denied.` };
+          }
+        }
+        const verCheck = ValidateAuthoritativeArtifactVersionRecord(ver, {
+          targetEntityName,
+          targetRecordUuid: recUuid,
+          expectedFileId: targetEntityName === 'MJ: Files' ? recUuid : null,
+          linkedFileRow: linkedFile,
+        });
+        if (!verCheck.valid || typeof verCheck.sizeBytes !== 'number' || verCheck.sizeBytes <= 0) {
+          return {
+            ok: false,
+            error: verCheck.error ?? `Unable to resolve authoritative size for existing SpaceItem ${si.ID}.`,
+          };
+        }
+        sizeBySpaceItem.set(si.ID.toLowerCase(), verCheck.sizeBytes);
+      } else if (targetEntityName === 'MJ: Artifacts') {
+        const latestVer = latestVersionByArtifactId.get(recUuid.toLowerCase());
+        if (!latestVer) {
+          return {
+            ok: false,
+            error: `Existing unpinned Artifact ${recUuid} has no Artifact Version to resolve authoritative size.`,
+          };
+        }
+        let linkedFile: AttachmentFileRow | null = null;
+        if (latestVer.FileID) {
+          linkedFile = fileById.get(latestVer.FileID.toLowerCase()) ?? null;
+          if (!linkedFile) {
+            return {
+              ok: false,
+              error: `Existing attachment File ${latestVer.FileID} was not found or access is denied.`,
+            };
+          }
+        }
+        const verCheck = ValidateAuthoritativeArtifactVersionRecord(latestVer, {
+          targetEntityName: 'MJ: Artifacts',
+          targetRecordUuid: recUuid,
+          linkedFileRow: linkedFile,
+        });
+        if (!verCheck.valid || typeof verCheck.sizeBytes !== 'number' || verCheck.sizeBytes <= 0) {
+          return {
+            ok: false,
+            error: verCheck.error ?? `Unable to resolve authoritative size for existing Artifact ${recUuid}.`,
+          };
+        }
+        sizeBySpaceItem.set(si.ID.toLowerCase(), verCheck.sizeBytes);
       } else {
-        const recUuid = extractRecordUuid(si.RecordID);
-        sizeBySpaceItem.set(si.ID.toLowerCase(), recUuid ? sizeByFile.get(recUuid.toLowerCase()) ?? null : null);
+        const fileRow = fileById.get(recUuid.toLowerCase());
+        if (!fileRow) {
+          return { ok: false, error: `Existing attachment File ${recUuid} was not found or access is denied.` };
+        }
+        const companionVer =
+          fileRow.ContentSizeBytes == null && fileRow.Size == null
+            ? companionByFileId.get(fileRow.ID.toLowerCase()) ?? null
+            : null;
+        const fileCheck = ValidateAuthoritativeFileRecord(fileRow, undefined, companionVer);
+        if (!fileCheck.valid || typeof fileCheck.sizeBytes !== 'number' || fileCheck.sizeBytes <= 0) {
+          return {
+            ok: false,
+            error: fileCheck.error ?? `Unable to resolve authoritative size for existing File ${recUuid}.`,
+          };
+        }
+        sizeBySpaceItem.set(si.ID.toLowerCase(), fileCheck.sizeBytes);
       }
     }
 
-    return existingAttachments.map((a) => ({
-      sizeBytes: sizeBySpaceItem.get(a.SpaceItemID.toLowerCase()) ?? null,
-    }));
+    const entries: Array<{ sizeBytes: number }> = [];
+    for (const att of existingAttachments) {
+      const sz = sizeBySpaceItem.get(att.SpaceItemID.toLowerCase());
+      if (typeof sz !== 'number' || !Number.isFinite(sz) || sz <= 0) {
+        return {
+          ok: false,
+          error: `Unable to resolve authoritative size for existing ForumPostAttachment ${att.ID}.`,
+        };
+      }
+      entries.push({ sizeBytes: sz });
+    }
+    return { ok: true, entries };
   }
 
   public override async Save(options?: EntitySaveOptions): Promise<boolean> {
