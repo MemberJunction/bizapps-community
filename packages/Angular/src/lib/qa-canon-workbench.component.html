@@ -203,6 +203,14 @@
             <div class="mjc-qa-inspector__body">No body provided yet.</div>
           }
 
+          @if (activeQa.attachments && activeQa.attachments.length > 0) {
+            <mjc-attachment-gallery
+              [attachments]="activeQa.attachments"
+              mode="full"
+              [ariaLabel]="'Attachments for ' + activeQa.title"
+            ></mjc-attachment-gallery>
+          }
+
           <div class="mjc-qa-btn-row">
             <button
               type="button"

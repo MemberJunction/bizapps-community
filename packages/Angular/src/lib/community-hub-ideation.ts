@@ -84,7 +84,7 @@ export async function LoadAllPaginatedRows<TRow>(params: {
   runView: RunView;
   entityName: string;
   extraFilter: string;
-  fields: string[];
+  fields?: string[];
   user: UserInfo;
   pageSize?: number;
 }): Promise<PaginatedLoadResult<TRow>> {
@@ -97,7 +97,7 @@ export async function LoadAllPaginatedRows<TRow>(params: {
       {
         EntityName: params.entityName,
         ExtraFilter: params.extraFilter,
-        Fields: params.fields,
+        ...(params.fields && params.fields.length > 0 ? { Fields: params.fields } : {}),
         ResultType: 'simple',
         StartRow: startRow,
         MaxRows: pageSize,

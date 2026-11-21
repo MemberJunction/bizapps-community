@@ -297,6 +297,14 @@
 
                   <div class="mjc-full-thread-content mjc-markdown" [innerHTML]="renderMarkdown(activeDetail.bodyMarkdown)"></div>
 
+                  @if (activeDetail.attachments && activeDetail.attachments.length > 0) {
+                    <mjc-attachment-gallery
+                      [attachments]="activeDetail.attachments"
+                      mode="full"
+                      [ariaLabel]="'Attachments for ' + activeDetail.title"
+                    ></mjc-attachment-gallery>
+                  }
+
                   @if (activeDetail.tags.length > 0) {
                     <div class="mjc-drawer-tags">
                       @for (tag of activeDetail.tags; track tag) {
@@ -419,6 +427,13 @@
                           }
                         </div>
                         <div class="mjc-reply-card__body mjc-markdown" [innerHTML]="renderMarkdown(reply.bodyMarkdown)"></div>
+                        @if (reply.attachments && reply.attachments.length > 0) {
+                          <mjc-attachment-gallery
+                            [attachments]="reply.attachments"
+                            mode="compact"
+                            [ariaLabel]="'Attachments for reply by ' + reply.authorName"
+                          ></mjc-attachment-gallery>
+                        }
                       </div>
                     }
                   }
@@ -433,8 +448,21 @@
                       placeholder="Write a reply, answer, or follow-up note..."
                       [(ngModel)]="detailReplyText"
                     ></textarea>
+                    <mjc-attachment-picker
+                      entryType="reply"
+                      pickerLabel="Thread reply attachments"
+                      [accessibleArtifacts]="accessibleArtifacts"
+                      [drafts]="detailReplyAttachments"
+                      (draftsChange)="detailReplyAttachments = $event"
+                      (validationError)="detailReplyAttachmentError = $event"
+                    ></mjc-attachment-picker>
                     <div class="mjc-community-hub__btn-row">
-                      <button type="submit" id="mjc-detail-reply-submit-btn" class="mjc-community-hub__btn mjc-community-hub__btn--primary">
+                      <button
+                        type="submit"
+                        id="mjc-detail-reply-submit-btn"
+                        class="mjc-community-hub__btn mjc-community-hub__btn--primary"
+                        [disabled]="!detailReplyText.trim() || !!detailReplyAttachmentError"
+                      >
                         Post Reply
                       </button>
                     </div>
@@ -636,6 +664,7 @@
                 [digestCadence]="digestCadence"
                 [topDigestMatchTitle]="topDigestMatchTitle"
                 [topDigestMatchScorePct]="topDigestMatchScorePct"
+                [accessibleArtifacts]="accessibleArtifacts"
                 (spaceFilterChange)="setSpaceFilter($event)"
                 (topicFilterChange)="setTopicFilter($event)"
                 (streamTypeFilterChange)="setStreamTypeFilter($event)"
@@ -644,7 +673,7 @@
                 (itemUpvoted)="upvoteCommonsItem($event)"
                 (threadSynthesized)="SynthesizeFeedThread($event)"
                 (threadRegenerated)="SynthesizeFeedThread($event, true)"
-                (inlineReplySubmitted)="submitDetailReply($event.itemId, $event.replyBody)"
+                (inlineReplySubmitted)="submitDetailReply($event.itemId, $event.replyBody, $event.attachments)"
                 (itemGraduated)="graduateDetailItem($event)"
                 (askShareRequested)="openAskShareModal()"
                 (navigateToTab)="SelectTab($event)"
@@ -834,6 +863,14 @@
                           <div class="mjc-ideation-console__summary mjc-markdown" [innerHTML]="renderMarkdown(activeIdea.summary)"></div>
                         </div>
 
+                        @if (activeIdea.attachments && activeIdea.attachments.length > 0) {
+                          <mjc-attachment-gallery
+                            [attachments]="activeIdea.attachments"
+                            mode="full"
+                            [ariaLabel]="'Attachments for ' + activeIdea.title"
+                          ></mjc-attachment-gallery>
+                        }
+
                         <div class="mjc-ideation-console__metrics">
                           <div>
                             <span class="mjc-ideation-console__metric-label">Your Points</span>
@@ -908,6 +945,30 @@
                 (submitInlineForm)="SubmitInlineForm($event)"
                 (resetMiniApp)="ResetMiniApp($event)"
               ></mjc-living-co-authoring>
+            </section>
+          }
+
+          @case ('media-library') {
+            <section
+              [id]="'mjc-hub-panel-media-library'"
+              class="mjc-community-hub__panel"
+              role="tabpanel"
+              [attr.aria-labelledby]="'mjc-hub-tab-media-library'"
+            >
+              <mjc-media-library
+                [entries]="mediaLibraryEntries"
+                [spaces]="streamSpaces"
+                [activeSpaceFilter]="activeSpaceFilter"
+                [kindFilter]="mediaLibraryKindFilter"
+                [scopeFilter]="mediaLibraryScopeFilter"
+                [searchQuery]="mediaLibrarySearchQuery"
+                (spaceFilterChange)="setSpaceFilter($event)"
+                (kindFilterChange)="setMediaLibraryKindFilter($event)"
+                (scopeFilterChange)="setMediaLibraryScopeFilter($event)"
+                (searchQueryChange)="setMediaLibrarySearchQuery($event)"
+                (viewInThread)="openMediaLibraryThread($event)"
+                (filtersReset)="resetMediaLibraryFilters()"
+              ></mjc-media-library>
             </section>
           }
         }
@@ -1113,6 +1174,18 @@
                     </ul>
                   }
                 </div>
+              </div>
+
+              <div class="mjc-community-hub__field">
+                <label class="mjc-community-hub__label">Attachments &amp; MJ Artifacts</label>
+                <mjc-attachment-picker
+                  [entryType]="askShareAttachmentEntryType"
+                  pickerLabel="Post attachments and MJ Artifacts"
+                  [accessibleArtifacts]="accessibleArtifacts"
+                  [drafts]="askShareAttachments"
+                  (draftsChange)="askShareAttachments = $event"
+                  (validationError)="askShareAttachmentError = $event"
+                ></mjc-attachment-picker>
               </div>
 
               @if (askShareError) {

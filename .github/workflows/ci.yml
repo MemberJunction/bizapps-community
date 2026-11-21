@@ -77,10 +77,13 @@ jobs:
             "  - 'packages/*'",
             "  - 'packages/Example*/*'",
             "  - 'e2e'",
+            "  - '.ci/bizapps-collaboration'",
             "  - '.ci/bizapps-collaboration/packages/*'",
             "  - '.ci/bizapps-collaboration/packages/ExampleSpaceTypes/*'",
             'linkWorkspacePackages: true',
             'minimumReleaseAge: 0',
+            'publicHoistPattern:',
+            "  - '@memberjunction/*'",
             'overrides:',
             ...Object.entries(mergedOverrides).map(
               ([k, v]) => `  '${k}': '${v}'`,
@@ -96,6 +99,16 @@ jobs:
             '  tesseract.js: false',
             '',
           ];
+
+          const collabServerPkgPath = '.ci/bizapps-collaboration/packages/CoreEntitiesServer/package.json';
+          if (fs.existsSync(collabServerPkgPath)) {
+            const collabServerPkg = JSON.parse(fs.readFileSync(collabServerPkgPath, 'utf8'));
+            collabServerPkg.devDependencies = collabServerPkg.devDependencies || {};
+            if (!collabServerPkg.devDependencies['@memberjunction/generic-database-provider']) {
+              collabServerPkg.devDependencies['@memberjunction/generic-database-provider'] = mjVersion;
+              fs.writeFileSync(collabServerPkgPath, `${JSON.stringify(collabServerPkg, null, 2)}\n`, 'utf8');
+            }
+          }
 
           fs.writeFileSync('pnpm-workspace.yaml', lines.join('\n'), 'utf8');
           console.log(

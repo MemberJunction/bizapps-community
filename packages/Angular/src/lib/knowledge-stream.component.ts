@@ -1,9 +1,11 @@
 import {
   Component,
   ChangeDetectionStrategy,
+  ChangeDetectorRef,
   EventEmitter,
   Input,
   Output,
+  inject,
 } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
@@ -19,12 +21,24 @@ import {
 import type { CommunityHubDigestCadence, CommunityHubTabKey } from './community-hub-preferences.ts';
 import type { LivingThreadSynthesisView } from './community-hub-wedge.ts';
 import { RenderSafeMarkdownHtml } from './community-markdown.ts';
+import { CommunityAttachmentGalleryComponent } from './community-attachment-gallery.component.ts';
+import { CommunityAttachmentPickerComponent } from './community-attachment-picker.component.ts';
+import type {
+  AccessibleArtifactCatalogItem,
+  DraftCommunityAttachment,
+} from './community-attachment-picker.ts';
 import { AskFirstDeflectionWidgetComponent } from './widgets/ask-first-deflection-widget.component.ts';
 
 export interface KnowledgeStreamWalletSummaryItem {
   id: string;
   title: string;
   myPointsAllocated: number;
+}
+
+export interface InlineReplySubmittedPayload {
+  itemId: string;
+  replyBody: string;
+  attachments: ReadonlyArray<DraftCommunityAttachment>;
 }
 
 /**
@@ -36,12 +50,19 @@ export interface KnowledgeStreamWalletSummaryItem {
 @Component({
   standalone: true,
   selector: 'mjc-knowledge-stream',
-  imports: [CommonModule, FormsModule, AskFirstDeflectionWidgetComponent],
+  imports: [
+    CommonModule,
+    FormsModule,
+    AskFirstDeflectionWidgetComponent,
+    CommunityAttachmentGalleryComponent,
+    CommunityAttachmentPickerComponent,
+  ],
   templateUrl: './knowledge-stream.component.html',
   styleUrl: './knowledge-stream.component.css',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class KnowledgeStreamComponent {
+  private readonly cdr = inject(ChangeDetectorRef);
   public readonly streamTypeOptions = STREAM_TYPE_FILTER_OPTIONS;
 
   @Input() public spaces: ReadonlyArray<CommunitySpaceDirectoryItem> = [];
@@ -65,6 +86,7 @@ export class KnowledgeStreamComponent {
   @Input() public digestCadence: CommunityHubDigestCadence = 'weekly';
   @Input() public topDigestMatchTitle: string | null = null;
   @Input() public topDigestMatchScorePct = 0;
+  @Input() public accessibleArtifacts: ReadonlyArray<AccessibleArtifactCatalogItem> = [];
 
   @Output() public readonly spaceFilterChange = new EventEmitter<CommunitySpaceFilterId>();
   @Output() public readonly topicFilterChange = new EventEmitter<string | null>();
@@ -74,7 +96,7 @@ export class KnowledgeStreamComponent {
   @Output() public readonly itemUpvoted = new EventEmitter<string>();
   @Output() public readonly threadSynthesized = new EventEmitter<string>();
   @Output() public readonly threadRegenerated = new EventEmitter<string>();
-  @Output() public readonly inlineReplySubmitted = new EventEmitter<{ itemId: string; replyBody: string }>();
+  @Output() public readonly inlineReplySubmitted = new EventEmitter<InlineReplySubmittedPayload>();
   @Output() public readonly itemGraduated = new EventEmitter<string>();
   @Output() public readonly askShareRequested = new EventEmitter<void>();
   @Output() public readonly navigateToTab = new EventEmitter<CommunityHubTabKey>();
@@ -86,6 +108,8 @@ export class KnowledgeStreamComponent {
   private readonly defaultVisibleTopicLimit = 10;
   private readonly expandedItemIds = new Set<string>();
   private readonly inlineReplyDrafts = new Map<string, string>();
+  private readonly inlineReplyAttachments = new Map<string, DraftCommunityAttachment[]>();
+  private readonly inlineReplyAttachmentErrors = new Map<string, string | null>();
 
   public get visibleTopics(): ReadonlyArray<string> {
     if (this.showAllTopics || this.topics.length <= this.defaultVisibleTopicLimit) {
@@ -232,11 +256,40 @@ export class KnowledgeStreamComponent {
     this.inlineReplyDrafts.set(itemId, value);
   }
 
+  public getInlineReplyAttachments(itemId: string): DraftCommunityAttachment[] {
+    return this.inlineReplyAttachments.get(itemId) ?? [];
+  }
+
+  public setInlineReplyAttachments(itemId: string, drafts: DraftCommunityAttachment[]): void {
+    this.inlineReplyAttachments.set(itemId, [...drafts]);
+    this.cdr.markForCheck();
+  }
+
+  public getInlineReplyAttachmentError(itemId: string): string | null {
+    return this.inlineReplyAttachmentErrors.get(itemId) ?? null;
+  }
+
+  public setInlineReplyAttachmentError(itemId: string, error: string | null): void {
+    if (error) {
+      this.inlineReplyAttachmentErrors.set(itemId, error);
+    } else {
+      this.inlineReplyAttachmentErrors.delete(itemId);
+    }
+    this.cdr.markForCheck();
+  }
+
+  public clearInlineReplyDraft(itemId: string): void {
+    this.inlineReplyDrafts.delete(itemId);
+    this.inlineReplyAttachments.delete(itemId);
+    this.inlineReplyAttachmentErrors.delete(itemId);
+    this.cdr.markForCheck();
+  }
+
   public submitInlineReply(itemId: string): void {
     const replyBody = (this.inlineReplyDrafts.get(itemId) ?? '').trim();
-    if (!replyBody) return;
-    this.inlineReplyDrafts.set(itemId, '');
-    this.inlineReplySubmitted.emit({ itemId, replyBody });
+    if (!replyBody || this.getInlineReplyAttachmentError(itemId)) return;
+    const attachments = this.inlineReplyAttachments.get(itemId) ?? [];
+    this.inlineReplySubmitted.emit({ itemId, replyBody, attachments: [...attachments] });
   }
 
   public graduateItem(itemId: string): void {

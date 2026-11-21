@@ -125,6 +125,7 @@ export async function loadRows<T>(
   extraFilter: string,
   fields?: string[],
   maxRows: number = 1000,
+  orderBy?: string,
 ): Promise<{ success: boolean; rows: T[]; errorMessage?: string }> {
   const rv = new RunView(entity.RunViewProviderToUse);
   const res = await rv.RunView<T>(
@@ -132,6 +133,7 @@ export async function loadRows<T>(
       EntityName: entityName,
       ExtraFilter: extraFilter,
       Fields: fields,
+      ...(orderBy ? { OrderBy: orderBy } : {}),
       ResultType: 'simple',
       MaxRows: maxRows,
     },

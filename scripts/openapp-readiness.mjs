@@ -214,7 +214,7 @@ function checkSeedDensity() {
 }
 
 const REQUIRED_E2E_SCHEMA_VERSION = 'sf-e2e/v1';
-const REQUIRED_TAB_KEYS = ['knowledge-stream', 'qa-canon-workbench', 'quadratic-ideation-wallet', 'living-co-authoring'];
+const REQUIRED_TAB_KEYS = ['knowledge-stream', 'qa-canon-workbench', 'quadratic-ideation-wallet', 'living-co-authoring', 'media-library'];
 /** Reports older than this are treated as stale (fail closed) rather than trusted blindly. */
 const MAX_REPORT_AGE_MS = 24 * 60 * 60 * 1000;
 

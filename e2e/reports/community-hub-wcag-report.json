@@ -1,7 +1,7 @@
 {
   "schemaVersion": "sf-e2e/v1",
-  "evaluatedAtIso": "2026-11-20T13:34:49.494Z",
-  "harnessUrl": "http://127.0.0.1:59353/",
+  "evaluatedAtIso": "2026-11-21T00:24:16.212Z",
+  "harnessUrl": "http://127.0.0.1:49915/",
   "fontAwesomeMode": "local-package",
   "fontAwesomeLoaded": true,
   "runtimeClassFactoryRegistrationsVerified": 26,
@@ -10,7 +10,8 @@
     "knowledge-stream",
     "qa-canon-workbench",
     "quadratic-ideation-wallet",
-    "living-co-authoring"
+    "living-co-authoring",
+    "media-library"
   ],
   "keyboardNavigationVerified": true,
   "askFirstDeflectionExercised": true,
@@ -20,6 +21,15 @@
   "userInfoEnginePreferencesPersisted": true,
   "livingSynthesisCitationsVerified": true,
   "qaCanonWorkbenchExercised": true,
+  "mediaLibraryExercised": true,
+  "attachmentVisualStatesVerified": {
+    "inlineGallery": "e2e/screenshots/attachments-01-inline-gallery.png",
+    "lightboxModal": "e2e/screenshots/attachments-02-lightbox-modal.png",
+    "artifactFullPreview": "e2e/screenshots/attachments-03-artifact-full-preview.png",
+    "composerPicker": "e2e/screenshots/attachments-04-composer-picker.png",
+    "mediaLibrary": "e2e/screenshots/community-attachments-and-media-library.png",
+    "largeFileRoundTripVerified": true
+  },
   "persistentReloadVerified": true,
   "livingCoAuthoringExercised": true,
   "inlineFormExercised": true,
@@ -48,6 +58,10 @@
     "living-co-authoring": {
       "violationCount": 0,
       "criticalOrSerious": 0
+    },
+    "media-library": {
+      "violationCount": 0,
+      "criticalOrSerious": 0
     }
   },
   "totalViolations": 0,
@@ -62,6 +76,11 @@
     "e2e/screenshots/06-living-co-authoring.png",
     "e2e/screenshots/07-collaboration-embedded.png",
     "e2e/screenshots/08-personalized-digest-preview.png",
+    "e2e/screenshots/attachments-01-inline-gallery.png",
+    "e2e/screenshots/attachments-02-lightbox-modal.png",
+    "e2e/screenshots/attachments-03-artifact-full-preview.png",
+    "e2e/screenshots/attachments-04-composer-picker.png",
+    "e2e/screenshots/community-attachments-and-media-library.png",
     "e2e/screenshots/community-hub.png"
   ]
 }

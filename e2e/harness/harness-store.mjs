@@ -58,6 +58,7 @@ const INSTALLED_ACTIONS_CATALOG = loadInstalledActionsCatalog();
 
 export const HARNESS_CONSTANTS = {
   HARNESS_USER_ID: '11111111-1111-4111-8111-111111111111',
+  PEER_USER_ID: '11111111-1111-4111-8111-222222222222',
   FORUM_1: '22222222-2222-4222-8222-000000000001',
   FORUM_2: '22222222-2222-4222-8222-000000000002',
   FORUM_GENERAL: '22222222-2222-4222-8222-000000000003',
@@ -66,7 +67,14 @@ export const HARNESS_CONSTANTS = {
   SPACE_2: '33333333-3333-4333-8333-000000000002',
   POST_FEED_1: '44444444-4444-4444-8444-000000000001',
   POST_FEED_2: '44444444-4444-4444-8444-000000000002',
+  REPLY_PEER_1: '44444444-4444-4444-8444-000000000088',
   POST_FEED_OTHER_SPACE: '44444444-4444-4444-8444-000000000099',
+  ENTITY_MJ_ARTIFACTS: 'eeee0000-0000-4000-8000-000000000001',
+  ENTITY_MJ_FILES: 'eeee0000-0000-4000-8000-000000000002',
+  ART_HTML_1: 'aaaa0000-0000-4000-8000-000000000001',
+  ART_SVG_1: 'aaaa0000-0000-4000-8000-000000000002',
+  ART_JSON_1: 'aaaa0000-0000-4000-8000-000000000003',
+  ART_MD_1: 'aaaa0000-0000-4000-8000-000000000004',
   Q_1: '55555555-5555-4555-8555-000000000001',
   Q_2: '55555555-5555-4555-8555-000000000002',
   Q_OTHER_SPACE: '55555555-5555-4555-8555-000000000099',
@@ -97,6 +105,25 @@ export const HARNESS_CONSTANTS = {
 
 const C = HARNESS_CONSTANTS;
 
+const HARNESS_PNG_1_URI =
+  'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAHgAAABICAIAAACyfKYoAAABuElEQVR4nO3awU0EMRAF0Y2CCEgDkiEJDhsVaZAUZyRm3N02Nb21lvpc+npX+/by/rkPuNvlC57kNvSGdt0v6NePrz/v7f6duqPOs/Vz0FYFoJ+AFisA/Si0WwHoh6AvXynoj6E7rBT0B9BNVgr6Z9B9Vgr6h9CtVgr6a6AfXQHoL4AWKAD9WWiHAtCfgtYoAP06tEkB6BehZQpAvwLtUwD6aWilAtDPQVsVgH4CWqwA9KPQbgWgH4K+fKWgP4busFLQH0A3WSnon0H3WSnoRx9n3QpAfw30oysA/QXQAgWgPwvtUAD6U9AaBaBfhzYpAP0itEwB6FegfQpAPw2tVAD6OWirAtBPQIsVgH4U2q0A9EPQl68U9MfQHVYK+gPoJisF/TPoPisF/ejjrFth/4/29BdACxSA/iy0QwHoT0FrFIB+HdqkAPSL0DIFoF+B9ikA/TS0UgHo56CtCkA/AS1WAPpRaLcC0A9BX75S0B9Dd1gp6A+gm6wU9M+g+6wU9KOPs26F/T/a018ALVAA+rPQDgWgPwWtUQD6dWiTAtAvQssUgH4F2qcA9A+h9/3fbegN7boNDd0Pj2rtdxUeUC0AAAAASUVORK5CYII=';
+
+const HARNESS_PNG_2_URI =
+  'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAHgAAABICAIAAACyfKYoAAABuUlEQVR4nO3asU0EMRBG4euAlDZogSpIaeMi2qBbYiR2PTM2b+feWZr46deX2reXj/d9wN0uX/Akt6E3tOt+Qb9+ff55b9/31B11nq2fg7YqAP0EtFgB6Eeh3QpAPwR9+UpBfwzdYaWgP4BuslLQP4Pus1LQP4RutVLQXwP96ApAfwG0QAHoz0I7FID+FLRGAejXoU0KQL8ILVMA+hVonwLQT0MrFYB+DtqqAPQT0GIFoB+FdisA/RD05SsF/TF0h5WC/gC6yUpB/wy6z0pBP/o461YA+mugH10B6C+AFigA/VlohwLQn4LWKAD9OrRJAegXoWUKQL8C7VMA+mlopQLQz0FbFYB+AlqsAPSj0G4FoB+CvnyloD+G7rBS0B9AN1kp6J9B91kp6EcfZ90K+3+0p78AWqAA9GehHQpAfwpaowD069AmBaBfhJYpAP0KtE8B6KehlQpAPwdtVQD6CWixAtCPQrsVgH4I+vKVgv4YusNKQX8A3WSloH8G3WeloB99nHUr7P/Rnv4CaIEC0J+FdigA/SlojQLQr0ObFIB+EVqmAPQr0D4FoH8Ive//bkNvaNdtaOh+AGrNI84pTtBzAAAAAElFTkSuQmCC';
+
+const HARNESS_PNG_3_URI =
+  'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAHgAAABICAIAAACyfKYoAAABuElEQVR4nO3awU0EMRAF0Y2HOBBpEABpoM2LNIiGMxIz7m6bmt5aS30ufb2rfXt9ue8D7nb5gie5Db2hXfcL+uPt68/7fP9O3VHn2fo5aKsC0E9AixWAfhTarQD0Q9CXrxT0x9AdVgr6A+gmKwX9M+g+KwX9Q+hWKwX9NdCPrgD0F0ALFID+LLRDAehPQWsUgH4d2qQA9IvQMgWgX4H2KQD9NLRSAejnoK0KQD8BLVYA+lFotwLQD0FfvlLQH0N3WCnoD6CbrBT0z6D7rBT0o4+zbgWgvwb60RWA/gJogQLQn4V2KAD9KWiNAtCvQ5sUgH4RWqYA9CvQPgWgn4ZWKgD9HLRVAegnoMUKQD8K7VYA+iHoy1cK+mPoDisF/QF0k5WC/hl0n5WCfvRx1q2w/0d7+gugBQpAfxbaoQD0p6A1CkC/Dm1SAPpFaJkC0K9A+xSAfhpaqQD0c9BWBaCfgBYrAP0otFsB6IegL18p6I+hO6wU9AfQTVYK+mfQfVYK+tHHWbfC/h/t6S+AFigA/VlohwLQn4LWKAD9OrRJAegXoWUKQL8C7VMA+ofQ+/7vNvSGdt2Ghu4HqJQP78/0MKwAAAAASUVORK5CYII=';
+
+const HARNESS_WEBM_VIDEO_URI =
+  'data:video/webm;base64,GkXfo59ChoEBQveBAULygQRC84EIQoKEd2VibUKHgQJChYECGFOAZwH/////////EU2bdKtNu4tTq4QVSalmU6yBoU27i1OrhBZUrmtTrIHLTbuMU6uEElTDZ1OsggEY7AEAAAAAAABoAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAVSalmpSrXsYMPQkBNgIxMYXZmNjMuMS4xMDJXQYxMYXZmNjMuMS4xMDIWVK5ryK4BAAAAAAAAP9eBAXPFiNVOO9rIqB5pnIEAIrWcg3VuZIiBAIaFVl9WUDiDgQEj44OEAmJaAOCQsIFAuoEwmoECVbCEVbmBARJUw2fWc3OfY8CAZ8iZRaOHRU5DT0RFUkSHjExhdmY2My4xLjEwMnNzsWPAi2PFiNVOO9rIqB5pZ8igRaOHRU5DT0RFUkSHk0xhdmM2My4xLjEwMiBsaWJ2cHgfQ7Z1QKbngQCjwYEAAIBQAwCdASpAADAAAEcIhYWIhYSIAgICdaoD+AIHCNVnmY830gD+/00S//xYV/FhX8WFf/FhX/z8zu3F/OYAo5aBACgA0QEABRCsABgAGFgv9AAIjAAAo5aBAFAA0QEABRCsABgAGFgv9AAIjAAAo5aBAHgA0QEABRCsABgAGFgv9AAIjAAAo5aBAKAA0QEABRCsABgAGFgv9AAIjAAA';
+
+const HARNESS_WAV_AUDIO_URI =
+  'data:audio/wav;base64,UklGRrQBAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YZABAACAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICA';
+
+const HARNESS_HTML_ARTIFACT_DOC = `<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><style>body{font-family:system-ui,sans-serif;margin:10px;background:Canvas;color:CanvasText}</style></head><body><strong>Zero-Downtime Cutover Telemetry (p95 Latency)</strong><p>US-East: 42ms · EU-West: 51ms · AP-South: 64ms</p></body></html>`;
+
+const HARNESS_SVG_ARTIFACT_DOC = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 360 90" role="img" aria-label="Dual-dialect schema parity gate"><rect x="8" y="18" width="100" height="54" rx="8" fill="none" stroke="currentColor" stroke-width="2"/><text x="58" y="49" text-anchor="middle" font-size="12" fill="currentColor">SQL Server</text><rect x="130" y="18" width="100" height="54" rx="8" fill="none" stroke="currentColor" stroke-width="2"/><text x="180" y="49" text-anchor="middle" font-size="12" fill="currentColor">Parity Gate</text><rect x="252" y="18" width="100" height="54" rx="8" fill="none" stroke="currentColor" stroke-width="2"/><text x="302" y="49" text-anchor="middle" font-size="12" fill="currentColor">PostgreSQL</text></svg>`;
+
 const OTHER_SPACE_POST_ID_SET = new Set(
   [C.POST_FEED_OTHER_SPACE, C.Q_OTHER_SPACE, C.ANS_OTHER_SPACE, C.IDEA_OTHER_SPACE, C.DOC_OTHER_SPACE].map((id) =>
     id.toLowerCase(),
@@ -111,10 +138,15 @@ function buildInitialState() {
         Name: 'E2E Harness Member',
         Email: 'member@bizapps-community.local',
       },
+      {
+        ID: C.PEER_USER_ID,
+        Name: 'Jordan Vance, Principal Architect',
+        Email: 'jordan@bizapps-community.local',
+      },
     ],
     spaces: [
-      { ID: C.SPACE_1, Name: 'Customer Success Community', ParentID: null, InheritsMembership: false, ClosedAt: null },
-      { ID: C.SPACE_2, Name: 'Internal Security Guild', ParentID: null, InheritsMembership: false, ClosedAt: null },
+      { ID: C.SPACE_1, Name: 'Customer Success Community', OwnerID: C.HARNESS_USER_ID, ParentID: null, InheritsMembership: false, ClosedAt: null },
+      { ID: C.SPACE_2, Name: 'Internal Security Guild', OwnerID: C.HARNESS_USER_ID, ParentID: null, InheritsMembership: false, ClosedAt: null },
     ],
     communitySpaces: [
       { ID: C.SPACE_1, Slug: 'customer-success', CommunityKind: 'Product Community' },
@@ -216,6 +248,21 @@ function buildInitialState() {
         AuthorUserID: C.HARNESS_USER_ID,
         Title: 'Multi-Region GraphQL Read Replica Architecture',
         BodyMarkdown: 'Summary of latency benchmarks and failover SLAs from our Q4 architecture review.',
+        Status: 'Published',
+        ReplyCount: 1,
+        ReactionScore: 0,
+        PromotedToSpaceID: null,
+      },
+      {
+        ID: C.REPLY_PEER_1,
+        ForumID: C.FORUM_GENERAL,
+        PostTypeID: C.PT_REPLY,
+        RootPostID: C.POST_FEED_2,
+        ParentPostID: C.POST_FEED_2,
+        ReplyDepth: 1,
+        AuthorUserID: C.PEER_USER_ID,
+        Title: null,
+        BodyMarkdown: 'Attached our Q4 replica failover compliance audit checklist.',
         Status: 'Published',
         ReplyCount: 0,
         ReactionScore: 0,
@@ -522,6 +569,7 @@ function buildInitialState() {
         SpaceID: C.SPACE_1,
         UserID: C.HARNESS_USER_ID,
         SpaceRoleTypeID: C.SPACE_ROLE_MEMBER,
+        Band: 'Team',
         Status: 'Active',
       },
       {
@@ -529,6 +577,7 @@ function buildInitialState() {
         SpaceID: C.SPACE_2,
         UserID: C.HARNESS_USER_ID,
         SpaceRoleTypeID: C.SPACE_ROLE_MEMBER,
+        Band: 'Team',
         Status: 'Active',
       },
     ],
@@ -568,6 +617,313 @@ function buildInitialState() {
     ],
     gqlCalls: [],
     actionCalls: [],
+    mjEntities: [
+      { ID: C.ENTITY_MJ_ARTIFACTS, Name: 'MJ: Artifacts' },
+      { ID: C.ENTITY_MJ_FILES, Name: 'MJ: Files' },
+    ],
+    mjArtifactTypes: [
+      { ID: '0c39419d-de0c-4269-8d68-37fde9a2075e', Name: 'Image', ContentType: 'image/*', IsEnabled: true },
+      { ID: '1c39419d-de0c-4269-8d68-37fde9a2075e', Name: 'Audio', ContentType: 'audio/*', IsEnabled: true },
+      { ID: '2c39419d-de0c-4269-8d68-37fde9a2075e', Name: 'Video', ContentType: 'video/*', IsEnabled: true },
+      { ID: '48909b66-0019-4cc5-b94d-568fe36e09bb', Name: 'Generic Binary', ContentType: 'application/octet-stream', IsEnabled: true },
+    ],
+    mjArtifacts: [
+      { ID: C.ART_HTML_1, Name: 'Multi-Region Rollover Latency Report', Type: 'HTML', Visibility: 'Always' },
+      { ID: C.ART_SVG_1, Name: 'Dual-Dialect Schema Parity Pipeline Diagram', Type: 'SVG', Visibility: 'Always' },
+      { ID: C.ART_JSON_1, Name: 'OpenTelemetry Webhook Retry Span Schema', Type: 'JSON', Visibility: 'Always' },
+      { ID: C.ART_MD_1, Name: 'Verified Key Rotation Cutover Checklist', Type: 'Markdown', Visibility: 'Always' },
+    ],
+    mjArtifactVersions: [
+      {
+        ID: 'aaaa1111-0000-4000-8000-000000000101',
+        ArtifactID: C.ART_HTML_1,
+        VersionNumber: 2,
+        Name: 'v2 Regional Cutover',
+        ContentMode: 'Text',
+        Content: HARNESS_HTML_ARTIFACT_DOC,
+        FileID: null,
+        FileName: null,
+        MimeType: 'text/html',
+        ContentSizeBytes: HARNESS_HTML_ARTIFACT_DOC.length,
+      },
+      {
+        ID: 'aaaa1111-0000-4000-8000-000000000102',
+        ArtifactID: C.ART_SVG_1,
+        VersionNumber: 3,
+        Name: 'v3 Parity Gate',
+        ContentMode: 'Text',
+        Content: HARNESS_SVG_ARTIFACT_DOC,
+        FileID: null,
+        FileName: null,
+        MimeType: 'image/svg+xml',
+        ContentSizeBytes: HARNESS_SVG_ARTIFACT_DOC.length,
+      },
+      {
+        ID: 'aaaa1111-0000-4000-8000-000000000103',
+        ArtifactID: C.ART_JSON_1,
+        VersionNumber: 1,
+        Name: 'v1 Span Schema',
+        ContentMode: 'Text',
+        Content: '{"schemaVersion":"1.0.0","spanName":"community.webhook.delivery","sloMs":40}',
+        FileID: null,
+        FileName: null,
+        MimeType: 'application/json',
+        ContentSizeBytes: 76,
+      },
+      {
+        ID: 'aaaa1111-0000-4000-8000-000000000104',
+        ArtifactID: C.ART_MD_1,
+        VersionNumber: 4,
+        Name: 'v4 Cutover Checklist',
+        ContentMode: 'Text',
+        Content: '### Verified Cutover Sequence\n- Provision secondary key\n- Drain legacy key leases',
+        FileID: null,
+        FileName: null,
+        MimeType: 'text/markdown',
+        ContentSizeBytes: 82,
+      },
+      {
+        ID: 'ffff1111-0000-4000-8000-000000000101',
+        ArtifactID: C.ART_HTML_1,
+        VersionNumber: 1,
+        Name: 'dual-key-sequence.png',
+        ContentMode: 'File',
+        Content: HARNESS_PNG_1_URI,
+        FileID: 'ffff2222-0000-4000-8000-000000000001',
+        FileName: 'dual-key-sequence.png',
+        MimeType: 'image/png',
+        ContentSizeBytes: 18420,
+      },
+      {
+        ID: 'ffff1111-0000-4000-8000-000000000102',
+        ArtifactID: C.ART_HTML_1,
+        VersionNumber: 1,
+        Name: 'lease-drain-metrics.png',
+        ContentMode: 'File',
+        Content: HARNESS_PNG_2_URI,
+        FileID: 'ffff2222-0000-4000-8000-000000000002',
+        FileName: 'lease-drain-metrics.png',
+        MimeType: 'image/png',
+        ContentSizeBytes: 21540,
+      },
+      {
+        ID: 'ffff1111-0000-4000-8000-000000000103',
+        ArtifactID: C.ART_HTML_1,
+        VersionNumber: 1,
+        Name: 'multi-region-rollover.png',
+        ContentMode: 'File',
+        Content: HARNESS_PNG_3_URI,
+        FileID: 'ffff2222-0000-4000-8000-000000000003',
+        FileName: 'multi-region-rollover.png',
+        MimeType: 'image/png',
+        ContentSizeBytes: 19800,
+      },
+      {
+        ID: 'ffff1111-0000-4000-8000-000000000104',
+        ArtifactID: C.ART_HTML_1,
+        VersionNumber: 1,
+        Name: 'replica-failover-walkthrough.webm',
+        ContentMode: 'File',
+        Content: HARNESS_WEBM_VIDEO_URI,
+        FileID: 'ffff2222-0000-4000-8000-000000000004',
+        FileName: 'replica-failover-walkthrough.webm',
+        MimeType: 'video/webm',
+        ContentSizeBytes: 98400,
+      },
+      {
+        ID: 'ffff1111-0000-4000-8000-000000000105',
+        ArtifactID: C.ART_HTML_1,
+        VersionNumber: 1,
+        Name: 'rollover-voice-brief-part1.wav',
+        ContentMode: 'File',
+        Content: HARNESS_WAV_AUDIO_URI,
+        FileID: 'ffff2222-0000-4000-8000-000000000005',
+        FileName: 'rollover-voice-brief-part1.wav',
+        MimeType: 'audio/wav',
+        ContentSizeBytes: 48200,
+      },
+      {
+        ID: 'ffff1111-0000-4000-8000-000000000106',
+        ArtifactID: C.ART_HTML_1,
+        VersionNumber: 1,
+        Name: 'rollover-voice-brief-part2.wav',
+        ContentMode: 'File',
+        Content: HARNESS_WAV_AUDIO_URI,
+        FileID: 'ffff2222-0000-4000-8000-000000000006',
+        FileName: 'rollover-voice-brief-part2.wav',
+        MimeType: 'audio/wav',
+        ContentSizeBytes: 51900,
+      },
+      {
+        ID: 'ffff1111-0000-4000-8000-000000000107',
+        ArtifactID: C.ART_HTML_1,
+        VersionNumber: 1,
+        Name: 'replica-failover-audit.pdf',
+        ContentMode: 'File',
+        Content: 'https://docs.memberjunction.org/community/replica-failover-audit.pdf',
+        FileID: 'ffff2222-0000-4000-8000-000000000007',
+        FileName: 'replica-failover-audit.pdf',
+        MimeType: 'application/pdf',
+        ContentSizeBytes: 245760,
+      },
+    ],
+    mjFiles: [
+      { ID: 'ffff2222-0000-4000-8000-000000000001', Name: 'dual-key-sequence.png', ContentType: 'image/png' },
+      { ID: 'ffff2222-0000-4000-8000-000000000002', Name: 'lease-drain-metrics.png', ContentType: 'image/png' },
+      { ID: 'ffff2222-0000-4000-8000-000000000003', Name: 'multi-region-rollover.png', ContentType: 'image/png' },
+      { ID: 'ffff2222-0000-4000-8000-000000000004', Name: 'replica-failover-walkthrough.webm', ContentType: 'video/webm' },
+      { ID: 'ffff2222-0000-4000-8000-000000000005', Name: 'rollover-voice-brief-part1.wav', ContentType: 'audio/wav' },
+      { ID: 'ffff2222-0000-4000-8000-000000000006', Name: 'rollover-voice-brief-part2.wav', ContentType: 'audio/wav' },
+      { ID: 'ffff2222-0000-4000-8000-000000000007', Name: 'replica-failover-audit.pdf', ContentType: 'application/pdf' },
+    ],
+    spaceItems: [
+      {
+        ID: '55551111-0000-4000-8000-000000000001',
+        SpaceID: C.SPACE_1,
+        EntityID: C.ENTITY_MJ_FILES,
+        RecordID: 'ID|ffff2222-0000-4000-8000-000000000001',
+        Band: 'Shared',
+        Folder: 'Post Media',
+        ArtifactVersionID: 'ffff1111-0000-4000-8000-000000000101',
+      },
+      {
+        ID: '55551111-0000-4000-8000-000000000002',
+        SpaceID: C.SPACE_1,
+        EntityID: C.ENTITY_MJ_FILES,
+        RecordID: 'ID|ffff2222-0000-4000-8000-000000000002',
+        Band: 'Shared',
+        Folder: 'Post Media',
+        ArtifactVersionID: 'ffff1111-0000-4000-8000-000000000102',
+      },
+      {
+        ID: '55551111-0000-4000-8000-000000000003',
+        SpaceID: C.SPACE_1,
+        EntityID: C.ENTITY_MJ_FILES,
+        RecordID: 'ID|ffff2222-0000-4000-8000-000000000003',
+        Band: 'Shared',
+        Folder: 'Post Media',
+        ArtifactVersionID: 'ffff1111-0000-4000-8000-000000000103',
+      },
+      {
+        ID: '55551111-0000-4000-8000-000000000004',
+        SpaceID: C.SPACE_1,
+        EntityID: C.ENTITY_MJ_ARTIFACTS,
+        RecordID: `ID|${C.ART_HTML_1}`,
+        Band: 'Shared',
+        Folder: 'Library',
+        ArtifactVersionID: 'aaaa1111-0000-4000-8000-000000000101',
+      },
+      {
+        ID: '55551111-0000-4000-8000-000000000005',
+        SpaceID: C.SPACE_1,
+        EntityID: C.ENTITY_MJ_FILES,
+        RecordID: 'ID|ffff2222-0000-4000-8000-000000000004',
+        Band: 'Shared',
+        Folder: 'Post Media',
+        ArtifactVersionID: 'ffff1111-0000-4000-8000-000000000104',
+      },
+      {
+        ID: '55551111-0000-4000-8000-000000000006',
+        SpaceID: C.SPACE_1,
+        EntityID: C.ENTITY_MJ_FILES,
+        RecordID: 'ID|ffff2222-0000-4000-8000-000000000005',
+        Band: 'Shared',
+        Folder: 'Post Media',
+        ArtifactVersionID: 'ffff1111-0000-4000-8000-000000000105',
+      },
+      {
+        ID: '55551111-0000-4000-8000-000000000007',
+        SpaceID: C.SPACE_1,
+        EntityID: C.ENTITY_MJ_FILES,
+        RecordID: 'ID|ffff2222-0000-4000-8000-000000000006',
+        Band: 'Shared',
+        Folder: 'Post Media',
+        ArtifactVersionID: 'ffff1111-0000-4000-8000-000000000106',
+      },
+      {
+        ID: '55551111-0000-4000-8000-000000000008',
+        SpaceID: C.SPACE_1,
+        EntityID: C.ENTITY_MJ_FILES,
+        RecordID: 'ID|ffff2222-0000-4000-8000-000000000007',
+        Band: 'Shared',
+        Folder: 'Library',
+        ArtifactVersionID: 'ffff1111-0000-4000-8000-000000000107',
+      },
+      {
+        ID: '55551111-0000-4000-8000-000000000009',
+        SpaceID: C.SPACE_1,
+        EntityID: C.ENTITY_MJ_ARTIFACTS,
+        RecordID: `ID|${C.ART_SVG_1}`,
+        Band: 'Shared',
+        Folder: 'Library',
+        ArtifactVersionID: 'aaaa1111-0000-4000-8000-000000000102',
+      },
+    ],
+    forumPostAttachments: [
+      {
+        ID: '66661111-0000-4000-8000-000000000001',
+        PostID: C.POST_FEED_1,
+        SpaceItemID: '55551111-0000-4000-8000-000000000001',
+        Caption: 'Phase 1: Provision secondary key',
+        Sequence: 1,
+      },
+      {
+        ID: '66661111-0000-4000-8000-000000000002',
+        PostID: C.POST_FEED_1,
+        SpaceItemID: '55551111-0000-4000-8000-000000000002',
+        Caption: 'Phase 2: Verify lease drain metrics',
+        Sequence: 2,
+      },
+      {
+        ID: '66661111-0000-4000-8000-000000000003',
+        PostID: C.POST_FEED_1,
+        SpaceItemID: '55551111-0000-4000-8000-000000000003',
+        Caption: 'Phase 3: Global cutover health',
+        Sequence: 3,
+      },
+      {
+        ID: '66661111-0000-4000-8000-000000000004',
+        PostID: C.POST_FEED_1,
+        SpaceItemID: '55551111-0000-4000-8000-000000000004',
+        Caption: 'Live p95 cutover metrics',
+        Sequence: 4,
+      },
+      {
+        ID: '66661111-0000-4000-8000-000000000005',
+        PostID: C.POST_FEED_2,
+        SpaceItemID: '55551111-0000-4000-8000-000000000005',
+        Caption: 'Replica failover architecture clip',
+        Sequence: 1,
+      },
+      {
+        ID: '66661111-0000-4000-8000-000000000006',
+        PostID: C.POST_FEED_2,
+        SpaceItemID: '55551111-0000-4000-8000-000000000006',
+        Caption: 'Audio Brief Part 1',
+        Sequence: 2,
+      },
+      {
+        ID: '66661111-0000-4000-8000-000000000007',
+        PostID: C.POST_FEED_2,
+        SpaceItemID: '55551111-0000-4000-8000-000000000007',
+        Caption: 'Audio Brief Part 2',
+        Sequence: 3,
+      },
+      {
+        ID: '66661111-0000-4000-8000-000000000008',
+        PostID: C.REPLY_PEER_1,
+        SpaceItemID: '55551111-0000-4000-8000-000000000008',
+        Caption: 'Replica failover audit PDF',
+        Sequence: 1,
+      },
+      {
+        ID: '66661111-0000-4000-8000-000000000009',
+        PostID: C.DOC_1,
+        SpaceItemID: '55551111-0000-4000-8000-000000000009',
+        Caption: 'Automated SQL + PG parity pipeline',
+        Sequence: 1,
+      },
+    ],
   };
   stateObj.worldMode = 'default';
   stateObj.currentUserId = C.HARNESS_USER_ID;
@@ -712,6 +1068,8 @@ function buildArchWorldState(options = {}) {
     userSettings: [],
     gqlCalls: [],
     actionCalls: [],
+    spaceItems: [],
+    forumPostAttachments: [],
   };
 }
 
@@ -925,6 +1283,74 @@ export function createHarnessStore() {
       const idx = state.communicationLogs.findIndex((l) => l.ID.toLowerCase() === String(row.ID).toLowerCase());
       if (idx >= 0) state.communicationLogs[idx] = { ...state.communicationLogs[idx], ...row };
       else state.communicationLogs.push(row);
+      return;
+    }
+
+    if (entityName === 'MJ_BizApps_Collaboration: Space Items') {
+      if (isDelete) {
+        state.spaceItems = state.spaceItems.filter(
+          (si) => si.ID.toLowerCase() !== String(record.ID).toLowerCase(),
+        );
+        return;
+      }
+      const row = {
+        ID: record.ID || randomUUID(),
+        ...record,
+      };
+      const idx = state.spaceItems.findIndex((si) => si.ID.toLowerCase() === String(row.ID).toLowerCase());
+      if (idx >= 0) state.spaceItems[idx] = { ...state.spaceItems[idx], ...row };
+      else state.spaceItems.push(row);
+      return;
+    }
+
+    if (entityName === 'MJ: Artifacts') {
+      if (isDelete) {
+        state.mjArtifacts = state.mjArtifacts.filter(
+          (a) => a.ID.toLowerCase() !== String(record.ID).toLowerCase(),
+        );
+        return;
+      }
+      const row = {
+        ID: record.ID || randomUUID(),
+        ...record,
+      };
+      const idx = state.mjArtifacts.findIndex((a) => a.ID.toLowerCase() === String(row.ID).toLowerCase());
+      if (idx >= 0) state.mjArtifacts[idx] = { ...state.mjArtifacts[idx], ...row };
+      else state.mjArtifacts.push(row);
+      return;
+    }
+
+    if (entityName === 'MJ: Artifact Versions') {
+      if (isDelete) {
+        state.mjArtifactVersions = state.mjArtifactVersions.filter(
+          (v) => v.ID.toLowerCase() !== String(record.ID).toLowerCase(),
+        );
+        return;
+      }
+      const row = {
+        ID: record.ID || randomUUID(),
+        ...record,
+      };
+      const idx = state.mjArtifactVersions.findIndex((v) => v.ID.toLowerCase() === String(row.ID).toLowerCase());
+      if (idx >= 0) state.mjArtifactVersions[idx] = { ...state.mjArtifactVersions[idx], ...row };
+      else state.mjArtifactVersions.push(row);
+      return;
+    }
+
+    if (entityName === 'MJ_BizApps_Community: Forum Post Attachments') {
+      if (isDelete) {
+        state.forumPostAttachments = state.forumPostAttachments.filter(
+          (att) => att.ID.toLowerCase() !== String(record.ID).toLowerCase(),
+        );
+        return;
+      }
+      const row = {
+        ID: record.ID || randomUUID(),
+        ...record,
+      };
+      const idx = state.forumPostAttachments.findIndex((att) => att.ID.toLowerCase() === String(row.ID).toLowerCase());
+      if (idx >= 0) state.forumPostAttachments[idx] = { ...state.forumPostAttachments[idx], ...row };
+      else state.forumPostAttachments.push(row);
     }
   }
 
@@ -1086,6 +1512,11 @@ export function createHarnessStore() {
         gqlCalls: state.gqlCalls,
         digestOutbox: CommunityTestCommunicationProvider.Instance.GetOutbox(),
         actionCalls: state.actionCalls,
+        spaceItems: state.spaceItems,
+        forumPostAttachments: state.forumPostAttachments,
+        mjArtifacts: state.mjArtifacts,
+        mjArtifactVersions: state.mjArtifactVersions,
+        mjFiles: state.mjFiles,
       };
     },
 
@@ -1158,11 +1589,20 @@ export function createHarnessStore() {
         case 'MJ_BizApps_Collaboration: Space Role Types':
           return state.spaceRoles;
         case 'MJ_BizApps_Collaboration: Space Members': {
+          let rows = state.spaceMembers;
+          const spaceId = parseEqFilter(extraFilter, 'SpaceID');
           const userId = parseEqFilter(extraFilter, 'UserID');
-          if (userId) {
-            return state.spaceMembers.filter((m) => m.UserID.toLowerCase() === userId.toLowerCase());
+          const status = parseEqFilter(extraFilter, 'Status');
+          if (spaceId) {
+            rows = rows.filter((m) => m.SpaceID.toLowerCase() === spaceId.toLowerCase());
           }
-          return state.spaceMembers;
+          if (userId) {
+            rows = rows.filter((m) => m.UserID.toLowerCase() === userId.toLowerCase());
+          }
+          if (status) {
+            rows = rows.filter((m) => String(m.Status ?? '').toLowerCase() === status.toLowerCase());
+          }
+          return rows;
         }
         case 'MJ_BizApps_Community: Forum Role Types': {
           const id = parseEqFilter(extraFilter, 'ID');
@@ -1420,6 +1860,62 @@ export function createHarnessStore() {
           }
           return rows;
         }
+        case 'MJ: Entities': {
+          const nameFilter = parseEqFilter(extraFilter, 'Name');
+          if (nameFilter) {
+            return state.mjEntities.filter((e) => e.Name === nameFilter);
+          }
+          return state.mjEntities;
+        }
+        case 'MJ: Artifact Types': {
+          return state.mjArtifactTypes.filter((t) => t.IsEnabled !== false);
+        }
+        case 'MJ: Artifacts': {
+          let rows = state.mjArtifacts;
+          const ids = parseInIds(extraFilter, 'ID');
+          const idEq = parseEqFilter(extraFilter, 'ID');
+          if (ids) rows = rows.filter((a) => ids.has(a.ID.toLowerCase()));
+          else if (idEq) rows = rows.filter((a) => a.ID.toLowerCase() === idEq.toLowerCase());
+          return rows;
+        }
+        case 'MJ: Artifact Versions': {
+          let rows = state.mjArtifactVersions;
+          const ids = parseInIds(extraFilter, 'ID');
+          const artIds = parseInIds(extraFilter, 'ArtifactID');
+          const artEq = parseEqFilter(extraFilter, 'ArtifactID');
+          if (ids) rows = rows.filter((v) => ids.has(v.ID.toLowerCase()));
+          if (artIds) rows = rows.filter((v) => artIds.has(v.ArtifactID.toLowerCase()));
+          if (artEq) rows = rows.filter((v) => v.ArtifactID.toLowerCase() === artEq.toLowerCase());
+          return rows;
+        }
+        case 'MJ: Files': {
+          let rows = state.mjFiles;
+          const ids = parseInIds(extraFilter, 'ID');
+          const idEq = parseEqFilter(extraFilter, 'ID');
+          if (ids) rows = rows.filter((f) => ids.has(f.ID.toLowerCase()));
+          else if (idEq) rows = rows.filter((f) => f.ID.toLowerCase() === idEq.toLowerCase());
+          return rows;
+        }
+        case 'MJ_BizApps_Collaboration: Space Items': {
+          let rows = state.spaceItems;
+          const ids = parseInIds(extraFilter, 'ID');
+          const idEq = parseEqFilter(extraFilter, 'ID');
+          const spaceEq = parseEqFilter(extraFilter, 'SpaceID');
+          if (ids) rows = rows.filter((si) => ids.has(si.ID.toLowerCase()));
+          else if (idEq) rows = rows.filter((si) => si.ID.toLowerCase() === idEq.toLowerCase());
+          if (spaceEq) rows = rows.filter((si) => si.SpaceID.toLowerCase() === spaceEq.toLowerCase());
+          return rows;
+        }
+        case 'MJ_BizApps_Community: Forum Post Attachments': {
+          let rows = state.forumPostAttachments;
+          const postIds = parseInIds(extraFilter, 'PostID');
+          const postEq = parseEqFilter(extraFilter, 'PostID');
+          const idEq = parseEqFilter(extraFilter, 'ID');
+          if (postIds) rows = rows.filter((a) => postIds.has(a.PostID.toLowerCase()));
+          else if (postEq) rows = rows.filter((a) => a.PostID.toLowerCase() === postEq.toLowerCase());
+          if (idEq) rows = rows.filter((a) => a.ID.toLowerCase() === idEq.toLowerCase());
+          return rows;
+        }
         default:
           return [];
       }
@@ -1439,6 +1935,24 @@ export function createHarnessStore() {
       }
       if (entityName === 'MJ: User Settings') {
         return state.userSettings.find((s) => s.ID.toLowerCase() === target) ?? null;
+      }
+      if (entityName === 'MJ_BizApps_Collaboration: Spaces') {
+        return state.spaces.find((s) => s.ID.toLowerCase() === target) ?? null;
+      }
+      if (entityName === 'MJ: Artifacts') {
+        return state.mjArtifacts.find((a) => a.ID.toLowerCase() === target) ?? null;
+      }
+      if (entityName === 'MJ: Artifact Versions') {
+        return state.mjArtifactVersions.find((v) => v.ID.toLowerCase() === target) ?? null;
+      }
+      if (entityName === 'MJ: Files') {
+        return state.mjFiles.find((f) => f.ID.toLowerCase() === target) ?? null;
+      }
+      if (entityName === 'MJ_BizApps_Collaboration: Space Items') {
+        return state.spaceItems.find((si) => si.ID.toLowerCase() === target) ?? null;
+      }
+      if (entityName === 'MJ_BizApps_Community: Forum Post Attachments') {
+        return state.forumPostAttachments.find((a) => a.ID.toLowerCase() === target) ?? null;
       }
       return null;
     },

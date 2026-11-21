@@ -28,6 +28,7 @@ import {
   COMMUNITY_ENTITY_NAMES,
   type mjBizAppsCommunityForumAnswerPostEntity,
   type mjBizAppsCommunityForumInteractivePostEntity,
+  type mjBizAppsCommunityForumPostAttachmentEntity,
   type mjBizAppsCommunityForumPostEntity,
   type mjBizAppsCommunityForumPostReactionEntity,
   type mjBizAppsCommunityForumPostTagEntity,
@@ -36,8 +37,35 @@ import {
 import {
   AssertValidUUID,
   AssertValidUUIDList,
+  ClassifyAttachmentKind,
+  EscapeSqlLiteral,
+  IsFeaturedLibraryFolder,
+  NormalizeAttachmentMimeType,
+  ResolveAuthoritativeFileUrl,
+  SanitizeCommunityAttachmentUrl,
+  type CommunityArtifactAttachmentItem,
+  type CommunityAttachmentEntryType,
+  type CommunityAttachmentItem,
+  type CommunityFileAttachmentItem,
   type IdeationAllocationMode,
 } from '@mj-biz-apps/community-core';
+import { DEMO_SEED_ATTACHMENTS } from './community-attachment-demo.ts';
+import { CommunityAttachmentGalleryComponent } from './community-attachment-gallery.component.ts';
+import { CommunityAttachmentPickerComponent } from './community-attachment-picker.component.ts';
+import {
+  AuthorizeClientPostAttachmentWrite,
+  DEMO_ACCESSIBLE_ARTIFACTS,
+  LoadAccessibleArtifactsCatalog,
+  PersistPostAttachmentsFromClient,
+  ResolveClientArtifactTypeId,
+  ResolveComposerAttachmentEntryType,
+  SyncDraftsForEntryTypeChange,
+  type AccessibleArtifactCatalogItem,
+  type CollaborationSpaceItemEntityView,
+  type DraftCommunityAttachment,
+  type MJArtifactEntityLike,
+  type MJArtifactVersionEntityLike,
+} from './community-attachment-picker.ts';
 import {
   CommunityHubPreferences,
   type CommunityHubDigestCadence,
@@ -107,6 +135,13 @@ import {
 import { KnowledgeStreamComponent, type KnowledgeStreamWalletSummaryItem } from './knowledge-stream.component.ts';
 import { QaCanonWorkbenchComponent } from './qa-canon-workbench.component.ts';
 import { LivingCoAuthoringComponent } from './living-co-authoring.component.ts';
+import {
+  BuildMediaLibraryEntries,
+  type MediaLibraryEntry,
+  type MediaLibraryKindFilter,
+  type MediaLibraryScopeFilter,
+} from './community-media-library.ts';
+import { CommunityMediaLibraryComponent } from './community-media-library.component.ts';
 import { RenderSafeMarkdownHtml, StripMarkdownToPlainText } from './community-markdown.ts';
 import {
   ComputeIdeationWalletSummary,
@@ -124,7 +159,7 @@ export interface CommunityHubTabDefinition {
   icon: string;
 }
 
-/** The 4 Community Hub tabs, in display order. */
+/** The 5 Community Hub tabs, in display order. */
 export const COMMUNITY_HUB_TABS: ReadonlyArray<CommunityHubTabDefinition> = [
   { key: 'knowledge-stream', label: 'Feed', icon: 'fa-solid fa-house' },
   { key: 'qa-canon-workbench', label: 'Q&A', icon: 'fa-solid fa-circle-question' },
@@ -133,6 +168,11 @@ export const COMMUNITY_HUB_TABS: ReadonlyArray<CommunityHubTabDefinition> = [
     key: 'living-co-authoring',
     label: 'Playbooks',
     icon: 'fa-solid fa-book-open',
+  },
+  {
+    key: 'media-library',
+    label: 'Library',
+    icon: 'fa-solid fa-photo-film',
   },
 ];
 
@@ -148,6 +188,7 @@ export interface CommunityHubQACanonItem {
   reactionScore?: number | null;
   replyCount?: number | null;
   promotedToSpaceId?: string | null;
+  attachments?: CommunityAttachmentItem[];
 }
 
 export interface CommunityHubIdeaItem {
@@ -161,6 +202,7 @@ export interface CommunityHubIdeaItem {
   myPointsAllocated: number;
   myEffectiveVotes: number;
   promotedToSpaceId?: string | null;
+  attachments?: CommunityAttachmentItem[];
 }
 
 export interface CommunityHubLivingDocItem {
@@ -173,6 +215,7 @@ export interface CommunityHubLivingDocItem {
   reactionScore?: number | null;
   replyCount?: number | null;
   promotedToSpaceId?: string | null;
+  attachments?: CommunityAttachmentItem[];
 }
 
 export interface CommunityHubFeedPost {
@@ -186,6 +229,7 @@ export interface CommunityHubFeedPost {
   replyCount?: number | null;
   reactionScore?: number | null;
   promotedToSpaceId?: string | null;
+  attachments?: CommunityAttachmentItem[];
 }
 
 /** An Ideation Campaign's wallet rules (`ForumIdeaCampaign` IS-A `Forum`), bound onto the
@@ -294,6 +338,7 @@ const SEEDED_FEED_POSTS_FALLBACK: CommunityHubFeedPost[] = [
     bodyMarkdown:
       'Provision a secondary client secret, roll worker secrets across active regions, verify lease telemetry, and revoke legacy keys after one lease interval.',
     status: 'Published',
+    attachments: DEMO_SEED_ATTACHMENTS.feedRotation,
   },
 ];
 
@@ -307,6 +352,7 @@ const SEEDED_QA_CANON_FALLBACK: CommunityHubQACanonItem[] = [
     epistemicStatus: 'Canon Verified',
     confidenceScore: 0.94,
     isAccepted: true,
+    attachments: DEMO_SEED_ATTACHMENTS.qaRotation,
   },
 ];
 
@@ -320,6 +366,7 @@ const SEEDED_IDEATION_FALLBACK: CommunityHubIdeaItem[] = [
     effectiveQuadraticVotes: 11,
     myPointsAllocated: 0,
     myEffectiveVotes: 0,
+    attachments: DEMO_SEED_ATTACHMENTS.ideaSigning,
   },
 ];
 
@@ -329,6 +376,7 @@ const SEEDED_LIVING_DOCS_FALLBACK: CommunityHubLivingDocItem[] = [
     title: 'OAuth2 Partner Onboarding Playbook',
     bodyMarkdown: '## OAuth2 Partner Playbook\n- Configure PKCE callback URLs\n- Enable token rotation alerts',
     postTypeCode: 'collaborative-doc',
+    attachments: DEMO_SEED_ATTACHMENTS.livingPlaybook,
   },
   {
     id: 'seed-form-1',
@@ -415,6 +463,9 @@ function buildMiniAppSrcdoc(title: string, kind: string): string {
     QaCanonWorkbenchComponent,
     LivingCoAuthoringComponent,
     QuadraticVotingSliderComponent,
+    CommunityAttachmentGalleryComponent,
+    CommunityAttachmentPickerComponent,
+    CommunityMediaLibraryComponent,
   ],
   templateUrl: './community-hub-resource.component.html',
   styleUrl: './community-hub-resource.component.css',
@@ -481,6 +532,8 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
   // Slide-Over Detail Sheet Drawer state
   public detailSheetItemId: string | null = null;
   public detailReplyText = '';
+  public detailReplyAttachments: DraftCommunityAttachment[] = [];
+  public detailReplyAttachmentError: string | null = null;
   public detailActionMessage: string | null = null;
   public detailErrorMessage: string | null = null;
 
@@ -497,6 +550,9 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
   public askShareTagHighlightIndex = 0;
   public askShareValidationErrors: AskShareValidationErrors = {};
   public askShareError: string | null = null;
+  public askShareAttachments: DraftCommunityAttachment[] = [];
+  public askShareAttachmentError: string | null = null;
+  public accessibleArtifacts: AccessibleArtifactCatalogItem[] = [];
 
   public qaCanonItems: CommunityHubQACanonItem[] = [];
   public selectedQaId: string | null = null;
@@ -525,6 +581,14 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
   private readonly repliesByRootPostId = new Map<string, CommunityCommonsReply[]>();
   private readonly upvotedPostIds = new Set<string>();
   private readonly tagNamesByPostId = new Map<string, string[]>();
+  private readonly attachmentsByPostId = new Map<string, CommunityAttachmentItem[]>();
+  private readonly authoredPostIds = new Set<string>();
+  private currentUserId: string | null = null;
+
+  public mediaLibraryEntries: MediaLibraryEntry[] = [];
+  public mediaLibraryKindFilter: MediaLibraryKindFilter = 'all';
+  public mediaLibraryScopeFilter: MediaLibraryScopeFilter = 'all';
+  public mediaLibrarySearchQuery = '';
 
   public livingDocItems: CommunityHubLivingDocItem[] = [];
   public selectedLivingDocId: string | null = null;
@@ -711,6 +775,7 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
   @ViewChild('detailSheetDialog') private detailSheetDialog?: ElementRef<HTMLElement>;
   @ViewChild('askShareDialog') private askShareDialog?: ElementRef<HTMLElement>;
   @ViewChild('digestDrawerDialog') private digestDrawerDialog?: ElementRef<HTMLElement>;
+  @ViewChild(KnowledgeStreamComponent) private knowledgeStreamRef?: KnowledgeStreamComponent;
 
   private lastDetailTrigger: HTMLElement | null = null;
   private lastAskShareTrigger: HTMLElement | null = null;
@@ -763,6 +828,24 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
     if (savedTopic) {
       this.activeTopicFilter = savedTopic;
     }
+    const savedLibKind = this.preferences.GetMediaLibraryKind();
+    if (savedLibKind) {
+      this.mediaLibraryKindFilter = savedLibKind;
+    }
+    const savedLibScope = this.preferences.GetMediaLibraryScope();
+    if (savedLibScope) {
+      this.mediaLibraryScopeFilter = savedLibScope;
+    }
+  }
+
+  private rebuildMediaLibraryEntries(): void {
+    this.mediaLibraryEntries = BuildMediaLibraryEntries({
+      commonsItems: this.commonsItems,
+      currentUserId: this.currentUserId,
+      authoredPostIds: this.authoredPostIds,
+      spaceNameById: this.spaceNameById,
+      isOfflineDemoMode: this.isOfflineDemoMode,
+    });
   }
 
   private rebuildCommonsItems(): void {
@@ -776,6 +859,7 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
           replyCount: p.replyCount ?? 0,
           replies: this.repliesByRootPostId.get(key),
           tags: this.isOfflineDemoMode ? undefined : (this.tagNamesByPostId.get(key) ?? []),
+          attachments: this.attachmentsByPostId.get(key) ?? p.attachments,
         };
       }),
       qaCanonItems: this.qaCanonItems.map((qa) => {
@@ -787,6 +871,7 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
           replyCount: qa.replyCount ?? 0,
           replies: this.repliesByRootPostId.get(key),
           tags: this.isOfflineDemoMode ? undefined : (this.tagNamesByPostId.get(key) ?? []),
+          attachments: this.attachmentsByPostId.get(key) ?? qa.attachments,
         };
       }),
       ideationItems: this.ideationItems.map((idea) => {
@@ -796,6 +881,7 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
           upvotedByMe: this.upvotedPostIds.has(key),
           replies: this.repliesByRootPostId.get(key),
           tags: this.isOfflineDemoMode ? undefined : (this.tagNamesByPostId.get(key) ?? []),
+          attachments: this.attachmentsByPostId.get(key) ?? idea.attachments,
         };
       }),
       livingDocItems: this.livingDocItems.map((doc) => {
@@ -807,6 +893,7 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
           replyCount: doc.replyCount ?? 0,
           replies: this.repliesByRootPostId.get(key),
           tags: this.isOfflineDemoMode ? undefined : (this.tagNamesByPostId.get(key) ?? []),
+          attachments: this.attachmentsByPostId.get(key) ?? doc.attachments,
         };
       }),
       includeDemoFixtures: this.isOfflineDemoMode,
@@ -825,6 +912,7 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
       }
       return true;
     });
+    this.rebuildMediaLibraryEntries();
     void this.refreshDigestPreview();
   }
 
@@ -841,8 +929,13 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
     this.repliesByRootPostId.clear();
     this.upvotedPostIds.clear();
     this.tagNamesByPostId.clear();
+    this.attachmentsByPostId.clear();
+    this.authoredPostIds.clear();
+    this.mediaLibraryEntries = [];
     this.detailSheetItemId = null;
     this.detailReplyText = '';
+    this.detailReplyAttachments = [];
+    this.detailReplyAttachmentError = null;
     this.detailActionMessage = null;
     this.detailErrorMessage = null;
     this.streamActionError = null;
@@ -855,6 +948,9 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
     this.ideationErrorMessage = null;
     this.showQuestionComposer = false;
     this.showIdeaComposer = false;
+    this.askShareAttachments = [];
+    this.askShareAttachmentError = null;
+    this.accessibleArtifacts = [];
     this.sendTestDigestResult = null;
     this.sendTestDigestError = null;
   }
@@ -871,6 +967,7 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
 
     const user: UserInfo | undefined = provider.CurrentUser;
     this.isOfflineDemoMode = false;
+    this.currentUserId = user?.ID ?? null;
     if (!user) {
       this.clearLiveHubData(
         'Authenticated user session is required to load Community Hub.',
@@ -1135,18 +1232,23 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
 
       this.feedPosts =
         feedResult.success && feedResult.rows.length > 0
-          ? feedResult.rows.map((p) => ({
-              id: p.ID,
-              forumId: p.ForumID,
-              title: p.Title ?? 'Untitled Thread',
-              bodyMarkdown: p.BodyMarkdown ?? '',
-              status: p.Status,
-              authorName: p.AuthorUserID && UUIDsEqual(p.AuthorUserID, user.ID) ? user.Name : 'Community Member',
-              authorRole: 'Member',
-              replyCount: p.ReplyCount ?? 0,
-              reactionScore: p.ReactionScore ?? 0,
-              promotedToSpaceId: p.PromotedToSpaceID ?? null,
-            }))
+          ? feedResult.rows.map((p) => {
+              if (p.AuthorUserID && UUIDsEqual(p.AuthorUserID, user.ID)) {
+                this.authoredPostIds.add(p.ID.toLowerCase());
+              }
+              return {
+                id: p.ID,
+                forumId: p.ForumID,
+                title: p.Title ?? 'Untitled Thread',
+                bodyMarkdown: p.BodyMarkdown ?? '',
+                status: p.Status,
+                authorName: p.AuthorUserID && UUIDsEqual(p.AuthorUserID, user.ID) ? user.Name : 'Community Member',
+                authorRole: 'Member',
+                replyCount: p.ReplyCount ?? 0,
+                reactionScore: p.ReactionScore ?? 0,
+                promotedToSpaceId: p.PromotedToSpaceID ?? null,
+              };
+            })
           : [];
       this.selectedFeedPostId = this.feedPosts[0]?.id ?? null;
 
@@ -1168,7 +1270,7 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
       if (answersResult.success && answersResult.rows.length > 0) {
         type AnswerMetaRow = Pick<
           ForumPostRow,
-          'ID' | 'ForumID' | 'Title' | 'BodyMarkdown' | 'ReplyCount' | 'ReactionScore' | 'PromotedToSpaceID'
+          'ID' | 'ForumID' | 'Title' | 'BodyMarkdown' | 'AuthorUserID' | 'ReplyCount' | 'ReactionScore' | 'PromotedToSpaceID'
         >;
         let bodyById = new Map<string, AnswerMetaRow>(spacePostById);
         if (!scopedSpaceId) {
@@ -1177,7 +1279,7 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
             runView: rv,
             entityName: COMMUNITY_ENTITY_NAMES.ForumPosts,
             extraFilter: `ID IN (${answerIds})`,
-            fields: ['ID', 'ForumID', 'Title', 'BodyMarkdown', 'ReplyCount', 'ReactionScore', 'PromotedToSpaceID'],
+            fields: ['ID', 'ForumID', 'Title', 'BodyMarkdown', 'AuthorUserID', 'ReplyCount', 'ReactionScore', 'PromotedToSpaceID'],
             user,
           });
           if (loadVersion !== this.loadHubStateVersion) return;
@@ -1188,6 +1290,9 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
           : answersResult.rows;
         this.qaCanonItems = matchingAnswers.map((a) => {
           const post = bodyById.get(a.ID.toLowerCase());
+          if (post?.AuthorUserID && UUIDsEqual(post.AuthorUserID, user.ID)) {
+            this.authoredPostIds.add(post.ID.toLowerCase());
+          }
           return {
             id: a.ID,
             questionPostId: a.QuestionPostID ?? null,
@@ -1230,11 +1335,11 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
                   .filter((p): p is ScopedPostRow => Boolean(p)),
                 errorMessage: null as string | null,
               })
-            : LoadAllPaginatedRows<Pick<ForumPostRow, 'ID' | 'ForumID' | 'Title' | 'BodyMarkdown' | 'PromotedToSpaceID'>>({
+            : LoadAllPaginatedRows<Pick<ForumPostRow, 'ID' | 'ForumID' | 'Title' | 'BodyMarkdown' | 'AuthorUserID' | 'PromotedToSpaceID'>>({
                 runView: rv,
                 entityName: COMMUNITY_ENTITY_NAMES.ForumPosts,
                 extraFilter: ideaFilter,
-                fields: ['ID', 'ForumID', 'Title', 'BodyMarkdown', 'PromotedToSpaceID'],
+                fields: ['ID', 'ForumID', 'Title', 'BodyMarkdown', 'AuthorUserID', 'PromotedToSpaceID'],
                 user,
               }),
           LoadAllPaginatedRows<IdeaAllocationAggregateRow>({
@@ -1264,6 +1369,9 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
             .filter((i) => postMetaById.has(i.ID.toLowerCase()))
             .map((i) => {
               const postMeta = postMetaById.get(i.ID.toLowerCase())!;
+              if (postMeta.AuthorUserID && UUIDsEqual(postMeta.AuthorUserID, user.ID)) {
+                this.authoredPostIds.add(postMeta.ID.toLowerCase());
+              }
               const mine = myAllocByIdeaId.get(i.ID.toLowerCase());
               return {
                 id: i.ID,
@@ -1300,10 +1408,14 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
           ...this.livingDocItems.map((d) => d.id),
         ]),
       );
-      if (allRootIds.length > 0) {
-        await this.loadPostSupplementaryMetadata(rv, user, allRootIds);
-        if (loadVersion !== this.loadHubStateVersion) return;
-      }
+      const [_, loadedArtifacts] = await Promise.all([
+        allRootIds.length > 0
+          ? this.loadPostSupplementaryMetadata(rv, user, allRootIds)
+          : Promise.resolve(),
+        LoadAccessibleArtifactsCatalog(rv, user).catch(() => [] as AccessibleArtifactCatalogItem[]),
+      ]);
+      if (loadVersion !== this.loadHubStateVersion) return;
+      this.accessibleArtifacts = loadedArtifacts;
 
       this.sessions = [];
       this.rebuildCommonsItems();
@@ -1394,6 +1506,9 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
     this.repliesByRootPostId.clear();
     if (repliesRes.success) {
       for (const r of repliesRes.rows) {
+        if (r.AuthorUserID && UUIDsEqual(r.AuthorUserID, user.ID)) {
+          this.authoredPostIds.add(r.ID.toLowerCase());
+        }
         const rootKey = r.RootPostID?.toLowerCase();
         if (!rootKey) continue;
         const replyItem = this.mapForumReplyRow(r, user);
@@ -1423,6 +1538,338 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
         }
       }
     }
+
+    const replyIds: string[] = [];
+    for (const replyList of this.repliesByRootPostId.values()) {
+      for (const reply of replyList) {
+        try {
+          replyIds.push(AssertValidUUID(reply.id, 'replyId'));
+        } catch {
+          // Skip non-UUID synthetic IDs.
+        }
+      }
+    }
+
+    await this.loadAttachmentsForPosts(rv, user, Array.from(new Set([...validIds, ...replyIds])));
+
+    if (this.attachmentsByPostId.size > 0) {
+      this.feedPosts = this.feedPosts.map((p) => ({
+        ...p,
+        attachments: this.attachmentsByPostId.get(p.id.toLowerCase()) ?? p.attachments,
+      }));
+      this.qaCanonItems = this.qaCanonItems.map((q) => ({
+        ...q,
+        attachments: this.attachmentsByPostId.get(q.id.toLowerCase()) ?? q.attachments,
+      }));
+      this.ideationItems = this.ideationItems.map((i) => ({
+        ...i,
+        attachments: this.attachmentsByPostId.get(i.id.toLowerCase()) ?? i.attachments,
+      }));
+      this.livingDocItems = this.livingDocItems.map((d) => ({
+        ...d,
+        attachments: this.attachmentsByPostId.get(d.id.toLowerCase()) ?? d.attachments,
+      }));
+      for (const [rootKey, replyList] of this.repliesByRootPostId.entries()) {
+        this.repliesByRootPostId.set(
+          rootKey,
+          replyList.map((r) => ({
+            ...r,
+            attachments: this.attachmentsByPostId.get(r.id.toLowerCase()) ?? r.attachments,
+          })),
+        );
+      }
+    }
+  }
+
+  private async loadAttachmentsForPosts(
+    rv: RunView,
+    user: UserInfo,
+    postIds: ReadonlyArray<string>,
+    preserveExisting = false,
+  ): Promise<void> {
+    if (!preserveExisting) {
+      this.attachmentsByPostId.clear();
+    } else {
+      for (const pid of postIds) {
+        this.attachmentsByPostId.delete(pid.toLowerCase());
+      }
+    }
+    if (postIds.length === 0) return;
+
+    interface LiveAttachmentRow {
+      ID: string;
+      PostID: string;
+      SpaceItemID: string;
+      Caption: string | null;
+      Sequence: number;
+    }
+    interface LiveSpaceItemRow {
+      ID: string;
+      SpaceID: string;
+      EntityID: string;
+      RecordID: string;
+      Band?: 'Shared' | 'Team' | null;
+      Folder: string | null;
+      ArtifactVersionID: string | null;
+    }
+    interface LiveArtifactVersionRow {
+      ID: string;
+      ArtifactID: string;
+      VersionNumber: number | null;
+      Name: string | null;
+      ContentMode: string | null;
+      Content: string | null;
+      FileID: string | null;
+      FileName: string | null;
+      MimeType: string | null;
+      ContentSizeBytes: number | null;
+    }
+    interface LiveArtifactRow {
+      ID: string;
+      Name: string;
+      Type: string | null;
+    }
+    interface LiveFileRow {
+      ID: string;
+      Name: string;
+      ContentType: string | null;
+      ProviderKey?: string | null;
+      Status?: string | null;
+      Size?: number | null;
+      ContentSizeBytes?: number | null;
+      DownloadURL?: string | null;
+      Url?: string | null;
+      Content?: string | null;
+    }
+
+    try {
+      const md = new Metadata();
+      let artifactsEntityId: string | null =
+        typeof md.EntityByName === 'function' ? md.EntityByName('MJ: Artifacts')?.ID ?? null : null;
+      if (!artifactsEntityId) {
+        const entRes = await rv.RunView<{ ID: string }>(
+          {
+            EntityName: 'MJ: Entities',
+            ExtraFilter: `Name = 'MJ: Artifacts'`,
+            Fields: ['ID'],
+            ResultType: 'simple',
+            MaxRows: 1,
+          },
+          user,
+        );
+        artifactsEntityId = entRes?.Success ? entRes.Results?.[0]?.ID ?? null : null;
+      }
+
+      const postIn = this.buildUuidInClause(postIds, 'attachmentPostId');
+      const attRes = await LoadAllPaginatedRows<LiveAttachmentRow>({
+        runView: rv,
+        entityName: COMMUNITY_ENTITY_NAMES.ForumPostAttachments,
+        extraFilter: `PostID IN (${postIn})`,
+        fields: ['ID', 'PostID', 'SpaceItemID', 'Caption', 'Sequence'],
+        user,
+      });
+      if (!attRes.success || attRes.rows.length === 0) return;
+
+      const spaceItemIds = Array.from(new Set(attRes.rows.map((a) => a.SpaceItemID)));
+      const spaceItemIn = this.buildUuidInClause(spaceItemIds, 'spaceItemId');
+      const siRes = await LoadAllPaginatedRows<LiveSpaceItemRow>({
+        runView: rv,
+        entityName: 'MJ_BizApps_Collaboration: Space Items',
+        extraFilter: `ID IN (${spaceItemIn})`,
+        fields: ['ID', 'SpaceID', 'EntityID', 'RecordID', 'Band', 'Folder', 'ArtifactVersionID'],
+        user,
+      });
+      if (!siRes.success || siRes.rows.length === 0) return;
+
+      const siById = new Map(siRes.rows.map((s) => [s.ID.toLowerCase(), s]));
+      const versionIds = Array.from(
+        new Set(siRes.rows.map((s) => s.ArtifactVersionID).filter((v): v is string => Boolean(v))),
+      );
+
+      const versionById = new Map<string, LiveArtifactVersionRow>();
+      if (versionIds.length > 0) {
+        const verRes = await LoadAllPaginatedRows<LiveArtifactVersionRow>({
+          runView: rv,
+          entityName: 'MJ: Artifact Versions',
+          extraFilter: `ID IN (${this.buildUuidInClause(versionIds, 'artifactVersionId')})`,
+          fields: ['ID', 'ArtifactID', 'VersionNumber', 'Name', 'ContentMode', 'Content', 'FileID', 'FileName', 'MimeType', 'ContentSizeBytes'],
+          user,
+        });
+        if (verRes.success) {
+          for (const v of verRes.rows) {
+            versionById.set(v.ID.toLowerCase(), v);
+          }
+        }
+      }
+
+      const artifactIds = new Set<string>();
+      const fileIds = new Set<string>();
+      for (const si of siRes.rows) {
+        const recordUuid = si.RecordID.startsWith('ID|') ? si.RecordID.slice(3) : si.RecordID;
+        const ver = si.ArtifactVersionID ? versionById.get(si.ArtifactVersionID.toLowerCase()) : undefined;
+        const isDirectArtifact = Boolean(artifactsEntityId && UUIDsEqual(si.EntityID, artifactsEntityId));
+        if (ver?.ArtifactID && ver.ContentMode !== 'File') artifactIds.add(ver.ArtifactID);
+        if (ver?.FileID) fileIds.add(ver.FileID);
+        try {
+          AssertValidUUID(recordUuid, 'recordUuid');
+          if (isDirectArtifact || (ver && ver.ContentMode !== 'File')) {
+            artifactIds.add(recordUuid);
+          } else {
+            fileIds.add(recordUuid);
+          }
+        } catch {
+          // Ignore non-UUID record references.
+        }
+      }
+
+      const artifactById = new Map<string, LiveArtifactRow>();
+      if (artifactIds.size > 0) {
+        const artRes = await LoadAllPaginatedRows<LiveArtifactRow>({
+          runView: rv,
+          entityName: 'MJ: Artifacts',
+          extraFilter: `ID IN (${this.buildUuidInClause(Array.from(artifactIds), 'artifactId')})`,
+          fields: ['ID', 'Name', 'Type'],
+          user,
+        });
+        if (artRes.success) {
+          for (const a of artRes.rows) artifactById.set(a.ID.toLowerCase(), a);
+        }
+      }
+
+      const fileById = new Map<string, LiveFileRow>();
+      if (fileIds.size > 0) {
+        const fileRes = await LoadAllPaginatedRows<LiveFileRow>({
+          runView: rv,
+          entityName: 'MJ: Files',
+          extraFilter: `ID IN (${this.buildUuidInClause(Array.from(fileIds), 'fileId')})`,
+          user,
+        });
+        if (fileRes.success) {
+          for (const f of fileRes.rows) fileById.set(f.ID.toLowerCase(), f);
+        }
+      }
+
+      const companionVersionByFileId = new Map<string, LiveArtifactVersionRow>();
+      if (fileIds.size > 0) {
+        const compVerRes = await LoadAllPaginatedRows<LiveArtifactVersionRow>({
+          runView: rv,
+          entityName: 'MJ: Artifact Versions',
+          extraFilter: `FileID IN (${this.buildUuidInClause(Array.from(fileIds), 'companionFileId')})`,
+          fields: ['ID', 'ArtifactID', 'VersionNumber', 'Name', 'ContentMode', 'Content', 'FileID', 'FileName', 'MimeType', 'ContentSizeBytes'],
+          user,
+        });
+        if (compVerRes.success) {
+          for (const v of compVerRes.rows) {
+            if (!v.FileID) continue;
+            const key = v.FileID.toLowerCase();
+            const existing = companionVersionByFileId.get(key);
+            if (!existing || (v.VersionNumber ?? 0) > (existing.VersionNumber ?? 0)) {
+              companionVersionByFileId.set(key, v);
+            }
+          }
+        }
+      }
+
+      for (const att of attRes.rows) {
+        const si = siById.get(att.SpaceItemID.toLowerCase());
+        if (!si) continue;
+        const ver = si.ArtifactVersionID ? versionById.get(si.ArtifactVersionID.toLowerCase()) ?? null : null;
+        const recordUuid = si.RecordID.startsWith('ID|') ? si.RecordID.slice(3) : si.RecordID;
+        const isDirectArtifact = Boolean(artifactsEntityId && UUIDsEqual(si.EntityID, artifactsEntityId));
+        const isFileBackedVersion = Boolean(ver && ver.ContentMode === 'File');
+        const artifact =
+          (ver?.ArtifactID && !isFileBackedVersion ? artifactById.get(ver.ArtifactID.toLowerCase()) : undefined) ??
+          (!isFileBackedVersion && isDirectArtifact ? artifactById.get(recordUuid.toLowerCase()) : undefined) ??
+          null;
+        const featureInLibrary = IsFeaturedLibraryFolder(si.Folder);
+        const authoredByCurrentUser = this.authoredPostIds.has(att.PostID.toLowerCase());
+        const attAuthorUserId = authoredByCurrentUser ? user.ID : null;
+        const attAuthorName = authoredByCurrentUser ? user.Name || 'Community Member' : 'Community Member';
+        const band = si.Band === 'Team' ? 'Team' : 'Shared';
+
+        let mapped: CommunityAttachmentItem;
+        if (artifact && !isFileBackedVersion) {
+          const item: CommunityArtifactAttachmentItem = {
+            id: att.ID,
+            kind: 'artifact',
+            spaceId: si.SpaceID,
+            postId: att.PostID,
+            spaceItemId: si.ID,
+            forumPostAttachmentId: att.ID,
+            artifactId: artifact.ID,
+            artifactVersionId: ver?.ID ?? si.ArtifactVersionID,
+            artifactTypeName: artifact.Type?.trim() || 'Artifact',
+            artifactName: artifact.Name || ver?.Name || att.Caption || 'Untitled Artifact',
+            previewContent: ver?.Content ?? null,
+            contentType: ver?.MimeType ?? null,
+            versionNumber: ver?.VersionNumber ?? null,
+            showInlinePreview: true,
+            caption: att.Caption,
+            sequence: att.Sequence,
+            featureInLibrary,
+            folder: si.Folder,
+            band,
+            authorUserId: attAuthorUserId,
+            authorName: attAuthorName,
+          };
+          mapped = item;
+        } else {
+          const fileId = ver?.FileID ?? (isDirectArtifact ? null : recordUuid);
+          const companionVer = fileId ? companionVersionByFileId.get(fileId.toLowerCase()) ?? null : null;
+          const resolvedArtifactId = ver?.ArtifactID ?? companionVer?.ArtifactID ?? (isDirectArtifact ? recordUuid : null);
+          const fileRow = fileId ? fileById.get(fileId.toLowerCase()) ?? null : null;
+          const fileName = ver?.FileName || fileRow?.Name || companionVer?.FileName || att.Caption || 'attachment';
+          const mimeType = NormalizeAttachmentMimeType(
+            ver?.MimeType || fileRow?.ContentType || companionVer?.MimeType || 'application/octet-stream',
+          );
+          const kind = ClassifyAttachmentKind(mimeType, false);
+          const normalizedKind = kind === 'artifact' ? 'file' : kind;
+          const candidateUrl =
+            ver?.Content ??
+            (fileRow ? ResolveAuthoritativeFileUrl(fileRow, normalizedKind) : null) ??
+            companionVer?.Content ??
+            null;
+          const safeUrl = SanitizeCommunityAttachmentUrl(candidateUrl, normalizedKind) ?? '';
+          const resolvedSizeBytes =
+            ver?.ContentSizeBytes ??
+            fileRow?.ContentSizeBytes ??
+            fileRow?.Size ??
+            companionVer?.ContentSizeBytes ??
+            0;
+          const fileItem: CommunityFileAttachmentItem = {
+            id: att.ID,
+            kind: normalizedKind,
+            spaceId: si.SpaceID,
+            postId: att.PostID,
+            spaceItemId: si.ID,
+            forumPostAttachmentId: att.ID,
+            fileId,
+            fileName,
+            mimeType,
+            sizeBytes: resolvedSizeBytes,
+            url: safeUrl,
+            artifactId: resolvedArtifactId,
+            artifactVersionId: ver?.ID ?? si.ArtifactVersionID ?? companionVer?.ID ?? null,
+            caption: att.Caption,
+            sequence: att.Sequence,
+            featureInLibrary,
+            folder: si.Folder,
+            band,
+            authorUserId: attAuthorUserId,
+            authorName: attAuthorName,
+          };
+          mapped = fileItem;
+        }
+
+        const key = att.PostID.toLowerCase();
+        const existing = this.attachmentsByPostId.get(key) ?? [];
+        existing.push(mapped);
+        existing.sort((a, b) => a.sequence - b.sequence);
+        this.attachmentsByPostId.set(key, existing);
+      }
+    } catch {
+      // Leave attachmentsByPostId empty if host environment omits attachment metadata tables.
+    }
   }
 
   private mapForumReplyRow(row: ForumReplyRow, user: UserInfo): CommunityCommonsReply {
@@ -1444,6 +1891,7 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
       bodyMarkdown: row.BodyMarkdown ?? '',
       isAccepted: row.Status === 'Answered',
       upvotes: row.ReactionScore ?? 0,
+      attachments: this.attachmentsByPostId.get(row.ID.toLowerCase()),
     };
   }
 
@@ -1459,12 +1907,27 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
     if (!res.success) {
       throw new Error(res.errorMessage || 'Failed to reload replies from server.');
     }
+    const replyIds = res.rows
+      .map((r) => r.ID)
+      .filter((id) => {
+        try {
+          AssertValidUUID(id, 'replyId');
+          return true;
+        } catch {
+          return false;
+        }
+      });
+    if (replyIds.length > 0) {
+      await this.loadAttachmentsForPosts(rv, user, replyIds, true);
+    }
     return res.rows.map((r) => this.mapForumReplyRow(r, user));
   }
 
   private applySeededFallback(): void {
     this.resetTransientSpaceState();
     this.isOfflineDemoMode = true;
+    this.currentUserId = 'demo-member';
+    this.accessibleArtifacts = [...DEMO_ACCESSIBLE_ARTIFACTS];
     this.authorizedForums = [];
     this.allowedForumIDs = [];
     this.loadedTopicTags = [];
@@ -1561,7 +2024,7 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
 
     type DocPostMeta = Pick<
       ForumPostRow,
-      'ID' | 'ForumID' | 'Title' | 'BodyMarkdown' | 'ReplyCount' | 'ReactionScore' | 'PromotedToSpaceID'
+      'ID' | 'ForumID' | 'Title' | 'BodyMarkdown' | 'AuthorUserID' | 'ReplyCount' | 'ReactionScore' | 'PromotedToSpaceID'
     >;
     let postById: ReadonlyMap<string, DocPostMeta>;
     if (scopedPostById) {
@@ -1572,7 +2035,7 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
         runView: rv,
         entityName: COMMUNITY_ENTITY_NAMES.ForumPosts,
         extraFilter: `ID IN (${safeIds.map((id) => `'${id}'`).join(',')})`,
-        fields: ['ID', 'ForumID', 'Title', 'BodyMarkdown', 'ReplyCount', 'ReactionScore', 'PromotedToSpaceID'],
+        fields: ['ID', 'ForumID', 'Title', 'BodyMarkdown', 'AuthorUserID', 'ReplyCount', 'ReactionScore', 'PromotedToSpaceID'],
         user,
       });
       postById = new Map((postsResult.success ? postsResult.rows : []).map((r) => [r.ID.toLowerCase(), r]));
@@ -1584,6 +2047,9 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
 
     return visibleItems.map((r) => {
       const post = postById.get(r.id.toLowerCase());
+      if (post?.AuthorUserID && UUIDsEqual(post.AuthorUserID, user.ID)) {
+        this.authoredPostIds.add(post.ID.toLowerCase());
+      }
       return {
         id: r.id,
         forumId: post?.ForumID ?? null,
@@ -1726,6 +2192,39 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
     this.headerSearchQuery = '';
     void this.preferences.SetActiveTopicFilter(null);
     this.cdr.markForCheck();
+  }
+
+  // ─── Space Media & Artifacts Library Handlers ─────────────────────────────
+
+  public setMediaLibraryKindFilter(kind: MediaLibraryKindFilter): void {
+    this.mediaLibraryKindFilter = kind;
+    void this.preferences.SetMediaLibraryKind(kind);
+    this.cdr.markForCheck();
+  }
+
+  public setMediaLibraryScopeFilter(scope: MediaLibraryScopeFilter): void {
+    this.mediaLibraryScopeFilter = scope;
+    void this.preferences.SetMediaLibraryScope(scope);
+    this.cdr.markForCheck();
+  }
+
+  public setMediaLibrarySearchQuery(query: string): void {
+    this.mediaLibrarySearchQuery = query;
+    this.cdr.markForCheck();
+  }
+
+  public resetMediaLibraryFilters(): void {
+    this.activeSpaceFilter = 'all';
+    this.mediaLibraryKindFilter = 'all';
+    this.mediaLibraryScopeFilter = 'all';
+    this.mediaLibrarySearchQuery = '';
+    void this.preferences.SetMediaLibraryKind('all');
+    void this.preferences.SetMediaLibraryScope('all');
+    this.cdr.markForCheck();
+  }
+
+  public openMediaLibraryThread(sourceItemId: string): void {
+    this.openDetailSheet(sourceItemId);
   }
 
   // ─── Personalized Digest Preview Drawer & MJ Comms Dispatch ───────────────
@@ -1973,6 +2472,9 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
 
   @HostListener('document:keydown.escape')
   public onDocumentEscape(): void {
+    if (this.doc?.querySelector('.mjc-att-modal-backdrop, .mjc-lib-modal-backdrop')) {
+      return;
+    }
     if (this.isDigestDrawerOpen) {
       this.closeDigestDrawer();
       return;
@@ -2132,12 +2634,101 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
     }
   }
 
-  public async submitDetailReply(targetItemId?: string, replyTextOverride?: string): Promise<void> {
+  private createClientAttachmentPersister(
+    user: UserInfo | undefined,
+    isOfflineDemoMode: boolean,
+  ) {
+    const md = new Metadata();
+    const rv = new RunView();
+    return async (params: {
+      postId: string;
+      spaceId: string;
+      drafts: ReadonlyArray<DraftCommunityAttachment>;
+    }) => {
+      const outcome = await PersistPostAttachmentsFromClient({
+        postId: params.postId,
+        spaceId: params.spaceId,
+        drafts: params.drafts,
+        isOfflineDemoMode,
+        currentUserId: user?.ID ?? null,
+        authorName: user?.Name || 'Community Member',
+        authorizePostWrite: !isOfflineDemoMode && user
+          ? ({ postId, spaceId, drafts }) =>
+              AuthorizeClientPostAttachmentWrite({
+                rv,
+                postId,
+                spaceId,
+                user,
+                incomingDrafts: drafts,
+              })
+          : null,
+        resolveEntityId: !isOfflineDemoMode && user
+          ? async (entityName: string) => {
+              if (typeof md.EntityByName === 'function') {
+                const info = md.EntityByName(entityName);
+                if (info?.ID) return info.ID;
+              }
+              const res = await rv.RunView<{ ID: string }>(
+                {
+                  EntityName: 'MJ: Entities',
+                  ExtraFilter: `Name = '${EscapeSqlLiteral(entityName)}'`,
+                  Fields: ['ID'],
+                  ResultType: 'simple',
+                  MaxRows: 1,
+                },
+                user,
+              );
+              return res?.Success ? res.Results?.[0]?.ID ?? null : null;
+            }
+          : null,
+        resolveArtifactTypeId: !isOfflineDemoMode && user
+          ? (kind, mimeType) => ResolveClientArtifactTypeId(rv, kind, mimeType, user)
+          : null,
+        createArtifactEntity: !isOfflineDemoMode && user
+          ? () => md.GetEntityObject<MJArtifactEntityLike & import('@memberjunction/core').BaseEntity>('MJ: Artifacts', user)
+          : null,
+        createArtifactVersionEntity: !isOfflineDemoMode && user
+          ? () => md.GetEntityObject<MJArtifactVersionEntityLike & import('@memberjunction/core').BaseEntity>('MJ: Artifact Versions', user)
+          : null,
+        createSpaceItemEntity: !isOfflineDemoMode && user
+          ? () => md.GetEntityObject<CollaborationSpaceItemEntityView>('MJ_BizApps_Collaboration: Space Items', user)
+          : null,
+        createForumPostAttachmentEntity: !isOfflineDemoMode && user
+          ? () => md.GetEntityObject<mjBizAppsCommunityForumPostAttachmentEntity>(COMMUNITY_ENTITY_NAMES.ForumPostAttachments, user)
+          : null,
+      });
+
+      if (outcome.success && outcome.persistedAttachments.length > 0) {
+        this.attachmentsByPostId.set(params.postId.toLowerCase(), [...outcome.persistedAttachments]);
+      }
+
+      return {
+        success: outcome.success,
+        errorMessage: outcome.errorMessage,
+        persistedAttachments: outcome.persistedAttachments,
+      };
+    };
+  }
+
+  public async submitDetailReply(
+    targetItemId?: string,
+    replyTextOverride?: string,
+    replyAttachmentsOverride?: ReadonlyArray<DraftCommunityAttachment>,
+  ): Promise<void> {
     const item = targetItemId
       ? this.commonsItems.find((entry) => entry.id === targetItemId) ?? null
       : this.detailSheetItem;
     const text = (replyTextOverride ?? this.detailReplyText).trim();
     if (!item || !text) return;
+
+    if (replyAttachmentsOverride === undefined && this.detailReplyAttachmentError) {
+      this.detailErrorMessage = this.detailReplyAttachmentError;
+      this.streamActionError = this.detailReplyAttachmentError;
+      this.cdr.markForCheck();
+      return;
+    }
+
+    const drafts = replyAttachmentsOverride ?? this.detailReplyAttachments;
 
     this.detailActionMessage = null;
     this.detailErrorMessage = null;
@@ -2151,6 +2742,10 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
       await this.ensurePostTypesLoaded(user).catch(() => undefined);
     }
 
+    const targetSpaceId = offlineOnly
+      ? item.spaceId
+      : (item.forumId ? this.forumSpaceIdByForumId.get(item.forumId.toLowerCase()) : null) ?? item.spaceId;
+
     const rv = new RunView();
     const outcome = await PersistDetailReply({
       item,
@@ -2159,6 +2754,9 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
       isOfflineDemoMode: offlineOnly,
       postTypeIdByCode: this.postTypeIdByCode,
       currentUserId: user?.ID ?? null,
+      spaceId: targetSpaceId,
+      draftAttachments: drafts,
+      persistAttachments: this.createClientAttachmentPersister(user, offlineOnly),
       createForumPostEntity:
         provider && user
           ? () =>
@@ -2184,6 +2782,9 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
     if (!outcome.offlineFallback) {
       this.repliesByRootPostId.set(item.sourcePostId.toLowerCase(), [...outcome.replies]);
     }
+    if (outcome.persistedReplyId) {
+      this.authoredPostIds.add(outcome.persistedReplyId.toLowerCase());
+    }
 
     this.commonsItems = this.commonsItems.map((entry) =>
       entry.id === item.id
@@ -2194,8 +2795,13 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
           }
         : entry,
     );
+    this.rebuildMediaLibraryEntries();
     if (replyTextOverride === undefined) {
       this.detailReplyText = '';
+      this.detailReplyAttachments = [];
+      this.detailReplyAttachmentError = null;
+    } else if (targetItemId) {
+      this.knowledgeStreamRef?.clearInlineReplyDraft(targetItemId);
     }
     this.detailActionMessage = outcome.statusMessage ?? 'Reply saved to thread.';
     this.cdr.markForCheck();
@@ -2241,6 +2847,10 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
   }
 
   // ─── Ask or Share Modal ───────────────────────────────────────────────────
+
+  public get askShareAttachmentEntryType(): CommunityAttachmentEntryType {
+    return ResolveComposerAttachmentEntryType('post', this.askShareEntryType);
+  }
 
   public get compatibleAskShareForums(): ReadonlyArray<AuthorizedForumOption> {
     return FilterForumsForAskShareEntryType(
@@ -2391,6 +3001,10 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
   public onAskShareEntryTypeChange(nextType: AskShareEntryType): void {
     this.askShareEntryType = nextType;
     this.askShareError = null;
+    this.askShareAttachments = SyncDraftsForEntryTypeChange(
+      this.askShareAttachments,
+      ResolveComposerAttachmentEntryType('post', nextType),
+    );
     if (!this.isOfflineDemoMode) {
       const previousForum = this.authorizedForums.find((f) => UUIDsEqual(f.id, this.askShareForumId));
       const compatible = this.compatibleAskShareForums;
@@ -2445,6 +3059,8 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
     this.askShareTagHighlightIndex = 0;
     this.askShareValidationErrors = {};
     this.askShareError = null;
+    this.askShareAttachments = [];
+    this.askShareAttachmentError = null;
     this.cdr.markForCheck();
     this.scheduleOverlayInitialFocus('ask-share');
   }
@@ -2522,6 +3138,8 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
     this.liveAskShareDeflections = [];
     this.askShareValidationErrors = {};
     this.askShareError = null;
+    this.askShareAttachments = [];
+    this.askShareAttachmentError = null;
     this.cdr.markForCheck();
     this.restoreOverlayTriggerFocus(trigger, '#mjc-header-ask-share-btn');
   }
@@ -2631,8 +3249,15 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
 
   public async submitAskShareModal(): Promise<void> {
     this.askShareError = null;
+    if (this.askShareAttachmentError) {
+      this.askShareError = this.askShareAttachmentError;
+      this.cdr.markForCheck();
+      return;
+    }
+
     const provider = Metadata.Provider;
     const user: UserInfo | undefined = provider?.CurrentUser;
+    const offlineOnly = !provider;
     if (!this.isOfflineDemoMode && provider && user) {
       await this.ensurePostTypesLoaded(user).catch(() => undefined);
     }
@@ -2645,7 +3270,7 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
         body: this.askShareBody,
         tagsInput: this.askShareTags,
       },
-      isOfflineDemoMode: !provider,
+      isOfflineDemoMode: offlineOnly,
       targetForumId: this.askShareForumId,
       allowedForumIDs: this.allowedForumIDs,
       authorizedForums: this.authorizedForums,
@@ -2654,6 +3279,8 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
       authorName: user?.Name || 'Community Member',
       selectedTopicTagIds: this.askShareSelectedTagIds,
       topicTags: this.loadedTopicTags,
+      draftAttachments: this.askShareAttachments,
+      persistAttachments: this.createClientAttachmentPersister(user, offlineOnly),
       createForumPostEntity:
         provider && user
           ? () =>
@@ -2693,6 +3320,7 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
     }
 
     const newItem = outcome.createdItem;
+    this.authoredPostIds.add(newItem.sourcePostId.toLowerCase());
     if (!this.isOfflineDemoMode && newItem.tags.length > 0) {
       this.tagNamesByPostId.set(newItem.sourcePostId.toLowerCase(), [...newItem.tags]);
     }
@@ -2709,6 +3337,7 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
         replyCount: 0,
         reactionScore: 0,
         promotedToSpaceId: null,
+        attachments: newItem.attachments,
       },
       ...this.feedPosts,
     ];
@@ -2726,6 +3355,7 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
         reactionScore: 0,
         replyCount: 0,
         promotedToSpaceId: null,
+        attachments: newItem.attachments,
       };
       this.qaCanonItems = [qaEntry, ...this.qaCanonItems];
       this.selectedQaId = qaEntry.id;
@@ -2739,6 +3369,7 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
         reactionScore: 0,
         replyCount: 0,
         promotedToSpaceId: null,
+        attachments: newItem.attachments,
       };
       this.livingDocItems = [docEntry, ...this.livingDocItems];
       this.selectedLivingDocId = docEntry.id;
@@ -2751,6 +3382,8 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
     this.askShareBody = '';
     this.askShareTags = '';
     this.askShareSelectedTagIds = [];
+    this.askShareAttachments = [];
+    this.askShareAttachmentError = null;
     this.askShareValidationErrors = {};
     this.askShareError = null;
     this.closeAskShareModal();

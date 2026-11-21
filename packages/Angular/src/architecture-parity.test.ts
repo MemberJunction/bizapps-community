@@ -186,8 +186,8 @@ describe('OpenApp Readiness — CommunityHubResource architecture', () => {
     assert.match(template, /<\/mj-page-layout>/);
   });
 
-  it('declares all 4 required Community Hub tabs', () => {
-    for (const label of ['Feed', 'Q&A', 'Ideas', 'Playbooks']) {
+  it('declares all 5 required Community Hub tabs', () => {
+    for (const label of ['Feed', 'Q&A', 'Ideas', 'Playbooks', 'Library']) {
       assert.ok(componentSource.includes(`label: '${label}'`), `missing tab label "${label}"`);
     }
   });
@@ -205,8 +205,8 @@ describe('OpenApp Readiness — CommunityHubResource architecture', () => {
     assert.match(template, /\(keydown\)="OnTabKeydown\(\$event, tab\.key\)"/);
     // Every tabpanel is role="tabpanel" with an id/aria-labelledby pair matching its tab button.
     const tabpanelCount = (template.match(/role="tabpanel"/g) ?? []).length;
-    assert.equal(tabpanelCount, 4);
-    for (const key of ['knowledge-stream', 'qa-canon-workbench', 'quadratic-ideation-wallet', 'living-co-authoring']) {
+    assert.equal(tabpanelCount, 5);
+    for (const key of ['knowledge-stream', 'qa-canon-workbench', 'quadratic-ideation-wallet', 'living-co-authoring', 'media-library']) {
       assert.match(template, new RegExp(`mjc-hub-panel-${key}`));
       assert.match(template, new RegExp(`aria-labelledby\\]="'mjc-hub-tab-${key}'"`));
     }

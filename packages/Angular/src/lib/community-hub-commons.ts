@@ -1,5 +1,11 @@
 import { UUIDsEqual } from '@memberjunction/global';
-import { AssertValidUUID } from '@mj-biz-apps/community-core';
+import { AssertValidUUID, type CommunityAttachmentItem } from '@mj-biz-apps/community-core';
+import { DEMO_SEED_ATTACHMENTS } from './community-attachment-demo.ts';
+import {
+  ConvertDraftsToCommunityAttachments,
+  ValidateDraftAttachmentsForSubmit,
+  type DraftCommunityAttachment,
+} from './community-attachment-picker.ts';
 import { type CommunityGraphQLExecutor, InvokeToggleCommunityPostReactionMutation } from './community-hub-mutations.ts';
 import type {
   mjBizAppsCommunityForumAnswerPostEntity,
@@ -61,6 +67,7 @@ export interface CommunityCommonsReply {
   bodyMarkdown: string;
   isAccepted: boolean;
   upvotes: number;
+  attachments?: CommunityAttachmentItem[];
 }
 
 export interface CommunityCommonsItem {
@@ -91,6 +98,7 @@ export interface CommunityCommonsItem {
   sourceTab: CommunityHubTabKey;
   sourcePostId: string;
   forumId?: string | null;
+  attachments?: CommunityAttachmentItem[];
 }
 
 export interface CommunityFeaturedHighlight {
@@ -209,7 +217,20 @@ export interface AskSharePostTagEntityLike {
   AssignedByAI: mjBizAppsCommunityForumPostTagEntity['AssignedByAI'];
   LatestResult?: EntitySaveResultLike | null;
   Save(): Promise<boolean>;
+  Delete?(): Promise<boolean>;
 }
+
+export interface PersistAttachmentsCallbackResult {
+  success: boolean;
+  errorMessage: string | null;
+  persistedAttachments: CommunityAttachmentItem[];
+}
+
+export type PersistAttachmentsCallback = (params: {
+  postId: string;
+  spaceId: string;
+  drafts: ReadonlyArray<DraftCommunityAttachment>;
+}) => Promise<PersistAttachmentsCallbackResult>;
 
 export interface PersistAskShareParams {
   draft: AskShareDraft;
@@ -222,6 +243,8 @@ export interface PersistAskShareParams {
   authorName: string;
   selectedTopicTagIds?: ReadonlyArray<string>;
   topicTags?: ReadonlyArray<LiveForumTopicTagRow>;
+  draftAttachments?: ReadonlyArray<DraftCommunityAttachment>;
+  persistAttachments?: PersistAttachmentsCallback | null;
   createForumPostEntity: (() => Promise<AskSharePostEntityLike | null>) | null;
   createQuestionPostEntity?: (() => Promise<AskShareQuestionPostEntityLike | null>) | null;
   createPostTagEntity?: (() => Promise<AskSharePostTagEntityLike | null>) | null;
@@ -262,6 +285,7 @@ export interface CommonsQAInput {
   replies?: ReadonlyArray<CommunityCommonsReply>;
   tags?: ReadonlyArray<string>;
   promotedToSpaceId?: string | null;
+  attachments?: CommunityAttachmentItem[];
 }
 
 export interface CommonsIdeaInput {
@@ -281,6 +305,7 @@ export interface CommonsIdeaInput {
   replies?: ReadonlyArray<CommunityCommonsReply>;
   tags?: ReadonlyArray<string>;
   promotedToSpaceId?: string | null;
+  attachments?: CommunityAttachmentItem[];
 }
 
 export interface CommonsLivingDocInput {
@@ -300,6 +325,7 @@ export interface CommonsLivingDocInput {
   replies?: ReadonlyArray<CommunityCommonsReply>;
   tags?: ReadonlyArray<string>;
   promotedToSpaceId?: string | null;
+  attachments?: CommunityAttachmentItem[];
 }
 
 export interface CommonsFeedPostInput {
@@ -318,6 +344,7 @@ export interface CommonsFeedPostInput {
   tags?: ReadonlyArray<string>;
   promotedToSpaceId?: string | null;
   spaceId?: CommunitySpaceFilterId | null;
+  attachments?: CommunityAttachmentItem[];
 }
 
 export const COMMUNITY_SPACES_DIRECTORY: ReadonlyArray<CommunitySpaceDirectoryItem> = [
@@ -431,6 +458,7 @@ export const SEEDED_SUPPLEMENTAL_COMMONS_ITEMS: ReadonlyArray<CommunityCommonsIt
           'Confirmed our multi-tenant PostgreSQL staging cluster passed all 25 entity parity checks with zero manual adjustments.',
         isAccepted: true,
         upvotes: 12,
+        attachments: DEMO_SEED_ATTACHMENTS.rfcReply1,
       },
       {
         id: 'reply-rfc-2',
@@ -448,6 +476,7 @@ export const SEEDED_SUPPLEMENTAL_COMMONS_ITEMS: ReadonlyArray<CommunityCommonsIt
     deliverableTitle: null,
     sourceTab: 'knowledge-stream',
     sourcePostId: 'commons-rfc-2026-08',
+    attachments: DEMO_SEED_ATTACHMENTS.rfcMotion,
   },
   {
     id: 'commons-wg-webhook-telemetry',
@@ -483,12 +512,14 @@ export const SEEDED_SUPPLEMENTAL_COMMONS_ITEMS: ReadonlyArray<CommunityCommonsIt
           'Added our Prometheus alert rule snippets for dead-letter queue growth thresholds to Milestone 2.',
         isAccepted: true,
         upvotes: 9,
+        attachments: DEMO_SEED_ATTACHMENTS.wgReply1,
       },
     ],
     graduatedToDeliverable: true,
     deliverableTitle: 'Webhook Telemetry Reference Blueprint v1.0',
     sourceTab: 'living-co-authoring',
     sourcePostId: 'commons-wg-webhook-telemetry',
+    attachments: DEMO_SEED_ATTACHMENTS.wgTelemetry,
   },
 ];
 
@@ -627,6 +658,7 @@ export function BuildCommonsStreamItems(params: {
       sourceTab: 'knowledge-stream',
       sourcePostId: post.id,
       forumId: post.forumId ?? null,
+      attachments: post.attachments ? [...post.attachments] : undefined,
     });
   }
 
@@ -681,6 +713,7 @@ export function BuildCommonsStreamItems(params: {
       sourceTab: 'qa-canon-workbench',
       sourcePostId: qa.id,
       forumId: qa.forumId ?? null,
+      attachments: qa.attachments ? [...qa.attachments] : undefined,
     });
   }
 
@@ -736,6 +769,7 @@ export function BuildCommonsStreamItems(params: {
       sourceTab: 'quadratic-ideation-wallet',
       sourcePostId: idea.id,
       forumId: idea.campaignId || null,
+      attachments: idea.attachments ? [...idea.attachments] : undefined,
     });
   }
 
@@ -792,6 +826,7 @@ export function BuildCommonsStreamItems(params: {
       sourceTab: 'living-co-authoring',
       sourcePostId: doc.id,
       forumId: doc.forumId ?? null,
+      attachments: doc.attachments ? [...doc.attachments] : undefined,
     });
   }
 
@@ -802,6 +837,7 @@ export function BuildCommonsStreamItems(params: {
           ...supplemental,
           tags: [...supplemental.tags],
           replies: supplemental.replies.map((r) => ({ ...r })),
+          attachments: supplemental.attachments ? [...supplemental.attachments] : undefined,
         });
       }
     }
@@ -1288,6 +1324,25 @@ function extractEntitySaveError(entity: { LatestResult?: EntitySaveResultLike | 
   return msg.length > 0 ? msg : null;
 }
 
+async function rollbackCreatedEntities(
+  entities: ReadonlyArray<{ label: string; entity: { Delete?: () => Promise<boolean>; LatestResult?: EntitySaveResultLike | null } | null | undefined }>,
+): Promise<string[]> {
+  const failures: string[] = [];
+  for (const entry of entities) {
+    if (!entry.entity || typeof entry.entity.Delete !== 'function') continue;
+    try {
+      const deleted = await entry.entity.Delete();
+      if (!deleted) {
+        const msg = extractEntitySaveError(entry.entity) ?? 'Delete() returned false';
+        failures.push(`${entry.label}: ${msg}`);
+      }
+    } catch (err) {
+      failures.push(`${entry.label}: ${err instanceof Error ? err.message : 'Delete() threw an error'}`);
+    }
+  }
+  return failures;
+}
+
 export function ResolveAuthorizedForumTarget(
   targetForumId: string | null | undefined,
   allowedForumIDs: ReadonlyArray<string>,
@@ -1359,6 +1414,21 @@ export async function PersistAskSharePost(params: PersistAskShareParams): Promis
     };
   }
 
+  const draftAttachments = params.draftAttachments ?? [];
+  if (draftAttachments.length > 0) {
+    const attValidation = ValidateDraftAttachmentsForSubmit(draftAttachments);
+    if (!attValidation.valid) {
+      return {
+        success: false,
+        validationErrors: {},
+        errorMessage: attValidation.errors.join(' '),
+        persistedPostId: null,
+        resolvedForumId: null,
+        createdItem: null,
+      };
+    }
+  }
+
   const matchedForum = params.authorizedForums?.find(
     (f) => f.id.trim().toLowerCase() === (params.targetForumId ?? '').trim().toLowerCase(),
   );
@@ -1372,6 +1442,34 @@ export async function PersistAskSharePost(params: PersistAskShareParams): Promis
       params.authorName || 'Community Member',
       'Demo Member',
     );
+    if (draftAttachments.length > 0) {
+      if (params.persistAttachments) {
+        const attRes = await params.persistAttachments({
+          postId: demoItem.sourcePostId,
+          spaceId: resolvedDraft.spaceId,
+          drafts: draftAttachments,
+        });
+        if (!attRes.success) {
+          return {
+            success: false,
+            validationErrors: {},
+            errorMessage: attRes.errorMessage ?? 'Failed to attach files in offline demo mode.',
+            persistedPostId: null,
+            resolvedForumId: null,
+            createdItem: null,
+          };
+        }
+        demoItem.attachments = attRes.persistedAttachments;
+      } else {
+        demoItem.attachments = ConvertDraftsToCommunityAttachments({
+          drafts: draftAttachments,
+          spaceId: resolvedDraft.spaceId,
+          postId: demoItem.sourcePostId,
+          authorUserId: params.currentUserId,
+          authorName: params.authorName || 'Community Member',
+        });
+      }
+    }
     return {
       success: true,
       validationErrors: {},
@@ -1462,6 +1560,8 @@ export async function PersistAskSharePost(params: PersistAskShareParams): Promis
   let savedPostId: string | null = null;
   let savedPostEntity: AskSharePostEntityLike | null = null;
   let savedQuestionEntity: AskShareQuestionPostEntityLike | null = null;
+  const savedTagEntities: AskSharePostTagEntityLike[] = [];
+  let persistedAttachments: CommunityAttachmentItem[] = [];
   try {
     const post = await params.createForumPostEntity();
     if (!post) {
@@ -1535,6 +1635,9 @@ export async function PersistAskSharePost(params: PersistAskShareParams): Promis
       for (const topicTag of matchedTopicTags) {
         const postTag = await params.createPostTagEntity();
         if (!postTag) {
+          for (const createdTag of savedTagEntities.reverse()) {
+            await createdTag.Delete?.().catch(() => false);
+          }
           await savedQuestionEntity?.Delete?.().catch(() => false);
           await savedPostEntity.Delete?.().catch(() => false);
           return {
@@ -1552,6 +1655,9 @@ export async function PersistAskSharePost(params: PersistAskShareParams): Promis
         const tagSaved = await postTag.Save();
         if (!tagSaved) {
           const tagReason = extractEntitySaveError(postTag);
+          for (const createdTag of savedTagEntities.reverse()) {
+            await createdTag.Delete?.().catch(() => false);
+          }
           await savedQuestionEntity?.Delete?.().catch(() => false);
           await savedPostEntity.Delete?.().catch(() => false);
           return {
@@ -1565,9 +1671,61 @@ export async function PersistAskSharePost(params: PersistAskShareParams): Promis
             createdItem: null,
           };
         }
+        savedTagEntities.push(postTag);
       }
     }
+
+    if (draftAttachments.length > 0) {
+      const targetSpaceId = matchedForum?.dbSpaceId?.trim() || '';
+      if (!params.persistAttachments || !targetSpaceId) {
+        const rollbackFailures = await rollbackCreatedEntities([
+          ...[...savedTagEntities].reverse().map((entity, idx) => ({ label: `ForumPostTag[${idx}]`, entity })),
+          { label: 'ForumQuestionPost', entity: savedQuestionEntity },
+          { label: 'ForumPost', entity: savedPostEntity },
+        ]);
+        const rollbackSuffix =
+          rollbackFailures.length > 0 ? ` (Rollback cleanup failed: ${rollbackFailures.join('; ')})` : '';
+        return {
+          success: false,
+          validationErrors: {},
+          errorMessage:
+            `Target Space or attachment persistence provider is unavailable — rolled back post so attachments are not dropped.${rollbackSuffix}`,
+          persistedPostId: null,
+          resolvedForumId: authorizedForumId,
+          createdItem: null,
+        };
+      }
+
+      const attOutcome = await params.persistAttachments({
+        postId: savedPostId,
+        spaceId: targetSpaceId,
+        drafts: draftAttachments,
+      });
+      if (!attOutcome.success) {
+        const rollbackFailures = await rollbackCreatedEntities([
+          ...[...savedTagEntities].reverse().map((entity, idx) => ({ label: `ForumPostTag[${idx}]`, entity })),
+          { label: 'ForumQuestionPost', entity: savedQuestionEntity },
+          { label: 'ForumPost', entity: savedPostEntity },
+        ]);
+        const rollbackSuffix =
+          rollbackFailures.length > 0 ? ` (Rollback cleanup failed: ${rollbackFailures.join('; ')})` : '';
+        return {
+          success: false,
+          validationErrors: {},
+          errorMessage: attOutcome.errorMessage
+            ? `Failed to save post attachments: ${attOutcome.errorMessage} — rolled back post.${rollbackSuffix}`
+            : `Failed to save post attachments — rolled back post.${rollbackSuffix}`,
+          persistedPostId: null,
+          resolvedForumId: authorizedForumId,
+          createdItem: null,
+        };
+      }
+      persistedAttachments = attOutcome.persistedAttachments;
+    }
   } catch (err) {
+    for (const createdTag of savedTagEntities.reverse()) {
+      await createdTag.Delete?.().catch(() => false);
+    }
     if (savedQuestionEntity) {
       await savedQuestionEntity.Delete?.().catch(() => false);
     }
@@ -1608,6 +1766,9 @@ export async function PersistAskSharePost(params: PersistAskShareParams): Promis
   }
   if (savedPostId) {
     createdItem.sourcePostId = savedPostId;
+  }
+  if (persistedAttachments.length > 0) {
+    createdItem.attachments = persistedAttachments;
   }
   createdItem.forumId = authorizedForumId;
   createdItem.promotedToSpaceId = null;
@@ -1745,6 +1906,7 @@ export interface ReplyForumPostEntityLike {
   BodyMarkdown: mjBizAppsCommunityForumPostEntity['BodyMarkdown'];
   Status: mjBizAppsCommunityForumPostEntity['Status'];
   Save(): Promise<boolean>;
+  Delete?(): Promise<boolean>;
   LatestResult?: { CompleteMessage?: string | null } | null;
 }
 
@@ -1756,6 +1918,9 @@ export interface PersistDetailReplyParams {
   isOfflineDemoMode: boolean;
   postTypeIdByCode: ReadonlyMap<string, string>;
   currentUserId: string | null | undefined;
+  spaceId?: string | null;
+  draftAttachments?: ReadonlyArray<DraftCommunityAttachment>;
+  persistAttachments?: PersistAttachmentsCallback | null;
   createForumPostEntity: (() => Promise<ReplyForumPostEntityLike | null>) | null;
   reloadThreadReplies: ((rootPostId: string) => Promise<ReadonlyArray<CommunityCommonsReply>>) | null;
 }
@@ -1767,11 +1932,15 @@ export interface PersistDetailReplyResult {
   statusMessage: string | null;
   replies: ReadonlyArray<CommunityCommonsReply>;
   replyCount: number;
+  persistedReplyId?: string | null;
+  persistedAttachments?: CommunityAttachmentItem[];
 }
 
 /**
  * Persists a child `ForumPost` reply (`PostType = 'reply'`, `RootPostID`, `ParentPostID`,
  * `ReplyDepth`, `Status = 'Published'`) in live mode and reloads replies from the database.
+ * Validates and persists any staged attachments (`SpaceItem` + `ForumPostAttachment`), rolling
+ * back the reply if attachment persistence fails so attachments are never silently dropped.
  * Uses local offline fallback ONLY when `isOfflineDemoMode` is true (`!Metadata.Provider`).
  */
 export async function PersistDetailReply(params: PersistDetailReplyParams): Promise<PersistDetailReplyResult> {
@@ -1787,9 +1956,55 @@ export async function PersistDetailReply(params: PersistDetailReplyParams): Prom
     };
   }
 
+  const draftAttachments = params.draftAttachments ?? [];
+  if (draftAttachments.length > 0) {
+    const attValidation = ValidateDraftAttachmentsForSubmit(draftAttachments);
+    if (!attValidation.valid) {
+      return {
+        success: false,
+        offlineFallback: params.isOfflineDemoMode,
+        errorMessage: attValidation.errors.join(' '),
+        statusMessage: null,
+        replies: params.item.replies,
+        replyCount: params.item.replyCount,
+      };
+    }
+  }
+
   if (params.isOfflineDemoMode) {
+    const replyId = `reply-${crypto.randomUUID()}`;
+    let attachedItems: CommunityAttachmentItem[] = [];
+    if (draftAttachments.length > 0) {
+      if (params.persistAttachments) {
+        const attOutcome = await params.persistAttachments({
+          postId: replyId,
+          spaceId: params.spaceId?.trim() || params.item.spaceId,
+          drafts: draftAttachments,
+        });
+        if (!attOutcome.success) {
+          return {
+            success: false,
+            offlineFallback: true,
+            errorMessage: attOutcome.errorMessage ?? 'Failed to attach files to reply.',
+            statusMessage: null,
+            replies: params.item.replies,
+            replyCount: params.item.replyCount,
+          };
+        }
+        attachedItems = attOutcome.persistedAttachments;
+      } else {
+        attachedItems = ConvertDraftsToCommunityAttachments({
+          drafts: draftAttachments,
+          spaceId: params.spaceId?.trim() || params.item.spaceId,
+          postId: replyId,
+          authorUserId: params.currentUserId,
+          authorName: params.authorName || 'Community Member',
+        });
+      }
+    }
+
     const newReply: CommunityCommonsReply = {
-      id: `reply-${crypto.randomUUID()}`,
+      id: replyId,
       authorName: params.authorName || 'Community Member',
       authorRole: params.authorRole || 'Enterprise Member · MemberJunction',
       authorInitials: computeInitials(params.authorName || 'Community Member'),
@@ -1797,6 +2012,7 @@ export async function PersistDetailReply(params: PersistDetailReplyParams): Prom
       bodyMarkdown: trimmed,
       isAccepted: false,
       upvotes: 1,
+      ...(attachedItems.length > 0 ? { attachments: attachedItems } : {}),
     };
     const nextReplies = [...params.item.replies, newReply];
     return {
@@ -1806,6 +2022,8 @@ export async function PersistDetailReply(params: PersistDetailReplyParams): Prom
       statusMessage: 'Reply added to thread.',
       replies: nextReplies,
       replyCount: nextReplies.length,
+      persistedReplyId: replyId,
+      persistedAttachments: attachedItems,
     };
   }
 
@@ -1850,6 +2068,8 @@ export async function PersistDetailReply(params: PersistDetailReplyParams): Prom
     };
   }
 
+  let savedReplyEntity: ReplyForumPostEntityLike | null = null;
+  let persistedAttachments: CommunityAttachmentItem[] = [];
   try {
     const replyEntity = await params.createForumPostEntity();
     if (!replyEntity) {
@@ -1883,6 +2103,51 @@ export async function PersistDetailReply(params: PersistDetailReplyParams): Prom
         replyCount: params.item.replyCount,
       };
     }
+    savedReplyEntity = replyEntity;
+
+    if (draftAttachments.length > 0) {
+      const targetSpaceId = params.spaceId?.trim() || params.item.spaceId;
+      if (!params.persistAttachments || !targetSpaceId) {
+        const rollbackFailures = await rollbackCreatedEntities([
+          { label: 'ReplyForumPost', entity: savedReplyEntity },
+        ]);
+        const rollbackSuffix =
+          rollbackFailures.length > 0 ? ` (Rollback cleanup failed: ${rollbackFailures.join('; ')})` : '';
+        return {
+          success: false,
+          offlineFallback: false,
+          errorMessage:
+            `Target Space or attachment persistence provider is unavailable — rolled back reply so attachments are not dropped.${rollbackSuffix}`,
+          statusMessage: null,
+          replies: params.item.replies,
+          replyCount: params.item.replyCount,
+        };
+      }
+
+      const attOutcome = await params.persistAttachments({
+        postId: replyEntity.ID,
+        spaceId: targetSpaceId,
+        drafts: draftAttachments,
+      });
+      if (!attOutcome.success) {
+        const rollbackFailures = await rollbackCreatedEntities([
+          { label: 'ReplyForumPost', entity: savedReplyEntity },
+        ]);
+        const rollbackSuffix =
+          rollbackFailures.length > 0 ? ` (Rollback cleanup failed: ${rollbackFailures.join('; ')})` : '';
+        return {
+          success: false,
+          offlineFallback: false,
+          errorMessage: attOutcome.errorMessage
+            ? `Failed to save reply attachments: ${attOutcome.errorMessage} — rolled back reply.${rollbackSuffix}`
+            : `Failed to save reply attachments — rolled back reply.${rollbackSuffix}`,
+          statusMessage: null,
+          replies: params.item.replies,
+          replyCount: params.item.replyCount,
+        };
+      }
+      persistedAttachments = attOutcome.persistedAttachments;
+    }
 
     const reloaded = params.reloadThreadReplies
       ? await params.reloadThreadReplies(validRootPostId)
@@ -1901,8 +2166,13 @@ export async function PersistDetailReply(params: PersistDetailReplyParams): Prom
       statusMessage,
       replies: [...reloaded],
       replyCount: reloaded.length,
+      persistedReplyId: replyEntity.ID,
+      persistedAttachments,
     };
   } catch (err) {
+    if (savedReplyEntity) {
+      await savedReplyEntity.Delete?.().catch(() => false);
+    }
     return {
       success: false,
       offlineFallback: false,
