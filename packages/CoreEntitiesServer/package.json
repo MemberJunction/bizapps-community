@@ -1,7 +1,7 @@
 {
   "name": "@mj-biz-apps/community-core-entities-server",
   "type": "module",
-  "version": "0.1.0",
+  "version": "6.3.0-edge.1",
   "description": "Server drivers, registries, and CommunityEngine for BizApps Community.",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -17,16 +17,16 @@
   },
   "license": "BUSL-1.1",
   "dependencies": {
-    "@mj-biz-apps/community-core": "0.1.0",
-    "@mj-biz-apps/community-engine-base": "0.1.0",
-    "@mj-biz-apps/community-entities": "0.1.0"
+    "@mj-biz-apps/community-core": "6.3.0-edge.1",
+    "@mj-biz-apps/community-engine-base": "6.3.0-edge.1",
+    "@mj-biz-apps/community-entities": "6.3.0-edge.1"
   },
   "peerDependencies": {
     "@memberjunction/core": "^6.3.0-edge.1",
     "@memberjunction/global": "^6.3.0-edge.1",
-    "@mj-biz-apps/collaboration-core": ">=0.1.0 <1.0.0",
-    "@mj-biz-apps/collaboration-core-entities-server": ">=0.1.0 <1.0.0",
-    "@mj-biz-apps/collaboration-entities": ">=0.1.0 <1.0.0"
+    "@mj-biz-apps/collaboration-core": ">=0.1.0 <7.0.0",
+    "@mj-biz-apps/collaboration-core-entities-server": ">=0.1.0 <7.0.0",
+    "@mj-biz-apps/collaboration-entities": ">=0.1.0 <7.0.0"
   },
   "devDependencies": {
     "@memberjunction/core": "6.3.0-edge.1",

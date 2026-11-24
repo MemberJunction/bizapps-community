@@ -4,7 +4,7 @@
   "name": "mj-bizapps-community",
   "displayName": "BizApps Community",
   "description": "AI-native member discussions, self-collapsing thread syntheses, personalized digests, and reply-by-email built on BizApps Collaboration spaces — where every conversation stays in your database and enriches your organization's AI context.",
-  "version": "0.1.0",
+  "version": "6.3.0-edge.1",
   "license": "BUSL-1.1",
   "icon": "fa-solid fa-comments",
   "color": "#0D9488",
@@ -16,19 +16,19 @@
   "mjVersionRange": ">=6.3.0-edge.1 <7.0.0",
   "dependencies": {
     "mj-bizapps-common": {
-      "version": ">=5.59.0 <6.0.0",
+      "version": ">=5.59.0 <7.0.0",
       "repository": "https://github.com/MemberJunction/bizapps-common"
     },
     "mj-bizapps-tasks": {
-      "version": ">=1.5.0 <2.0.0",
+      "version": ">=1.5.0 <7.0.0",
       "repository": "https://github.com/MemberJunction/bizapps-tasks"
     },
     "mj-bizapps-collaboration": {
-      "version": ">=0.1.0 <1.0.0",
+      "version": ">=0.1.0 <7.0.0",
       "repository": "https://github.com/MemberJunction/bizapps-collaboration"
     },
     "mj-bizapps-forms": {
-      "version": ">=0.16.0 <1.0.0",
+      "version": ">=0.16.0 <7.0.0",
       "repository": "https://github.com/MemberJunction/bizapps-forms"
     }
   },
@@ -91,6 +91,17 @@
     "visibility": "public",
     "sourceDirectory": "packages"
   },
-  "categories": ["Business", "Collaboration", "Community"],
-  "tags": ["community", "forums", "discussions", "digest", "spaces", "knowledge"]
+  "categories": [
+    "Business",
+    "Collaboration",
+    "Community"
+  ],
+  "tags": [
+    "community",
+    "forums",
+    "discussions",
+    "digest",
+    "spaces",
+    "knowledge"
+  ]
 }

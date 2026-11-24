@@ -1,7 +1,7 @@
 {
   "name": "@mj-biz-apps/community-ng-widgets",
   "type": "module",
-  "version": "0.1.0",
+  "version": "6.3.0-edge.1",
   "description": "Embeddable Angular widgets and UI driver registries (BaseForumUIDriver, BasePostUIDriver, CommunitySpaceUIDriver) for BizApps Community.",
   "main": "dist/public-api.js",
   "types": "dist/public-api.d.ts",
@@ -18,9 +18,9 @@
     "test": "node --experimental-strip-types --test src/ui-drivers.test.ts"
   },
   "dependencies": {
-    "@mj-biz-apps/community-core": "0.1.0",
-    "@mj-biz-apps/community-engine-base": "0.1.0",
-    "@mj-biz-apps/community-entities": "0.1.0"
+    "@mj-biz-apps/community-core": "6.3.0-edge.1",
+    "@mj-biz-apps/community-engine-base": "6.3.0-edge.1",
+    "@mj-biz-apps/community-entities": "6.3.0-edge.1"
   },
   "peerDependencies": {
     "@angular/common": "^21.2.22",
@@ -28,7 +28,7 @@
     "@angular/forms": "^21.2.22",
     "@memberjunction/core": "^6.3.0-edge.1",
     "@memberjunction/global": "^6.3.0-edge.1",
-    "@mj-biz-apps/collaboration-ng-widgets": ">=0.1.0 <1.0.0"
+    "@mj-biz-apps/collaboration-ng-widgets": ">=0.1.0 <7.0.0"
   },
   "devDependencies": {
     "@memberjunction/core": "6.3.0-edge.1",
