@@ -1,7 +1,7 @@
 {
   "name": "@mj-biz-apps/community-ng",
   "type": "module",
-  "version": "0.1.0",
+  "version": "6.3.0-edge.1",
   "description": "BizApps Community Explorer UI surface and client bootstrap.",
   "main": "dist/public-api.js",
   "types": "dist/public-api.d.ts",
@@ -18,10 +18,10 @@
     "test": "node --experimental-strip-types --test src/client-bootstrap.test.ts src/architecture-parity.test.ts src/ideation-persistence.test.ts src/commons-ux-alignment.test.ts src/workbench-ux-alignment.test.ts src/community-attachment-gallery.test.ts src/community-attachment-picker.test.ts src/__tests__/community-hub-wedge.test.ts"
   },
   "dependencies": {
-    "@mj-biz-apps/community-core": "0.1.0",
-    "@mj-biz-apps/community-engine-base": "0.1.0",
-    "@mj-biz-apps/community-entities": "0.1.0",
-    "@mj-biz-apps/community-ng-widgets": "0.1.0"
+    "@mj-biz-apps/community-core": "6.3.0-edge.1",
+    "@mj-biz-apps/community-engine-base": "6.3.0-edge.1",
+    "@mj-biz-apps/community-entities": "6.3.0-edge.1",
+    "@mj-biz-apps/community-ng-widgets": "6.3.0-edge.1"
   },
   "peerDependencies": {
     "@angular/common": "^21.2.22",
@@ -38,7 +38,7 @@
     "@memberjunction/ng-link-directives": "^6.3.0-edge.1",
     "@memberjunction/ng-shared": "^6.3.0-edge.1",
     "@memberjunction/ng-ui-components": "^6.3.0-edge.1",
-    "@mj-biz-apps/collaboration-ng-widgets": ">=0.1.0 <1.0.0"
+    "@mj-biz-apps/collaboration-ng-widgets": ">=0.1.0 <7.0.0"
   },
   "devDependencies": {
     "@angular/compiler": "21.2.22",

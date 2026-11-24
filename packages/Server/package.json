@@ -1,7 +1,7 @@
 {
   "name": "@mj-biz-apps/community-server",
   "type": "module",
-  "version": "0.1.0",
+  "version": "6.3.0-edge.1",
   "description": "BizApps Community server bootstrap, public edge resolvers, thread-to-space graduation service, and custom DocumentBlocks.",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -17,11 +17,11 @@
   },
   "license": "BUSL-1.1",
   "dependencies": {
-    "@mj-biz-apps/community-actions": "0.1.0",
-    "@mj-biz-apps/community-core": "0.1.0",
-    "@mj-biz-apps/community-core-entities-server": "0.1.0",
-    "@mj-biz-apps/community-engine-base": "0.1.0",
-    "@mj-biz-apps/community-entities": "0.1.0",
+    "@mj-biz-apps/community-actions": "6.3.0-edge.1",
+    "@mj-biz-apps/community-core": "6.3.0-edge.1",
+    "@mj-biz-apps/community-core-entities-server": "6.3.0-edge.1",
+    "@mj-biz-apps/community-engine-base": "6.3.0-edge.1",
+    "@mj-biz-apps/community-entities": "6.3.0-edge.1",
     "class-validator": "^0.14.3"
   },
   "peerDependencies": {
@@ -29,12 +29,12 @@
     "@memberjunction/core-entities": "^6.3.0-edge.1",
     "@memberjunction/global": "^6.3.0-edge.1",
     "@memberjunction/server": "^6.3.0-edge.1",
-    "@mj-biz-apps/collaboration-core": ">=0.1.0 <1.0.0",
-    "@mj-biz-apps/collaboration-core-entities-server": ">=0.1.0 <1.0.0",
-    "@mj-biz-apps/collaboration-entities": ">=0.1.0 <1.0.0",
-    "@mj-biz-apps/common-entities": ">=5.59.0 <6.0.0",
-    "@mj-biz-apps/forms-entities": ">=0.16.0 <1.0.0",
-    "@mj-biz-apps/tasks-entities": ">=1.5.0 <2.0.0"
+    "@mj-biz-apps/collaboration-core": ">=0.1.0 <7.0.0",
+    "@mj-biz-apps/collaboration-core-entities-server": ">=0.1.0 <7.0.0",
+    "@mj-biz-apps/collaboration-entities": ">=0.1.0 <7.0.0",
+    "@mj-biz-apps/common-entities": ">=5.59.0 <7.0.0",
+    "@mj-biz-apps/forms-entities": ">=0.16.0 <7.0.0",
+    "@mj-biz-apps/tasks-entities": ">=1.5.0 <7.0.0"
   },
   "devDependencies": {
     "@memberjunction/core": "6.3.0-edge.1",

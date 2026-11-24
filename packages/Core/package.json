@@ -1,7 +1,7 @@
 {
   "name": "@mj-biz-apps/community-core",
   "type": "module",
-  "version": "0.1.0",
+  "version": "6.3.0-edge.1",
   "description": "Pure domain rules for BizApps Community: forum reach, band ceiling, quadratic & point-wallet ideation math, thread synthesis triggers, and anonymous read redaction.",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",

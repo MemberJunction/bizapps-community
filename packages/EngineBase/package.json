@@ -1,7 +1,7 @@
 {
   "name": "@mj-biz-apps/community-engine-base",
   "type": "module",
-  "version": "0.1.0",
+  "version": "6.3.0-edge.1",
   "description": "Browser-safe community engine base for BizApps Community — metadata caches (forum types, post types, forum role types, application settings), 4-tier configuration cascade resolution, and typed lookups shared by widgets, host, and server.",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -18,8 +18,8 @@
   "author": "MemberJunction.com",
   "license": "BUSL-1.1",
   "dependencies": {
-    "@mj-biz-apps/community-core": "0.1.0",
-    "@mj-biz-apps/community-entities": "0.1.0"
+    "@mj-biz-apps/community-core": "6.3.0-edge.1",
+    "@mj-biz-apps/community-entities": "6.3.0-edge.1"
   },
   "peerDependencies": {
     "@memberjunction/core": "^6.3.0-edge.1",

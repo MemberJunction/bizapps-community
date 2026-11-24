@@ -1,7 +1,7 @@
 {
   "name": "@mj-biz-apps/community-actions",
   "type": "module",
-  "version": "0.1.0",
+  "version": "6.3.0-edge.1",
   "description": "Action contracts and subclasses for BizApps Community (Ask-First deflection, Living Thread Synthesis, Epistemic Answer Grading, and Thread-to-Space Graduation).",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -17,9 +17,9 @@
   },
   "license": "BUSL-1.1",
   "dependencies": {
-    "@mj-biz-apps/community-core": "0.1.0",
-    "@mj-biz-apps/community-engine-base": "0.1.0",
-    "@mj-biz-apps/community-entities": "0.1.0",
+    "@mj-biz-apps/community-core": "6.3.0-edge.1",
+    "@mj-biz-apps/community-engine-base": "6.3.0-edge.1",
+    "@mj-biz-apps/community-entities": "6.3.0-edge.1",
     "pdfkit": "^0.17.2"
   },
   "peerDependencies": {
