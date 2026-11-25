@@ -1,0 +1,303 @@
+[
+  {
+    "fields": {
+      "Name": "Community Hub: Forums, Q&A & AMA Sessions",
+      "TourKey": "community.hub-forums",
+      "Description": "Explore Community Hub topic forums, live AMA threads, accepted Q&A answers, AI thread synthesis, and personalized digests.",
+      "ApplicationID": "@lookup:MJ: Applications.Name=Community",
+      "RunInAuthenticatedHosts": true,
+      "Status": "Draft",
+      "EstimatedMinutes": 2,
+      "Priority": 85,
+      "DefaultGuideMode": "Visual",
+      "AllowAgentActions": false,
+      "Goal": {
+        "Type": "Navigation",
+        "AppName": "Community",
+        "Description": "User learns CommunityHubResource: navigating spaces and topic forums, joining AMA sessions, verifying Q&A answers, and synthesizing threads."
+      },
+      "StartLocation": {
+        "Application": "Community",
+        "DriverClass": "CommunityHubResource"
+      }
+    },
+    "primaryKey": {
+      "ID": "D6A5EEF3-C11E-44F3-B198-1B9DA5EA2BA3"
+    },
+    "relatedEntities": {
+      "MJ: Tour Steps": [
+        {
+          "fields": {
+            "TourID": "@parent:ID",
+            "StepKey": "community-hub-welcome",
+            "Sequence": 1,
+            "StepTypeID": "@lookup:MJ: Tour Step Types.Name=Modal",
+            "Title": "Welcome to Community Hub",
+            "Body": "**Community Hub** unifies member discussions, live AMA threads, Q&A canon answers, ideation campaigns, and collaborative playbooks inside your Collaboration spaces.",
+            "Configuration": {
+              "Variant": "welcome",
+              "PrimaryButtonText": "Explore Community Hub",
+              "ShowProgress": true
+            },
+            "Placement": "Center",
+            "Mode": "Show",
+            "Completion": {
+              "Type": "NextButton"
+            },
+            "OnMissing": "Center",
+            "IsOptional": false
+          },
+          "primaryKey": {
+            "ID": "F5A64E30-B30D-4021-B2AD-2D0228BBD89B"
+          }
+        },
+        {
+          "fields": {
+            "TourID": "@parent:ID",
+            "StepKey": "community-hub-forums",
+            "Sequence": 2,
+            "StepTypeID": "@lookup:MJ: Tour Step Types.Name=Spotlight",
+            "Title": "Topic Forums, Feed & Live AMA Sessions",
+            "Body": "Switch between **Feed**, **Q&A**, **Ideas**, **Playbooks**, and **Library**. Filter threads by space or topic tag, RSVP to live AMA sessions, and customize **My Digest** cadence.",
+            "Configuration": {
+              "ShowProgress": true
+            },
+            "Anchor": {
+              "Strategy": "Registered",
+              "Key": "community.hub.tabs"
+            },
+            "Placement": "Bottom",
+            "Mode": "Guide",
+            "Completion": {
+              "Type": "NextButton"
+            },
+            "OnMissing": "Center",
+            "IsOptional": false
+          },
+          "primaryKey": {
+            "ID": "0E9F8A43-BD93-41B2-80FC-388DDDC0D553"
+          }
+        },
+        {
+          "fields": {
+            "TourID": "@parent:ID",
+            "StepKey": "community-hub-qa",
+            "Sequence": 3,
+            "StepTypeID": "@lookup:MJ: Tour Step Types.Name=Spotlight",
+            "Title": "Q&A Canon & Accepted Answers",
+            "Body": "Use **Ask a Question** to post with instant deflection against existing verified answers, run AI confidence grading, and promote accepted answers into the reusable Q&A canon.",
+            "Configuration": {
+              "ShowProgress": true
+            },
+            "Anchor": {
+              "Strategy": "Registered",
+              "Key": "community.qa.ask-question"
+            },
+            "Placement": "Bottom",
+            "Mode": "Guide",
+            "Completion": {
+              "Type": "NextButton"
+            },
+            "OnMissing": "Center",
+            "IsOptional": false
+          },
+          "primaryKey": {
+            "ID": "64A75971-4E99-4F60-ABD3-993B5C759143"
+          }
+        },
+        {
+          "fields": {
+            "TourID": "@parent:ID",
+            "StepKey": "community-hub-summary",
+            "Sequence": 4,
+            "StepTypeID": "@lookup:MJ: Tour Step Types.Name=Modal",
+            "Title": "AI Thread Synthesis & Working Groups",
+            "Body": "Generate structured **AI Summaries** on long threads or graduate active discussions into Collaboration working spaces — next, explore idea campaigns, vote budgets, and moderation.",
+            "Configuration": {
+              "Variant": "summary",
+              "PrimaryButtonText": "Finish",
+              "NextTourKey": "community.ideas-moderation",
+              "ShowProgress": true
+            },
+            "Placement": "Center",
+            "Mode": "Show",
+            "Completion": {
+              "Type": "NextButton"
+            },
+            "OnMissing": "Center",
+            "IsOptional": false
+          },
+          "primaryKey": {
+            "ID": "0BC4D1C3-2381-41BE-9AFB-9F14E2FCA805"
+          }
+        }
+      ],
+      "MJ: Tour Triggers": [
+        {
+          "fields": {
+            "TourID": "@parent:ID",
+            "TriggerType": "FirstVisit",
+            "Configuration": {
+              "Application": "Community"
+            },
+            "Delivery": "Offer",
+            "CooldownDays": 30,
+            "Priority": 85,
+            "Status": "Active"
+          },
+          "primaryKey": {
+            "ID": "4703B0B1-8C4F-4EBF-A546-DC7D5BA29C28"
+          }
+        }
+      ]
+    }
+  },
+  {
+    "fields": {
+      "Name": "Idea Campaigns, Vote Allocations & Moderation",
+      "TourKey": "community.ideas-moderation",
+      "Description": "Allocate member point budgets across idea campaigns, track status roadmaps, and govern posting policies and moderation queues.",
+      "ApplicationID": "@lookup:MJ: Applications.Name=Community",
+      "RunInAuthenticatedHosts": true,
+      "Status": "Draft",
+      "EstimatedMinutes": 2,
+      "Priority": 80,
+      "DefaultGuideMode": "Visual",
+      "AllowAgentActions": false,
+      "Goal": {
+        "Type": "Navigation",
+        "AppName": "Community",
+        "Description": "User learns idea campaign wallets, quadratic vote allocations, roadmap statuses, and forum moderation workflows."
+      },
+      "StartLocation": {
+        "Application": "Community",
+        "DriverClass": "CommunityHubResource"
+      }
+    },
+    "primaryKey": {
+      "ID": "7D86826C-2F86-457A-B1EF-3ADD3118C2EB"
+    },
+    "relatedEntities": {
+      "MJ: Tour Steps": [
+        {
+          "fields": {
+            "TourID": "@parent:ID",
+            "StepKey": "community-ideas-welcome",
+            "Sequence": 1,
+            "StepTypeID": "@lookup:MJ: Tour Step Types.Name=Modal",
+            "Title": "Idea Campaigns & Community Governance",
+            "Body": "Structured **Ideas** campaigns let members propose initiatives, allocate finite point budgets with quadratic or linear weighting, and move approved proposals onto your roadmap.",
+            "Configuration": {
+              "Variant": "welcome",
+              "PrimaryButtonText": "Explore Ideas & Moderation",
+              "ShowProgress": true
+            },
+            "Placement": "Center",
+            "Mode": "Show",
+            "Completion": {
+              "Type": "NextButton"
+            },
+            "OnMissing": "Center",
+            "IsOptional": false
+          },
+          "primaryKey": {
+            "ID": "A29E406F-C6C1-43AE-9AA3-CE9C6F88B8A9"
+          }
+        },
+        {
+          "fields": {
+            "TourID": "@parent:ID",
+            "StepKey": "community-ideas-wallet",
+            "Sequence": 2,
+            "StepTypeID": "@lookup:MJ: Tour Step Types.Name=Spotlight",
+            "Title": "Member Idea Budgets & Weighted Support",
+            "Body": "Select an active campaign to view your remaining point budget, propose a new idea, or use quick presets and the **Quadratic Voting** slider to balance conviction across priorities.",
+            "Configuration": {
+              "ShowProgress": true
+            },
+            "Anchor": {
+              "Strategy": "Registered",
+              "Key": "community.ideas.wallet-hero"
+            },
+            "Placement": "Bottom",
+            "Mode": "Guide",
+            "Completion": {
+              "Type": "NextButton"
+            },
+            "OnMissing": "Center",
+            "IsOptional": false
+          },
+          "primaryKey": {
+            "ID": "BD01EEE6-3321-44B2-AE7F-62A16DF81802"
+          }
+        },
+        {
+          "fields": {
+            "TourID": "@parent:ID",
+            "StepKey": "community-ideas-moderation",
+            "Sequence": 3,
+            "StepTypeID": "@lookup:MJ: Tour Step Types.Name=Spotlight",
+            "Title": "Status Roadmaps & Moderation Queues",
+            "Body": "Forum posting policies and moderation queues ensure new posts, replies, and idea proposals respect space permissions and review status transitions before appearing on the public roadmap.",
+            "Configuration": {
+              "ShowProgress": true
+            },
+            "Anchor": {
+              "Strategy": "Registered",
+              "Key": "community.hub.new-post"
+            },
+            "Placement": "Bottom",
+            "Mode": "Guide",
+            "Completion": {
+              "Type": "NextButton"
+            },
+            "OnMissing": "Center",
+            "IsOptional": false
+          },
+          "primaryKey": {
+            "ID": "E11C849F-7A1E-410C-AAB1-DEB799C5FC73"
+          }
+        },
+        {
+          "fields": {
+            "TourID": "@parent:ID",
+            "StepKey": "community-ideas-summary",
+            "Sequence": 4,
+            "StepTypeID": "@lookup:MJ: Tour Step Types.Name=Modal",
+            "Title": "From Ideas to Living Playbooks",
+            "Body": "Turn top-backed ideas and moderated discussions into shared **Playbooks** and personalized email digests with reply-by-email continuity.",
+            "Configuration": {
+              "Variant": "summary",
+              "PrimaryButtonText": "Finish",
+              "ShowProgress": true
+            },
+            "Placement": "Center",
+            "Mode": "Show",
+            "Completion": {
+              "Type": "NextButton"
+            },
+            "OnMissing": "Center",
+            "IsOptional": false
+          },
+          "primaryKey": {
+            "ID": "30956C9D-042E-491F-AB79-5949C80D0A9D"
+          }
+        }
+      ],
+      "MJ: Tour Prerequisites": [
+        {
+          "fields": {
+            "TourID": "@parent:ID",
+            "PrerequisiteType": "Tour",
+            "RequiredTourID": "@lookup:MJ: Tours.TourKey=community.hub-forums",
+            "Strength": "Recommended",
+            "Sequence": 1
+          },
+          "primaryKey": {
+            "ID": "CA319DB5-6965-4FF6-A12B-82A299778C06"
+          }
+        }
+      ]
+    }
+  }
+]

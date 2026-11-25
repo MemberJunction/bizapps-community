@@ -34,7 +34,7 @@
           }
 
           @if (ShowTabBar) {
-            <nav class="mjc-community-hub__tabs" role="tablist" aria-label="Community Hub">
+            <nav class="mjc-community-hub__tabs" role="tablist" aria-label="Community Hub" data-mj-tour-anchor="community.hub.tabs">
             @for (tab of tabs; track tab.key) {
               <button
                 #tabButton
@@ -111,6 +111,7 @@
               type="button"
               id="mjc-header-ask-share-btn"
               class="mjc-community-hub__btn mjc-community-hub__btn--primary"
+              data-mj-tour-anchor="community.hub.new-post"
               (click)="openAskShareModal()"
             >
               <span>+ New Post</span>
@@ -719,7 +720,7 @@
               [attr.aria-labelledby]="'mjc-hub-tab-quadratic-ideation-wallet'"
             >
               <!-- IDEAS & VOTING HERO SUMMARY BANNER -->
-              <div class="mjc-wallet-hero">
+              <div class="mjc-wallet-hero" data-mj-tour-anchor="community.ideas.wallet-hero">
                 <div class="mjc-wallet-hero__lead">
                   <span class="mjc-wallet-hero__kicker">
                     Ideas &amp; Community Voting · {{ activeCampaign.allocationMode === 'Quadratic' ? 'Weighted Voting' : 'Points Voting' }}

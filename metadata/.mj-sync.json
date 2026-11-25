@@ -15,7 +15,10 @@
     "entity-permissions",
     "entities",
     "prompts",
-    "actions"
+    "actions",
+    "tours",
+    "learning-paths",
+    "tour-publications"
   ],
   "emitSyncNotes": false,
   "sqlLogging": {
