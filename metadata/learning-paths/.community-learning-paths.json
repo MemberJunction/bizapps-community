@@ -1,0 +1,44 @@
+[
+  {
+    "fields": {
+      "Name": "Community Engagement & Moderation",
+      "PathKey": "community.essentials",
+      "Description": "Master Community Hub spaces, Q&A canon promotion, AMA sessions, weighted idea voting budgets, and moderation workflows.",
+      "ApplicationID": "@lookup:MJ: Applications.Name=Community",
+      "Status": "Active",
+      "Configuration": {
+        "AllowSkipOptional": true,
+        "ShowNextConcreteStep": true
+      }
+    },
+    "primaryKey": {
+      "ID": "906DD754-C69E-4244-B1CC-36EB79012BDB"
+    },
+    "relatedEntities": {
+      "MJ: Learning Path Tours": [
+        {
+          "fields": {
+            "LearningPathID": "@parent:ID",
+            "TourID": "@lookup:MJ: Tours.TourKey=community.hub-forums",
+            "Sequence": 1,
+            "IsRequired": true
+          },
+          "primaryKey": {
+            "ID": "C84580FF-EAD8-42CC-9821-A7EC28DD3237"
+          }
+        },
+        {
+          "fields": {
+            "LearningPathID": "@parent:ID",
+            "TourID": "@lookup:MJ: Tours.TourKey=community.ideas-moderation",
+            "Sequence": 2,
+            "IsRequired": true
+          },
+          "primaryKey": {
+            "ID": "CC2FE3BC-A3F3-4420-8950-E22E2ED6F73C"
+          }
+        }
+      ]
+    }
+  }
+]
