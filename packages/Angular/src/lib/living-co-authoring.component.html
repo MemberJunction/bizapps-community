@@ -135,7 +135,7 @@
             </div>
             <span class="mjc-living-list-item__title">{{ doc.title }}</span>
             <span class="mjc-living-list-item__excerpt">
-              {{ doc.bodyMarkdown ? (doc.bodyMarkdown.length > 92 ? doc.bodyMarkdown.slice(0, 92) + '...' : doc.bodyMarkdown) : 'Open artifact workspace.' }}
+              {{ plainExcerpt(doc.bodyMarkdown) }}
             </span>
           </button>
         }
@@ -157,12 +157,31 @@
               </span>
               <h3 class="mjc-living-card__title">{{ doc.title }}</h3>
             </div>
+            @if (hasArtifactBinding(doc)) {
+              <button
+                type="button"
+                id="mjc-living-open-artifact-drawer-btn"
+                class="mjc-living-btn"
+                (click)="onOpenArtifactDrawer(doc)"
+              >
+                <i class="fa-solid fa-up-right-and-down-left-from-center" aria-hidden="true"></i>
+                <span>Open Viewer Drawer</span>
+              </button>
+            }
           </div>
 
           @switch (doc.postTypeCode) {
             @case ('collaborative-doc') {
+              @if (hasArtifactBinding(doc)) {
+                <mjc-community-artifact-viewer
+                  mode="inline"
+                  [request]="buildArtifactRequest(doc)"
+                  [preloadedMetadata]="doc.artifactMetadata ?? null"
+                  [currentUser]="currentUser"
+                ></mjc-community-artifact-viewer>
+              }
               <div class="mjc-living-field">
-                <label for="mjc-living-doc-editor" class="mjc-living-label">Co-Authoring Markdown</label>
+                <label for="mjc-living-doc-editor" class="mjc-living-label">Co-Authoring Notes &amp; Revision Summary</label>
                 <textarea
                   id="mjc-living-doc-editor"
                   name="editingDocMarkdown"
@@ -247,7 +266,27 @@
                 <p class="mjc-community-hub__status" role="status">{{ formSubmittedMessage }}</p>
               }
             }
+            @case ('collaborative-deck') {
+              @if (hasArtifactBinding(doc)) {
+                <mjc-community-artifact-viewer
+                  mode="inline"
+                  [request]="buildArtifactRequest(doc)"
+                  [preloadedMetadata]="doc.artifactMetadata ?? null"
+                  [currentUser]="currentUser"
+                ></mjc-community-artifact-viewer>
+              } @else {
+                <p class="mjc-living-card__body">{{ plainExcerpt(doc.bodyMarkdown, 600) }}</p>
+              }
+            }
             @case ('interactive-experience') {
+              @if (hasArtifactBinding(doc)) {
+                <mjc-community-artifact-viewer
+                  mode="inline"
+                  [request]="buildArtifactRequest(doc)"
+                  [preloadedMetadata]="doc.artifactMetadata ?? null"
+                  [currentUser]="currentUser"
+                ></mjc-community-artifact-viewer>
+              }
               <p class="mjc-living-sandbox-note">
                 <i class="fa-solid fa-shield-halved" aria-hidden="true"></i>
                 <span>Executed inside an isolated <code>sandbox="allow-scripts"</code> frame with zero parent DOM access.</span>
@@ -268,7 +307,7 @@
               </div>
             }
             @default {
-              <p class="mjc-living-card__body">{{ doc.bodyMarkdown }}</p>
+              <p class="mjc-living-card__body">{{ plainExcerpt(doc.bodyMarkdown, 600) }}</p>
             }
           }
 

@@ -103,6 +103,7 @@ export class KnowledgeStreamComponent {
   @Output() public readonly navigateToTab = new EventEmitter<CommunityHubTabKey>();
   @Output() public readonly sessionRsvpToggled = new EventEmitter<string>();
   @Output() public readonly digestPreviewRequested = new EventEmitter<void>();
+  @Output() public readonly artifactViewerRequested = new EventEmitter<CommunityCommonsItem>();
 
   public canonLookupQuery = '';
   public showAllTopics = false;
@@ -347,5 +348,13 @@ export class KnowledgeStreamComponent {
 
   public openDigestPreview(): void {
     this.digestPreviewRequested.emit();
+  }
+
+  public hasArtifactViewerTarget(item: CommunityCommonsItem): boolean {
+    return Boolean(item.isArtifactPost || item.artifactId);
+  }
+
+  public openArtifactViewer(item: CommunityCommonsItem): void {
+    this.artifactViewerRequested.emit(item);
   }
 }

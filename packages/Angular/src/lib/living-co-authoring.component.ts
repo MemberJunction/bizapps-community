@@ -2,6 +2,7 @@ import { Component, ChangeDetectionStrategy, EventEmitter, Input, Output } from 
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import type { SafeHtml } from '@angular/platform-browser';
+import type { UserInfo } from '@memberjunction/core';
 import {
   CalculateSlaCapacitySpec,
   FilterLivingDocItems,
@@ -15,7 +16,10 @@ import {
   type SlaCapacityInput,
   type SlaCapacityResult,
 } from './community-hub-workbench.ts';
+import type { CommunityArtifactViewerRequest } from './community-artifact-viewer.ts';
+import { CommunityArtifactViewerComponent } from './community-artifact-viewer.component.ts';
 import { CommunityAttachmentGalleryComponent } from './community-attachment-gallery.component.ts';
+import { StripMarkdownToPlainText } from './community-markdown.ts';
 
 export interface LivingDocFilterOption {
   key: LivingDocFilterKey;
@@ -39,7 +43,7 @@ const LIVING_DOC_FILTERS: ReadonlyArray<LivingDocFilterOption> = [
 @Component({
   standalone: true,
   selector: 'mjc-living-co-authoring',
-  imports: [CommonModule, FormsModule, CommunityAttachmentGalleryComponent],
+  imports: [CommonModule, FormsModule, CommunityArtifactViewerComponent, CommunityAttachmentGalleryComponent],
   templateUrl: './living-co-authoring.component.html',
   styleUrl: './living-co-authoring.component.css',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -49,6 +53,7 @@ export class LivingCoAuthoringComponent {
 
   @Input() public items: ReadonlyArray<LivingDocItemInput> = [];
   @Input() public selectedDocId: string | null = null;
+  @Input() public currentUser: UserInfo | null = null;
   @Input() public editingDocMarkdown = '';
   @Input() public docActionMessage: string | null = null;
   @Input() public threadSynthesisResult: string | null = null;
@@ -63,6 +68,7 @@ export class LivingCoAuthoringComponent {
   @Output() public readonly editingDocMarkdownChange = new EventEmitter<string>();
   @Output() public readonly saveDoc = new EventEmitter<{ docId: string; markdown: string }>();
   @Output() public readonly synthesizeDoc = new EventEmitter<string>();
+  @Output() public readonly openArtifactDrawer = new EventEmitter<CommunityArtifactViewerRequest>();
   @Output() public readonly formRespondentNameChange = new EventEmitter<string>();
   @Output() public readonly formConfidenceRatingChange = new EventEmitter<string>();
   @Output() public readonly formCommentsChange = new EventEmitter<string>();
@@ -119,6 +125,35 @@ export class LivingCoAuthoringComponent {
 
   public metaFor(item: LivingDocItemInput): LivingDocTypeMeta {
     return GetLivingDocTypeMeta(item);
+  }
+
+  public plainExcerpt(markdown: string | null | undefined, maxLength = 92): string {
+    const plain = StripMarkdownToPlainText(markdown);
+    if (!plain) return 'Open artifact workspace.';
+    return plain.length > maxLength ? `${plain.slice(0, maxLength).trimEnd()}...` : plain;
+  }
+
+  public hasArtifactBinding(doc: LivingDocItemInput | null | undefined): boolean {
+    return Boolean(doc && (doc.isArtifactPost || doc.artifactId));
+  }
+
+  public buildArtifactRequest(doc: LivingDocItemInput): CommunityArtifactViewerRequest {
+    return {
+      postId: doc.id,
+      postTitle: doc.title,
+      postKind: doc.postTypeCode === 'interactive-experience' ? 'interactive-post' : 'artifact-post',
+      artifactId: doc.artifactId ?? null,
+      pinnedArtifactVersionId: doc.pinnedArtifactVersionId ?? null,
+      pinnedVersionNumber: doc.pinnedVersionNumber ?? null,
+      artifactModality: doc.artifactModality ?? null,
+      collaborationMode: doc.collaborationMode ?? null,
+      experienceKind: doc.experienceKind ?? null,
+      fallbackSummaryMarkdown: doc.bodyMarkdown,
+    };
+  }
+
+  public onOpenArtifactDrawer(doc: LivingDocItemInput): void {
+    this.openArtifactDrawer.emit(this.buildArtifactRequest(doc));
   }
 
   public setFilter(key: LivingDocFilterKey): void {
