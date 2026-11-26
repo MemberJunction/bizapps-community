@@ -1,4 +1,6 @@
 export * from './lib/client-bootstrap.ts';
+export * from './lib/community-artifact-viewer.ts';
+export * from './lib/community-artifact-viewer.component.ts';
 export * from './lib/community-attachment-demo.ts';
 export * from './lib/community-attachment-gallery.ts';
 export * from './lib/community-attachment-gallery.component.ts';

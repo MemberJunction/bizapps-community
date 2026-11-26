@@ -1,0 +1,214 @@
+@if (isVisible) {
+  @if (mode === 'drawer') {
+    <div
+      id="mjc-artifact-viewer-backdrop"
+      class="mjc-art-drawer-backdrop"
+      role="presentation"
+      (click)="onBackdropClick()"
+    >
+      <div
+        #drawerDialog
+        id="mjc-artifact-viewer-drawer"
+        class="mjc-art-drawer-panel"
+        [class.mjc-art-drawer-panel--maximized]="isMaximized"
+        role="dialog"
+        aria-modal="true"
+        [attr.aria-labelledby]="dialogTitleId"
+        [attr.data-viewer-state]="snapshot.state"
+        [attr.data-artifact-id]="request?.artifactId || ''"
+        [attr.data-pinned-version-id]="request?.pinnedArtifactVersionId || ''"
+        [attr.data-version-number]="snapshot.effectiveVersionNumber ?? ''"
+        [attr.data-post-kind]="request?.postKind || ''"
+        tabindex="-1"
+        (keydown)="onDrawerKeydown($event)"
+        (click)="$event.stopPropagation()"
+      >
+        <ng-container *ngTemplateOutlet="viewerShellTemplate" />
+      </div>
+    </div>
+  } @else {
+    <section
+      class="mjc-art-inline-shell"
+      [attr.aria-labelledby]="dialogTitleId"
+      [attr.data-viewer-state]="snapshot.state"
+      [attr.data-artifact-id]="request?.artifactId || ''"
+      [attr.data-pinned-version-id]="request?.pinnedArtifactVersionId || ''"
+      [attr.data-version-number]="snapshot.effectiveVersionNumber ?? ''"
+      [attr.data-post-kind]="request?.postKind || ''"
+    >
+      <ng-container *ngTemplateOutlet="viewerShellTemplate" />
+    </section>
+  }
+}
+
+<ng-template #viewerShellTemplate>
+  <header class="mjc-art-shell__header">
+    <div class="mjc-art-shell__identity">
+      <div class="mjc-art-shell__badges">
+        <span class="mjc-art-badge mjc-art-badge--brand">
+          <i class="fa-solid fa-layer-group" aria-hidden="true"></i>
+          <span>{{ postKindBadgeLabel }}</span>
+        </span>
+        @if (pinnedVersionBadgeLabel; as verBadge) {
+          <span class="mjc-art-badge mjc-art-badge--accent" id="mjc-artifact-viewer-version-badge">
+            <i class="fa-solid fa-thumbtack" aria-hidden="true"></i>
+            <span>{{ verBadge }}</span>
+          </span>
+        }
+        @if (request?.collaborationMode; as collabMode) {
+          <span class="mjc-art-badge">{{ collabMode }}</span>
+        }
+        @if (request?.spaceLabel; as spaceLabel) {
+          <span class="mjc-art-badge">{{ spaceLabel }}</span>
+        }
+      </div>
+      <h2 [id]="dialogTitleId" class="mjc-art-shell__title">{{ displayTitle }}</h2>
+    </div>
+
+    <div class="mjc-art-shell__controls">
+      @if (mode === 'drawer') {
+        <button
+          type="button"
+          id="mjc-artifact-viewer-maximize-btn"
+          class="mjc-art-icon-btn"
+          [attr.aria-label]="isMaximized ? 'Restore artifact drawer width' : 'Maximize artifact drawer'"
+          [attr.aria-pressed]="isMaximized"
+          (click)="toggleMaximized()"
+        >
+          <i
+            [class]="isMaximized ? 'fa-solid fa-compress' : 'fa-solid fa-expand'"
+            aria-hidden="true"
+          ></i>
+        </button>
+        <button
+          type="button"
+          id="mjc-artifact-viewer-close-btn"
+          class="mjc-art-icon-btn"
+          aria-label="Close artifact viewer"
+          (click)="close()"
+        >
+          <i class="fa-solid fa-xmark" aria-hidden="true"></i>
+        </button>
+      }
+    </div>
+  </header>
+
+  <div class="mjc-art-shell__body">
+    @switch (snapshot.state) {
+      @case ('loading') {
+        <div class="mjc-art-status-panel" role="status" aria-live="polite">
+          <i class="fa-solid fa-spinner fa-spin mjc-art-status-panel__icon" aria-hidden="true"></i>
+          <div class="mjc-art-status-panel__copy">
+            <strong>Loading MJ Artifact…</strong>
+            <span>Resolving artifact metadata and pinned version snapshot.</span>
+          </div>
+        </div>
+      }
+
+      @case ('ready') {
+        @if (canRenderLivePanel && effectiveCurrentUser && snapshot.resolved; as resolved) {
+          <div class="mjc-art-panel-host">
+            <mj-artifact-viewer-panel
+              [artifactId]="resolved.artifactId"
+              [VersionNumber]="snapshot.effectiveVersionNumber"
+              [CurrentUser]="effectiveCurrentUser"
+              [EnvironmentId]="environmentId"
+              [ShowHeader]="showPanelHeader"
+              [ShowTabs]="showPanelTabs"
+              [ShowCloseButton]="false"
+              [ShowMaximizeButton]="false"
+              [ShowSaveToCollection]="showSaveToCollection"
+              [CanEdit]="canEditArtifact"
+              [ViewMode]="viewerViewMode"
+              [IsMaximized]="isMaximized"
+              (Closed)="close()"
+              (VersionSaved)="onPanelVersionSaved($event)"
+            ></mj-artifact-viewer-panel>
+          </div>
+        } @else if (snapshot.resolved; as offlineArt) {
+          <div class="mjc-art-offline-preview" role="region" aria-label="Artifact summary preview">
+            <div class="mjc-art-offline-preview__meta">
+              <span class="mjc-art-badge mjc-art-badge--brand">{{ offlineArt.artifactTypeName }}</span>
+              @if (offlineArt.pinnedVersionNumber !== null) {
+                <span class="mjc-art-badge mjc-art-badge--accent">Version {{ offlineArt.pinnedVersionNumber }}</span>
+              }
+              <code class="mjc-art-id-pill">{{ offlineArt.artifactId }}</code>
+            </div>
+            @if (offlineArt.previewPlainExcerpt) {
+              <p class="mjc-art-offline-preview__summary">{{ offlineArt.previewPlainExcerpt }}</p>
+            } @else {
+              <p class="mjc-art-offline-preview__summary">
+                Connected MJ Explorer sessions render the full interactive artifact viewer panel for this record.
+              </p>
+            }
+          </div>
+        }
+      }
+
+      @case ('missing') {
+        @if (snapshot.fallback; as fb) {
+          <div
+            id="mjc-artifact-viewer-fallback"
+            class="mjc-art-fallback"
+            role="status"
+            aria-live="polite"
+            [attr.data-fallback-reason]="fb.reason"
+          >
+            <div class="mjc-art-fallback__head">
+              <span class="mjc-art-fallback__icon" aria-hidden="true">
+                <i class="fa-solid fa-triangle-exclamation"></i>
+              </span>
+              <div>
+                <h3 class="mjc-art-fallback__title">{{ fb.headline }}</h3>
+                <p class="mjc-art-fallback__desc">{{ fb.explanation }}</p>
+              </div>
+            </div>
+            @if (fb.plainSummary) {
+              <p class="mjc-art-fallback__summary">{{ fb.plainSummary }}</p>
+            }
+            @if (fb.artifactIdLabel || fb.pinnedVersionIdLabel) {
+              <dl class="mjc-art-fallback__meta">
+                @if (fb.artifactIdLabel) {
+                  <div class="mjc-art-fallback__meta-row">
+                    <dt>Artifact ID</dt>
+                    <dd><code>{{ fb.artifactIdLabel }}</code></dd>
+                  </div>
+                }
+                @if (fb.pinnedVersionIdLabel) {
+                  <div class="mjc-art-fallback__meta-row">
+                    <dt>Pinned Version ID</dt>
+                    <dd><code>{{ fb.pinnedVersionIdLabel }}</code></dd>
+                  </div>
+                }
+              </dl>
+            }
+          </div>
+        }
+      }
+
+      @case ('error') {
+        @if (snapshot.fallback; as errFb) {
+          <div
+            id="mjc-artifact-viewer-error"
+            class="mjc-art-fallback mjc-art-fallback--error"
+            role="alert"
+            [attr.data-fallback-reason]="errFb.reason"
+          >
+            <div class="mjc-art-fallback__head">
+              <span class="mjc-art-fallback__icon mjc-art-fallback__icon--error" aria-hidden="true">
+                <i class="fa-solid fa-circle-exclamation"></i>
+              </span>
+              <div>
+                <h3 class="mjc-art-fallback__title">{{ errFb.headline }}</h3>
+                <p class="mjc-art-fallback__desc">{{ errFb.explanation }}</p>
+              </div>
+            </div>
+            @if (errFb.plainSummary) {
+              <p class="mjc-art-fallback__summary">{{ errFb.plainSummary }}</p>
+            }
+          </div>
+        }
+      }
+    }
+  </div>
+</ng-template>
