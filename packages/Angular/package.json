@@ -15,7 +15,7 @@
   "license": "BUSL-1.1",
   "scripts": {
     "build": "node ./scripts/run-ngc.mjs",
-    "test": "node --experimental-strip-types --test src/client-bootstrap.test.ts src/architecture-parity.test.ts src/ideation-persistence.test.ts src/commons-ux-alignment.test.ts src/workbench-ux-alignment.test.ts src/community-attachment-gallery.test.ts src/community-attachment-picker.test.ts src/__tests__/community-hub-wedge.test.ts src/__tests__/forum-artifact-viewer.component.spec.ts src/__tests__/design-tokens-and-openapp-parity.spec.ts"
+    "test": "node --experimental-strip-types --test src/client-bootstrap.test.ts src/architecture-parity.test.ts src/ideation-persistence.test.ts src/commons-ux-alignment.test.ts src/workbench-ux-alignment.test.ts src/community-attachment-gallery.test.ts src/community-attachment-picker.test.ts src/__tests__/community-hub-wedge.test.ts src/__tests__/forum-artifact-viewer.component.spec.ts src/__tests__/design-tokens-and-openapp-parity.spec.ts src/__tests__/docs-rubric-contract.spec.ts"
   },
   "dependencies": {
     "@mj-biz-apps/community-core": "6.3.0-edge.1",
