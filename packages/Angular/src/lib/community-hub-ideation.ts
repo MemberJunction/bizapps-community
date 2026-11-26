@@ -2,6 +2,8 @@ import {
   CompositeKey,
   Metadata,
   RunView,
+  type RunViewParams,
+  type RunViewResult,
   type TransactionGroupBase,
   type UserInfo,
 } from '@memberjunction/core';
@@ -122,6 +124,92 @@ export async function LoadAllPaginatedRows<TRow>(params: {
   return { success: true, rows };
 }
 
+export interface PaginatedBatchQuerySpec {
+  entityName: string;
+  extraFilter: string;
+  fields?: string[];
+  orderBy?: string;
+  pageSize?: number;
+}
+
+/**
+ * Executes multiple independent paginated `RunView` queries in batched `rv.RunViews([...])`
+ * round-trips (one `RunViews` call per page wave rather than N parallel `RunView` calls).
+ * Fails CLOSED per query (`success: false`) if any page fails.
+ */
+export async function LoadAllPaginatedBatches<TRow extends object>(params: {
+  runView: RunView;
+  queries: ReadonlyArray<PaginatedBatchQuerySpec>;
+  user: UserInfo;
+}): Promise<Array<PaginatedLoadResult<TRow>>> {
+  const count = params.queries.length;
+  if (count === 0) {
+    return [];
+  }
+
+  const states = params.queries.map((q) => ({
+    query: q,
+    pageSize: q.pageSize ?? DEFAULT_PAGE_SIZE,
+    startRow: 0,
+    rows: [] as TRow[],
+    done: false,
+    failed: false,
+    errorMessage: undefined as string | undefined,
+  }));
+
+  while (true) {
+    const activeIndices: number[] = [];
+    const batchParams: RunViewParams[] = [];
+
+    for (let i = 0; i < states.length; i += 1) {
+      const s = states[i];
+      if (s.done) continue;
+      activeIndices.push(i);
+      batchParams.push({
+        EntityName: s.query.entityName,
+        ExtraFilter: s.query.extraFilter,
+        ...(s.query.fields && s.query.fields.length > 0 ? { Fields: s.query.fields } : {}),
+        ...(s.query.orderBy ? { OrderBy: s.query.orderBy } : {}),
+        ResultType: 'simple',
+        StartRow: s.startRow,
+        MaxRows: s.pageSize,
+      });
+    }
+
+    if (activeIndices.length === 0) {
+      break;
+    }
+
+    const results: RunViewResult<TRow>[] = await params.runView.RunViews<TRow>(batchParams, params.user);
+
+    for (let b = 0; b < activeIndices.length; b += 1) {
+      const idx = activeIndices[b];
+      const s = states[idx];
+      const res = results?.[b];
+      if (!res?.Success) {
+        s.done = true;
+        s.failed = true;
+        s.rows = [];
+        s.errorMessage = res?.ErrorMessage || `Failed loading ${s.query.entityName} (StartRow=${s.startRow}).`;
+        continue;
+      }
+      const batch = res.Results ?? [];
+      s.rows.push(...batch);
+      if (batch.length < s.pageSize) {
+        s.done = true;
+      } else {
+        s.startRow += batch.length;
+      }
+    }
+  }
+
+  return states.map((s) =>
+    s.failed
+      ? { success: false, rows: [], errorMessage: s.errorMessage }
+      : { success: true, rows: s.rows },
+  );
+}
+
 /** Serializes, fails closed on aggregate read errors, and rolls back the allocation row if either
  * loading authoritative allocations or persisting the `ForumIdeaPost` aggregate fails (`CR-21`). */
 export function PersistIdeaAllocationAtomic(params: {
@@ -168,7 +256,7 @@ async function executePersistIdeaAllocationAtomic(params: {
   AssertValidUUID(params.user.ID, 'user.ID');
 
   const md = new Metadata();
-  const rv = new RunView();
+  const rv = Metadata.Provider ? RunView.FromMetadataProvider(Metadata.Provider) : new RunView();
 
   // 1. Read existing user allocation so we know exact prior values for rollback if needed
   const existingResult = await rv.RunView<IdeaAllocationAggregateRow>(

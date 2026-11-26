@@ -145,6 +145,40 @@ export async function loadRows<T>(
   return { success: true, rows: res.Results ?? [] };
 }
 
+export interface BatchRowQuery {
+  entityName: string;
+  extraFilter: string;
+  fields?: string[];
+  maxRows?: number;
+  orderBy?: string;
+}
+
+export async function loadBatchRows<T>(
+  entity: BaseEntity,
+  queries: ReadonlyArray<BatchRowQuery>,
+): Promise<Array<{ success: boolean; rows: T[]; errorMessage?: string }>> {
+  if (queries.length === 0) return [];
+  const rv = new RunView(entity.RunViewProviderToUse);
+  const results = await rv.RunViews<T>(
+    queries.map((q) => ({
+      EntityName: q.entityName,
+      ExtraFilter: q.extraFilter,
+      Fields: q.fields,
+      ...(q.orderBy ? { OrderBy: q.orderBy } : {}),
+      ResultType: 'simple',
+      MaxRows: q.maxRows ?? 1000,
+    })),
+    entity.ContextCurrentUser,
+  );
+  return queries.map((_q, idx) => {
+    const res = results?.[idx];
+    if (!res?.Success) {
+      return { success: false, rows: [], errorMessage: res?.ErrorMessage };
+    }
+    return { success: true, rows: res.Results ?? [] };
+  });
+}
+
 export async function loadSingleRow<T>(
   entity: BaseEntity,
   entityName: string,

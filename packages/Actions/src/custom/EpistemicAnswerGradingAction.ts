@@ -1,4 +1,4 @@
-import { CompositeKey, Metadata, RunView, type UserInfo } from '@memberjunction/core';
+import { CompositeKey, Metadata, RunView, type RunViewResult, type UserInfo } from '@memberjunction/core';
 import { ActionParam, ActionResultSimple, RunActionParams } from '@memberjunction/actions-base';
 import { BaseAction } from '@memberjunction/actions';
 import { RegisterClass } from '@memberjunction/global';
@@ -86,7 +86,8 @@ export class EpistemicAnswerGradingAction extends BaseAction {
     answerPostId: string,
     user: UserInfo,
   ): Promise<{ questionBodyMarkdown: string; answerBodyMarkdown: string; priorCanonAnswerMarkdown: string | null } | null> {
-    const linkResult = await new RunView().RunView<AnswerQuestionLinkRow>(
+    const rv = new RunView();
+    const linkResult = await rv.RunView<AnswerQuestionLinkRow>(
       {
         EntityName: COMMUNITY_ENTITY_NAMES.ForumAnswerPosts,
         ExtraFilter: `ID = '${answerPostId}'`,
@@ -99,8 +100,9 @@ export class EpistemicAnswerGradingAction extends BaseAction {
     const link = linkResult?.Success ? linkResult.Results?.[0] : null;
     if (!link) return null;
 
-    const [postsResult, questionCanonResult] = await Promise.all([
-      new RunView().RunView<PostBodyRow>(
+    type ContentBatchRow = PostBodyRow | QuestionCanonLinkRow;
+    const batchResults = await rv.RunViews<ContentBatchRow>(
+      [
         {
           EntityName: COMMUNITY_ENTITY_NAMES.ForumPosts,
           ExtraFilter: `ID IN ('${answerPostId}', '${link.QuestionPostID}')`,
@@ -108,9 +110,6 @@ export class EpistemicAnswerGradingAction extends BaseAction {
           ResultType: 'simple',
           MaxRows: 2,
         },
-        user,
-      ),
-      new RunView().RunView<QuestionCanonLinkRow>(
         {
           EntityName: COMMUNITY_ENTITY_NAMES.ForumQuestionPosts,
           ExtraFilter: `ID = '${link.QuestionPostID}'`,
@@ -118,9 +117,11 @@ export class EpistemicAnswerGradingAction extends BaseAction {
           ResultType: 'simple',
           MaxRows: 1,
         },
-        user,
-      ),
-    ]);
+      ],
+      user,
+    );
+    const postsResult = batchResults[0] as RunViewResult<PostBodyRow> | undefined;
+    const questionCanonResult = batchResults[1] as RunViewResult<QuestionCanonLinkRow> | undefined;
     if (!postsResult?.Success || !postsResult.Results) return null;
 
     const content = ExtractAuthoritativeContent(answerPostId, link.QuestionPostID, postsResult.Results);
@@ -133,7 +134,7 @@ export class EpistemicAnswerGradingAction extends BaseAction {
     const canonAnswerPostId = questionCanonResult.Results[0].AICanonAnswerPostID;
     let priorCanonAnswerMarkdown: string | null = null;
     if (canonAnswerPostId) {
-      const canonResult = await new RunView().RunView<PostBodyRow>(
+      const canonResult = await rv.RunView<PostBodyRow>(
         {
           EntityName: COMMUNITY_ENTITY_NAMES.ForumPosts,
           ExtraFilter: `ID = '${canonAnswerPostId}'`,

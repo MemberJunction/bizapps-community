@@ -1,4 +1,4 @@
-import { RunView, type UserInfo } from '@memberjunction/core';
+import { RunView, type RunViewResult, type UserInfo } from '@memberjunction/core';
 import { ActionParam, ActionResultSimple, RunActionParams } from '@memberjunction/actions-base';
 import { BaseAction } from '@memberjunction/actions';
 import { RegisterClass } from '@memberjunction/global';
@@ -110,8 +110,10 @@ export class AskFirstDeflectionAction extends BaseAction {
   ): Promise<AskFirstCandidate[]> {
     const forumFilter = allowedForumIDs.map((id) => `'${id}'`).join(',');
     try {
-      const [forumsRes, postsRes] = await Promise.all([
-        new RunView().RunView<ForumRow>(
+      const rv = new RunView();
+      type Wave1Row = ForumRow | ForumPostCandidateRow;
+      const wave1Results = await rv.RunViews<Wave1Row>(
+        [
           {
             EntityName: COMMUNITY_ENTITY_NAMES.Forums,
             ExtraFilter: `ID IN (${forumFilter})`,
@@ -119,9 +121,6 @@ export class AskFirstDeflectionAction extends BaseAction {
             ResultType: 'simple',
             MaxRows: 200,
           },
-          user,
-        ),
-        new RunView().RunView<ForumPostCandidateRow>(
           {
             EntityName: COMMUNITY_ENTITY_NAMES.ForumPosts,
             ExtraFilter: `ForumID IN (${forumFilter}) AND Status IN ('Published', 'Answered', 'Resolved')`,
@@ -140,9 +139,11 @@ export class AskFirstDeflectionAction extends BaseAction {
             ResultType: 'simple',
             MaxRows: 200,
           },
-          user,
-        ),
-      ]);
+        ],
+        user,
+      );
+      const forumsRes = wave1Results[0] as RunViewResult<ForumRow> | undefined;
+      const postsRes = wave1Results[1] as RunViewResult<ForumPostCandidateRow> | undefined;
 
       const forumSlugById = new Map<string, string>(
         (forumsRes?.Success && forumsRes.Results ? forumsRes.Results : []).map((f) => [f.ID.toLowerCase(), f.Slug]),
@@ -157,8 +158,9 @@ export class AskFirstDeflectionAction extends BaseAction {
       const postIds = posts.map((p) => p.ID);
       const idFilter = postIds.map((id) => `'${id}'`).join(',');
 
-      const [answersRes, questionsRes, tagsByPostId] = await Promise.all([
-        new RunView().RunView<AnswerMetadataRow>(
+      type Wave2Row = AnswerMetadataRow | QuestionLookupRow | PostTagJoinRow;
+      const wave2Results = await rv.RunViews<Wave2Row>(
+        [
           {
             EntityName: COMMUNITY_ENTITY_NAMES.ForumAnswerPosts,
             ExtraFilter: `ID IN (${idFilter})`,
@@ -166,9 +168,6 @@ export class AskFirstDeflectionAction extends BaseAction {
             ResultType: 'simple',
             MaxRows: 200,
           },
-          user,
-        ),
-        new RunView().RunView<QuestionLookupRow>(
           {
             EntityName: COMMUNITY_ENTITY_NAMES.ForumQuestionPosts,
             ExtraFilter: `ID IN (${idFilter})`,
@@ -176,10 +175,24 @@ export class AskFirstDeflectionAction extends BaseAction {
             ResultType: 'simple',
             MaxRows: 200,
           },
-          user,
-        ),
-        this.loadPostTags(postIds, user),
-      ]);
+          {
+            EntityName: COMMUNITY_ENTITY_NAMES.ForumPostTags,
+            ExtraFilter: `PostID IN (${idFilter})`,
+            Fields: ['PostID', 'TopicTagID'],
+            ResultType: 'simple',
+            MaxRows: 500,
+          },
+        ],
+        user,
+      );
+      const answersRes = wave2Results[0] as RunViewResult<AnswerMetadataRow> | undefined;
+      const questionsRes = wave2Results[1] as RunViewResult<QuestionLookupRow> | undefined;
+      const tagJoinsRes = wave2Results[2] as RunViewResult<PostTagJoinRow> | undefined;
+      const tagsByPostId = await this.resolvePostTagNames(
+        tagJoinsRes?.Success && tagJoinsRes.Results ? tagJoinsRes.Results : [],
+        rv,
+        user,
+      );
 
       const answerMetaById = new Map<string, AnswerMetadataRow>(
         (answersRes?.Success && answersRes.Results ? answersRes.Results : []).map((a) => [a.ID.toLowerCase(), a]),
@@ -233,26 +246,16 @@ export class AskFirstDeflectionAction extends BaseAction {
     }
   }
 
-  private async loadPostTags(postIds: string[], user: UserInfo): Promise<Map<string, string[]>> {
+  private async resolvePostTagNames(
+    joins: ReadonlyArray<PostTagJoinRow>,
+    rv: RunView,
+    user: UserInfo,
+  ): Promise<Map<string, string[]>> {
     const out = new Map<string, string[]>();
-    if (postIds.length === 0) return out;
-    const idList = postIds.map((id) => `'${id}'`).join(',');
+    if (joins.length === 0) return out;
     try {
-      const joinRes = await new RunView().RunView<PostTagJoinRow>(
-        {
-          EntityName: COMMUNITY_ENTITY_NAMES.ForumPostTags,
-          ExtraFilter: `PostID IN (${idList})`,
-          Fields: ['PostID', 'TopicTagID'],
-          ResultType: 'simple',
-          MaxRows: 500,
-        },
-        user,
-      );
-      const joins = joinRes?.Success && joinRes.Results ? joinRes.Results : [];
-      if (joins.length === 0) return out;
-
       const tagIds = Array.from(new Set(joins.map((j) => j.TopicTagID)));
-      const tagRes = await new RunView().RunView<TopicTagRow>(
+      const tagRes = await rv.RunView<TopicTagRow>(
         {
           EntityName: COMMUNITY_ENTITY_NAMES.ForumTopicTags,
           ExtraFilter: `ID IN (${tagIds.map((id) => `'${id}'`).join(',')})`,

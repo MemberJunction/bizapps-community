@@ -1,5 +1,11 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import {
+  Metadata,
+  type BaseEnginePropertyConfig,
+  type IMetadataProvider,
+  type UserInfo,
+} from '@memberjunction/core';
 import { CommunityEngineBase } from './CommunityEngineBase.ts';
 import type { IForumRoleTypeDescriptor, IForumTypeDescriptor, IPostTypeDescriptor } from '@mj-biz-apps/community-entities';
 
@@ -296,4 +302,141 @@ test('@mj-biz-apps/community-engine-base CommunityEngineBase resets _appSettings
   });
   const afterRemoval = engine.ResolveConfiguration({ forum: { ForumTypeID: 'TYPE-RESET', Configuration: null } });
   assert.notEqual(afterRemoval.DefaultDigestCadence, 'Weekly Digest');
+});
+
+test('@mj-biz-apps/community-engine-base CommunityEngineBase impersonation safety: ProviderToUse follows active provider and auto-evicts user caches on userId switch', async () => {
+  const engine = CommunityEngineBase.Instance;
+
+  const userA = { ID: '11111111-1111-4111-8111-111111111111', Name: 'Alice' } as UserInfo;
+  const userB = { ID: '22222222-2222-4222-8222-222222222222', Name: 'Bob' } as UserInfo;
+
+  const makeMockEntity = (name: string, opts: { canRead: boolean; hasRls?: boolean }) => ({
+    Name: name,
+    TrustServerCacheCompletely: !opts.hasRls,
+    Permissions: opts.hasRls ? [{ ReadRLSFilterID: 'rls-1' }] : [],
+    GetUserPermisions: (_u: UserInfo) => ({ CanRead: opts.canRead }),
+  });
+
+  const capturedConfigs: Array<Array<Partial<BaseEnginePropertyConfig>>> = [];
+  const capturedForceFlags: boolean[] = [];
+
+  const providerA = {
+    CurrentUser: userA,
+    Entities: [
+      makeMockEntity('MJ_BizApps_Community: Forum Types', { canRead: true, hasRls: false }),
+      makeMockEntity('MJ_BizApps_Community: Post Types', { canRead: true, hasRls: true }),
+      makeMockEntity('MJ_BizApps_Community: Forum Role Types', { canRead: true, hasRls: false }),
+      makeMockEntity('MJ: Application Settings', { canRead: true, hasRls: false }),
+    ],
+    EntityByName(name: string) {
+      return this.Entities.find((e) => e.Name === name);
+    },
+  } as IMetadataProvider;
+
+  const providerB = {
+    CurrentUser: userB,
+    Entities: [
+      makeMockEntity('MJ_BizApps_Community: Forum Types', { canRead: true, hasRls: false }),
+      makeMockEntity('MJ_BizApps_Community: Post Types', { canRead: true, hasRls: false }),
+      makeMockEntity('MJ_BizApps_Community: Forum Role Types', { canRead: true, hasRls: false }),
+      makeMockEntity('MJ: Application Settings', { canRead: false, hasRls: false }),
+    ],
+    EntityByName(name: string) {
+      return this.Entities.find((e) => e.Name === name);
+    },
+  } as IMetadataProvider;
+
+  type LoadOverrideFn = (
+    configs: Array<Partial<BaseEnginePropertyConfig>>,
+    provider?: IMetadataProvider,
+    forceRefresh?: boolean,
+    contextUser?: UserInfo,
+  ) => Promise<void>;
+  interface EngineWithLoad {
+    Load: LoadOverrideFn;
+  }
+  const engineWithLoad = engine as object as EngineWithLoad;
+  const originalLoad = engineWithLoad.Load;
+  const originalGlobalProvider = Metadata.Provider;
+  try {
+    engineWithLoad.Load = async (configs, _p, forceRefresh) => {
+      capturedConfigs.push(configs);
+      capturedForceFlags.push(Boolean(forceRefresh));
+    };
+
+    // 1. Load under providerA / userA
+    await engine.Config(false, userA, providerA);
+    assert.equal(engine.ProviderToUse, providerA, 'ProviderToUse must follow explicit providerA');
+    assert.equal(engine.ActiveUserId, userA.ID.toLowerCase());
+    assert.equal(capturedConfigs.length, 1);
+    assert.equal(capturedConfigs[0].length, 4, 'All 4 metadata entities should load when CanRead=true');
+    assert.equal(
+      capturedConfigs[0].every((c) => c.AutoRefresh === true),
+      true,
+      'Every BaseEnginePropertyConfig must set AutoRefresh: true',
+    );
+    const postTypesCfg = capturedConfigs[0].find((c) => c.PropertyName === '_postTypes');
+    assert.equal(postTypesCfg?.CacheLocal, false, 'RLS-filtered entity must set CacheLocal: false');
+    const forumTypesCfg = capturedConfigs[0].find((c) => c.PropertyName === '_forumTypes');
+    assert.equal(forumTypesCfg?.CacheLocal, true, 'Non-RLS taxonomy entity may set CacheLocal: true');
+
+    // Populate userA's bounded space container cache
+    const spaceId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+    engine.SetCachedSpaceForums(
+      spaceId,
+      [
+        {
+          ID: 'f1',
+          SpaceID: spaceId,
+          ParentForumID: null,
+          ForumTypeID: 'ft1',
+          Slug: 'general',
+          Name: 'General',
+          Description: null,
+          Icon: null,
+          ColorHex: null,
+          VisibilityBand: 'Shared',
+          AnonymousReadMode: null,
+          InheritsSpaceMembers: true,
+          PostingPolicy: 'Open',
+          InboundEmailAlias: null,
+          Sequence: 1,
+          Status: 'Active',
+          Configuration: null,
+        },
+      ],
+      userA,
+    );
+    assert.equal(engine.GetCachedSpaceForums(spaceId, userA)?.length, 1);
+
+    // 2. Switch to providerB / userB (impersonation) — where Application Settings has CanRead=false
+    await engine.Config(false, userB, providerB);
+    assert.equal(engine.ProviderToUse, providerB, 'ProviderToUse must switch immediately to providerB');
+    assert.equal(engine.ActiveUserId, userB.ID.toLowerCase());
+    assert.equal(capturedForceFlags[1], true, 'Provider/user switch must force refresh');
+    assert.equal(
+      capturedConfigs[1].some((c) => c.PropertyName === '_applicationSettings'),
+      false,
+      'Optional MJ: Application Settings must be gated off when CanRead=false',
+    );
+    assert.equal(
+      engine.GetCachedSpaceForums(spaceId, userB),
+      undefined,
+      'User-scoped space forums cache must auto-evict on userId change',
+    );
+
+    // 3. Explicit InvalidateSpace and following Metadata.Provider when provider arg omitted
+    engine.SetCachedSpaceForums(spaceId, [], userB);
+    assert.deepEqual(engine.GetCachedSpaceForums(spaceId, userB), []);
+    engine.InvalidateSpace(spaceId);
+    assert.equal(engine.GetCachedSpaceForums(spaceId, userB), undefined);
+
+    Metadata.Provider = providerA;
+    await engine.Config(false, userA);
+    assert.equal(engine.ProviderToUse, providerA, 'ProviderToUse must follow Metadata.Provider when explicit provider is omitted');
+  } finally {
+    engineWithLoad.Load = originalLoad;
+    Metadata.Provider = originalGlobalProvider;
+    engine.ClearUserCaches();
+  }
 });

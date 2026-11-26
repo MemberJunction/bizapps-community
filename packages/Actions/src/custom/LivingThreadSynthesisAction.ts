@@ -1,4 +1,4 @@
-import { CompositeKey, Metadata, RunView, type UserInfo } from '@memberjunction/core';
+import { CompositeKey, Metadata, RunView, type RunViewResult, type UserInfo } from '@memberjunction/core';
 import { ActionParam, ActionResultSimple, RunActionParams } from '@memberjunction/actions-base';
 import { BaseAction } from '@memberjunction/actions';
 import { AIPromptParams, type MJAIPromptEntityExtended } from '@memberjunction/ai-core-plus';
@@ -124,10 +124,10 @@ export class LivingThreadSynthesisAction extends BaseAction {
     const maxReplyCount = maxReplyCountRaw ? Math.max(0, Number(maxReplyCountRaw)) : 50;
     const maxCharsPerPost = maxCharsPerPostRaw ? Math.max(10, Number(maxCharsPerPostRaw)) : 500;
 
-    const root = await this.loadRootPost(rootPostId, user);
-    if (!root) return fail('ROOT_POST_NOT_FOUND', `No post found with ID ${rootPostId}`);
-
-    const replies = await this.loadReplies(rootPostId, acceptedAnswerPostId, user);
+    const loaded = await this.loadRootAndReplies(rootPostId, acceptedAnswerPostId, user);
+    if (!loaded.root) return fail('ROOT_POST_NOT_FOUND', `No post found with ID ${rootPostId}`);
+    const root = loaded.root;
+    const replies = loaded.replies;
     const fingerprint = ComputeThreadContentFingerprint({
       rootTitle: root.Title,
       rootBodyMarkdown: root.BodyMarkdown,
@@ -375,45 +375,60 @@ export class LivingThreadSynthesisAction extends BaseAction {
     return SaveOrFail(post, 'SAVE_FAILED', `Failed to persist the synthesized summary onto Forum Post ${rootPostId}.`);
   }
 
-  private async loadRootPost(rootPostId: string, user: UserInfo): Promise<RootPostRow | null> {
-    const result = await new RunView().RunView<RootPostRow>(
-      {
-        EntityName: COMMUNITY_ENTITY_NAMES.ForumPosts,
-        ExtraFilter: `ID = '${rootPostId}'`,
-        Fields: ['ID', 'Title', 'BodyMarkdown', 'SummaryMarkdown', 'SummaryGeneratedAt', 'SummaryReplyWatermark'],
-        ResultType: 'simple',
-        MaxRows: 1,
-      },
-      user,
-    );
-    return result?.Success ? result.Results?.[0] ?? null : null;
-  }
-
-  private async loadReplies(
+  private async loadRootAndReplies(
     rootPostId: string,
     acceptedAnswerPostId: string | null,
     user: UserInfo,
-  ): Promise<ThreadPostForSynthesis[]> {
-    const result = await new RunView().RunView<ReplyRow>(
-      {
-        EntityName: COMMUNITY_ENTITY_NAMES.ForumPosts,
-        ExtraFilter: `RootPostID = '${rootPostId}'`,
-        Fields: ['ID', 'BodyMarkdown', 'AuthorUserID', 'AuthorUser'],
-        OrderBy: '__mj_CreatedAt ASC',
-        ResultType: 'simple',
-        MaxRows: 500,
-      },
+  ): Promise<{ root: RootPostRow | null; replies: ThreadPostForSynthesis[] }> {
+    const rv = new RunView();
+    type ThreadWaveRow = RootPostRow | ReplyRow | QuestionCanonRow;
+    const waveResults = await rv.RunViews<ThreadWaveRow>(
+      [
+        {
+          EntityName: COMMUNITY_ENTITY_NAMES.ForumPosts,
+          ExtraFilter: `ID = '${rootPostId}'`,
+          Fields: ['ID', 'Title', 'BodyMarkdown', 'SummaryMarkdown', 'SummaryGeneratedAt', 'SummaryReplyWatermark'],
+          ResultType: 'simple',
+          MaxRows: 1,
+        },
+        {
+          EntityName: COMMUNITY_ENTITY_NAMES.ForumPosts,
+          ExtraFilter: `RootPostID = '${rootPostId}'`,
+          Fields: ['ID', 'BodyMarkdown', 'AuthorUserID', 'AuthorUser'],
+          OrderBy: '__mj_CreatedAt ASC',
+          ResultType: 'simple',
+          MaxRows: 500,
+        },
+        {
+          EntityName: COMMUNITY_ENTITY_NAMES.ForumQuestionPosts,
+          ExtraFilter: `ID = '${rootPostId}'`,
+          Fields: ['ID', 'AcceptedAnswerPostID', 'AICanonAnswerPostID'],
+          ResultType: 'simple',
+          MaxRows: 1,
+        },
+      ],
       user,
     );
-    if (!result?.Success || !result.Results || result.Results.length === 0) return [];
 
-    const replyIds = result.Results.map((r) => r.ID);
-    const [answerMetaMap, questionRow] = await Promise.all([
-      this.loadAnswerMetadata(replyIds, user),
-      this.loadQuestionCanonRow(rootPostId, user),
-    ]);
+    const rootRes = waveResults[0] as RunViewResult<RootPostRow> | undefined;
+    const root = rootRes?.Success ? rootRes.Results?.[0] ?? null : null;
+    if (!root) {
+      return { root: null, replies: [] };
+    }
 
-    return result.Results.map((row) => {
+    const repliesRes = waveResults[1] as RunViewResult<ReplyRow> | undefined;
+    const rawReplies = repliesRes?.Success && repliesRes.Results ? repliesRes.Results : [];
+    if (rawReplies.length === 0) {
+      return { root, replies: [] };
+    }
+
+    const questionRes = waveResults[2] as RunViewResult<QuestionCanonRow> | undefined;
+    const questionRow = questionRes?.Success ? questionRes.Results?.[0] ?? null : null;
+
+    const replyIds = rawReplies.map((r) => r.ID);
+    const answerMetaMap = await this.loadAnswerMetadata(replyIds, rv, user);
+
+    const replies = rawReplies.map((row) => {
       const answerMeta = answerMetaMap.get(row.ID.toLowerCase());
       const matchesExplicitAccepted = acceptedAnswerPostId != null && UUIDsEqual(row.ID, acceptedAnswerPostId);
       const matchesQuestionAccepted =
@@ -430,17 +445,20 @@ export class LivingThreadSynthesisAction extends BaseAction {
         epistemicStatus: answerMeta?.AIEpistemicStatus ?? (matchesQuestionCanon ? 'Canon Verified' : null),
       };
     });
+
+    return { root, replies };
   }
 
   private async loadAnswerMetadata(
     replyIds: string[],
+    rv: RunView,
     user: UserInfo,
   ): Promise<Map<string, ReplyAnswerMetadataRow>> {
     const out = new Map<string, ReplyAnswerMetadataRow>();
     if (replyIds.length === 0) return out;
     try {
       const idFilter = replyIds.map((id) => `'${id}'`).join(',');
-      const res = await new RunView().RunView<ReplyAnswerMetadataRow>(
+      const res = await rv.RunView<ReplyAnswerMetadataRow>(
         {
           EntityName: COMMUNITY_ENTITY_NAMES.ForumAnswerPosts,
           ExtraFilter: `ID IN (${idFilter})`,
@@ -459,24 +477,6 @@ export class LivingThreadSynthesisAction extends BaseAction {
       // Optional answer metadata enrichment.
     }
     return out;
-  }
-
-  private async loadQuestionCanonRow(rootPostId: string, user: UserInfo): Promise<QuestionCanonRow | null> {
-    try {
-      const res = await new RunView().RunView<QuestionCanonRow>(
-        {
-          EntityName: COMMUNITY_ENTITY_NAMES.ForumQuestionPosts,
-          ExtraFilter: `ID = '${rootPostId}'`,
-          Fields: ['ID', 'AcceptedAnswerPostID', 'AICanonAnswerPostID'],
-          ResultType: 'simple',
-          MaxRows: 1,
-        },
-        user,
-      );
-      return res?.Success ? res.Results?.[0] ?? null : null;
-    } catch {
-      return null;
-    }
   }
 }
 

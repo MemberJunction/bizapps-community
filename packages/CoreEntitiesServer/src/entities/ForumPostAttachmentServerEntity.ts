@@ -25,11 +25,13 @@ import {
 import {
   failSave,
   failValidation,
+  loadBatchRows,
   loadRows,
   loadSingleRow,
   resolveForumMemberAndRole,
   resolveForumRow,
   validUuidOrNull,
+  type BatchRowQuery,
 } from './server-entity-helpers.ts';
 
 interface AttachmentPostRow {
@@ -184,27 +186,31 @@ export class ForumPostAttachmentServerEntity extends mjBizAppsCommunityForumPost
       return failValidation(result, 'PostID', 'Forum SpaceID is invalid.');
     }
 
-    const spaceRes = await loadSingleRow<AttachmentSpaceRow>(
-      this,
-      'MJ_BizApps_Collaboration: Spaces',
-      `ID = '${validSpaceId}'`,
-      ['ID', 'OwnerID'],
-    );
-    if (!spaceRes.success || !spaceRes.row) {
+    type SpaceAccessBatchRow = AttachmentSpaceRow | AttachmentSpaceMemberRow;
+    const [spaceBatch, spaceMemberBatch] = await loadBatchRows<SpaceAccessBatchRow>(this, [
+      {
+        entityName: 'MJ_BizApps_Collaboration: Spaces',
+        extraFilter: `ID = '${validSpaceId}'`,
+        fields: ['ID', 'OwnerID'],
+        maxRows: 1,
+      },
+      {
+        entityName: 'MJ_BizApps_Collaboration: Space Members',
+        extraFilter: `SpaceID = '${validSpaceId}' AND UserID = '${callerUserId}' AND Status = 'Active'`,
+        fields: ['ID', 'SpaceID', 'UserID', 'Band', 'Status'],
+        maxRows: 1,
+      },
+    ]);
+    const spaceRow = spaceBatch?.success ? (spaceBatch.rows[0] as AttachmentSpaceRow | undefined) ?? null : null;
+    if (!spaceBatch?.success || !spaceRow) {
       return failValidation(result, 'PostID', `Collaboration Space ${validSpaceId} was not found or access is denied.`);
     }
-    const isOwner = UUIDsEqual(spaceRes.row.OwnerID, callerUserId);
+    const isOwner = UUIDsEqual(spaceRow.OwnerID, callerUserId);
 
-    const spaceMemberRes = await loadSingleRow<AttachmentSpaceMemberRow>(
-      this,
-      'MJ_BizApps_Collaboration: Space Members',
-      `SpaceID = '${validSpaceId}' AND UserID = '${callerUserId}' AND Status = 'Active'`,
-      ['ID', 'SpaceID', 'UserID', 'Band', 'Status'],
-    );
-    if (!spaceMemberRes.success) {
+    if (!spaceMemberBatch?.success) {
       return failValidation(result, 'PostID', 'Unable to verify Collaboration Space membership.');
     }
-    const spaceMember = spaceMemberRes.row;
+    const spaceMember = (spaceMemberBatch.rows[0] as AttachmentSpaceMemberRow | undefined) ?? null;
     if (!isOwner && !spaceMember) {
       return failValidation(result, 'PostID', `Caller is not authorized to access Space ${validSpaceId}.`);
     }
@@ -647,38 +653,43 @@ export class ForumPostAttachmentServerEntity extends mjBizAppsCommunityForumPost
     }
 
     const versionById = new Map<string, AttachmentArtifactVersionRow>();
-    if (pinnedVersionIds.size > 0) {
-      const verRes = await loadRows<AttachmentArtifactVersionRow>(
-        this,
-        'MJ: Artifact Versions',
-        `ID IN (${Array.from(pinnedVersionIds).map((id) => `'${id}'`).join(', ')})`,
-        ARTIFACT_VERSION_FIELDS,
-        COMMUNITY_ATTACHMENT_MAX_COUNT_PER_POST + 5,
-      );
-      if (!verRes.success) {
-        return { ok: false, error: 'Unable to load pinned Artifact Versions for existing post attachments.' };
-      }
-      for (const v of verRes.rows) {
-        versionById.set(v.ID.toLowerCase(), v);
-      }
+    const latestVersionByArtifactId = new Map<string, AttachmentArtifactVersionRow>();
+    const versionQueries: BatchRowQuery[] = [];
+    const hasPinnedVersions = pinnedVersionIds.size > 0;
+    if (hasPinnedVersions) {
+      versionQueries.push({
+        entityName: 'MJ: Artifact Versions',
+        extraFilter: `ID IN (${Array.from(pinnedVersionIds).map((id) => `'${id}'`).join(', ')})`,
+        fields: ARTIFACT_VERSION_FIELDS,
+        maxRows: COMMUNITY_ATTACHMENT_MAX_COUNT_PER_POST + 5,
+      });
+    }
+    const unpinnedArtifactList = Array.from(unpinnedArtifactIds);
+    for (const artId of unpinnedArtifactList) {
+      versionQueries.push({
+        entityName: 'MJ: Artifact Versions',
+        extraFilter: `ArtifactID = '${artId}'`,
+        fields: ARTIFACT_VERSION_FIELDS,
+        maxRows: 1,
+        orderBy: 'VersionNumber DESC',
+      });
     }
 
-    const latestVersionByArtifactId = new Map<string, AttachmentArtifactVersionRow>();
-    if (unpinnedArtifactIds.size > 0) {
-      const perArtifactResults = await Promise.all(
-        Array.from(unpinnedArtifactIds).map((artId) =>
-          loadRows<AttachmentArtifactVersionRow>(
-            this,
-            'MJ: Artifact Versions',
-            `ArtifactID = '${artId}'`,
-            ARTIFACT_VERSION_FIELDS,
-            1,
-            'VersionNumber DESC',
-          ),
-        ),
-      );
-      for (const artVerRes of perArtifactResults) {
-        if (!artVerRes.success) {
+    if (versionQueries.length > 0) {
+      const versionBatchResults = await loadBatchRows<AttachmentArtifactVersionRow>(this, versionQueries);
+      let cursor = 0;
+      if (hasPinnedVersions) {
+        const verRes = versionBatchResults[cursor++];
+        if (!verRes?.success) {
+          return { ok: false, error: 'Unable to load pinned Artifact Versions for existing post attachments.' };
+        }
+        for (const v of verRes.rows) {
+          versionById.set(v.ID.toLowerCase(), v);
+        }
+      }
+      for (let i = 0; i < unpinnedArtifactList.length; i += 1) {
+        const artVerRes = versionBatchResults[cursor++];
+        if (!artVerRes?.success) {
           return { ok: false, error: 'Unable to load latest Artifact Versions for existing unpinned artifact attachments.' };
         }
         for (const v of artVerRes.rows) {
@@ -734,17 +745,15 @@ export class ForumPostAttachmentServerEntity extends mjBizAppsCommunityForumPost
     });
     const companionByFileId = new Map<string, AttachmentArtifactVersionRow>();
     if (filesNeedingCompanion.length > 0) {
-      const perFileResults = await Promise.all(
-        filesNeedingCompanion.map((fid) =>
-          loadRows<AttachmentArtifactVersionRow>(
-            this,
-            'MJ: Artifact Versions',
-            `FileID = '${fid}'`,
-            ARTIFACT_VERSION_FIELDS,
-            1,
-            'VersionNumber DESC',
-          ),
-        ),
+      const perFileResults = await loadBatchRows<AttachmentArtifactVersionRow>(
+        this,
+        filesNeedingCompanion.map((fid) => ({
+          entityName: 'MJ: Artifact Versions',
+          extraFilter: `FileID = '${fid}'`,
+          fields: ARTIFACT_VERSION_FIELDS,
+          maxRows: 1,
+          orderBy: 'VersionNumber DESC',
+        })),
       );
       for (const compRes of perFileResults) {
         if (!compRes.success) {

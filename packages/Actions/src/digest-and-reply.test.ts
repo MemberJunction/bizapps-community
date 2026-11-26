@@ -378,10 +378,7 @@ describe('MJ CommunicationEngine + CommunityTestCommunicationProvider + Personal
       ]);
       mock.method(CommunicationEngineBase.prototype, 'StartLog', async () => fakeLog);
 
-      mock.method(
-        RunView.prototype,
-        'RunView',
-        async (params: { EntityName: string; ExtraFilter?: string; Fields?: string[] }) => {
+      const digestRunViewHandler = async (params: { EntityName: string; ExtraFilter?: string; Fields?: string[] }) => {
           const filter = params.ExtraFilter ?? '';
 
           // CR-06 Schema fidelity check: reject nonexistent ForumPostID field queries
@@ -702,7 +699,13 @@ describe('MJ CommunicationEngine + CommunityTestCommunicationProvider + Personal
           }
 
           return { Success: true, Results: [] };
-        },
+        };
+      mock.method(RunView.prototype, 'RunView', digestRunViewHandler);
+      mock.method(
+        RunView.prototype,
+        'RunViews',
+        async (list: Array<{ EntityName: string; ExtraFilter?: string; Fields?: string[] }>) =>
+          Promise.all(list.map((p) => digestRunViewHandler(p))),
       );
 
       mock.method(Metadata.prototype, 'GetEntityObject', async () => {

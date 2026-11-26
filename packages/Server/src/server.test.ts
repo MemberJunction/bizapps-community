@@ -627,7 +627,7 @@ describe('@mj-biz-apps/community-server services and document blocks', () => {
         return { Save: async () => true, Delete: async () => true };
       });
 
-      mock.method(RunView.prototype, 'RunView', async (query: { EntityName: string; ExtraFilter?: string }) => {
+      const runViewHandler = async (query: { EntityName: string; ExtraFilter?: string }) => {
         if (query.EntityName === 'MJ_BizApps_Community: Forum Members') {
           return { Success: true, Results: [{ ForumRoleTypeID: roleTypeId }] };
         }
@@ -650,7 +650,11 @@ describe('@mj-biz-apps/community-server services and document blocks', () => {
           return { Success: true, Results: [{ ID: 'st-wg' }] };
         }
         return { Success: true, Results: [] };
-      });
+      };
+      mock.method(RunView.prototype, 'RunView', runViewHandler);
+      mock.method(RunView.prototype, 'RunViews', async (queries: Array<{ EntityName: string; ExtraFilter?: string }>) =>
+        Promise.all(queries.map((q) => runViewHandler(q))),
+      );
 
       await assert.rejects(
         () =>
@@ -690,7 +694,7 @@ describe('@mj-biz-apps/community-server services and document blocks', () => {
         return { Save: async () => { saveCalls++; return true; } };
       });
 
-      mock.method(RunView.prototype, 'RunView', async (query: { EntityName: string; ExtraFilter?: string }) => {
+      const runViewHandler = async (query: { EntityName: string; ExtraFilter?: string }) => {
         if (query.EntityName === 'MJ_BizApps_Community: Forum Members') {
           return { Success: true, Results: [{ ForumRoleTypeID: roleTypeId }] };
         }
@@ -718,7 +722,11 @@ describe('@mj-biz-apps/community-server services and document blocks', () => {
           return { Success: true, Results: [] };
         }
         return { Success: true, Results: [] };
-      });
+      };
+      mock.method(RunView.prototype, 'RunView', runViewHandler);
+      mock.method(RunView.prototype, 'RunViews', async (queries: Array<{ EntityName: string; ExtraFilter?: string }>) =>
+        Promise.all(queries.map((q) => runViewHandler(q))),
+      );
 
       await assert.rejects(
         () =>
@@ -1089,7 +1097,7 @@ describe('@mj-biz-apps/community-server services and document blocks', () => {
         return { Save: async () => true };
       });
 
-      mock.method(RunView.prototype, 'RunView', async (query: { EntityName: string; ExtraFilter?: string }) => {
+      const runViewHandler = async (query: { EntityName: string; ExtraFilter?: string }) => {
         const filter = query.ExtraFilter ?? '';
         if (query.EntityName === 'MJ_BizApps_Community: Forum Members') {
           return { Success: true, Results: [{ ForumRoleTypeID: roleTypeId }] };
@@ -1128,7 +1136,11 @@ describe('@mj-biz-apps/community-server services and document blocks', () => {
           return { Success: true, Results: [{ UserID: USER_1 }] };
         }
         return { Success: true, Results: [] };
-      });
+      };
+      mock.method(RunView.prototype, 'RunView', runViewHandler);
+      mock.method(RunView.prototype, 'RunViews', async (queries: Array<{ EntityName: string; ExtraFilter?: string }>) =>
+        Promise.all(queries.map((q) => runViewHandler(q))),
+      );
 
       try {
         const res = await service.GraduateThreadToSpace({
@@ -1204,7 +1216,7 @@ describe('@mj-biz-apps/community-server services and document blocks', () => {
         return { Save: async () => true };
       });
 
-      mock.method(RunView.prototype, 'RunView', async (query: { EntityName: string; ExtraFilter?: string }) => {
+      const runViewHandler = async (query: { EntityName: string; ExtraFilter?: string }) => {
         const filter = query.ExtraFilter ?? '';
         if (query.EntityName === 'MJ_BizApps_Community: Forum Members') {
           return { Success: true, Results: [{ ForumRoleTypeID: roleTypeId }] };
@@ -1229,7 +1241,11 @@ describe('@mj-biz-apps/community-server services and document blocks', () => {
           return { Success: true, Results: [{ ID: 'tt-1' }] };
         }
         return { Success: true, Results: [] };
-      });
+      };
+      mock.method(RunView.prototype, 'RunView', runViewHandler);
+      mock.method(RunView.prototype, 'RunViews', async (queries: Array<{ EntityName: string; ExtraFilter?: string }>) =>
+        Promise.all(queries.map((q) => runViewHandler(q))),
+      );
 
       try {
         await assert.rejects(

@@ -200,7 +200,7 @@ function setupGraduationMocks(initialSummary: string | null, txGroup: InMemoryTx
     return { Save: async () => true };
   });
 
-  mock.method(RunView.prototype, 'RunView', async (query: { EntityName: string; ExtraFilter?: string }) => {
+  const runViewHandler = async (query: { EntityName: string; ExtraFilter?: string }) => {
     const filter = query.ExtraFilter ?? '';
     if (query.EntityName === COMMUNITY_ENTITY_NAMES.ForumMembers) {
       return { Success: true, Results: [{ ForumRoleTypeID: FORUM_ROLE_ID }] };
@@ -253,7 +253,11 @@ function setupGraduationMocks(initialSummary: string | null, txGroup: InMemoryTx
       return { Success: true, Results: store.members.map((m) => ({ UserID: m.UserID })) };
     }
     return { Success: true, Results: [] };
-  });
+  };
+  mock.method(RunView.prototype, 'RunView', runViewHandler);
+  mock.method(RunView.prototype, 'RunViews', async (queries: Array<{ EntityName: string; ExtraFilter?: string }>) =>
+    Promise.all(queries.map((q) => runViewHandler(q))),
+  );
 
   return store;
 }

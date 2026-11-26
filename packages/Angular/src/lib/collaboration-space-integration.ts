@@ -294,7 +294,7 @@ export class CommunityOverviewHighlightsCardComponent extends BaseSpaceOverviewC
 
     try {
       const safeSpaceId = AssertValidUUID(rawSpaceId, 'SpaceId');
-      const rv = new RunView();
+      const rv = RunView.FromMetadataProvider(provider);
       const forumsRes = await LoadAllPaginatedRows<{ ID: string }>({
         runView: rv,
         entityName: COMMUNITY_ENTITY_NAMES.Forums,

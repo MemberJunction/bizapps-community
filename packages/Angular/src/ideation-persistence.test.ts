@@ -5,6 +5,7 @@ import {
   ComputeCampaignWalletSpentOnOthers,
   ComputeIdeaAggregateFromAllocations,
   IDEA_POST_TYPE_CODE,
+  LoadAllPaginatedBatches,
   LoadAllPaginatedRows,
   PersistIdeaAllocationAtomic,
   PersistProposedIdea,
@@ -284,5 +285,65 @@ describe('CommunityHub Ideation Wallet & Fail-Closed Aggregate (CR-21 / CR-22)',
     assert.equal(res.success, false);
     assert.equal(rolledBack, true);
     assert.match(res.errorMessage ?? '', /Subtype constraint failed/);
+  });
+
+  it('LoadAllPaginatedBatches collapses multiple independent queries into a single RunViews call per page wave and fails closed per query', async () => {
+    const user = new UserInfo(undefined, { ID: '11111111-1111-4111-8111-111111111111' });
+    const batchCalls: Array<Array<{ EntityName?: string; StartRow?: number }>> = [];
+    let singleRunViewCalls = 0;
+
+    mock.method(RunView.prototype, 'RunView', async () => {
+      singleRunViewCalls += 1;
+      return { Success: false, Results: [], ErrorMessage: 'Should not call single RunView' };
+    });
+
+    mock.method(
+      RunView.prototype,
+      'RunViews',
+      async (paramsList: Array<{ EntityName?: string; StartRow?: number }>) => {
+        batchCalls.push(paramsList.map((p) => ({ EntityName: p.EntityName, StartRow: p.StartRow })));
+        return paramsList.map((p) => {
+          if (p.EntityName === 'EntityA') {
+            if ((p.StartRow ?? 0) === 0) {
+              return { Success: true, Results: [{ ID: 'a1' }, { ID: 'a2' }] };
+            }
+            return { Success: true, Results: [{ ID: 'a3' }] };
+          }
+          if (p.EntityName === 'EntityB') {
+            return { Success: true, Results: [{ ID: 'b1' }] };
+          }
+          return { Success: false, Results: [], ErrorMessage: 'EntityC denied' };
+        });
+      },
+    );
+
+    const results = await LoadAllPaginatedBatches<{ ID: string }>({
+      runView: new RunView(),
+      queries: [
+        { entityName: 'EntityA', extraFilter: '1=1', fields: ['ID'], pageSize: 2 },
+        { entityName: 'EntityB', extraFilter: '1=1', fields: ['ID'], pageSize: 2 },
+        { entityName: 'EntityC', extraFilter: '1=1', fields: ['ID'], pageSize: 2 },
+      ],
+      user,
+    });
+    mock.restoreAll();
+
+    assert.equal(singleRunViewCalls, 0, 'Must never fall back to individual RunView calls');
+    assert.equal(batchCalls.length, 2, 'Wave 1 batches all 3 queries; Wave 2 only fetches EntityA page 2');
+    assert.deepEqual(
+      batchCalls[0].map((q) => q.EntityName),
+      ['EntityA', 'EntityB', 'EntityC'],
+    );
+    assert.deepEqual(
+      batchCalls[1].map((q) => q.EntityName),
+      ['EntityA'],
+    );
+    assert.equal(results[0].success, true);
+    assert.deepEqual(results[0].rows.map((r) => r.ID), ['a1', 'a2', 'a3']);
+    assert.equal(results[1].success, true);
+    assert.deepEqual(results[1].rows.map((r) => r.ID), ['b1']);
+    assert.equal(results[2].success, false);
+    assert.deepEqual(results[2].rows, []);
+    assert.match(results[2].errorMessage ?? '', /EntityC denied/);
   });
 });
