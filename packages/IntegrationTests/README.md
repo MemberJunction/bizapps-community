@@ -67,6 +67,12 @@ flowchart TB
   - Interactive slide-over artifact viewer drawer for `ForumArtifactPost` (`Pinned v2`), `ForumInteractivePost` (`Pinned v2`), and revoked artifact fallback (`data-fallback-reason="artifact-not-found"`), plus `Escape` dismissal
   - Zero raw markdown syntax tokens (`###`, `**bold**`), zero broken images, zero horizontal overflow, zero `window.print()`, `pageErrors === 0`, `consoleErrors === 0`, and domain-neutral copy
 
+## Related Architecture & Rubric Documentation
+
+- **Docs vs. Notes Rubric**: [CLAUDE.md](../../CLAUDE.md) and [AGENTS.md](../../AGENTS.md) codify the `MJ Docs (MJ: Artifacts) vs. MJ: Comments vs. Quick Notes` classification (`ForumArtifactPost` and `ForumInteractivePost` = Category A; high-volume `ForumPost` replies = Category C relational).
+- **Git-Canonical Specification**: [`.mj/specs/ng-artifacts-forum-viewer/spec.md`](../../.mj/specs/ng-artifacts-forum-viewer/spec.md) documents `CommunityArtifactViewerComponent`, batched `RunView` metadata loading, critical user journeys, and this verification matrix.
+- **Angular Viewer API**: [`packages/Angular/README.md`](../Angular/README.md) documents `<mjc-community-artifact-viewer>` inputs, outputs, keyboard accessibility, and `--mj-*` design tokens.
+
 ## Running Commands
 
 ```bash

@@ -72,12 +72,25 @@ All styles in `community-artifact-viewer.component.css` use MemberJunction seman
 
 ---
 
+## Architectural Rubric: MJ Docs (`MJ: Artifacts`) vs. `MJ: Comments` vs. Quick Notes
+
+`@mj-biz-apps/community-ng` follows the repository's three-category content rubric documented in [CLAUDE.md](../../CLAUDE.md), [AGENTS.md](../../AGENTS.md), and [.mj/specs/ng-artifacts-forum-viewer/spec.md](../../.mj/specs/ng-artifacts-forum-viewer/spec.md):
+
+- **Category A — MJ Docs (`MJ: Artifacts`)**: `ForumArtifactPost` (`ArtifactID` / `PinnedArtifactVersionID`) and `ForumInteractivePost` (`ComponentArtifactID` / `PinnedArtifactVersionID`) render through `<mjc-community-artifact-viewer>` wrapping `<mj-artifact-viewer-panel>` from `@memberjunction/ng-artifacts`.
+- **Category B — `MJ: Comments`**: Inline and record-anchored contextual commentary attached to documents or entity records.
+- **Category C — Quick Notes / Relational Records**: High-volume conversational `ForumPost` replies remain Category C relational records and continue rendering natively in the thread stream even when a Category A artifact is missing or revoked.
+
+---
+
 ## Development & Verification
 
 ```bash
 # Build Angular package (ngc + asset copy)
 pnpm --filter @mj-biz-apps/community-ng run build
 
-# Run Angular unit tests (artifact viewer, design tokens, OpenApp parity, UX alignment)
+# Run Angular unit tests (artifact viewer, design tokens, OpenApp parity, docs/rubric contract, UX alignment)
 pnpm --filter @mj-biz-apps/community-ng run test
+
+# Run cross-stack integration + 8-cell multi-viewport Playwright harness (see ../IntegrationTests/README.md)
+node test-harnesses/integration.mjs
 ```

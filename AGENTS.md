@@ -40,6 +40,14 @@ This file mirrors and links the critical development rules and performance stand
    - Never embed raw SQL subqueries against RLS-filtered `vw*` views inside `ExtraFilter`.
    - Query the RLS-protected entity first via `RunView` / `RunViews`, validate UUIDs (`AssertValidUUID`), and pass `ID IN (...)` to the dependent query.
 
+## MJ Docs (MJ: Artifacts) vs. MJ: Comments vs. Quick Notes
+
+Apply this architectural rubric whenever adding or reviewing Community content surfaces:
+
+- **Category A — MJ Docs (`MJ: Artifacts`)**: Versioned, rich, shareable documents and interactive components backed by `MJ: Artifacts` / `MJ: Artifact Versions` and rendered in-place or in a slide-over drawer via `@memberjunction/ng-artifacts` (`<mj-artifact-viewer-panel>` wrapped by `CommunityArtifactViewerComponent`). Explicitly includes **`ForumArtifactPost`** (`ArtifactID` / `PinnedArtifactVersionID`) and **`ForumInteractivePost`** (`ComponentArtifactID` / `PinnedArtifactVersionID`).
+- **Category B — `MJ: Comments`**: Inline or record-anchored contextual commentary (passage annotations, lightweight review remarks, and record-scoped notes) that adds context without becoming a versioned document or full forum thread.
+- **Category C — Quick Notes / Relational Records**: High-volume, low-ceremony conversational threads and transactional community records stored directly in relational `__mj_BizAppsCommunity` entities. **High-volume `ForumPost` replies explicitly remain Category C relational records** (never migrated into `MJ: Artifacts`), preserving fast `RootPostID` threading and `fnCommunityForumAccess` RLS enforcement.
+
 ## References
 
 - Full repository rules, dual-dialect migrations, Collaboration relationship, and release lines: [CLAUDE.md](CLAUDE.md)

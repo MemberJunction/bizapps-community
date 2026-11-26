@@ -52,6 +52,20 @@ Every engine, Angular component, Action, server entity, and GraphQL resolver in 
 - **ZERO `localStorage` / `sessionStorage`**: persist user preferences via `UserInfoEngine.Instance`.
 - See also [AGENTS.md](AGENTS.md) for the complete agent operating checklist.
 
+## MJ Docs (MJ: Artifacts) vs. MJ: Comments vs. Quick Notes
+
+Use this three-category rubric whenever modeling content, discussions, or annotations in `BizApps Community` so rich versioned documents get full MJ Artifact capabilities while high-volume conversations stay fast relational rows:
+
+| Category | Backing Store & Surface | When to Use | BizApps Community Classification |
+| --- | --- | --- | --- |
+| **Category A — MJ Docs (`MJ: Artifacts`)** | `MJ: Artifacts` & `MJ: Artifact Versions` rendered in-place or in a slide-over drawer via `@memberjunction/ng-artifacts` (`<mj-artifact-viewer-panel>` wrapped by `CommunityArtifactViewerComponent`) | Versioned, rich, shareable documents, slides, sheets, and AI-generated interactive components that require version pinning, structured rendering, preview/export, or co-authoring | **`ForumArtifactPost`** (`ArtifactID` / `PinnedArtifactVersionID`) and **`ForumInteractivePost`** (`ComponentArtifactID` / `PinnedArtifactVersionID`), plus version-pinned artifact attachments in `ForumPostAttachment` |
+| **Category B — `MJ: Comments`** | `MJ: Comments` (inline / record-anchored contextual commentary) | Lightweight, passage-anchored or record-anchored review remarks, editorial notes, and contextual annotations tied to a specific document passage or entity record | Inline annotations and contextual remarks anchored to shared documents, artifacts, or records (not a replacement for standalone forum threads) |
+| **Category C — Quick Notes / Relational Records** | Domain relational entities in `__mj_BizAppsCommunity` (queried via batched `RunViews` with `ResultType: 'simple'` and `fnCommunityForumAccess` RLS) | High-volume, low-ceremony conversational discussion threads, Q&A answers, reactions, votes, and status updates where flat relational queries and thread-tree indexing matter most | **High-volume `ForumPost` replies remain Category C relational records** (never migrated into `MJ: Artifacts`), alongside `ForumQuestionPost`, `ForumAnswerPost`, `ForumIdeaPost`, `ForumPostReaction`, and `ForumPostFlag` |
+
+**Authoring Rules for Category A Viewing:**
+- Render `ForumArtifactPost` and `ForumInteractivePost` artifacts through `CommunityArtifactViewerComponent` (`<mjc-community-artifact-viewer>`) wrapping `<mj-artifact-viewer-panel>` from `@memberjunction/ng-artifacts`—never write bespoke Markdown-to-HTML parsers or raw iframe hacks for post bodies.
+- Resolve `ArtifactID` / `ComponentArtifactID` and `PinnedArtifactVersionID` via batched `RunView` / `RunViews` queries (`ResultType: 'simple'`, validated `ID IN (...)`) and render a Markdown-free fallback banner if an artifact or pinned version is missing or revoked while keeping Category C relational `ForumPost` replies intact.
+
 ## Downstream Isolation Boundary
 
 To preserve 100% generic purity, zero downstream app names (`voting`, `issues`, `credentialing`, `sonar`, `accounting`) are permitted inside `packages/`, `metadata/`, or `migrations/`. Verified in CI via `node scripts/check-downstream-names.mjs`.
