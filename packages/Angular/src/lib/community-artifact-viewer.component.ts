@@ -71,6 +71,7 @@ export class CommunityArtifactViewerComponent implements OnChanges, OnDestroy {
   @ViewChild('drawerDialog') private drawerDialog?: ElementRef<HTMLElement>;
 
   private lastTriggerElement: HTMLElement | null = null;
+  private lastLoadSignature: string | null = null;
   private isDestroyed = false;
 
   @Input() public mode: CommunityArtifactViewerMode = 'drawer';
@@ -167,6 +168,7 @@ export class CommunityArtifactViewerComponent implements OnChanges, OnDestroy {
 
     const shouldBeOpen = this.mode === 'inline' ? this.request !== null : this.open && this.request !== null;
     if (!shouldBeOpen) {
+      this.lastLoadSignature = null;
       const wasOpen = this.snapshot.state !== 'closed';
       this.controller.close();
       if (wasOpen) {
@@ -188,6 +190,12 @@ export class CommunityArtifactViewerComponent implements OnChanges, OnDestroy {
       return;
     }
 
+    const nextSignature = this.buildLoadSignature(activeRequest);
+    if (nextSignature === this.lastLoadSignature) {
+      return;
+    }
+    this.lastLoadSignature = nextSignature;
+
     // Defer async loading via microtask so synchronous ngOnChanges / ngOnInit never trigger NG0100.
     queueMicrotask(() => {
       if (this.isDestroyed) return;
@@ -195,8 +203,29 @@ export class CommunityArtifactViewerComponent implements OnChanges, OnDestroy {
     });
   }
 
+  private buildLoadSignature(request: CommunityArtifactViewerRequest): string {
+    return [
+      this.mode,
+      this.open ? '1' : '0',
+      request.postId,
+      request.postKind,
+      request.postTitle,
+      request.artifactId ?? '',
+      request.pinnedArtifactVersionId ?? '',
+      request.pinnedVersionNumber ?? '',
+      request.artifactModality ?? '',
+      request.collaborationMode ?? '',
+      request.experienceKind ?? '',
+      request.fallbackSummaryMarkdown ?? '',
+      this.preloadedMetadata?.artifactId ?? '',
+      this.preloadedMetadata?.pinnedVersionId ?? '',
+      this.preloadedMetadata?.pinnedVersionNumber ?? '',
+    ].join('|');
+  }
+
   public ngOnDestroy(): void {
     this.isDestroyed = true;
+    this.lastLoadSignature = null;
     this.controller.close();
   }
 
@@ -230,6 +259,7 @@ export class CommunityArtifactViewerComponent implements OnChanges, OnDestroy {
   }
 
   public close(): void {
+    this.lastLoadSignature = null;
     if (this.snapshot.state === 'closed' && !this.open) {
       return;
     }
@@ -266,6 +296,7 @@ export class CommunityArtifactViewerComponent implements OnChanges, OnDestroy {
       return;
     }
     if (this.controller.handleKeydown(event.key)) {
+      this.lastLoadSignature = null;
       event.preventDefault();
       event.stopPropagation();
       this.stateChanged.emit('closed');
@@ -281,6 +312,7 @@ export class CommunityArtifactViewerComponent implements OnChanges, OnDestroy {
       return;
     }
     if (this.controller.handleKeydown('Escape')) {
+      this.lastLoadSignature = null;
       event.preventDefault();
       event.stopPropagation();
       this.stateChanged.emit('closed');

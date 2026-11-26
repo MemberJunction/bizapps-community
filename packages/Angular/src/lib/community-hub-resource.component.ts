@@ -2718,8 +2718,28 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
     }
   }
 
+  private cachedDetailArtifactRequestKey: string | null = null;
+  private cachedDetailArtifactRequest: CommunityArtifactViewerRequest | null = null;
+
   public buildDetailArtifactRequest(item: CommunityCommonsItem): CommunityArtifactViewerRequest {
-    return {
+    const key = [
+      item.sourcePostId || item.id,
+      item.title,
+      item.isInteractiveArtifactPost ? 'interactive-post' : 'artifact-post',
+      item.artifactId ?? '',
+      item.pinnedArtifactVersionId ?? '',
+      item.pinnedVersionNumber ?? '',
+      item.artifactModality ?? '',
+      item.collaborationMode ?? '',
+      item.experienceKind ?? '',
+      item.bodyMarkdown ?? '',
+      item.spaceLabel ?? '',
+      item.authorName ?? '',
+    ].join('|');
+    if (this.cachedDetailArtifactRequest && this.cachedDetailArtifactRequestKey === key) {
+      return this.cachedDetailArtifactRequest;
+    }
+    const next: CommunityArtifactViewerRequest = {
       postId: item.sourcePostId || item.id,
       postTitle: item.title,
       postKind: item.isInteractiveArtifactPost ? 'interactive-post' : 'artifact-post',
@@ -2733,6 +2753,9 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
       spaceLabel: item.spaceLabel,
       authorName: item.authorName,
     };
+    this.cachedDetailArtifactRequestKey = key;
+    this.cachedDetailArtifactRequest = next;
+    return next;
   }
 
   public openArtifactViewerForCommonsItem(item: CommunityCommonsItem): void {

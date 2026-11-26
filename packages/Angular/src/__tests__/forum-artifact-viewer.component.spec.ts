@@ -528,4 +528,12 @@ describe('CommunityArtifactViewerComponent — Angular Template & Wiring Verific
     assert.match(livingHtml, /<mjc-community-artifact-viewer[\s\S]*mode="inline"/);
     assert.match(streamHtml, /openArtifactViewer\(item\)/);
   });
+
+  it('deduplicates ngOnChanges loads by signature and memoizes inline artifact request objects to prevent zoneless NG0103 loops', () => {
+    const livingTs = readFileSync(join(LIB_DIR, 'living-co-authoring.component.ts'), 'utf8');
+    assert.match(viewerTs, /buildLoadSignature\(/);
+    assert.match(viewerTs, /if\s*\(nextSignature\s*===\s*this\.lastLoadSignature\)/);
+    assert.match(livingTs, /cachedArtifactRequestKey/);
+    assert.match(hubTs, /cachedDetailArtifactRequestKey/);
+  });
 });

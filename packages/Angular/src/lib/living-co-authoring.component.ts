@@ -137,8 +137,26 @@ export class LivingCoAuthoringComponent {
     return Boolean(doc && (doc.isArtifactPost || doc.artifactId));
   }
 
+  private cachedArtifactRequestKey: string | null = null;
+  private cachedArtifactRequest: CommunityArtifactViewerRequest | null = null;
+
   public buildArtifactRequest(doc: LivingDocItemInput): CommunityArtifactViewerRequest {
-    return {
+    const key = [
+      doc.id,
+      doc.title,
+      doc.postTypeCode,
+      doc.artifactId ?? '',
+      doc.pinnedArtifactVersionId ?? '',
+      doc.pinnedVersionNumber ?? '',
+      doc.artifactModality ?? '',
+      doc.collaborationMode ?? '',
+      doc.experienceKind ?? '',
+      doc.bodyMarkdown ?? '',
+    ].join('|');
+    if (this.cachedArtifactRequest && this.cachedArtifactRequestKey === key) {
+      return this.cachedArtifactRequest;
+    }
+    const next: CommunityArtifactViewerRequest = {
       postId: doc.id,
       postTitle: doc.title,
       postKind: doc.postTypeCode === 'interactive-experience' ? 'interactive-post' : 'artifact-post',
@@ -150,6 +168,9 @@ export class LivingCoAuthoringComponent {
       experienceKind: doc.experienceKind ?? null,
       fallbackSummaryMarkdown: doc.bodyMarkdown,
     };
+    this.cachedArtifactRequestKey = key;
+    this.cachedArtifactRequest = next;
+    return next;
   }
 
   public onOpenArtifactDrawer(doc: LivingDocItemInput): void {
