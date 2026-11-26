@@ -13,12 +13,14 @@ import {
 import { type CommunityGraphQLExecutor, InvokeToggleCommunityPostReactionMutation } from './community-hub-mutations.ts';
 import type {
   mjBizAppsCommunityForumAnswerPostEntity,
+  mjBizAppsCommunityForumArtifactPostEntity,
   mjBizAppsCommunityForumInteractivePostEntity,
   mjBizAppsCommunityForumPostEntity,
   mjBizAppsCommunityForumPostReactionEntity,
   mjBizAppsCommunityForumPostTagEntity,
   mjBizAppsCommunityForumQuestionPostEntity,
 } from '@mj-biz-apps/community-entities';
+import type { ResolvedCommunityArtifactMetadata } from './community-artifact-viewer.ts';
 import type { CommunityHubTabKey } from './community-hub-preferences.ts';
 import { StripMarkdownToPlainText } from './community-markdown.ts';
 
@@ -108,6 +110,15 @@ export interface CommunityCommonsItem {
   sourceTab: CommunityHubTabKey;
   sourcePostId: string;
   forumId?: string | null;
+  artifactId?: string | null;
+  pinnedArtifactVersionId?: string | null;
+  pinnedVersionNumber?: number | null;
+  artifactModality?: mjBizAppsCommunityForumArtifactPostEntity['ArtifactModality'] | null;
+  collaborationMode?: mjBizAppsCommunityForumArtifactPostEntity['CollaborationMode'] | null;
+  experienceKind?: mjBizAppsCommunityForumInteractivePostEntity['ExperienceKind'] | null;
+  artifactMetadata?: ResolvedCommunityArtifactMetadata | null;
+  isArtifactPost?: boolean;
+  isInteractiveArtifactPost?: boolean;
   attachments?: CommunityAttachmentItem[];
 }
 
@@ -347,6 +358,13 @@ export interface CommonsLivingDocInput {
   bodyMarkdown: string;
   postTypeCode: 'collaborative-doc' | 'collaborative-sheet' | 'collaborative-deck' | 'interactive-experience';
   experienceKind?: mjBizAppsCommunityForumInteractivePostEntity['ExperienceKind'] | null;
+  artifactId?: string | null;
+  pinnedArtifactVersionId?: string | null;
+  pinnedVersionNumber?: number | null;
+  artifactModality?: mjBizAppsCommunityForumArtifactPostEntity['ArtifactModality'] | null;
+  collaborationMode?: mjBizAppsCommunityForumArtifactPostEntity['CollaborationMode'] | null;
+  artifactMetadata?: ResolvedCommunityArtifactMetadata | null;
+  isArtifactPost?: boolean;
   authorName?: string | null;
   authorRole?: string | null;
   timestampLabel?: string | null;
@@ -862,6 +880,15 @@ export function BuildCommonsStreamItems(params: {
       sourceTab: 'living-co-authoring',
       sourcePostId: doc.id,
       forumId: doc.forumId ?? null,
+      artifactId: doc.artifactId ?? null,
+      pinnedArtifactVersionId: doc.pinnedArtifactVersionId ?? null,
+      pinnedVersionNumber: doc.pinnedVersionNumber ?? null,
+      artifactModality: doc.artifactModality ?? null,
+      collaborationMode: doc.collaborationMode ?? null,
+      experienceKind: doc.experienceKind ?? null,
+      artifactMetadata: doc.artifactMetadata ?? null,
+      isArtifactPost: Boolean(doc.isArtifactPost || doc.artifactId),
+      isInteractiveArtifactPost: isInteractive && Boolean(doc.artifactId),
       attachments: doc.attachments ? [...doc.attachments] : undefined,
     });
   }

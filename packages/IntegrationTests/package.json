@@ -1,0 +1,19 @@
+{
+  "name": "@mj-biz-apps/community-integration-tests",
+  "private": true,
+  "type": "module",
+  "version": "6.3.0-edge.1",
+  "description": "Real-world seeded cross-stack integration tests, adversarial boundary checks, and multi-viewport Playwright verification for BizApps Community.",
+  "license": "BUSL-1.1",
+  "scripts": {
+    "build": "echo \"@mj-biz-apps/community-integration-tests uses native ESM and Node stripped TypeScript\"",
+    "test:unit": "node --experimental-strip-types --test src/__tests__/community-seed-density.spec.ts",
+    "test:checks": "node --test checks/forum-artifact-post-viewer.check.mjs checks/forum-artifact-adversarial-boundaries.check.mjs",
+    "test": "node --experimental-strip-types --test src/__tests__/community-seed-density.spec.ts && node --test checks/forum-artifact-post-viewer.check.mjs checks/forum-artifact-adversarial-boundaries.check.mjs",
+    "test:integration": "node ../../test-harnesses/integration.mjs"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/MemberJunction/bizapps-community"
+  }
+}

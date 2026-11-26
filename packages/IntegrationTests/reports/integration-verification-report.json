@@ -1,0 +1,388 @@
+{
+  "schemaVersion": "sf-integration-report/v1",
+  "evaluatedAtIso": "2026-11-26T19:44:27.093Z",
+  "overallPassed": true,
+  "seedSummary": {
+    "counts": {
+      "Organizations": 3,
+      "Spaces": 3,
+      "People": 6,
+      "Roles": 4,
+      "Permissions": 8,
+      "Forums": 5,
+      "Artifacts": 5,
+      "ArtifactVersions": 9,
+      "ForumArtifactPosts": 6,
+      "ForumInteractivePosts": 2,
+      "ForumPostReplies": 14
+    },
+    "totalRecords": 65,
+    "categoryCount": 11,
+    "statuses": [
+      "Answered",
+      "Archived",
+      "Draft",
+      "Published",
+      "Resolved"
+    ],
+    "periods": [
+      "2026-Q1",
+      "2026-Q2",
+      "2026-Q3",
+      "2026-Q4"
+    ]
+  },
+  "sqliteIntegrity": {
+    "foreignKeyViolations": 0,
+    "fkVerifiedArtifactPosts": 4,
+    "adversarialMissingArtifactPosts": 2,
+    "fkVerifiedInteractivePosts": 1,
+    "adversarialMissingInteractivePosts": 1,
+    "revokedArtifactIdAbsent": true,
+    "nonExistentVersionAbsent": true
+  },
+  "integrationChecks": {
+    "totalPassed": 10,
+    "totalFailed": 0,
+    "totalSkipped": 0,
+    "suites": [
+      {
+        "suite": "forum-artifact-post-viewer",
+        "passed": true,
+        "checkCount": 5,
+        "checks": [
+          {
+            "check": "batched-runview-zero-n-plus-1",
+            "passed": true,
+            "queryCount": 2
+          },
+          {
+            "check": "pinned-version-passthrough",
+            "passed": true,
+            "pinnedVersionNumber": 2
+          },
+          {
+            "check": "interactive-post-pinned-and-escape",
+            "passed": true,
+            "versionNumber": 2
+          },
+          {
+            "check": "relational-reply-threading-preserved",
+            "passed": true,
+            "replyCount": 12
+          },
+          {
+            "check": "rapid-switch-stale-response-discarded",
+            "passed": true
+          }
+        ]
+      },
+      {
+        "suite": "forum-artifact-adversarial-boundaries",
+        "passed": true,
+        "checkCount": 5,
+        "checks": [
+          {
+            "check": "cross-tenant-rls-denial",
+            "passed": true
+          },
+          {
+            "check": "role-and-status-permission-denial",
+            "passed": true
+          },
+          {
+            "check": "missing-revoked-artifact-graceful-fallback",
+            "passed": true,
+            "preservedReplies": 3
+          },
+          {
+            "check": "invalid-pin-cross-artifact-and-sql-injection-blocked",
+            "passed": true
+          },
+          {
+            "check": "empty-short-circuit-and-bounded-chunking",
+            "passed": true
+          }
+        ]
+      }
+    ]
+  },
+  "playwrightVerification": {
+    "tool": "playwright-chromium",
+    "evaluatedAtIso": "2026-11-26T19:44:26.961Z",
+    "fontAwesomeMode": "svg-mask-fallback",
+    "fontAwesomeLoaded": true,
+    "customElementsVerified": true,
+    "runtimeClassFactoryRegistrationsVerified": 26,
+    "viewportThemeCombinationsVerified": 8,
+    "matrix": [
+      {
+        "viewport": "desktop-1440x900",
+        "width": 1440,
+        "height": 900,
+        "theme": "light",
+        "passed": true,
+        "bgPage": "rgb(245, 246, 248)",
+        "overflowPx": 0,
+        "landmarks": {
+          "header": true,
+          "headerSticky": true,
+          "nav": true,
+          "main": true,
+          "asideCount": 2,
+          "footer": true
+        }
+      },
+      {
+        "viewport": "tablet-landscape-1024x768",
+        "width": 1024,
+        "height": 768,
+        "theme": "light",
+        "passed": true,
+        "bgPage": "rgb(245, 246, 248)",
+        "overflowPx": 0,
+        "landmarks": {
+          "header": true,
+          "headerSticky": true,
+          "nav": true,
+          "main": true,
+          "asideCount": 2,
+          "footer": true
+        }
+      },
+      {
+        "viewport": "tablet-portrait-768x1024",
+        "width": 768,
+        "height": 1024,
+        "theme": "light",
+        "passed": true,
+        "bgPage": "rgb(245, 246, 248)",
+        "overflowPx": 0,
+        "landmarks": {
+          "header": true,
+          "headerSticky": true,
+          "nav": true,
+          "main": true,
+          "asideCount": 2,
+          "footer": true
+        }
+      },
+      {
+        "viewport": "mobile-390x844",
+        "width": 390,
+        "height": 844,
+        "theme": "light",
+        "passed": true,
+        "bgPage": "rgb(245, 246, 248)",
+        "overflowPx": 0,
+        "landmarks": {
+          "header": true,
+          "headerSticky": true,
+          "nav": true,
+          "main": true,
+          "asideCount": 2,
+          "footer": true
+        }
+      },
+      {
+        "viewport": "desktop-1440x900",
+        "width": 1440,
+        "height": 900,
+        "theme": "dark",
+        "passed": true,
+        "bgPage": "rgb(15, 20, 28)",
+        "overflowPx": 0,
+        "landmarks": {
+          "header": true,
+          "headerSticky": true,
+          "nav": true,
+          "main": true,
+          "asideCount": 2,
+          "footer": true
+        }
+      },
+      {
+        "viewport": "tablet-landscape-1024x768",
+        "width": 1024,
+        "height": 768,
+        "theme": "dark",
+        "passed": true,
+        "bgPage": "rgb(15, 20, 28)",
+        "overflowPx": 0,
+        "landmarks": {
+          "header": true,
+          "headerSticky": true,
+          "nav": true,
+          "main": true,
+          "asideCount": 2,
+          "footer": true
+        }
+      },
+      {
+        "viewport": "tablet-portrait-768x1024",
+        "width": 768,
+        "height": 1024,
+        "theme": "dark",
+        "passed": true,
+        "bgPage": "rgb(15, 20, 28)",
+        "overflowPx": 0,
+        "landmarks": {
+          "header": true,
+          "headerSticky": true,
+          "nav": true,
+          "main": true,
+          "asideCount": 2,
+          "footer": true
+        }
+      },
+      {
+        "viewport": "mobile-390x844",
+        "width": 390,
+        "height": 844,
+        "theme": "dark",
+        "passed": true,
+        "bgPage": "rgb(15, 20, 28)",
+        "overflowPx": 0,
+        "landmarks": {
+          "header": true,
+          "headerSticky": true,
+          "nav": true,
+          "main": true,
+          "asideCount": 2,
+          "footer": true
+        }
+      }
+    ],
+    "drawerFlows": {
+      "pinnedArtifactPost": {
+        "state": "ready",
+        "versionNumber": "2",
+        "pinnedVersionId": "f7000000-0000-4000-8000-000000000102",
+        "badgeText": "Pinned v2",
+        "hasArtifactViewerPanel": true,
+        "rawMarkdownLeak": false
+      },
+      "pinnedInteractivePost": {
+        "state": "ready",
+        "postKind": "interactive-post",
+        "versionNumber": "2",
+        "overflowPx": 0
+      },
+      "revokedArtifactFallback": {
+        "state": "missing",
+        "reason": "artifact-not-found",
+        "rawMarkdownLeak": false
+      },
+      "escapeDismissalVerified": true,
+      "windowPrintCalled": false
+    },
+    "pageErrors": 0,
+    "consoleErrors": 0
+  },
+  "openAppReadinessReport": {
+    "schemaVersion": "sf-readiness/v3",
+    "overallPassed": true,
+    "pillars": {
+      "formParity": {
+        "passed": true,
+        "summary": "startupExport=LoadBizAppsCommunityClient; 25/25 BaseFormComponent classes registered and retained",
+        "checkedCount": 25,
+        "violationCount": 0,
+        "violations": []
+      },
+      "navParity": {
+        "passed": true,
+        "summary": "1/1 DefaultNavItems match active BaseResourceComponent registrations",
+        "checkedCount": 1,
+        "violationCount": 0,
+        "violations": []
+      },
+      "designTokens": {
+        "passed": true,
+        "summary": "Zero raw hex/rgb/rgba/hsl color literals across 49 Angular files",
+        "checkedCount": 49,
+        "violationCount": 0,
+        "violations": []
+      },
+      "browserSmoke": {
+        "passed": true,
+        "summary": "Headless Chromium verified 8 viewport/theme combinations, 0 pageErrors, 0 consoleErrors, 26 runtime ClassFactory registrations",
+        "checkedCount": 8,
+        "violationCount": 0,
+        "violations": []
+      },
+      "seedDensity": {
+        "passed": true,
+        "summary": "65 multi-entity domain-neutral seed records across 11 categories (5 statuses, 4 quarters)",
+        "checkedCount": 65,
+        "violationCount": 0,
+        "violations": [],
+        "counts": {
+          "Organizations": 3,
+          "Spaces": 3,
+          "People": 6,
+          "Roles": 4,
+          "Permissions": 8,
+          "Forums": 5,
+          "Artifacts": 5,
+          "ArtifactVersions": 9,
+          "ForumArtifactPosts": 6,
+          "ForumInteractivePosts": 2,
+          "ForumPostReplies": 14
+        },
+        "statuses": [
+          "Answered",
+          "Archived",
+          "Draft",
+          "Published",
+          "Resolved"
+        ],
+        "periods": [
+          "2026-Q1",
+          "2026-Q2",
+          "2026-Q3",
+          "2026-Q4"
+        ]
+      }
+    }
+  },
+  "seedDensityReport": {
+    "schemaVersion": "sf-readiness/v3",
+    "overallPassed": true,
+    "pillars": {
+      "seedDensity": {
+        "passed": true,
+        "summary": "65 multi-entity domain-neutral seed records across 11 categories (5 statuses, 4 quarters)",
+        "checkedCount": 65,
+        "violationCount": 0,
+        "violations": [],
+        "counts": {
+          "Organizations": 3,
+          "Spaces": 3,
+          "People": 6,
+          "Roles": 4,
+          "Permissions": 8,
+          "Forums": 5,
+          "Artifacts": 5,
+          "ArtifactVersions": 9,
+          "ForumArtifactPosts": 6,
+          "ForumInteractivePosts": 2,
+          "ForumPostReplies": 14
+        },
+        "statuses": [
+          "Answered",
+          "Archived",
+          "Draft",
+          "Published",
+          "Resolved"
+        ],
+        "periods": [
+          "2026-Q1",
+          "2026-Q2",
+          "2026-Q3",
+          "2026-Q4"
+        ]
+      }
+    }
+  }
+}

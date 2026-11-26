@@ -19,7 +19,7 @@
               <img
                 class="mjc-att-single-img"
                 [src]="safeImgUrl"
-                [alt]="singleMedia.altText"
+                alt="{{ singleMedia.altText }}"
                 loading="lazy"
               />
               <span class="mjc-att-zoom-badge" aria-hidden="true">
@@ -122,7 +122,7 @@
                 <img
                   class="mjc-att-carousel__img"
                   [src]="safeSlideImg"
-                  [alt]="slide.altText"
+                  alt="{{ slide.altText }}"
                 />
               </button>
             } @else {
@@ -495,7 +495,7 @@
 
         <div class="mjc-att-lightbox-stage">
           @if (lbItem.isImage && lbItem.safeUrl) {
-            <img class="mjc-att-lightbox-img" [src]="lbItem.safeUrl" [alt]="lbItem.altText" />
+            <img class="mjc-att-lightbox-img" [src]="lbItem.safeUrl" alt="{{ lbItem.altText }}" />
           } @else if (lbItem.isVideo && lbItem.safeUrl) {
             <video
               class="mjc-att-lightbox-video"

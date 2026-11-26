@@ -334,7 +334,27 @@
                     </div>
                   </div>
 
-                  <div class="mjc-full-thread-content mjc-markdown" [innerHTML]="renderMarkdown(activeDetail.bodyMarkdown)"></div>
+                  @if (activeDetail.isArtifactPost || activeDetail.artifactId) {
+                    <mjc-community-artifact-viewer
+                      mode="inline"
+                      [request]="buildDetailArtifactRequest(activeDetail)"
+                      [preloadedMetadata]="activeDetail.artifactMetadata ?? null"
+                      [currentUser]="activeCurrentUser"
+                    ></mjc-community-artifact-viewer>
+                    <div class="mjc-community-hub__btn-row">
+                      <button
+                        type="button"
+                        id="mjc-detail-open-artifact-drawer-btn"
+                        class="mjc-community-hub__btn"
+                        (click)="openArtifactViewerForCommonsItem(activeDetail)"
+                      >
+                        <i class="fa-solid fa-up-right-and-down-left-from-center" aria-hidden="true"></i>
+                        <span>Open in Slide-Over Viewer</span>
+                      </button>
+                    </div>
+                  } @else {
+                    <div class="mjc-full-thread-content mjc-markdown" [innerHTML]="renderMarkdown(activeDetail.bodyMarkdown)"></div>
+                  }
 
                   @if (activeDetail.attachments && activeDetail.attachments.length > 0) {
                     <mjc-attachment-gallery
@@ -739,6 +759,7 @@
                 (navigateToTab)="SelectTab($event)"
                 (sessionRsvpToggled)="toggleSessionRsvp($event)"
                 (digestPreviewRequested)="openDigestDrawer()"
+                (artifactViewerRequested)="openArtifactViewerForCommonsItem($event)"
               ></mjc-knowledge-stream>
             </section>
           }
@@ -986,6 +1007,7 @@
               <mjc-living-co-authoring
                 [items]="livingDocItems"
                 [selectedDocId]="selectedLivingDocId"
+                [currentUser]="activeCurrentUser"
                 [editingDocMarkdown]="editingDocMarkdown"
                 [docActionMessage]="docActionMessage"
                 [threadSynthesisResult]="threadSynthesisResult"
@@ -999,6 +1021,7 @@
                 (editingDocMarkdownChange)="editingDocMarkdown = $event"
                 (saveDoc)="SaveCoAuthoringDocument($event.docId, $event.markdown)"
                 (synthesizeDoc)="SynthesizeFeedThread($event)"
+                (openArtifactDrawer)="openArtifactViewerDrawer($event)"
                 (formRespondentNameChange)="formRespondentName = $event"
                 (formConfidenceRatingChange)="formConfidenceRating = $event"
                 (formCommentsChange)="formComments = $event"
@@ -1440,5 +1463,15 @@
           </div>
         </div>
       }
+
+      <!-- SLIDE-OVER MJ ARTIFACT VIEWER DRAWER (ForumArtifactPost & ForumInteractivePost) -->
+      <mjc-community-artifact-viewer
+        mode="drawer"
+        [open]="isArtifactViewerOpen"
+        [request]="activeArtifactViewerRequest"
+        [preloadedMetadata]="activeArtifactViewerMetadata"
+        [currentUser]="activeCurrentUser"
+        (closed)="closeArtifactViewerDrawer()"
+      ></mjc-community-artifact-viewer>
     </div>
 </ng-template>

@@ -1,8 +1,10 @@
 import type { CommunityAttachmentItem, IdeationAllocationMode } from '@mj-biz-apps/community-core';
 import type {
   mjBizAppsCommunityForumAnswerPostEntity,
+  mjBizAppsCommunityForumArtifactPostEntity,
   mjBizAppsCommunityForumInteractivePostEntity,
 } from '@mj-biz-apps/community-entities';
+import type { ResolvedCommunityArtifactMetadata } from './community-artifact-viewer.ts';
 import type { CommunityBadgeTone } from './community-hub-commons.ts';
 
 export type QaCanonFilterKey = 'all' | 'canon-verified' | 'novel-insight' | 'needs-review';
@@ -52,6 +54,13 @@ export interface LivingDocItemInput {
   bodyMarkdown: string;
   postTypeCode: 'collaborative-doc' | 'collaborative-sheet' | 'collaborative-deck' | 'interactive-experience';
   experienceKind?: mjBizAppsCommunityForumInteractivePostEntity['ExperienceKind'] | null;
+  artifactId?: string | null;
+  pinnedArtifactVersionId?: string | null;
+  pinnedVersionNumber?: number | null;
+  artifactModality?: mjBizAppsCommunityForumArtifactPostEntity['ArtifactModality'] | null;
+  collaborationMode?: mjBizAppsCommunityForumArtifactPostEntity['CollaborationMode'] | null;
+  artifactMetadata?: ResolvedCommunityArtifactMetadata | null;
+  isArtifactPost?: boolean;
   attachments?: CommunityAttachmentItem[];
 }
 

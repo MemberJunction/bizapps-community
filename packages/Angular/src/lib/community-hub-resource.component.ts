@@ -28,6 +28,7 @@ import { CommunityEngineBase } from '@mj-biz-apps/community-engine-base';
 import {
   COMMUNITY_ENTITY_NAMES,
   type mjBizAppsCommunityForumAnswerPostEntity,
+  type mjBizAppsCommunityForumArtifactPostEntity,
   type mjBizAppsCommunityForumInteractivePostEntity,
   type mjBizAppsCommunityForumPostAttachmentEntity,
   type mjBizAppsCommunityForumPostEntity,
@@ -51,6 +52,14 @@ import {
   type IdeationAllocationMode,
 } from '@mj-biz-apps/community-core';
 import { DEMO_SEED_ATTACHMENTS } from './community-attachment-demo.ts';
+import {
+  ExtractResolvedMetadataFromBatch,
+  LoadBatchedArtifactsMetadata,
+  MapArtifactModalityToPostTypeCode,
+  type CommunityArtifactViewerRequest,
+  type ResolvedCommunityArtifactMetadata,
+} from './community-artifact-viewer.ts';
+import { CommunityArtifactViewerComponent } from './community-artifact-viewer.component.ts';
 import { CommunityAttachmentGalleryComponent } from './community-attachment-gallery.component.ts';
 import { CommunityAttachmentPickerComponent } from './community-attachment-picker.component.ts';
 import {
@@ -222,6 +231,13 @@ export interface CommunityHubLivingDocItem {
   bodyMarkdown: string;
   postTypeCode: 'collaborative-doc' | 'collaborative-sheet' | 'collaborative-deck' | 'interactive-experience';
   experienceKind?: mjBizAppsCommunityForumInteractivePostEntity['ExperienceKind'] | null;
+  artifactId?: string | null;
+  pinnedArtifactVersionId?: string | null;
+  pinnedVersionNumber?: number | null;
+  artifactModality?: mjBizAppsCommunityForumArtifactPostEntity['ArtifactModality'] | null;
+  collaborationMode?: mjBizAppsCommunityForumArtifactPostEntity['CollaborationMode'] | null;
+  artifactMetadata?: ResolvedCommunityArtifactMetadata | null;
+  isArtifactPost?: boolean;
   reactionScore?: number | null;
   replyCount?: number | null;
   promotedToSpaceId?: string | null;
@@ -320,8 +336,18 @@ interface SubtypeIdRow {
   ID: string;
 }
 
+interface ArtifactSubtypeRow {
+  ID: string;
+  ArtifactID: string;
+  PinnedArtifactVersionID: string | null;
+  ArtifactModality: mjBizAppsCommunityForumArtifactPostEntity['ArtifactModality'] | null;
+  CollaborationMode: mjBizAppsCommunityForumArtifactPostEntity['CollaborationMode'] | null;
+}
+
 interface InteractiveSubtypeRow {
   ID: string;
+  ComponentArtifactID: string | null;
+  PinnedArtifactVersionID: string | null;
   ExperienceKind: mjBizAppsCommunityForumInteractivePostEntity['ExperienceKind'] | null;
 }
 
@@ -384,8 +410,14 @@ const SEEDED_LIVING_DOCS_FALLBACK: CommunityHubLivingDocItem[] = [
   {
     id: 'seed-doc-1',
     title: 'OAuth2 Partner Onboarding Playbook',
-    bodyMarkdown: '## OAuth2 Partner Playbook\n- Configure PKCE callback URLs\n- Enable token rotation alerts',
+    bodyMarkdown: 'Configure PKCE callback URLs and enable automated token rotation alerts across partner environments.',
     postTypeCode: 'collaborative-doc',
+    artifactId: 'A1000001-0000-4000-8000-000000000001',
+    pinnedArtifactVersionId: 'A1000001-0000-4000-8000-000000000101',
+    pinnedVersionNumber: 2,
+    artifactModality: 'Document',
+    collaborationMode: 'Suggest',
+    isArtifactPost: true,
     attachments: DEMO_SEED_ATTACHMENTS.livingPlaybook,
   },
   {
@@ -400,6 +432,10 @@ const SEEDED_LIVING_DOCS_FALLBACK: CommunityHubLivingDocItem[] = [
     bodyMarkdown: 'Interactive knowledge check running inside an isolated sandbox.',
     postTypeCode: 'interactive-experience',
     experienceKind: 'Trivia',
+    artifactId: 'A1000001-0000-4000-8000-000000000002',
+    pinnedArtifactVersionId: 'A1000001-0000-4000-8000-000000000201',
+    pinnedVersionNumber: 1,
+    isArtifactPost: true,
   },
 ];
 
@@ -473,6 +509,7 @@ function buildMiniAppSrcdoc(title: string, kind: string): string {
     QaCanonWorkbenchComponent,
     LivingCoAuthoringComponent,
     QuadraticVotingSliderComponent,
+    CommunityArtifactViewerComponent,
     CommunityAttachmentGalleryComponent,
     CommunityAttachmentPickerComponent,
     CommunityMediaLibraryComponent,
@@ -541,8 +578,10 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
   public hubLoadError: string | null = null;
   public streamActionError: string | null = null;
 
-  // Slide-Over Detail Sheet Drawer state
+  // Slide-Over Detail Sheet & Artifact Viewer Drawer state
   public detailSheetItemId: string | null = null;
+  public activeArtifactViewerRequest: CommunityArtifactViewerRequest | null = null;
+  public activeArtifactViewerMetadata: ResolvedCommunityArtifactMetadata | null = null;
   public detailReplyText = '';
   public detailReplyAttachments: DraftCommunityAttachment[] = [];
   public detailReplyAttachmentError: string | null = null;
@@ -698,7 +737,15 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
   }
 
   public get hasActiveOverlay(): boolean {
-    return Boolean(this.isAskShareModalOpen || this.isDigestDrawerOpen);
+    return Boolean(this.isAskShareModalOpen || this.isDigestDrawerOpen || this.isArtifactViewerOpen);
+  }
+
+  public get isArtifactViewerOpen(): boolean {
+    return this.activeArtifactViewerRequest !== null;
+  }
+
+  public get activeCurrentUser(): UserInfo | null {
+    return Metadata.Provider?.CurrentUser ?? null;
   }
 
   public renderMarkdown(markdown: string | null | undefined): string {
@@ -1280,6 +1327,7 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
         | ForumPostRow
         | IdeaCampaignRow
         | SubtypeIdRow
+        | ArtifactSubtypeRow
         | InteractiveSubtypeRow;
 
       const wave2Queries: PaginatedBatchQuerySpec[] = [];
@@ -1331,7 +1379,7 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
           {
             entityName: COMMUNITY_ENTITY_NAMES.ForumArtifactPosts,
             extraFilter: subtypeScopeFilter,
-            fields: ['ID'],
+            fields: ['ID', 'ArtifactID', 'PinnedArtifactVersionID', 'ArtifactModality', 'CollaborationMode'],
           },
           {
             entityName: COMMUNITY_ENTITY_NAMES.ForumFormPosts,
@@ -1341,7 +1389,7 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
           {
             entityName: COMMUNITY_ENTITY_NAMES.ForumInteractivePosts,
             extraFilter: subtypeScopeFilter,
-            fields: ['ID', 'ExperienceKind'],
+            fields: ['ID', 'ComponentArtifactID', 'PinnedArtifactVersionID', 'ExperienceKind'],
           },
         );
       }
@@ -1365,9 +1413,9 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
         ? { success: true, rows: Array.from(spacePostById.values()).filter((p) => p.RootPostID == null) }
         : (wave2Results[feedIdx] as PaginatedLoadResult<ForumPostRow>);
       const campaignsResult = wave2Results[campaignsIdx] as PaginatedLoadResult<IdeaCampaignRow>;
-      const artifactSubtypesResult: PaginatedLoadResult<SubtypeIdRow> =
+      const artifactSubtypesResult: PaginatedLoadResult<ArtifactSubtypeRow> =
         artifactIdx >= 0
-          ? (wave2Results[artifactIdx] as PaginatedLoadResult<SubtypeIdRow>)
+          ? (wave2Results[artifactIdx] as PaginatedLoadResult<ArtifactSubtypeRow>)
           : { success: true, rows: [] };
       const formSubtypesResult: PaginatedLoadResult<SubtypeIdRow> =
         formIdx >= 0
@@ -1423,10 +1471,20 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
         id: string;
         postTypeCode: CommunityHubLivingDocItem['postTypeCode'];
         experienceKind?: mjBizAppsCommunityForumInteractivePostEntity['ExperienceKind'] | null;
+        artifactId?: string | null;
+        pinnedArtifactVersionId?: string | null;
+        artifactModality?: mjBizAppsCommunityForumArtifactPostEntity['ArtifactModality'] | null;
+        collaborationMode?: mjBizAppsCommunityForumArtifactPostEntity['CollaborationMode'] | null;
+        isArtifactPost?: boolean;
       }> = [
         ...(artifactSubtypesResult.success ? artifactSubtypesResult.rows : []).map((r) => ({
           id: r.ID,
-          postTypeCode: 'collaborative-doc' as const,
+          postTypeCode: MapArtifactModalityToPostTypeCode(r.ArtifactModality),
+          artifactId: r.ArtifactID ?? null,
+          pinnedArtifactVersionId: r.PinnedArtifactVersionID ?? null,
+          artifactModality: r.ArtifactModality ?? 'Document',
+          collaborationMode: r.CollaborationMode ?? 'Suggest',
+          isArtifactPost: true,
         })),
         ...(formSubtypesResult.success ? formSubtypesResult.rows : []).map((r) => ({
           id: r.ID,
@@ -1436,6 +1494,9 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
           id: r.ID,
           postTypeCode: 'interactive-experience' as const,
           experienceKind: r.ExperienceKind,
+          artifactId: r.ComponentArtifactID ?? null,
+          pinnedArtifactVersionId: r.PinnedArtifactVersionID ?? null,
+          isArtifactPost: Boolean(r.ComponentArtifactID),
         })),
       ];
 
@@ -1602,6 +1663,11 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
             bodyMarkdown: post?.BodyMarkdown ?? '',
             postTypeCode: r.postTypeCode,
             experienceKind: r.experienceKind ?? null,
+            artifactId: r.artifactId ?? null,
+            pinnedArtifactVersionId: r.pinnedArtifactVersionId ?? null,
+            artifactModality: r.artifactModality ?? null,
+            collaborationMode: r.collaborationMode ?? null,
+            isArtifactPost: Boolean(r.isArtifactPost),
             reactionScore: post?.ReactionScore ?? 0,
             replyCount: post?.ReplyCount ?? 0,
             promotedToSpaceId: post?.PromotedToSpaceID ?? null,
@@ -1617,14 +1683,47 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
           ...this.livingDocItems.map((d) => d.id),
         ]),
       );
-      const [_, loadedArtifacts] = await Promise.all([
+      const livingDocArtifactIds = this.livingDocItems
+        .map((d) => d.artifactId)
+        .filter((id): id is string => Boolean(id));
+      const livingDocPinnedVersionIds = this.livingDocItems
+        .map((d) => d.pinnedArtifactVersionId)
+        .filter((id): id is string => Boolean(id));
+
+      const [_, loadedArtifacts, batchedArtifactMeta] = await Promise.all([
         allRootIds.length > 0
           ? this.loadPostSupplementaryMetadata(rv, user, allRootIds)
           : Promise.resolve(),
         LoadAccessibleArtifactsCatalog(rv, user).catch(() => [] as AccessibleArtifactCatalogItem[]),
+        livingDocArtifactIds.length > 0
+          ? LoadBatchedArtifactsMetadata({
+              runView: rv,
+              artifactIds: livingDocArtifactIds,
+              pinnedVersionIds: livingDocPinnedVersionIds,
+              user,
+            })
+          : Promise.resolve(null),
       ]);
       if (loadVersion !== this.loadHubStateVersion) return;
       this.accessibleArtifacts = loadedArtifacts;
+
+      if (batchedArtifactMeta) {
+        this.livingDocItems = this.livingDocItems.map((doc) => {
+          if (!doc.artifactId) return doc;
+          const resolvedMeta = ExtractResolvedMetadataFromBatch({
+            postTitle: doc.title,
+            artifactId: doc.artifactId,
+            pinnedArtifactVersionId: doc.pinnedArtifactVersionId,
+            fallbackSummaryMarkdown: doc.bodyMarkdown,
+            batch: batchedArtifactMeta,
+          });
+          return {
+            ...doc,
+            pinnedVersionNumber: resolvedMeta?.pinnedVersionNumber ?? doc.pinnedVersionNumber ?? null,
+            artifactMetadata: resolvedMeta,
+          };
+        });
+      }
 
       this.sessions = [];
       this.rebuildCommonsItems();
@@ -2602,6 +2701,10 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
     if (this.doc?.querySelector('.mjc-att-modal-backdrop, .mjc-lib-modal-backdrop')) {
       return;
     }
+    if (this.isArtifactViewerOpen) {
+      this.closeArtifactViewerDrawer();
+      return;
+    }
     if (this.isDigestDrawerOpen) {
       this.closeDigestDrawer();
       return;
@@ -2613,6 +2716,70 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
     if (this.detailSheetItemId) {
       this.closeDetailSheet();
     }
+  }
+
+  private cachedDetailArtifactRequestKey: string | null = null;
+  private cachedDetailArtifactRequest: CommunityArtifactViewerRequest | null = null;
+
+  public buildDetailArtifactRequest(item: CommunityCommonsItem): CommunityArtifactViewerRequest {
+    const key = [
+      item.sourcePostId || item.id,
+      item.title,
+      item.isInteractiveArtifactPost ? 'interactive-post' : 'artifact-post',
+      item.artifactId ?? '',
+      item.pinnedArtifactVersionId ?? '',
+      item.pinnedVersionNumber ?? '',
+      item.artifactModality ?? '',
+      item.collaborationMode ?? '',
+      item.experienceKind ?? '',
+      item.bodyMarkdown ?? '',
+      item.spaceLabel ?? '',
+      item.authorName ?? '',
+    ].join('|');
+    if (this.cachedDetailArtifactRequest && this.cachedDetailArtifactRequestKey === key) {
+      return this.cachedDetailArtifactRequest;
+    }
+    const next: CommunityArtifactViewerRequest = {
+      postId: item.sourcePostId || item.id,
+      postTitle: item.title,
+      postKind: item.isInteractiveArtifactPost ? 'interactive-post' : 'artifact-post',
+      artifactId: item.artifactId ?? null,
+      pinnedArtifactVersionId: item.pinnedArtifactVersionId ?? null,
+      pinnedVersionNumber: item.pinnedVersionNumber ?? null,
+      artifactModality: item.artifactModality ?? null,
+      collaborationMode: item.collaborationMode ?? null,
+      experienceKind: item.experienceKind ?? null,
+      fallbackSummaryMarkdown: item.bodyMarkdown,
+      spaceLabel: item.spaceLabel,
+      authorName: item.authorName,
+    };
+    this.cachedDetailArtifactRequestKey = key;
+    this.cachedDetailArtifactRequest = next;
+    return next;
+  }
+
+  public openArtifactViewerForCommonsItem(item: CommunityCommonsItem): void {
+    this.openArtifactViewerDrawer(this.buildDetailArtifactRequest(item), item.artifactMetadata ?? null);
+  }
+
+  public openArtifactViewerDrawer(
+    request: CommunityArtifactViewerRequest,
+    metadata?: ResolvedCommunityArtifactMetadata | null,
+  ): void {
+    const resolvedMetadata =
+      metadata !== undefined
+        ? metadata
+        : (this.livingDocItems.find((d) => d.id === request.postId)?.artifactMetadata ?? null);
+    this.activeArtifactViewerRequest = request;
+    this.activeArtifactViewerMetadata = resolvedMetadata;
+    this.cdr.markForCheck();
+  }
+
+  public closeArtifactViewerDrawer(): void {
+    if (!this.activeArtifactViewerRequest) return;
+    this.activeArtifactViewerRequest = null;
+    this.activeArtifactViewerMetadata = null;
+    this.cdr.markForCheck();
   }
 
   public openDetailSheet(itemId: string): void {

@@ -132,14 +132,14 @@
                   <img
                     class="mjc-lib-thumb-media"
                     [src]="entry.safeUrl"
-                    [alt]="entry.caption || entry.title"
+                    alt="{{ entry.caption || entry.title }}"
                     loading="lazy"
                   />
                 } @else if (entry.kind === 'video' && entry.safePosterUrl) {
                   <img
                     class="mjc-lib-thumb-media"
                     [src]="entry.safePosterUrl"
-                    [alt]="entry.caption || entry.title"
+                    alt="{{ entry.caption || entry.title }}"
                     loading="lazy"
                   />
                   <span class="mjc-lib-video-overlay" aria-hidden="true">
@@ -364,7 +364,7 @@
             <img
               class="mjc-lib-lightbox-img"
               [src]="lbEntry.safeUrl"
-              [alt]="lbEntry.caption || lbEntry.title"
+              alt="{{ lbEntry.caption || lbEntry.title }}"
             />
           } @else if (lbEntry.kind === 'video' && lbEntry.safeUrl) {
             <video

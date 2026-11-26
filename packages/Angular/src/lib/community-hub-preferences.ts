@@ -38,6 +38,7 @@ export const COMMUNITY_HUB_PREFERENCE_KEYS = {
   porchCollapsed: 'bizapps-community.porchCollapsed',
   mediaLibraryKind: 'bizapps-community.mediaLibraryKind',
   mediaLibraryScope: 'bizapps-community.mediaLibraryScope',
+  artifactViewerMaximized: 'bizapps-community.artifactViewerMaximized',
 } as const;
 
 /**
@@ -164,5 +165,21 @@ export class CommunityHubPreferences {
       return true;
     }
     return this.store.SetSetting(COMMUNITY_HUB_PREFERENCE_KEYS.mediaLibraryScope, scope);
+  }
+
+  public GetArtifactViewerMaximized(defaultMaximized = false): boolean {
+    const raw = this.store.GetSetting(COMMUNITY_HUB_PREFERENCE_KEYS.artifactViewerMaximized);
+    if (raw === 'true') return true;
+    if (raw === 'false') return false;
+    return defaultMaximized;
+  }
+
+  public async SetArtifactViewerMaximized(maximized: boolean): Promise<boolean> {
+    const value = maximized ? 'true' : 'false';
+    if (this.store.SetSettingDebounced) {
+      this.store.SetSettingDebounced(COMMUNITY_HUB_PREFERENCE_KEYS.artifactViewerMaximized, value);
+      return true;
+    }
+    return this.store.SetSetting(COMMUNITY_HUB_PREFERENCE_KEYS.artifactViewerMaximized, value);
   }
 }
