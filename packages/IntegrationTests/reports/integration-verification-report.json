@@ -1,6 +1,6 @@
 {
   "schemaVersion": "sf-integration-report/v1",
-  "evaluatedAtIso": "2026-11-26T19:15:32.329Z",
+  "evaluatedAtIso": "2026-11-26T19:44:27.093Z",
   "overallPassed": true,
   "seedSummary": {
     "counts": {
@@ -109,7 +109,7 @@
   },
   "playwrightVerification": {
     "tool": "playwright-chromium",
-    "evaluatedAtIso": "2026-11-26T19:15:32.156Z",
+    "evaluatedAtIso": "2026-11-26T19:44:26.961Z",
     "fontAwesomeMode": "svg-mask-fallback",
     "fontAwesomeLoaded": true,
     "customElementsVerified": true,

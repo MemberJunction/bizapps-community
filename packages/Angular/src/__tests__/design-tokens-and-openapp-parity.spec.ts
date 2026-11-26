@@ -95,6 +95,22 @@ describe('AC-1 & AC-3 — Dependency Pinning, --mj-* Design Tokens & Zero window
     assert.match(css, /var\(--mj-brand-primary\)/);
     assert.equal((css.match(RAW_COLOR_PATTERN) ?? []).length, 0);
   });
+
+  it('verifies every <img> element across all Angular templates declares an explicit accessible alt= attribute (WCAG 1.1.1)', () => {
+    const htmlFiles = listFilesRecursive(ANGULAR_SRC, ['.html']);
+    assert.ok(htmlFiles.length > 0);
+    const violations: string[] = [];
+    for (const file of htmlFiles) {
+      const html = readFileSync(file, 'utf8');
+      const imgTags = html.match(/<img\b[^>]*>/gi) ?? [];
+      for (const tag of imgTags) {
+        if (!/\salt\s*=/i.test(tag)) {
+          violations.push(`${file}: <img> missing explicit alt= attribute -> ${tag.replace(/\s+/g, ' ').trim()}`);
+        }
+      }
+    }
+    assert.deepEqual(violations, []);
+  });
 });
 
 describe('AC-4 — OpenApp Dual Form Registration Parity & Navigation/Resource Parity', () => {

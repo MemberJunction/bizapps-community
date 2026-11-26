@@ -218,6 +218,14 @@
               }
             }
             @case ('collaborative-sheet') {
+              @if (hasArtifactBinding(doc)) {
+                <mjc-community-artifact-viewer
+                  mode="inline"
+                  [request]="buildArtifactRequest(doc)"
+                  [preloadedMetadata]="doc.artifactMetadata ?? null"
+                  [currentUser]="currentUser"
+                ></mjc-community-artifact-viewer>
+              }
               <form class="mjc-living-form" (ngSubmit)="onSubmitInlineForm()">
                 <div class="mjc-living-field">
                   <label for="mjc-form-respondent" class="mjc-living-label">Member / Cohort Name</label>

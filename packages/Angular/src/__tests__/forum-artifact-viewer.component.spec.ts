@@ -526,6 +526,10 @@ describe('CommunityArtifactViewerComponent — Angular Template & Wiring Verific
     assert.match(hubHtml, /<mjc-community-artifact-viewer[\s\S]*mode="drawer"/);
     assert.match(hubHtml, /<mjc-community-artifact-viewer[\s\S]*mode="inline"/);
     assert.match(livingHtml, /<mjc-community-artifact-viewer[\s\S]*mode="inline"/);
+    assert.match(
+      livingHtml,
+      /@case\s*\('collaborative-sheet'\)\s*\{[\s\S]*?@if\s*\(hasArtifactBinding\(doc\)\)\s*\{[\s\S]*?<mjc-community-artifact-viewer[\s\S]*?mode="inline"/,
+    );
     assert.match(streamHtml, /openArtifactViewer\(item\)/);
   });
 
