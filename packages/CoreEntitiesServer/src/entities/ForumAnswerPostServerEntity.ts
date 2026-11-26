@@ -8,6 +8,7 @@ import {
 import {
   createNewEntity,
   failValidation,
+  loadBatchRows,
   loadEntityById,
   loadRows,
   loadSingleRow,
@@ -66,30 +67,32 @@ export class ForumAnswerPostServerEntity extends mjBizAppsCommunityForumAnswerPo
       return failValidation(result, 'QuestionPostID', 'An answer post cannot reference itself as QuestionPostID.');
     }
 
-    const [answerPostRes, questionPostRes] = await Promise.all([
-      loadSingleRow<PostForumAuthorRow>(
-        this,
-        COMMUNITY_ENTITY_NAMES.ForumPosts,
-        `ID = '${validAnswerId}'`,
-        ['ID', 'ForumID', 'AuthorUserID'],
-      ),
-      loadSingleRow<PostForumAuthorRow>(
-        this,
-        COMMUNITY_ENTITY_NAMES.ForumPosts,
-        `ID = '${validQuestionId}'`,
-        ['ID', 'ForumID', 'AuthorUserID'],
-      ),
+    const [answerPostBatch, questionPostBatch] = await loadBatchRows<PostForumAuthorRow>(this, [
+      {
+        entityName: COMMUNITY_ENTITY_NAMES.ForumPosts,
+        extraFilter: `ID = '${validAnswerId}'`,
+        fields: ['ID', 'ForumID', 'AuthorUserID'],
+        maxRows: 1,
+      },
+      {
+        entityName: COMMUNITY_ENTITY_NAMES.ForumPosts,
+        extraFilter: `ID = '${validQuestionId}'`,
+        fields: ['ID', 'ForumID', 'AuthorUserID'],
+        maxRows: 1,
+      },
     ]);
+    const answerPostRow = answerPostBatch?.success ? answerPostBatch.rows[0] ?? null : null;
+    const questionPostRow = questionPostBatch?.success ? questionPostBatch.rows[0] ?? null : null;
 
-    if (!answerPostRes.success || !answerPostRes.row) {
+    if (!answerPostBatch?.success || !answerPostRow) {
       return failValidation(result, 'ID', `Parent ForumPost ${validAnswerId} was not found for this answer.`);
     }
 
-    if (!questionPostRes.success || !questionPostRes.row) {
+    if (!questionPostBatch?.success || !questionPostRow) {
       return failValidation(result, 'QuestionPostID', `Question post ${validQuestionId} was not found.`);
     }
 
-    if (!UUIDsEqual(answerPostRes.row.ForumID, questionPostRes.row.ForumID)) {
+    if (!UUIDsEqual(answerPostRow.ForumID, questionPostRow.ForumID)) {
       return failValidation(
         result,
         'QuestionPostID',
@@ -97,7 +100,7 @@ export class ForumAnswerPostServerEntity extends mjBizAppsCommunityForumAnswerPo
       );
     }
 
-    const questionPost = questionPostRes.row;
+    const questionPost = questionPostRow;
 
     const forum = await resolveForumRow(this, questionPost.ForumID);
     if (!forum) {

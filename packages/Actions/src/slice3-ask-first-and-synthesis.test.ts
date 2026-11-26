@@ -204,7 +204,8 @@ describe('Slice 3 — Semantic Ask-First Deflection', () => {
     const action = new AskFirstDeflectionAction();
 
     try {
-      mock.method(RunView.prototype, 'RunView', async (params: { EntityName: string; Fields?: string[]; ExtraFilter?: string }) => {
+      let runViewsBatchCalls = 0;
+      const askFirstHandler = async (params: { EntityName: string; Fields?: string[]; ExtraFilter?: string }) => {
         if (params.Fields?.includes('ForumPostID') || params.ExtraFilter?.includes('ForumPostID')) {
           throw new Error(`Invalid schema query: ForumPostID does not exist on ${params.EntityName}; must use PostID.`);
         }
@@ -300,6 +301,11 @@ describe('Slice 3 — Semantic Ask-First Deflection', () => {
           };
         }
         return { Success: true, Results: [] };
+      };
+      mock.method(RunView.prototype, 'RunView', askFirstHandler);
+      mock.method(RunView.prototype, 'RunViews', async (list: Array<{ EntityName: string; Fields?: string[]; ExtraFilter?: string }>) => {
+        runViewsBatchCalls += 1;
+        return Promise.all(list.map((p) => askFirstHandler(p)));
       });
 
       const user = new UserInfo(undefined, { ID: USER_ID });
@@ -313,6 +319,7 @@ describe('Slice 3 — Semantic Ask-First Deflection', () => {
       ];
 
       const res = await action.Run(runParams);
+      assert.equal(runViewsBatchCalls, 2, 'AskFirstDeflectionAction must batch Forums+Posts and Answers+Questions+PostTags via RunViews');
       assert.equal(res.Success, true, res.Message);
       assert.equal(res.ResultCode, 'DEFLECTED');
 
@@ -409,7 +416,7 @@ describe('Slice 3 — Living Thread Synthesis (Takeaways, Open Questions, Contri
     }> = [];
 
     try {
-      mock.method(RunView.prototype, 'RunView', async (params: { EntityName: string; ExtraFilter?: string }) => {
+      const synthesisHandler1 = async (params: { EntityName: string; ExtraFilter?: string }) => {
         if (params.EntityName === COMMUNITY_ENTITY_NAMES.ForumPosts) {
           if (params.ExtraFilter?.includes(`RootPostID = '${ROOT_POST_ID}'`)) {
             return {
@@ -469,7 +476,11 @@ describe('Slice 3 — Living Thread Synthesis (Takeaways, Open Questions, Contri
           };
         }
         return { Success: true, Results: [] };
-      });
+      };
+      mock.method(RunView.prototype, 'RunView', synthesisHandler1);
+      mock.method(RunView.prototype, 'RunViews', async (list: Array<{ EntityName: string; ExtraFilter?: string }>) =>
+        Promise.all(list.map((p) => synthesisHandler1(p))),
+      );
 
       mock.method(Metadata.prototype, 'GetEntityObject', async () => {
         const entity = {
@@ -553,7 +564,7 @@ describe('Slice 3 — Living Thread Synthesis (Takeaways, Open Questions, Contri
 
     const action = new TestableSynthesisAction();
     try {
-      mock.method(RunView.prototype, 'RunView', async (params: { EntityName: string; ExtraFilter?: string }) => {
+      const synthesisHandler2 = async (params: { EntityName: string; ExtraFilter?: string }) => {
         if (params.EntityName === COMMUNITY_ENTITY_NAMES.ForumPosts) {
           if (params.ExtraFilter?.includes(`RootPostID = '${ROOT_POST_ID}'`)) {
             return { Success: true, Results: replies };
@@ -575,7 +586,11 @@ describe('Slice 3 — Living Thread Synthesis (Takeaways, Open Questions, Contri
           }
         }
         return { Success: true, Results: [] };
-      });
+      };
+      mock.method(RunView.prototype, 'RunView', synthesisHandler2);
+      mock.method(RunView.prototype, 'RunViews', async (list: Array<{ EntityName: string; ExtraFilter?: string }>) =>
+        Promise.all(list.map((p) => synthesisHandler2(p))),
+      );
 
       mock.method(Metadata.prototype, 'GetEntityObject', async () => {
         const entity = {

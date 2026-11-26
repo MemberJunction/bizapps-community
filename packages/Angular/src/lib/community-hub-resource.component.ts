@@ -24,6 +24,7 @@ import { RegisterClass, UUIDsEqual } from '@memberjunction/global';
 import { BaseResourceComponent } from '@memberjunction/ng-shared';
 import { MJPageLayoutComponent, MJPageBodyComponent } from '@memberjunction/ng-ui-components';
 import type { ResourceData } from '@memberjunction/core-entities';
+import { CommunityEngineBase } from '@mj-biz-apps/community-engine-base';
 import {
   COMMUNITY_ENTITY_NAMES,
   type mjBizAppsCommunityForumAnswerPostEntity,
@@ -88,10 +89,13 @@ import {
 import {
   ComputeCampaignWalletSpentOnOthers,
   IDEA_POST_TYPE_CODE,
+  LoadAllPaginatedBatches,
   LoadAllPaginatedRows,
   PersistIdeaAllocationAtomic,
   PersistProposedIdea,
   type IdeaAllocationAggregateRow,
+  type PaginatedBatchQuerySpec,
+  type PaginatedLoadResult,
 } from './community-hub-ideation.ts';
 import {
   CreateForumQuestionPostGraphQLAdapter,
@@ -1045,9 +1049,19 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
     }
 
     try {
-      const rv = new RunView();
+      const rv = RunView.FromMetadataProvider(provider);
       const rawScopeId = this.ScopeSpaceId?.trim() ?? '';
       const scopedSpaceId = rawScopeId ? AssertValidUUID(rawScopeId, 'ScopeSpaceId') : null;
+
+      // Ensure bounded taxonomy metadata (ForumTypes, PostTypes, ForumRoleTypes) is hydrated via
+      // CommunityEngineBase rather than re-querying those reference tables on every hub load.
+      await CommunityEngineBase.Instance.Config(false, user, provider).catch(() => undefined);
+      if (loadVersion !== this.loadHubStateVersion) return;
+
+      const engineForumTypes = CommunityEngineBase.Instance.ForumTypes;
+      const enginePostTypes = CommunityEngineBase.Instance.PostTypes;
+      const needForumTypesFallback = engineForumTypes.length === 0;
+      const needPostTypesFallback = enginePostTypes.length === 0;
 
       const collabSpaceFields = this.resolveEntityProjectionFields(
         'MJ_BizApps_Collaboration: Spaces',
@@ -1060,68 +1074,78 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
         ['Name', 'Description', 'IconClass', 'Color', 'ImageURL', 'BannerImageURL'],
       );
 
-      const [
-        forumsResult,
-        forumTypesResult,
-        collabSpacesResult,
-        communitySpacesResult,
-        postTypesResult,
-        topicTagsResult,
-      ] = await Promise.all([
-        LoadAllPaginatedRows<ForumRow>({
-          runView: rv,
+      type TypeCodeRow = { ID: string; Code: string };
+      type Wave1Row = ForumRow | CommunitySpaceRowProjection | LiveForumTopicTagRow | TypeCodeRow;
+      const wave1Queries: PaginatedBatchQuerySpec[] = [
+        {
           entityName: COMMUNITY_ENTITY_NAMES.Forums,
           extraFilter: scopedSpaceId ? `SpaceID = '${scopedSpaceId}'` : '1=1',
           fields: ['ID', 'Name', 'SpaceID', 'ForumTypeID', 'Status', 'PostingPolicy', 'Description'],
-          user,
-        }),
-        LoadAllPaginatedRows<{ ID: string; Code: string }>({
-          runView: rv,
-          entityName: COMMUNITY_ENTITY_NAMES.ForumTypes,
-          extraFilter: '1=1',
-          fields: ['ID', 'Code'],
-          user,
-        }),
-        LoadAllPaginatedRows<CommunitySpaceRowProjection>({
-          runView: rv,
+        },
+        {
           entityName: 'MJ_BizApps_Collaboration: Spaces',
           extraFilter: scopedSpaceId ? `ID = '${scopedSpaceId}'` : '1=1',
           fields: collabSpaceFields,
-          user,
-        }),
-        LoadAllPaginatedRows<CommunitySpaceRowProjection>({
-          runView: rv,
+        },
+        {
           entityName: COMMUNITY_ENTITY_NAMES.CommunitySpaces,
           extraFilter: scopedSpaceId ? `ID = '${scopedSpaceId}'` : '1=1',
           fields: communitySpaceFields,
-          user,
-        }),
-        LoadAllPaginatedRows<{ ID: string; Code: string }>({
-          runView: rv,
-          entityName: COMMUNITY_ENTITY_NAMES.PostTypes,
-          extraFilter: '1=1',
-          fields: ['ID', 'Code'],
-          user,
-        }),
-        LoadAllPaginatedRows<LiveForumTopicTagRow>({
-          runView: rv,
+        },
+        {
           entityName: COMMUNITY_ENTITY_NAMES.ForumTopicTags,
           extraFilter: scopedSpaceId ? `SpaceID = '${scopedSpaceId}'` : '1=1',
           fields: ['ID', 'SpaceID', 'Slug', 'Name', 'PostCount'],
-          user,
-        }),
-      ]);
+        },
+      ];
+      const forumTypesIdx = needForumTypesFallback ? wave1Queries.length : -1;
+      if (needForumTypesFallback) {
+        wave1Queries.push({
+          entityName: COMMUNITY_ENTITY_NAMES.ForumTypes,
+          extraFilter: '1=1',
+          fields: ['ID', 'Code'],
+        });
+      }
+      const postTypesIdx = needPostTypesFallback ? wave1Queries.length : -1;
+      if (needPostTypesFallback) {
+        wave1Queries.push({
+          entityName: COMMUNITY_ENTITY_NAMES.PostTypes,
+          extraFilter: '1=1',
+          fields: ['ID', 'Code'],
+        });
+      }
+
+      const wave1Results = await LoadAllPaginatedBatches<Wave1Row>({
+        runView: rv,
+        queries: wave1Queries,
+        user,
+      });
       if (loadVersion !== this.loadHubStateVersion) return;
 
+      const forumsResult = wave1Results[0] as PaginatedLoadResult<ForumRow>;
+      const collabSpacesResult = wave1Results[1] as PaginatedLoadResult<CommunitySpaceRowProjection>;
+      const communitySpacesResult = wave1Results[2] as PaginatedLoadResult<CommunitySpaceRowProjection>;
+      const topicTagsResult = wave1Results[3] as PaginatedLoadResult<LiveForumTopicTagRow>;
+      const forumTypesRows: ReadonlyArray<TypeCodeRow> = needForumTypesFallback
+        ? ((wave1Results[forumTypesIdx] as PaginatedLoadResult<TypeCodeRow> | undefined)?.success
+            ? ((wave1Results[forumTypesIdx] as PaginatedLoadResult<TypeCodeRow>).rows ?? [])
+            : [])
+        : engineForumTypes;
+      const postTypesRows: ReadonlyArray<TypeCodeRow> = needPostTypesFallback
+        ? ((wave1Results[postTypesIdx] as PaginatedLoadResult<TypeCodeRow> | undefined)?.success
+            ? ((wave1Results[postTypesIdx] as PaginatedLoadResult<TypeCodeRow>).rows ?? [])
+            : [])
+        : enginePostTypes;
+
       const forumTypeCodeById = new Map<string, string>();
-      for (const ft of forumTypesResult.success ? forumTypesResult.rows : []) {
+      for (const ft of forumTypesRows) {
         if (ft.Code) {
           forumTypeCodeById.set(ft.ID.toLowerCase(), ft.Code.trim().toLowerCase());
         }
       }
 
       this.postTypeIdByCode.clear();
-      for (const pt of postTypesResult.success ? postTypesResult.rows : []) {
+      for (const pt of postTypesRows) {
         if (pt.Code) {
           this.postTypeIdByCode.set(pt.Code.trim().toLowerCase(), pt.ID);
         }
@@ -1247,62 +1271,112 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
       }
 
       const subtypeScopeFilter = scopedSpaceId && spacePostInList ? `ID IN (${spacePostInList})` : '1=1';
+      const loadSubtypes = !(scopedSpaceId && !spacePostInList);
 
-      const [answersResult, ideasResult, feedResult, campaignsResult] = await Promise.all([
-        scopedSpaceId && !spacePostInList
-          ? Promise.resolve({
-              success: true,
-              rows: [] as Array<AnswerPostRow & { Title: string | null }>,
-              errorMessage: null as string | null,
-            })
-          : LoadAllPaginatedRows<AnswerPostRow & { Title: string | null }>({
-              runView: rv,
-              entityName: COMMUNITY_ENTITY_NAMES.ForumAnswerPosts,
-              extraFilter: subtypeScopeFilter,
-              fields: ['ID', 'QuestionPostID', 'Title', 'AIEpistemicStatus', 'AIConfidenceScore', 'IsAcceptedByAuthor'],
-              user,
-            }),
-        scopedSpaceId && !spacePostInList
-          ? Promise.resolve({ success: true, rows: [] as IdeaPostRow[], errorMessage: null as string | null })
-          : LoadAllPaginatedRows<IdeaPostRow>({
-              runView: rv,
-              entityName: COMMUNITY_ENTITY_NAMES.ForumIdeaPosts,
-              extraFilter: subtypeScopeFilter,
-              fields: ['ID', 'TotalPointsAllocated', 'EffectiveQuadraticVotes'],
-              user,
-            }),
-        scopedSpaceId
-          ? Promise.resolve({
-              success: true,
-              rows: Array.from(spacePostById.values()).filter((p) => p.RootPostID == null),
-              errorMessage: null as string | null,
-            })
-          : LoadAllPaginatedRows<ForumPostRow>({
-              runView: rv,
-              entityName: COMMUNITY_ENTITY_NAMES.ForumPosts,
-              extraFilter: `RootPostID IS NULL AND Status = 'Published'`,
-              fields: [
-                'ID',
-                'ForumID',
-                'Title',
-                'BodyMarkdown',
-                'Status',
-                'AuthorUserID',
-                'ReplyCount',
-                'ReactionScore',
-                'PromotedToSpaceID',
-              ],
-              user,
-            }),
-        LoadAllPaginatedRows<IdeaCampaignRow>({
-          runView: rv,
-          entityName: COMMUNITY_ENTITY_NAMES.ForumIdeaCampaigns,
-          extraFilter: scopedForumInList ? `ID IN (${scopedForumInList})` : '1=1',
-          fields: ['ID', 'AllocationMode', 'DefaultBudgetPoints', 'MaxPointsPerIdea'],
-          user,
-        }),
-      ]);
+      type AnswerWithTitleRow = AnswerPostRow & { Title: string | null };
+      type Wave2Row =
+        | AnswerWithTitleRow
+        | IdeaPostRow
+        | ForumPostRow
+        | IdeaCampaignRow
+        | SubtypeIdRow
+        | InteractiveSubtypeRow;
+
+      const wave2Queries: PaginatedBatchQuerySpec[] = [];
+      const answersIdx = loadSubtypes ? wave2Queries.length : -1;
+      if (loadSubtypes) {
+        wave2Queries.push({
+          entityName: COMMUNITY_ENTITY_NAMES.ForumAnswerPosts,
+          extraFilter: subtypeScopeFilter,
+          fields: ['ID', 'QuestionPostID', 'Title', 'AIEpistemicStatus', 'AIConfidenceScore', 'IsAcceptedByAuthor'],
+        });
+      }
+      const ideasIdx = loadSubtypes ? wave2Queries.length : -1;
+      if (loadSubtypes) {
+        wave2Queries.push({
+          entityName: COMMUNITY_ENTITY_NAMES.ForumIdeaPosts,
+          extraFilter: subtypeScopeFilter,
+          fields: ['ID', 'TotalPointsAllocated', 'EffectiveQuadraticVotes'],
+        });
+      }
+      const feedIdx = !scopedSpaceId ? wave2Queries.length : -1;
+      if (!scopedSpaceId) {
+        wave2Queries.push({
+          entityName: COMMUNITY_ENTITY_NAMES.ForumPosts,
+          extraFilter: `RootPostID IS NULL AND Status = 'Published'`,
+          fields: [
+            'ID',
+            'ForumID',
+            'Title',
+            'BodyMarkdown',
+            'Status',
+            'AuthorUserID',
+            'ReplyCount',
+            'ReactionScore',
+            'PromotedToSpaceID',
+          ],
+        });
+      }
+      const campaignsIdx = wave2Queries.length;
+      wave2Queries.push({
+        entityName: COMMUNITY_ENTITY_NAMES.ForumIdeaCampaigns,
+        extraFilter: scopedForumInList ? `ID IN (${scopedForumInList})` : '1=1',
+        fields: ['ID', 'AllocationMode', 'DefaultBudgetPoints', 'MaxPointsPerIdea'],
+      });
+      const artifactIdx = loadSubtypes ? wave2Queries.length : -1;
+      const formIdx = loadSubtypes ? wave2Queries.length + 1 : -1;
+      const interactiveIdx = loadSubtypes ? wave2Queries.length + 2 : -1;
+      if (loadSubtypes) {
+        wave2Queries.push(
+          {
+            entityName: COMMUNITY_ENTITY_NAMES.ForumArtifactPosts,
+            extraFilter: subtypeScopeFilter,
+            fields: ['ID'],
+          },
+          {
+            entityName: COMMUNITY_ENTITY_NAMES.ForumFormPosts,
+            extraFilter: subtypeScopeFilter,
+            fields: ['ID'],
+          },
+          {
+            entityName: COMMUNITY_ENTITY_NAMES.ForumInteractivePosts,
+            extraFilter: subtypeScopeFilter,
+            fields: ['ID', 'ExperienceKind'],
+          },
+        );
+      }
+
+      const wave2Results = await LoadAllPaginatedBatches<Wave2Row>({
+        runView: rv,
+        queries: wave2Queries,
+        user,
+      });
       if (loadVersion !== this.loadHubStateVersion) return;
+
+      const answersResult: PaginatedLoadResult<AnswerWithTitleRow> =
+        answersIdx >= 0
+          ? (wave2Results[answersIdx] as PaginatedLoadResult<AnswerWithTitleRow>)
+          : { success: true, rows: [] };
+      const ideasResult: PaginatedLoadResult<IdeaPostRow> =
+        ideasIdx >= 0
+          ? (wave2Results[ideasIdx] as PaginatedLoadResult<IdeaPostRow>)
+          : { success: true, rows: [] };
+      const feedResult: PaginatedLoadResult<ForumPostRow> = scopedSpaceId
+        ? { success: true, rows: Array.from(spacePostById.values()).filter((p) => p.RootPostID == null) }
+        : (wave2Results[feedIdx] as PaginatedLoadResult<ForumPostRow>);
+      const campaignsResult = wave2Results[campaignsIdx] as PaginatedLoadResult<IdeaCampaignRow>;
+      const artifactSubtypesResult: PaginatedLoadResult<SubtypeIdRow> =
+        artifactIdx >= 0
+          ? (wave2Results[artifactIdx] as PaginatedLoadResult<SubtypeIdRow>)
+          : { success: true, rows: [] };
+      const formSubtypesResult: PaginatedLoadResult<SubtypeIdRow> =
+        formIdx >= 0
+          ? (wave2Results[formIdx] as PaginatedLoadResult<SubtypeIdRow>)
+          : { success: true, rows: [] };
+      const interactiveSubtypesResult: PaginatedLoadResult<InteractiveSubtypeRow> =
+        interactiveIdx >= 0
+          ? (wave2Results[interactiveIdx] as PaginatedLoadResult<InteractiveSubtypeRow>)
+          : { success: true, rows: [] };
 
       if (!feedResult.success) {
         this.hubLoadError = feedResult.errorMessage || 'Failed to load Community Hub feed posts.';
@@ -1345,29 +1419,99 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
         this.selectedCampaignId = this.campaigns[0]?.id ?? null;
       }
 
+      const livingDocIdsWithType: Array<{
+        id: string;
+        postTypeCode: CommunityHubLivingDocItem['postTypeCode'];
+        experienceKind?: mjBizAppsCommunityForumInteractivePostEntity['ExperienceKind'] | null;
+      }> = [
+        ...(artifactSubtypesResult.success ? artifactSubtypesResult.rows : []).map((r) => ({
+          id: r.ID,
+          postTypeCode: 'collaborative-doc' as const,
+        })),
+        ...(formSubtypesResult.success ? formSubtypesResult.rows : []).map((r) => ({
+          id: r.ID,
+          postTypeCode: 'collaborative-sheet' as const,
+        })),
+        ...(interactiveSubtypesResult.success ? interactiveSubtypesResult.rows : []).map((r) => ({
+          id: r.ID,
+          postTypeCode: 'interactive-experience' as const,
+          experienceKind: r.ExperienceKind,
+        })),
+      ];
+
+      // Wave 3: batch all unscoped ForumPosts body lookups (answers + ideas + living docs)
+      // together with user ForumIdeaAllocations in a single RunViews call.
+      type SubtypePostMetaRow = Pick<
+        ForumPostRow,
+        'ID' | 'ForumID' | 'Title' | 'BodyMarkdown' | 'AuthorUserID' | 'ReplyCount' | 'ReactionScore' | 'PromotedToSpaceID'
+      >;
+      type Wave3Row = SubtypePostMetaRow | IdeaAllocationAggregateRow;
+
+      const validAnswerIds =
+        answersResult.success && answersResult.rows.length > 0
+          ? answersResult.rows.map((a) => AssertValidUUID(a.ID, 'answerId'))
+          : [];
+      const validIdeaIds =
+        ideasResult.success && ideasResult.rows.length > 0
+          ? ideasResult.rows.map((i) => AssertValidUUID(i.ID, 'ideaPostId'))
+          : [];
+      const validLivingDocIds =
+        livingDocIdsWithType.length > 0
+          ? AssertValidUUIDList(livingDocIdsWithType.map((r) => r.id).join(','), 'livingDocIds')
+          : [];
+
+      const unscopedSubtypePostIds = scopedSpaceId
+        ? []
+        : Array.from(new Set([...validAnswerIds, ...validIdeaIds, ...validLivingDocIds]));
+
+      const wave3Queries: PaginatedBatchQuerySpec[] = [];
+      const subtypePostsIdx = unscopedSubtypePostIds.length > 0 ? wave3Queries.length : -1;
+      if (unscopedSubtypePostIds.length > 0) {
+        wave3Queries.push({
+          entityName: COMMUNITY_ENTITY_NAMES.ForumPosts,
+          extraFilter: `ID IN (${unscopedSubtypePostIds.map((id) => `'${id}'`).join(',')})`,
+          fields: ['ID', 'ForumID', 'Title', 'BodyMarkdown', 'AuthorUserID', 'ReplyCount', 'ReactionScore', 'PromotedToSpaceID'],
+        });
+      }
+      const myAllocsIdx = validIdeaIds.length > 0 ? wave3Queries.length : -1;
+      if (validIdeaIds.length > 0) {
+        AssertValidUUID(user.ID, 'user.ID');
+        wave3Queries.push({
+          entityName: COMMUNITY_ENTITY_NAMES.ForumIdeaAllocations,
+          extraFilter: `UserID = '${user.ID}'`,
+          fields: ['ID', 'IdeaPostID', 'PointsAllocated', 'QuadraticVotes'],
+        });
+      }
+
+      const wave3Results =
+        wave3Queries.length > 0
+          ? await LoadAllPaginatedBatches<Wave3Row>({
+              runView: rv,
+              queries: wave3Queries,
+              user,
+            })
+          : [];
+      if (loadVersion !== this.loadHubStateVersion) return;
+
+      const subtypePostsRes: PaginatedLoadResult<SubtypePostMetaRow> =
+        subtypePostsIdx >= 0
+          ? (wave3Results[subtypePostsIdx] as PaginatedLoadResult<SubtypePostMetaRow>)
+          : { success: true, rows: [] };
+      const myAllocsRes: PaginatedLoadResult<IdeaAllocationAggregateRow> =
+        myAllocsIdx >= 0
+          ? (wave3Results[myAllocsIdx] as PaginatedLoadResult<IdeaAllocationAggregateRow>)
+          : { success: true, rows: [] };
+
+      const subtypePostById: Map<string, SubtypePostMetaRow> = scopedSpaceId
+        ? new Map<string, SubtypePostMetaRow>(spacePostById)
+        : new Map((subtypePostsRes.success ? subtypePostsRes.rows : []).map((p) => [p.ID.toLowerCase(), p]));
+
       if (answersResult.success && answersResult.rows.length > 0) {
-        type AnswerMetaRow = Pick<
-          ForumPostRow,
-          'ID' | 'ForumID' | 'Title' | 'BodyMarkdown' | 'AuthorUserID' | 'ReplyCount' | 'ReactionScore' | 'PromotedToSpaceID'
-        >;
-        let bodyById = new Map<string, AnswerMetaRow>(spacePostById);
-        if (!scopedSpaceId) {
-          const answerIds = answersResult.rows.map((a) => `'${AssertValidUUID(a.ID, 'answerId')}'`).join(',');
-          const bodyRes = await LoadAllPaginatedRows<AnswerMetaRow>({
-            runView: rv,
-            entityName: COMMUNITY_ENTITY_NAMES.ForumPosts,
-            extraFilter: `ID IN (${answerIds})`,
-            fields: ['ID', 'ForumID', 'Title', 'BodyMarkdown', 'AuthorUserID', 'ReplyCount', 'ReactionScore', 'PromotedToSpaceID'],
-            user,
-          });
-          if (loadVersion !== this.loadHubStateVersion) return;
-          bodyById = new Map((bodyRes.success ? bodyRes.rows : []).map((p) => [p.ID.toLowerCase(), p]));
-        }
         const matchingAnswers = scopedSpaceId
-          ? answersResult.rows.filter((a) => bodyById.has(a.ID.toLowerCase()))
+          ? answersResult.rows.filter((a) => subtypePostById.has(a.ID.toLowerCase()))
           : answersResult.rows;
         this.qaCanonItems = matchingAnswers.map((a) => {
-          const post = bodyById.get(a.ID.toLowerCase());
+          const post = subtypePostById.get(a.ID.toLowerCase());
           if (post?.AuthorUserID && UUIDsEqual(post.AuthorUserID, user.ID)) {
             this.authoredPostIds.add(post.ID.toLowerCase());
           }
@@ -1401,52 +1545,23 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
         this.allUserAllocations = [];
         this.ideationErrorMessage = ideasResult.errorMessage || 'Failed to load campaign ideation items — voting is disabled.';
       } else if (ideasResult.rows.length > 0) {
-        AssertValidUUID(user.ID, 'user.ID');
-        const ideaPostIds = ideasResult.rows.map((i) => AssertValidUUID(i.ID, 'ideaPostId'));
-        const ideaFilter = `ID IN (${ideaPostIds.map((id) => `'${id}'`).join(',')})`;
-        const [ideaPostsRes, myAllocsRes] = await Promise.all([
-          scopedSpaceId
-            ? Promise.resolve({
-                success: true,
-                rows: ideaPostIds
-                  .map((id) => spacePostById.get(id.toLowerCase()))
-                  .filter((p): p is ScopedPostRow => Boolean(p)),
-                errorMessage: null as string | null,
-              })
-            : LoadAllPaginatedRows<Pick<ForumPostRow, 'ID' | 'ForumID' | 'Title' | 'BodyMarkdown' | 'AuthorUserID' | 'PromotedToSpaceID'>>({
-                runView: rv,
-                entityName: COMMUNITY_ENTITY_NAMES.ForumPosts,
-                extraFilter: ideaFilter,
-                fields: ['ID', 'ForumID', 'Title', 'BodyMarkdown', 'AuthorUserID', 'PromotedToSpaceID'],
-                user,
-              }),
-          LoadAllPaginatedRows<IdeaAllocationAggregateRow>({
-            runView: rv,
-            entityName: COMMUNITY_ENTITY_NAMES.ForumIdeaAllocations,
-            extraFilter: `UserID = '${user.ID}'`,
-            fields: ['ID', 'IdeaPostID', 'PointsAllocated', 'QuadraticVotes'],
-            user,
-          }),
-        ]);
-        if (loadVersion !== this.loadHubStateVersion) return;
-
-        if (!ideaPostsRes.success || !myAllocsRes.success) {
+        const ideaPostsOk = scopedSpaceId ? true : subtypePostsRes.success;
+        if (!ideaPostsOk || !myAllocsRes.success) {
           this.ideationLoadFailed = true;
           this.ideationItems = [];
           this.allUserAllocations = [];
           this.ideationErrorMessage =
-            ideaPostsRes.errorMessage ||
+            (!ideaPostsOk ? subtypePostsRes.errorMessage : null) ||
             myAllocsRes.errorMessage ||
             'Failed to load campaign ideation metadata or user allocations — voting is disabled.';
         } else {
-          const postMetaById = new Map(ideaPostsRes.rows.map((p) => [p.ID.toLowerCase(), p]));
           this.allUserAllocations = myAllocsRes.rows;
           const myAllocByIdeaId = new Map(this.allUserAllocations.map((a) => [a.IdeaPostID.toLowerCase(), a]));
 
           this.ideationItems = ideasResult.rows
-            .filter((i) => postMetaById.has(i.ID.toLowerCase()))
+            .filter((i) => subtypePostById.has(i.ID.toLowerCase()))
             .map((i) => {
-              const postMeta = postMetaById.get(i.ID.toLowerCase())!;
+              const postMeta = subtypePostById.get(i.ID.toLowerCase())!;
               if (postMeta.AuthorUserID && UUIDsEqual(postMeta.AuthorUserID, user.ID)) {
                 this.authoredPostIds.add(postMeta.ID.toLowerCase());
               }
@@ -1469,14 +1584,30 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
         this.allUserAllocations = [];
       }
 
-      const loadedDocs = await this.loadLivingDocItems(
-        rv,
-        user,
-        scopedSpaceId ? spacePostInList : undefined,
-        scopedSpaceId ? spacePostById : undefined,
-      );
-      if (loadVersion !== this.loadHubStateVersion) return;
-      this.livingDocItems = loadedDocs;
+      if (livingDocIdsWithType.length === 0) {
+        this.livingDocItems = this.isOfflineDemoMode ? SEEDED_LIVING_DOCS_FALLBACK : [];
+      } else {
+        const visibleDocs = scopedSpaceId
+          ? livingDocIdsWithType.filter((r) => subtypePostById.has(r.id.toLowerCase()))
+          : livingDocIdsWithType;
+        this.livingDocItems = visibleDocs.map((r) => {
+          const post = subtypePostById.get(r.id.toLowerCase());
+          if (post?.AuthorUserID && UUIDsEqual(post.AuthorUserID, user.ID)) {
+            this.authoredPostIds.add(post.ID.toLowerCase());
+          }
+          return {
+            id: r.id,
+            forumId: post?.ForumID ?? null,
+            title: post?.Title ?? 'Untitled',
+            bodyMarkdown: post?.BodyMarkdown ?? '',
+            postTypeCode: r.postTypeCode,
+            experienceKind: r.experienceKind ?? null,
+            reactionScore: post?.ReactionScore ?? 0,
+            replyCount: post?.ReplyCount ?? 0,
+            promotedToSpaceId: post?.PromotedToSpaceID ?? null,
+          };
+        });
+      }
 
       const allRootIds = Array.from(
         new Set([
@@ -1557,29 +1688,31 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
     const idInClause = this.buildUuidInClause(validIds, 'rootPostId');
     const tagNameById = new Map(this.loadedTopicTags.map((t) => [t.ID.toLowerCase(), t.Name]));
 
-    const [repliesRes, myReactionsRes, postTagsRes] = await Promise.all([
-      LoadAllPaginatedRows<ForumReplyRow>({
-        runView: rv,
-        entityName: COMMUNITY_ENTITY_NAMES.ForumPosts,
-        extraFilter: `RootPostID IN (${idInClause}) AND Status IN ('Published', 'Answered', 'Resolved')`,
-        fields: ['ID', 'RootPostID', 'ParentPostID', 'AuthorUserID', 'BodyMarkdown', 'Status', 'ReactionScore'],
-        user,
-      }),
-      LoadAllPaginatedRows<ForumPostReactionRow>({
-        runView: rv,
-        entityName: COMMUNITY_ENTITY_NAMES.ForumPostReactions,
-        extraFilter: `UserID = '${validUserId}' AND ReactionKind = 'Upvote' AND PostID IN (${idInClause})`,
-        fields: ['ID', 'PostID'],
-        user,
-      }),
-      LoadAllPaginatedRows<ForumPostTagRow>({
-        runView: rv,
-        entityName: COMMUNITY_ENTITY_NAMES.ForumPostTags,
-        extraFilter: `PostID IN (${idInClause})`,
-        fields: ['ID', 'PostID', 'TopicTagID'],
-        user,
-      }),
-    ]);
+    type SupplementaryRow = ForumReplyRow | ForumPostReactionRow | ForumPostTagRow;
+    const suppResults = await LoadAllPaginatedBatches<SupplementaryRow>({
+      runView: rv,
+      queries: [
+        {
+          entityName: COMMUNITY_ENTITY_NAMES.ForumPosts,
+          extraFilter: `RootPostID IN (${idInClause}) AND Status IN ('Published', 'Answered', 'Resolved')`,
+          fields: ['ID', 'RootPostID', 'ParentPostID', 'AuthorUserID', 'BodyMarkdown', 'Status', 'ReactionScore'],
+        },
+        {
+          entityName: COMMUNITY_ENTITY_NAMES.ForumPostReactions,
+          extraFilter: `UserID = '${validUserId}' AND ReactionKind = 'Upvote' AND PostID IN (${idInClause})`,
+          fields: ['ID', 'PostID'],
+        },
+        {
+          entityName: COMMUNITY_ENTITY_NAMES.ForumPostTags,
+          extraFilter: `PostID IN (${idInClause})`,
+          fields: ['ID', 'PostID', 'TopicTagID'],
+        },
+      ],
+      user,
+    });
+    const repliesRes = suppResults[0] as PaginatedLoadResult<ForumReplyRow>;
+    const myReactionsRes = suppResults[1] as PaginatedLoadResult<ForumPostReactionRow>;
+    const postTagsRes = suppResults[2] as PaginatedLoadResult<ForumPostTagRow>;
 
     this.repliesByRootPostId.clear();
     if (repliesRes.success) {
@@ -1800,42 +1933,61 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
         }
       }
 
-      const artifactById = new Map<string, LiveArtifactRow>();
+      type AttachmentTargetBatchRow = LiveArtifactRow | LiveFileRow | LiveArtifactVersionRow;
+      const targetQueries: PaginatedBatchQuerySpec[] = [];
+      const artIdx = artifactIds.size > 0 ? targetQueries.length : -1;
       if (artifactIds.size > 0) {
-        const artRes = await LoadAllPaginatedRows<LiveArtifactRow>({
-          runView: rv,
+        targetQueries.push({
           entityName: 'MJ: Artifacts',
           extraFilter: `ID IN (${this.buildUuidInClause(Array.from(artifactIds), 'artifactId')})`,
           fields: ['ID', 'Name', 'Type'],
-          user,
         });
+      }
+      const fileIdx = fileIds.size > 0 ? targetQueries.length : -1;
+      const compVerIdx = fileIds.size > 0 ? targetQueries.length + 1 : -1;
+      if (fileIds.size > 0) {
+        const fileIn = this.buildUuidInClause(Array.from(fileIds), 'fileId');
+        targetQueries.push(
+          {
+            entityName: 'MJ: Files',
+            extraFilter: `ID IN (${fileIn})`,
+          },
+          {
+            entityName: 'MJ: Artifact Versions',
+            extraFilter: `FileID IN (${this.buildUuidInClause(Array.from(fileIds), 'companionFileId')})`,
+            fields: ['ID', 'ArtifactID', 'VersionNumber', 'Name', 'ContentMode', 'Content', 'FileID', 'FileName', 'MimeType', 'ContentSizeBytes'],
+          },
+        );
+      }
+
+      const targetResults =
+        targetQueries.length > 0
+          ? await LoadAllPaginatedBatches<AttachmentTargetBatchRow>({
+              runView: rv,
+              queries: targetQueries,
+              user,
+            })
+          : [];
+
+      const artifactById = new Map<string, LiveArtifactRow>();
+      if (artIdx >= 0) {
+        const artRes = targetResults[artIdx] as PaginatedLoadResult<LiveArtifactRow>;
         if (artRes.success) {
           for (const a of artRes.rows) artifactById.set(a.ID.toLowerCase(), a);
         }
       }
 
       const fileById = new Map<string, LiveFileRow>();
-      if (fileIds.size > 0) {
-        const fileRes = await LoadAllPaginatedRows<LiveFileRow>({
-          runView: rv,
-          entityName: 'MJ: Files',
-          extraFilter: `ID IN (${this.buildUuidInClause(Array.from(fileIds), 'fileId')})`,
-          user,
-        });
+      if (fileIdx >= 0) {
+        const fileRes = targetResults[fileIdx] as PaginatedLoadResult<LiveFileRow>;
         if (fileRes.success) {
           for (const f of fileRes.rows) fileById.set(f.ID.toLowerCase(), f);
         }
       }
 
       const companionVersionByFileId = new Map<string, LiveArtifactVersionRow>();
-      if (fileIds.size > 0) {
-        const compVerRes = await LoadAllPaginatedRows<LiveArtifactVersionRow>({
-          runView: rv,
-          entityName: 'MJ: Artifact Versions',
-          extraFilter: `FileID IN (${this.buildUuidInClause(Array.from(fileIds), 'companionFileId')})`,
-          fields: ['ID', 'ArtifactID', 'VersionNumber', 'Name', 'ContentMode', 'Content', 'FileID', 'FileName', 'MimeType', 'ContentSizeBytes'],
-          user,
-        });
+      if (compVerIdx >= 0) {
+        const compVerRes = targetResults[compVerIdx] as PaginatedLoadResult<LiveArtifactVersionRow>;
         if (compVerRes.success) {
           for (const v of compVerRes.rows) {
             if (!v.FileID) continue;
@@ -2037,109 +2189,6 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
     } else if (!this.livingDocItems.some((d) => d.id === this.selectedLivingDocId)) {
       this.SelectLivingDoc(this.livingDocItems[0].id);
     }
-  }
-
-  private async loadLivingDocItems(
-    rv: RunView,
-    user: UserInfo,
-    scopedPostInList?: string | null,
-    scopedPostById?: ReadonlyMap<
-      string,
-      Pick<ForumPostRow, 'ID' | 'ForumID' | 'Title' | 'BodyMarkdown' | 'ReplyCount' | 'ReactionScore' | 'PromotedToSpaceID'>
-    >,
-  ): Promise<CommunityHubLivingDocItem[]> {
-    if (scopedPostInList === null) {
-      return [];
-    }
-    const extraFilter = scopedPostInList ? `ID IN (${scopedPostInList})` : '1=1';
-
-    const [artifactRes, formRes, interactiveRes] = await Promise.all([
-      LoadAllPaginatedRows<SubtypeIdRow>({
-        runView: rv,
-        entityName: 'MJ_BizApps_Community: Forum Artifact Posts',
-        extraFilter,
-        fields: ['ID'],
-        user,
-      }),
-      LoadAllPaginatedRows<SubtypeIdRow>({
-        runView: rv,
-        entityName: 'MJ_BizApps_Community: Forum Form Posts',
-        extraFilter,
-        fields: ['ID'],
-        user,
-      }),
-      LoadAllPaginatedRows<InteractiveSubtypeRow>({
-        runView: rv,
-        entityName: 'MJ_BizApps_Community: Forum Interactive Posts',
-        extraFilter,
-        fields: ['ID', 'ExperienceKind'],
-        user,
-      }),
-    ]);
-
-    const idsWithType: Array<{
-      id: string;
-      postTypeCode: CommunityHubLivingDocItem['postTypeCode'];
-      experienceKind?: mjBizAppsCommunityForumInteractivePostEntity['ExperienceKind'] | null;
-    }> = [
-      ...(artifactRes.success ? artifactRes.rows : []).map((r) => ({
-        id: r.ID,
-        postTypeCode: 'collaborative-doc' as const,
-      })),
-      ...(formRes.success ? formRes.rows : []).map((r) => ({
-        id: r.ID,
-        postTypeCode: 'collaborative-sheet' as const,
-      })),
-      ...(interactiveRes.success ? interactiveRes.rows : []).map((r) => ({
-        id: r.ID,
-        postTypeCode: 'interactive-experience' as const,
-        experienceKind: r.ExperienceKind,
-      })),
-    ];
-    if (idsWithType.length === 0) {
-      return this.isOfflineDemoMode ? SEEDED_LIVING_DOCS_FALLBACK : [];
-    }
-
-    type DocPostMeta = Pick<
-      ForumPostRow,
-      'ID' | 'ForumID' | 'Title' | 'BodyMarkdown' | 'AuthorUserID' | 'ReplyCount' | 'ReactionScore' | 'PromotedToSpaceID'
-    >;
-    let postById: ReadonlyMap<string, DocPostMeta>;
-    if (scopedPostById) {
-      postById = scopedPostById;
-    } else {
-      const safeIds = AssertValidUUIDList(idsWithType.map((r) => r.id).join(','), 'livingDocIds');
-      const postsResult = await LoadAllPaginatedRows<DocPostMeta>({
-        runView: rv,
-        entityName: COMMUNITY_ENTITY_NAMES.ForumPosts,
-        extraFilter: `ID IN (${safeIds.map((id) => `'${id}'`).join(',')})`,
-        fields: ['ID', 'ForumID', 'Title', 'BodyMarkdown', 'AuthorUserID', 'ReplyCount', 'ReactionScore', 'PromotedToSpaceID'],
-        user,
-      });
-      postById = new Map((postsResult.success ? postsResult.rows : []).map((r) => [r.ID.toLowerCase(), r]));
-    }
-
-    const visibleItems = scopedPostInList
-      ? idsWithType.filter((r) => postById.has(r.id.toLowerCase()))
-      : idsWithType;
-
-    return visibleItems.map((r) => {
-      const post = postById.get(r.id.toLowerCase());
-      if (post?.AuthorUserID && UUIDsEqual(post.AuthorUserID, user.ID)) {
-        this.authoredPostIds.add(post.ID.toLowerCase());
-      }
-      return {
-        id: r.id,
-        forumId: post?.ForumID ?? null,
-        title: post?.Title ?? 'Untitled',
-        bodyMarkdown: post?.BodyMarkdown ?? '',
-        postTypeCode: r.postTypeCode,
-        experienceKind: r.experienceKind ?? null,
-        reactionScore: post?.ReactionScore ?? 0,
-        replyCount: post?.ReplyCount ?? 0,
-        promotedToSpaceId: post?.PromotedToSpaceID ?? null,
-      };
-    });
   }
 
   // ─── Sticky Top Shell, Search Spotlight, Porch & Digest PDF Export ────────
@@ -2456,7 +2505,7 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
       findExistingReactionId:
         provider && user
           ? async (postId, userId, kind) => {
-              const res = await new RunView().RunView<{ ID: string }>(
+              const res = await RunView.FromMetadataProvider(provider).RunView<{ ID: string }>(
                 {
                   EntityName: COMMUNITY_ENTITY_NAMES.ForumPostReactions,
                   ExtraFilter: `PostID = '${AssertValidUUID(postId, 'postId')}' AND UserID = '${AssertValidUUID(userId, 'userId')}' AND ReactionKind = '${kind}'`,
@@ -2492,7 +2541,7 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
       refreshPostReactionScore:
         provider && user
           ? async (postId) => {
-              const res = await new RunView().RunView<{ ReactionScore: number | null }>(
+              const res = await RunView.FromMetadataProvider(provider).RunView<{ ReactionScore: number | null }>(
                 {
                   EntityName: COMMUNITY_ENTITY_NAMES.ForumPosts,
                   ExtraFilter: `ID = '${AssertValidUUID(postId, 'postId')}'`,
@@ -2684,7 +2733,7 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
         ['ID', 'Name'],
         ['Description', 'IconClass', 'Color', 'ImageURL'],
       );
-      const res = await new RunView().RunView<CommunitySpaceRowProjection>(
+      const res = await RunView.FromMetadataProvider(provider).RunView<CommunitySpaceRowProjection>(
         {
           EntityName: 'MJ_BizApps_Collaboration: Spaces',
           ExtraFilter: `ID = '${safeId}'`,
@@ -2722,7 +2771,7 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
     isOfflineDemoMode: boolean,
   ) {
     const md = new Metadata();
-    const rv = new RunView();
+    const rv = Metadata.Provider ? RunView.FromMetadataProvider(Metadata.Provider) : new RunView();
     return async (params: {
       postId: string;
       spaceId: string;
@@ -2829,7 +2878,7 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
       ? item.spaceId
       : (item.forumId ? this.forumSpaceIdByForumId.get(item.forumId.toLowerCase()) : null) ?? item.spaceId;
 
-    const rv = new RunView();
+    const rv = provider ? RunView.FromMetadataProvider(provider) : new RunView();
     const outcome = await PersistDetailReply({
       item,
       replyBody: text,
@@ -3581,7 +3630,20 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
 
   private async ensurePostTypesLoaded(user: UserInfo): Promise<void> {
     if (this.postTypeIdByCode.size > 0) return;
-    const res = await new RunView().RunView<{ ID: string; Code: string }>(
+    const provider = Metadata.Provider;
+    if (CommunityEngineBase.Instance.PostTypes.length === 0 && provider) {
+      await CommunityEngineBase.Instance.Config(false, user, provider).catch(() => undefined);
+    }
+    if (CommunityEngineBase.Instance.PostTypes.length > 0) {
+      for (const pt of CommunityEngineBase.Instance.PostTypes) {
+        if (pt.Code) {
+          this.postTypeIdByCode.set(pt.Code.trim().toLowerCase(), pt.ID);
+        }
+      }
+      if (this.postTypeIdByCode.size > 0) return;
+    }
+    const rv = provider ? RunView.FromMetadataProvider(provider) : new RunView();
+    const res = await rv.RunView<{ ID: string; Code: string }>(
       { EntityName: COMMUNITY_ENTITY_NAMES.PostTypes, Fields: ['ID', 'Code'], ResultType: 'simple', MaxRows: 50 },
       user,
     );

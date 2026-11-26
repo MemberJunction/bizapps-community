@@ -246,7 +246,7 @@ describe('EpistemicAnswerGradingAction — CR-06/CR-20 fail-closed authoritative
     const canonId = '33333333-3333-4333-8333-333333333333';
 
     // Case 1: questionCanonResult fails -> must return AUTHORITATIVE_LOAD_FAILED and 0 writes
-    mock.method(RunView.prototype, 'RunView', async (params: { EntityName: string }) => {
+    const case1Handler = async (params: { EntityName: string }) => {
       if (params.EntityName === 'MJ_BizApps_Community: Forum Answer Posts') {
         return { Success: true, Results: [{ ID: answerId, QuestionPostID: questionId }] };
       }
@@ -263,7 +263,11 @@ describe('EpistemicAnswerGradingAction — CR-06/CR-20 fail-closed authoritative
         return { Success: false, Results: [], ErrorMessage: 'Simulated canon query failure' };
       }
       return { Success: true, Results: [] };
-    });
+    };
+    mock.method(RunView.prototype, 'RunView', case1Handler);
+    mock.method(RunView.prototype, 'RunViews', async (list: Array<{ EntityName: string }>) =>
+      Promise.all(list.map((p) => case1Handler(p))),
+    );
 
     const user = new UserInfo(undefined, { ID: '44444444-4444-4444-8444-444444444444' });
     const runParams1 = new RunActionParams();
@@ -285,7 +289,7 @@ describe('EpistemicAnswerGradingAction — CR-06/CR-20 fail-closed authoritative
         return true;
       },
     }));
-    mock.method(RunView.prototype, 'RunView', async (params: { EntityName: string }) => {
+    const case2Handler = async (params: { EntityName: string }) => {
       if (params.EntityName === 'MJ_BizApps_Community: Forum Answer Posts') {
         return { Success: true, Results: [{ ID: answerId, QuestionPostID: questionId }] };
       }
@@ -306,7 +310,11 @@ describe('EpistemicAnswerGradingAction — CR-06/CR-20 fail-closed authoritative
         return { Success: false, Results: [], ErrorMessage: 'Canon post load failure' };
       }
       return { Success: true, Results: [] };
-    });
+    };
+    mock.method(RunView.prototype, 'RunView', case2Handler);
+    mock.method(RunView.prototype, 'RunViews', async (list: Array<{ EntityName: string }>) =>
+      Promise.all(list.map((p) => case2Handler(p))),
+    );
 
     const runParams2 = new RunActionParams();
     runParams2.Params = [{ Name: 'AnswerPostID', Value: answerId, Type: 'Input' }];

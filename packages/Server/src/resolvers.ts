@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
-import { BaseEntity, CompositeKey, LogError, Metadata, RunView, type TransactionGroupBase, type UserInfo } from '@memberjunction/core';
+import { BaseEntity, CompositeKey, LogError, Metadata, RunView, type RunViewParams, type RunViewResult, type TransactionGroupBase, type UserInfo } from '@memberjunction/core';
 import { UUIDsEqual } from '@memberjunction/global';
+import { CommunityEngineBase } from '@mj-biz-apps/community-engine-base';
 import {
   Arg,
   Ctx,
@@ -461,6 +462,14 @@ export class ThreadGraduationService {
     }
 
     AssertValidUUID(forumRoleTypeId, 'forumRoleTypeId');
+    const cachedRole = CommunityEngineBase.Instance.GetForumRoleTypeById(forumRoleTypeId);
+    if (cachedRole) {
+      return {
+        CanModerateQueue: cachedRole.CanModerateQueue,
+        CanPromoteToSpace: cachedRole.CanPromoteToSpace,
+      };
+    }
+
     const roleResult = await new RunView().RunView<Pick<mjBizAppsCommunityForumRoleTypeEntity, 'CanModerateQueue' | 'CanPromoteToSpace'>>(
       {
         EntityName: COMMUNITY_ENTITY_NAMES.ForumRoleTypes,
@@ -591,61 +600,117 @@ export class ThreadGraduationService {
 
     const graduatedSummaryMarkdown = await this.buildGraduatedSpaceSummary(rootPost, params.request.targetSpaceName, params.contextUser);
 
-    // --- Resolve EVERY prerequisite before any Save() ---
-    const spaceTypeId = await this.ResolveIdByFilter(
-      'MJ_BizApps_Collaboration: Space Types',
-      `Code = '${EscapeSqlLiteral(plan.targetSpaceTypeCode)}'`,
-      params.contextUser,
-    );
+    // --- Resolve EVERY prerequisite and idempotency check in a single batched RunViews call before any Save() ---
+    const uniqueParticipantIds = DeduplicateUUIDsCaseInsensitive(params.request.includeParticipantUserIds);
+    const createStarterTask = plan.seededTaskId !== null;
+    const validPromotedSpaceId = AssertValidUUID(plan.promotedToSpaceId, 'promotedToSpaceId');
+    const validSeededTaskId =
+      createStarterTask && plan.seededTaskId ? AssertValidUUID(plan.seededTaskId, 'seededTaskId') : null;
+
+    type GradBatchRow = { ID: string } | { UserID: string };
+    const gradQueries: RunViewParams[] = [
+      {
+        EntityName: 'MJ_BizApps_Collaboration: Space Types',
+        ExtraFilter: `Code = '${EscapeSqlLiteral(plan.targetSpaceTypeCode)}'`,
+        Fields: ['ID'],
+        ResultType: 'simple',
+        MaxRows: 1,
+      },
+      {
+        EntityName: 'MJ_BizApps_Collaboration: Spaces',
+        ExtraFilter: `ID = '${validPromotedSpaceId}'`,
+        Fields: ['ID'],
+        ResultType: 'simple',
+        MaxRows: 1,
+      },
+    ];
+
+    const preferredRoleIdx = uniqueParticipantIds.length > 0 ? gradQueries.length : -1;
+    const fallbackRoleIdx = uniqueParticipantIds.length > 0 ? gradQueries.length + 1 : -1;
+    const existingMemberIdx = uniqueParticipantIds.length > 0 ? gradQueries.length + 2 : -1;
+    if (uniqueParticipantIds.length > 0) {
+      gradQueries.push(
+        {
+          EntityName: 'MJ_BizApps_Collaboration: Space Role Types',
+          ExtraFilter: `IsActive = 1 AND Name IN ('Member', 'Contributor')`,
+          Fields: ['ID'],
+          ResultType: 'simple',
+          MaxRows: 1,
+        },
+        {
+          EntityName: 'MJ_BizApps_Collaboration: Space Role Types',
+          ExtraFilter: `IsActive = 1 AND IsOwnerRole = 0 AND CanPromoteBand = 0 AND Code NOT IN ('admin', 'owner')`,
+          OrderBy: 'Level ASC, Name ASC',
+          Fields: ['ID'],
+          ResultType: 'simple',
+          MaxRows: 1,
+        },
+        {
+          EntityName: 'MJ_BizApps_Collaboration: Space Members',
+          ExtraFilter: `SpaceID = '${validPromotedSpaceId}'`,
+          Fields: ['UserID'],
+          ResultType: 'simple',
+          MaxRows: 500,
+        },
+      );
+    }
+
+    const taskTypeIdx = createStarterTask ? gradQueries.length : -1;
+    const existingTaskIdx = validSeededTaskId ? gradQueries.length + 1 : -1;
+    if (createStarterTask) {
+      gradQueries.push({
+        EntityName: 'MJ: Task Types',
+        ExtraFilter: '1=1',
+        Fields: ['ID'],
+        ResultType: 'simple',
+        MaxRows: 1,
+      });
+      if (validSeededTaskId) {
+        gradQueries.push({
+          EntityName: 'MJ: Tasks',
+          ExtraFilter: `ID = '${validSeededTaskId}'`,
+          Fields: ['ID'],
+          ResultType: 'simple',
+          MaxRows: 1,
+        });
+      }
+    }
+
+    const gradResults = await new RunView().RunViews<GradBatchRow>(gradQueries, params.contextUser);
+    const spaceTypeRes = gradResults[0] as RunViewResult<{ ID: string }> | undefined;
+    const spaceTypeId = spaceTypeRes?.Success ? spaceTypeRes.Results?.[0]?.ID ?? null : null;
     if (!spaceTypeId) {
       throw new Error(`No Collaboration SpaceType found for code "${plan.targetSpaceTypeCode}".`);
     }
 
-    const uniqueParticipantIds = DeduplicateUUIDsCaseInsensitive(params.request.includeParticipantUserIds);
     let spaceRoleTypeId: string | null = null;
     if (uniqueParticipantIds.length > 0) {
-      spaceRoleTypeId = await this.ResolveLeastPrivilegeSpaceRoleTypeId(params.contextUser);
+      const preferredRes = gradResults[preferredRoleIdx] as RunViewResult<{ ID: string }> | undefined;
+      const fallbackRes = gradResults[fallbackRoleIdx] as RunViewResult<{ ID: string }> | undefined;
+      spaceRoleTypeId =
+        (preferredRes?.Success ? preferredRes.Results?.[0]?.ID ?? null : null) ??
+        (fallbackRes?.Success ? fallbackRes.Results?.[0]?.ID ?? null : null);
       if (!spaceRoleTypeId) {
         throw new Error('No active Space Role Type is configured — cannot invite participants to the graduated Space.');
       }
     }
 
-    const createStarterTask = plan.seededTaskId !== null;
     let taskTypeId: string | null = null;
     if (createStarterTask) {
-      taskTypeId = await this.ResolveIdByFilter('MJ: Task Types', '1=1', params.contextUser);
+      const taskTypeRes = gradResults[taskTypeIdx] as RunViewResult<{ ID: string }> | undefined;
+      taskTypeId = taskTypeRes?.Success ? taskTypeRes.Results?.[0]?.ID ?? null : null;
       if (!taskTypeId) {
         throw new Error('No Task Type is configured — cannot seed the requested starter Task.');
       }
     }
 
-    // Check whether deterministic Space / Task / Member rows already exist from an interrupted prior run
-    const existingSpaceId = await this.ResolveIdByFilter(
-      'MJ_BizApps_Collaboration: Spaces',
-      `ID = '${AssertValidUUID(plan.promotedToSpaceId, 'promotedToSpaceId')}'`,
-      params.contextUser,
-    );
-    const existingTaskId =
-      createStarterTask && plan.seededTaskId
-        ? await this.ResolveIdByFilter(
-            'MJ: Tasks',
-            `ID = '${AssertValidUUID(plan.seededTaskId, 'seededTaskId')}'`,
-            params.contextUser,
-          )
-        : null;
+    const existingSpaceRes = gradResults[1] as RunViewResult<{ ID: string }> | undefined;
+    const existingSpaceId = existingSpaceRes?.Success ? existingSpaceRes.Results?.[0]?.ID ?? null : null;
+    const existingTaskRes =
+      existingTaskIdx >= 0 ? (gradResults[existingTaskIdx] as RunViewResult<{ ID: string }> | undefined) : null;
+    const existingTaskId = existingTaskRes?.Success ? existingTaskRes.Results?.[0]?.ID ?? null : null;
     const existingMemberRes =
-      uniqueParticipantIds.length > 0
-        ? await new RunView().RunView<{ UserID: string }>(
-            {
-              EntityName: 'MJ_BizApps_Collaboration: Space Members',
-              ExtraFilter: `SpaceID = '${plan.promotedToSpaceId}'`,
-              Fields: ['UserID'],
-              ResultType: 'simple',
-              MaxRows: 500,
-            },
-            params.contextUser,
-          )
-        : null;
+      existingMemberIdx >= 0 ? (gradResults[existingMemberIdx] as RunViewResult<{ UserID: string }> | undefined) : null;
     const existingMemberUserIds = new Set(
       (existingMemberRes?.Success ? existingMemberRes.Results ?? [] : []).map((m) => m.UserID.trim().toLowerCase()),
     );

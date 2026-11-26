@@ -1,5 +1,6 @@
-import { BaseEntity, CompositeKey, type RunView, type UserInfo } from '@memberjunction/core';
+import { BaseEntity, CompositeKey, type RunView, type RunViewParams, type RunViewResult, type UserInfo } from '@memberjunction/core';
 import { UUIDsEqual } from '@memberjunction/global';
+import { CommunityEngineBase } from '@mj-biz-apps/community-engine-base';
 import {
   AssertValidUUID,
   COMMUNITY_ATTACHMENT_MAX_AGGREGATE_BYTES_PER_POST,
@@ -887,6 +888,24 @@ interface ClientArtifactTypeRow {
   IsEnabled?: boolean | null;
 }
 
+export type ClientAttachmentRunViewLike = Pick<RunView, 'RunView'> & Partial<Pick<RunView, 'RunViews'>>;
+
+async function runBatchViews<TRow>(
+  rv: ClientAttachmentRunViewLike,
+  params: RunViewParams[],
+  user: UserInfo,
+): Promise<RunViewResult<TRow>[]> {
+  if (params.length === 0) return [];
+  if (typeof rv.RunViews === 'function') {
+    return await rv.RunViews<TRow>(params, user);
+  }
+  const results: RunViewResult<TRow>[] = [];
+  for (const p of params) {
+    results.push(await rv.RunView<TRow>(p, user));
+  }
+  return results;
+}
+
 /**
  * Authorizes a client attachment write against the authoritative `ForumPost`, `Forum`,
  * `Space`, `SpaceMember`, `ForumMember`, existing post attachment limits, and target
@@ -895,7 +914,7 @@ interface ClientArtifactTypeRow {
  * are never silently indexed into the `Shared` band.
  */
 export async function AuthorizeClientPostAttachmentWrite(params: {
-  rv: Pick<RunView, 'RunView'>;
+  rv: ClientAttachmentRunViewLike;
   postId: string;
   spaceId?: string | null;
   user: UserInfo;
@@ -969,8 +988,10 @@ export async function AuthorizeClientPostAttachmentWrite(params: {
     return deny(`Forum "${forum.Name}" has status "${forum.Status}" and does not accept attachment writes.`);
   }
 
-  const [spaceRes, spaceMemberRes, forumMemberRes] = await Promise.all([
-    params.rv.RunView<ClientAuthSpaceRow>(
+  type MembershipBatchRow = ClientAuthSpaceRow | ClientAuthSpaceMemberRow | ClientAuthForumMemberRow;
+  const membershipResults = await runBatchViews<MembershipBatchRow>(
+    params.rv,
+    [
       {
         EntityName: 'MJ_BizApps_Collaboration: Spaces',
         ExtraFilter: `ID = '${authoritativeSpaceId}'`,
@@ -978,9 +999,6 @@ export async function AuthorizeClientPostAttachmentWrite(params: {
         ResultType: 'simple',
         MaxRows: 1,
       },
-      params.user,
-    ),
-    params.rv.RunView<ClientAuthSpaceMemberRow>(
       {
         EntityName: 'MJ_BizApps_Collaboration: Space Members',
         ExtraFilter: `SpaceID = '${authoritativeSpaceId}' AND UserID = '${validUserId}' AND Status = 'Active'`,
@@ -988,9 +1006,6 @@ export async function AuthorizeClientPostAttachmentWrite(params: {
         ResultType: 'simple',
         MaxRows: 1,
       },
-      params.user,
-    ),
-    params.rv.RunView<ClientAuthForumMemberRow>(
       {
         EntityName: COMMUNITY_ENTITY_NAMES.ForumMembers,
         ExtraFilter: `ForumID = '${validForumId}' AND UserID = '${validUserId}'`,
@@ -998,9 +1013,12 @@ export async function AuthorizeClientPostAttachmentWrite(params: {
         ResultType: 'simple',
         MaxRows: 1,
       },
-      params.user,
-    ),
-  ]);
+    ],
+    params.user,
+  );
+  const spaceRes = membershipResults[0] as RunViewResult<ClientAuthSpaceRow> | undefined;
+  const spaceMemberRes = membershipResults[1] as RunViewResult<ClientAuthSpaceMemberRow> | undefined;
+  const forumMemberRes = membershipResults[2] as RunViewResult<ClientAuthForumMemberRow> | undefined;
 
   if (!spaceRes?.Success || !spaceRes.Results?.[0]) {
     return deny(`Collaboration Space ${authoritativeSpaceId} was not found or access is denied.`);
@@ -1021,20 +1039,31 @@ export async function AuthorizeClientPostAttachmentWrite(params: {
   let roleType: ClientAuthRoleCapabilitiesRow | null = null;
   if (forumMember) {
     const validRoleId = AssertValidUUID(forumMember.ForumRoleTypeID, 'ForumRoleTypeID');
-    const roleRes = await params.rv.RunView<ClientAuthRoleCapabilitiesRow>(
-      {
-        EntityName: COMMUNITY_ENTITY_NAMES.ForumRoleTypes,
-        ExtraFilter: `ID = '${validRoleId}'`,
-        Fields: ['ID', 'CanConfigureForum', 'CanModerateQueue', 'CanCreateRootPost', 'CanReply'],
-        ResultType: 'simple',
-        MaxRows: 1,
-      },
-      params.user,
-    );
-    if (!roleRes?.Success || !roleRes.Results?.[0]) {
-      return deny(`Unable to resolve ForumRoleType ${validRoleId} for Forum ${validForumId}.`);
+    const cachedRole = CommunityEngineBase.Instance.GetForumRoleTypeById(validRoleId);
+    if (cachedRole) {
+      roleType = {
+        ID: cachedRole.ID,
+        CanConfigureForum: cachedRole.CanConfigureForum,
+        CanModerateQueue: cachedRole.CanModerateQueue,
+        CanCreateRootPost: cachedRole.CanCreateRootPost,
+        CanReply: cachedRole.CanReply,
+      };
+    } else {
+      const roleRes = await params.rv.RunView<ClientAuthRoleCapabilitiesRow>(
+        {
+          EntityName: COMMUNITY_ENTITY_NAMES.ForumRoleTypes,
+          ExtraFilter: `ID = '${validRoleId}'`,
+          Fields: ['ID', 'CanConfigureForum', 'CanModerateQueue', 'CanCreateRootPost', 'CanReply'],
+          ResultType: 'simple',
+          MaxRows: 1,
+        },
+        params.user,
+      );
+      if (!roleRes?.Success || !roleRes.Results?.[0]) {
+        return deny(`Unable to resolve ForumRoleType ${validRoleId} for Forum ${validForumId}.`);
+      }
+      roleType = roleRes.Results[0];
     }
-    roleType = roleRes.Results[0];
   }
 
   const decision = CommunityRules.EvaluateForumAccess({
@@ -1160,92 +1189,134 @@ export async function AuthorizeClientPostAttachmentWrite(params: {
     return deny(batchLimits.errors.join(' '));
   }
 
-  // Verify target artifact / version / file accessibility under user
+  // Verify target artifact / version / file accessibility under user in a single batched RunViews call
+  interface TargetVersionVerifyRow {
+    ID: string;
+    ArtifactID: string;
+    ContentMode: string | null;
+    FileID: string | null;
+    MimeType: string | null;
+    ContentSizeBytes: number | null;
+    Content: string | null;
+  }
+  type TargetVerifyBatchRow = { ID: string } | TargetVersionVerifyRow;
+  interface TargetVerifySlot {
+    kind: 'artifact' | 'artifactVersion' | 'file' | 'fileArtifactVersion';
+    queryIndex: number;
+    draftKind: DraftCommunityAttachment['kind'];
+    targetId: string;
+    artifactId?: string;
+    fileId?: string | null;
+  }
+
+  const verifyQueries: RunViewParams[] = [];
+  const verifySlots: TargetVerifySlot[] = [];
+
   for (const draft of params.incomingDrafts) {
     if (draft.kind === 'artifact') {
       const validArtifactId = AssertValidUUID(draft.artifactId, 'artifactId');
-      const artRes = await params.rv.RunView<{ ID: string }>(
-        {
-          EntityName: 'MJ: Artifacts',
-          ExtraFilter: `ID = '${validArtifactId}'`,
-          Fields: ['ID'],
-          ResultType: 'simple',
-          MaxRows: 1,
-        },
-        params.user,
-      );
-      if (!artRes?.Success || !artRes.Results?.[0]) {
-        return deny(`Artifact ${validArtifactId} was not found or caller lacks read access.`);
-      }
+      verifySlots.push({
+        kind: 'artifact',
+        queryIndex: verifyQueries.length,
+        draftKind: draft.kind,
+        targetId: validArtifactId,
+      });
+      verifyQueries.push({
+        EntityName: 'MJ: Artifacts',
+        ExtraFilter: `ID = '${validArtifactId}'`,
+        Fields: ['ID'],
+        ResultType: 'simple',
+        MaxRows: 1,
+      });
+
       const targetVersionId = draft.pinnedVersionId ?? draft.latestVersionId ?? null;
       if (targetVersionId) {
         const validVerId = AssertValidUUID(targetVersionId, 'artifactVersionId');
-        const verRes = await params.rv.RunView<{ ID: string }>(
-          {
-            EntityName: 'MJ: Artifact Versions',
-            ExtraFilter: `ID = '${validVerId}' AND ArtifactID = '${validArtifactId}'`,
-            Fields: ['ID'],
-            ResultType: 'simple',
-            MaxRows: 1,
-          },
-          params.user,
-        );
-        if (!verRes?.Success || !verRes.Results?.[0]) {
-          return deny(`Artifact Version ${validVerId} for Artifact ${validArtifactId} was not found or access is denied.`);
-        }
+        verifySlots.push({
+          kind: 'artifactVersion',
+          queryIndex: verifyQueries.length,
+          draftKind: draft.kind,
+          targetId: validVerId,
+          artifactId: validArtifactId,
+        });
+        verifyQueries.push({
+          EntityName: 'MJ: Artifact Versions',
+          ExtraFilter: `ID = '${validVerId}' AND ArtifactID = '${validArtifactId}'`,
+          Fields: ['ID'],
+          ResultType: 'simple',
+          MaxRows: 1,
+        });
       }
     } else {
       if (draft.fileId) {
         const validFileId = AssertValidUUID(draft.fileId, 'fileId');
-        const fileRes = await params.rv.RunView<{ ID: string }>(
-          {
-            EntityName: 'MJ: Files',
-            ExtraFilter: `ID = '${validFileId}'`,
-            Fields: ['ID'],
-            ResultType: 'simple',
-            MaxRows: 1,
-          },
-          params.user,
-        );
-        if (!fileRes?.Success || !fileRes.Results?.[0]) {
-          return deny(`File ${validFileId} was not found or caller lacks read access.`);
-        }
+        verifySlots.push({
+          kind: 'file',
+          queryIndex: verifyQueries.length,
+          draftKind: draft.kind,
+          targetId: validFileId,
+        });
+        verifyQueries.push({
+          EntityName: 'MJ: Files',
+          ExtraFilter: `ID = '${validFileId}'`,
+          Fields: ['ID'],
+          ResultType: 'simple',
+          MaxRows: 1,
+        });
       }
       if (draft.artifactVersionId) {
         const validVerId = AssertValidUUID(draft.artifactVersionId, 'artifactVersionId');
-        const verRes = await params.rv.RunView<{
-          ID: string;
-          ArtifactID: string;
-          ContentMode: string | null;
-          FileID: string | null;
-          MimeType: string | null;
-          ContentSizeBytes: number | null;
-          Content: string | null;
-        }>(
-          {
-            EntityName: 'MJ: Artifact Versions',
-            ExtraFilter: `ID = '${validVerId}'`,
-            Fields: ['ID', 'ArtifactID', 'ContentMode', 'FileID', 'MimeType', 'ContentSizeBytes', 'Content'],
-            ResultType: 'simple',
-            MaxRows: 1,
-          },
-          params.user,
-        );
+        verifySlots.push({
+          kind: 'fileArtifactVersion',
+          queryIndex: verifyQueries.length,
+          draftKind: draft.kind,
+          targetId: validVerId,
+          fileId: draft.fileId ?? null,
+        });
+        verifyQueries.push({
+          EntityName: 'MJ: Artifact Versions',
+          ExtraFilter: `ID = '${validVerId}'`,
+          Fields: ['ID', 'ArtifactID', 'ContentMode', 'FileID', 'MimeType', 'ContentSizeBytes', 'Content'],
+          ResultType: 'simple',
+          MaxRows: 1,
+        });
+      }
+    }
+  }
+
+  if (verifyQueries.length > 0) {
+    const verifyResults = await runBatchViews<TargetVerifyBatchRow>(params.rv, verifyQueries, params.user);
+    for (const slot of verifySlots) {
+      const res = verifyResults[slot.queryIndex];
+      if (slot.kind === 'artifact') {
+        if (!res?.Success || !res.Results?.[0]) {
+          return deny(`Artifact ${slot.targetId} was not found or caller lacks read access.`);
+        }
+      } else if (slot.kind === 'artifactVersion') {
+        if (!res?.Success || !res.Results?.[0]) {
+          return deny(`Artifact Version ${slot.targetId} for Artifact ${slot.artifactId} was not found or access is denied.`);
+        }
+      } else if (slot.kind === 'file') {
+        if (!res?.Success || !res.Results?.[0]) {
+          return deny(`File ${slot.targetId} was not found or caller lacks read access.`);
+        }
+      } else if (slot.kind === 'fileArtifactVersion') {
+        const verRes = res as RunViewResult<TargetVersionVerifyRow> | undefined;
         if (!verRes?.Success || !verRes.Results?.[0]) {
-          return deny(`Artifact Version ${validVerId} was not found or access is denied.`);
+          return deny(`Artifact Version ${slot.targetId} was not found or access is denied.`);
         }
         const ver = verRes.Results[0];
         if (ver.ContentMode !== 'File') {
-          return deny(`Artifact Version ${validVerId} has ContentMode "${ver.ContentMode ?? 'null'}", expected "File".`);
+          return deny(`Artifact Version ${slot.targetId} has ContentMode "${ver.ContentMode ?? 'null'}", expected "File".`);
         }
-        if (draft.fileId && (!ver.FileID || !UUIDsEqual(ver.FileID, draft.fileId))) {
-          return deny(`Artifact Version ${validVerId} does not belong to File ${draft.fileId}.`);
+        if (slot.fileId && (!ver.FileID || !UUIDsEqual(ver.FileID, slot.fileId))) {
+          return deny(`Artifact Version ${slot.targetId} does not belong to File ${slot.fileId}.`);
         }
         if (ver.MimeType && !IsAllowedAttachmentMimeType(NormalizeAttachmentMimeType(ver.MimeType))) {
-          return deny(`Artifact Version ${validVerId} MIME type "${ver.MimeType}" is not permitted.`);
+          return deny(`Artifact Version ${slot.targetId} MIME type "${ver.MimeType}" is not permitted.`);
         }
-        if (ver.Content && !SanitizePersistedAttachmentUrl(ver.Content, draft.kind)) {
-          return deny(`Artifact Version ${validVerId} content URL uses an unsafe, temporary, or unsupported scheme.`);
+        if (slot.draftKind !== 'artifact' && ver.Content && !SanitizePersistedAttachmentUrl(ver.Content, slot.draftKind)) {
+          return deny(`Artifact Version ${slot.targetId} content URL uses an unsafe, temporary, or unsupported scheme.`);
         }
       }
     }

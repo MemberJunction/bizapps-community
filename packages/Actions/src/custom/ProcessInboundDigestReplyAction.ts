@@ -1,4 +1,4 @@
-import { Metadata, RunView, type UserInfo } from '@memberjunction/core';
+import { Metadata, RunView, type RunViewParams, type RunViewResult, type UserInfo } from '@memberjunction/core';
 import { ActionParam, ActionResultSimple, RunActionParams } from '@memberjunction/actions-base';
 import { BaseAction } from '@memberjunction/actions';
 import { RegisterClass, UUIDsEqual } from '@memberjunction/global';
@@ -223,8 +223,9 @@ export class ProcessInboundDigestReplyAction extends BaseAction {
     | { allowed: true; canSeeTeamBand: boolean; isSpaceOpenForWrites: boolean }
     | { allowed: false; errorCode: string; reason: string }
   > {
-    const [spacesRes, spaceMembersRes, spaceRolesRes] = await Promise.all([
-      new RunView().RunView<CollaborationSpaceRow>(
+    type SpaceAccessBatchRow = CollaborationSpaceRow | CollaborationSpaceMemberRow | CollaborationSpaceRoleTypeRow;
+    const spaceBatchResults = await new RunView().RunViews<SpaceAccessBatchRow>(
+      [
         {
           EntityName: 'MJ_BizApps_Collaboration: Spaces',
           ExtraFilter: '1=1',
@@ -232,9 +233,6 @@ export class ProcessInboundDigestReplyAction extends BaseAction {
           ResultType: 'simple',
           MaxRows: 500,
         },
-        user,
-      ),
-      new RunView().RunView<CollaborationSpaceMemberRow>(
         {
           EntityName: 'MJ_BizApps_Collaboration: Space Members',
           ExtraFilter: `UserID = '${memberUserId}'`,
@@ -242,9 +240,6 @@ export class ProcessInboundDigestReplyAction extends BaseAction {
           ResultType: 'simple',
           MaxRows: 500,
         },
-        user,
-      ),
-      new RunView().RunView<CollaborationSpaceRoleTypeRow>(
         {
           EntityName: 'MJ_BizApps_Collaboration: Space Role Types',
           ExtraFilter: '1=1',
@@ -252,9 +247,12 @@ export class ProcessInboundDigestReplyAction extends BaseAction {
           ResultType: 'simple',
           MaxRows: 200,
         },
-        user,
-      ),
-    ]);
+      ],
+      user,
+    );
+    const spacesRes = spaceBatchResults[0] as RunViewResult<CollaborationSpaceRow> | undefined;
+    const spaceMembersRes = spaceBatchResults[1] as RunViewResult<CollaborationSpaceMemberRow> | undefined;
+    const spaceRolesRes = spaceBatchResults[2] as RunViewResult<CollaborationSpaceRoleTypeRow> | undefined;
 
     if (!spacesRes?.Success || !spaceMembersRes?.Success || !spaceRolesRes?.Success) {
       return {
@@ -368,38 +366,45 @@ export class ProcessInboundDigestReplyAction extends BaseAction {
       }
     | { allowed: false; errorCode: string; reason: string }
   > {
-    const [forumRes, rootRes, memberRes] = await Promise.all([
-      new RunView().RunView<AuthoritativeForumRow>(
-        {
-          EntityName: COMMUNITY_ENTITY_NAMES.Forums,
-          ExtraFilter: `ID = '${forumId}'`,
-          Fields: ['ID', 'SpaceID', 'Name', 'Status', 'PostingPolicy', 'VisibilityBand', 'InheritsSpaceMembers'],
-          ResultType: 'simple',
-          MaxRows: 1,
-        },
-        user,
-      ),
-      new RunView().RunView<AuthoritativePostRow>(
-        {
-          EntityName: COMMUNITY_ENTITY_NAMES.ForumPosts,
-          ExtraFilter: `ID = '${rootPostId}'`,
-          Fields: ['ID', 'ForumID', 'RootPostID', 'ReplyDepth', 'VisibilityBand', 'Status', 'IsLocked'],
-          ResultType: 'simple',
-          MaxRows: 1,
-        },
-        user,
-      ),
-      new RunView().RunView<AuthoritativeForumMemberRow>(
-        {
-          EntityName: COMMUNITY_ENTITY_NAMES.ForumMembers,
-          ExtraFilter: `ForumID = '${forumId}' AND UserID = '${memberUserId}'`,
-          Fields: ['ID', 'ForumID', 'UserID', 'ForumRoleTypeID', 'Status'],
-          ResultType: 'simple',
-          MaxRows: 1,
-        },
-        user,
-      ),
-    ]);
+    type AccessBatchRow = AuthoritativeForumRow | AuthoritativePostRow | AuthoritativeForumMemberRow;
+    const needSeparateParent = !UUIDsEqual(parentPostId, rootPostId);
+    const accessQueries: RunViewParams[] = [
+      {
+        EntityName: COMMUNITY_ENTITY_NAMES.Forums,
+        ExtraFilter: `ID = '${forumId}'`,
+        Fields: ['ID', 'SpaceID', 'Name', 'Status', 'PostingPolicy', 'VisibilityBand', 'InheritsSpaceMembers'],
+        ResultType: 'simple',
+        MaxRows: 1,
+      },
+      {
+        EntityName: COMMUNITY_ENTITY_NAMES.ForumPosts,
+        ExtraFilter: `ID = '${rootPostId}'`,
+        Fields: ['ID', 'ForumID', 'RootPostID', 'ReplyDepth', 'VisibilityBand', 'Status', 'IsLocked'],
+        ResultType: 'simple',
+        MaxRows: 1,
+      },
+      {
+        EntityName: COMMUNITY_ENTITY_NAMES.ForumMembers,
+        ExtraFilter: `ForumID = '${forumId}' AND UserID = '${memberUserId}'`,
+        Fields: ['ID', 'ForumID', 'UserID', 'ForumRoleTypeID', 'Status'],
+        ResultType: 'simple',
+        MaxRows: 1,
+      },
+    ];
+    if (needSeparateParent) {
+      accessQueries.push({
+        EntityName: COMMUNITY_ENTITY_NAMES.ForumPosts,
+        ExtraFilter: `ID = '${parentPostId}'`,
+        Fields: ['ID', 'ForumID', 'RootPostID', 'ReplyDepth', 'VisibilityBand', 'Status', 'IsLocked'],
+        ResultType: 'simple',
+        MaxRows: 1,
+      });
+    }
+    const accessResults = await new RunView().RunViews<AccessBatchRow>(accessQueries, user);
+    const forumRes = accessResults[0] as RunViewResult<AuthoritativeForumRow> | undefined;
+    const rootRes = accessResults[1] as RunViewResult<AuthoritativePostRow> | undefined;
+    const memberRes = accessResults[2] as RunViewResult<AuthoritativeForumMemberRow> | undefined;
+    const parentRes = needSeparateParent ? (accessResults[3] as RunViewResult<AuthoritativePostRow> | undefined) : undefined;
 
     if (!forumRes?.Success || !forumRes.Results?.[0]) {
       return { allowed: false, errorCode: 'FORUM_NOT_FOUND', reason: `Forum ${forumId} was not found.` };
@@ -445,17 +450,7 @@ export class ProcessInboundDigestReplyAction extends BaseAction {
     }
 
     let parentPost = rootPost;
-    if (!UUIDsEqual(parentPostId, rootPostId)) {
-      const parentRes = await new RunView().RunView<AuthoritativePostRow>(
-        {
-          EntityName: COMMUNITY_ENTITY_NAMES.ForumPosts,
-          ExtraFilter: `ID = '${parentPostId}'`,
-          Fields: ['ID', 'ForumID', 'RootPostID', 'ReplyDepth', 'VisibilityBand', 'Status', 'IsLocked'],
-          ResultType: 'simple',
-          MaxRows: 1,
-        },
-        user,
-      );
+    if (needSeparateParent) {
       if (!parentRes?.Success || !parentRes.Results?.[0]) {
         return {
           allowed: false,

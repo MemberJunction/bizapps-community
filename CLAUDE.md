@@ -19,7 +19,38 @@ Every metadata record has a `primaryKey`, nested `relatedEntities` children incl
 
 ## Browser-Safe Metadata Engine (`@mj-biz-apps/community-engine-base`)
 
-`CommunityEngineBase` lives in `packages/EngineBase`. It extends `BaseSingleton<CommunityEngineBase>` to cache `ForumType`, `PostType`, and `ForumRoleType` metadata, providing O(1) in-memory lookups and resolving the 4-tier configuration cascade without any Node or server-only dependencies. Client Angular widgets, Explorer resources, and backend servers consume this package as a shared library.
+`CommunityEngineBase` lives in `packages/EngineBase`. It extends `BaseEngine<CommunityEngineBase>` (`BaseSingleton`) to cache bounded reference/taxonomy metadata (`ForumType`, `PostType`, `ForumRoleType`, and permission-gated `MJ: Application Settings`), providing O(1) in-memory lookups invalidated in `AdditionalLoading()` and resolving the 4-tier configuration cascade without any Node or server-only dependencies. Client Angular widgets, Explorer resources, Actions, and backend servers consume this package as a shared library.
+
+## Canonical 5-Rule Performance Standard
+
+Every engine, Angular component, Action, server entity, and GraphQL resolver in this repo **MUST** follow these 5 rules:
+
+1. **`BaseEngine` (`BaseSingleton`) for Bounded Reference / Taxonomy Metadata**: Cache bounded reference/taxonomy tables (`Forum Types`, `Post Types`, `Forum Role Types`, and optional `MJ: Application Settings`) via `BaseEnginePropertyConfig` with `AutoRefresh: true` and O(1) lookup `Map`s reset in `AdditionalLoading()`. Never re-query cached taxonomy tables via ad-hoc `RunView` calls in components, resolvers, or actions.
+2. **Multi-Provider & Impersonation Safety**:
+   - `ProviderToUse` must follow the active provider passed to `Config()` or `Metadata.Provider` (never stay pinned to a stale first-wins provider across persona/impersonation switches).
+   - Auto-evict user-scoped caches whenever the active `userId` changes (`EnsureUserCacheContext` / `ClearUserCaches`).
+   - Always set `CacheLocal: false` on any RLS-filtered or untrusted-cache entity.
+   - Gate optional metadata queries (such as `MJ: Application Settings`) on `EntityInfo.GetUserPermisions(user)?.CanRead`.
+3. **Mandatory `rv.RunViews([...])` Single-Request Batching**:
+   - Collapse independent `RunView` queries into a single `rv.RunViews([...])` batch call (`RunView.FromMetadataProvider(provider)` on the client; `LoadAllPaginatedBatches` for multi-page reads; `loadBatchRows` in `CoreEntitiesServer`).
+   - Always use `ResultType: 'simple'` with narrow `Fields` projections whenever entity mutation is not needed.
+   - Never issue `Promise.all([new RunView().RunView(...), ...])` bursts or multi-hop `ParentID` loops when a root pointer (`RootPostID`) or single batch suffices.
+4. **`ConversationEngine`-Style Bounded Container Caching**:
+   - Cache only bounded per-container windows/subtrees (e.g., per-space forum directories capped at a fixed container count) with automatic `BaseEntity` event invalidation (`HandleIndividualBaseEntityEvent`), explicit `Invalidate*()` methods, and automatic persona-switch eviction.
+   - **NEVER** cache global unbounded transactional tables (`ForumPosts`, `ForumPostReactions`, `ForumIdeaAllocations`, etc.) or arbitrary `ExtraFilter` list caches.
+5. **RLS-Safe Two-Step Entity Reads**:
+   - **NEVER** embed raw SQL subqueries against RLS-filtered `vw*` views inside `ExtraFilter`.
+   - Always query the RLS-protected entity first via `RunView` / `RunViews`, validate UUIDs via `AssertValidUUID`, and pass `ID IN (...)` to the follow-up entity query.
+
+## Type Safety & Code Quality Rules (CI-Enforced)
+
+- **ZERO `any` and ZERO `unknown`** in type position (enforced via `node scripts/check-type-safety.mjs`).
+- **ZERO `BaseEntity.Get()` / `.Set()`** dynamic field access (use generated strongly-typed entity properties).
+- **Use `BaseSingleton<T>`** for all singletons (never manual `static _instance`).
+- **Modern Angular syntax**: use `@if` / `@for` / `@switch` and `inject()`.
+- **ZERO cross-package re-exports**: consumers import types from their defining source package.
+- **ZERO `localStorage` / `sessionStorage`**: persist user preferences via `UserInfoEngine.Instance`.
+- See also [AGENTS.md](AGENTS.md) for the complete agent operating checklist.
 
 ## Downstream Isolation Boundary
 

@@ -908,6 +908,9 @@ describe('CR-2, CR-4, CR-7 & CR-8: ForumPostAttachmentServerEntity server-side v
 
     provider = new MockAttachmentProvider(existingAttachments, runViewHandler);
     mock.method(RunView.prototype, 'RunView', runViewHandler);
+    mock.method(RunView.prototype, 'RunViews', async <T>(paramsList: RunViewParams[]): Promise<RunViewResult<T>[]> =>
+      Promise.all(paramsList.map((p) => runViewHandler<T>(p))),
+    );
   });
 
   afterEach(() => {

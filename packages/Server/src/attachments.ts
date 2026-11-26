@@ -3,9 +3,12 @@ import {
   CompositeKey,
   Metadata,
   RunView,
+  type RunViewParams,
+  type RunViewResult,
   type UserInfo,
 } from '@memberjunction/core';
 import { UUIDsEqual } from '@memberjunction/global';
+import { CommunityEngineBase } from '@mj-biz-apps/community-engine-base';
 import {
   AssertValidUUID,
   COMMUNITY_ATTACHMENT_MAX_AGGREGATE_BYTES_PER_POST,
@@ -373,16 +376,29 @@ export class CommunityAttachmentServerService {
     const validSpaceId = AssertValidUUID(spaceId, 'spaceId');
     const rv = new RunView();
 
-    const spaceRes = await rv.RunView<CollaborationSpaceRow>(
-      {
-        EntityName: COLLABORATION_SPACES_ENTITY,
-        ExtraFilter: `ID = '${validSpaceId}'`,
-        Fields: ['ID', 'OwnerID', 'Name'],
-        ResultType: 'simple',
-        MaxRows: 1,
-      },
+    type SpaceAccessRow = CollaborationSpaceRow | CollaborationSpaceMemberRow;
+    const accessBatch = await rv.RunViews<SpaceAccessRow>(
+      [
+        {
+          EntityName: COLLABORATION_SPACES_ENTITY,
+          ExtraFilter: `ID = '${validSpaceId}'`,
+          Fields: ['ID', 'OwnerID', 'Name'],
+          ResultType: 'simple',
+          MaxRows: 1,
+        },
+        {
+          EntityName: COLLABORATION_SPACE_MEMBERS_ENTITY,
+          ExtraFilter: `SpaceID = '${validSpaceId}' AND UserID = '${validUserId}' AND Status = 'Active'`,
+          Fields: ['ID', 'SpaceID', 'UserID', 'Band', 'Status'],
+          ResultType: 'simple',
+          MaxRows: 1,
+        },
+      ],
       contextUser,
     );
+    const spaceRes = accessBatch[0] as RunViewResult<CollaborationSpaceRow> | undefined;
+    const memberRes = accessBatch[1] as RunViewResult<CollaborationSpaceMemberRow> | undefined;
+
     if (!spaceRes?.Success) {
       throw new Error(`Unable to verify Collaboration Space ${validSpaceId}: ${spaceRes?.ErrorMessage ?? 'query failed'}.`);
     }
@@ -392,16 +408,6 @@ export class CommunityAttachmentServerService {
     }
 
     const isOwner = UUIDsEqual(space.OwnerID, validUserId);
-    const memberRes = await rv.RunView<CollaborationSpaceMemberRow>(
-      {
-        EntityName: COLLABORATION_SPACE_MEMBERS_ENTITY,
-        ExtraFilter: `SpaceID = '${validSpaceId}' AND UserID = '${validUserId}' AND Status = 'Active'`,
-        Fields: ['ID', 'SpaceID', 'UserID', 'Band', 'Status'],
-        ResultType: 'simple',
-        MaxRows: 1,
-      },
-      contextUser,
-    );
     if (!memberRes?.Success) {
       throw new Error(`Unable to verify Space membership for Space ${validSpaceId}: ${memberRes?.ErrorMessage ?? 'query failed'}.`);
     }
@@ -457,20 +463,31 @@ export class CommunityAttachmentServerService {
     let roleType: ForumRoleCapabilitiesRow | null = null;
     if (member) {
       const validRoleId = AssertValidUUID(member.ForumRoleTypeID, 'ForumRoleTypeID');
-      const roleRes = await rv.RunView<ForumRoleCapabilitiesRow>(
-        {
-          EntityName: COMMUNITY_ENTITY_NAMES.ForumRoleTypes,
-          ExtraFilter: `ID = '${validRoleId}'`,
-          Fields: ['ID', 'CanConfigureForum', 'CanModerateQueue', 'CanCreateRootPost', 'CanReply'],
-          ResultType: 'simple',
-          MaxRows: 1,
-        },
-        contextUser,
-      );
-      if (!roleRes?.Success || !roleRes.Results?.[0]) {
-        throw new Error(`Unable to resolve ForumRoleType ${validRoleId} for Forum ${validForumId}.`);
+      const cachedRole = CommunityEngineBase.Instance.GetForumRoleTypeById(validRoleId);
+      if (cachedRole) {
+        roleType = {
+          ID: cachedRole.ID,
+          CanConfigureForum: cachedRole.CanConfigureForum,
+          CanModerateQueue: cachedRole.CanModerateQueue,
+          CanCreateRootPost: cachedRole.CanCreateRootPost,
+          CanReply: cachedRole.CanReply,
+        };
+      } else {
+        const roleRes = await rv.RunView<ForumRoleCapabilitiesRow>(
+          {
+            EntityName: COMMUNITY_ENTITY_NAMES.ForumRoleTypes,
+            ExtraFilter: `ID = '${validRoleId}'`,
+            Fields: ['ID', 'CanConfigureForum', 'CanModerateQueue', 'CanCreateRootPost', 'CanReply'],
+            ResultType: 'simple',
+            MaxRows: 1,
+          },
+          contextUser,
+        );
+        if (!roleRes?.Success || !roleRes.Results?.[0]) {
+          throw new Error(`Unable to resolve ForumRoleType ${validRoleId} for Forum ${validForumId}.`);
+        }
+        roleType = roleRes.Results[0];
       }
-      roleType = roleRes.Results[0];
     }
 
     const decision = CommunityRules.EvaluateForumAccess({
@@ -1452,43 +1469,43 @@ export class CommunityAttachmentServerService {
     }
 
     const versionById = new Map<string, MJArtifactVersionRow>();
-    if (pinnedVersionIds.size > 0) {
-      const verRes = await rv.RunView<MJArtifactVersionRow>(
-        {
-          EntityName: MJ_ARTIFACT_VERSIONS_ENTITY,
-          ExtraFilter: `ID IN (${buildSqlInUuidList(Array.from(pinnedVersionIds), 'existingArtifactVersionIds')})`,
-          Fields: ['ID', 'ArtifactID', 'VersionNumber', 'Name', 'ContentMode', 'Content', 'FileID', 'FileName', 'MimeType', 'ContentSizeBytes'],
-          ResultType: 'simple',
-          MaxRows: MAX_ATTACHMENTS_SCAN,
-        },
-        contextUser,
-      );
-      if (!verRes?.Success) {
-        throw new Error(`Unable to load pinned Artifact Versions for existing attachments: ${verRes?.ErrorMessage ?? 'query failed'}.`);
-      }
-      for (const v of verRes.Results ?? []) {
-        versionById.set(v.ID.toLowerCase(), v);
-      }
-    }
-
     const latestVersionByArtifactId = new Map<string, MJArtifactVersionRow>();
-    if (unpinnedArtifactIds.size > 0) {
-      const perArtifactResults = await Promise.all(
-        Array.from(unpinnedArtifactIds).map((artId) =>
-          rv.RunView<MJArtifactVersionRow>(
-            {
-              EntityName: MJ_ARTIFACT_VERSIONS_ENTITY,
-              ExtraFilter: `ArtifactID = '${AssertValidUUID(artId, 'existingArtifactId')}'`,
-              Fields: ['ID', 'ArtifactID', 'VersionNumber', 'Name', 'ContentMode', 'Content', 'FileID', 'FileName', 'MimeType', 'ContentSizeBytes'],
-              OrderBy: 'VersionNumber DESC',
-              ResultType: 'simple',
-              MaxRows: 1,
-            },
-            contextUser,
-          ),
-        ),
-      );
-      for (const artVerRes of perArtifactResults) {
+    const versionBatchQueries: RunViewParams[] = [];
+    const hasPinned = pinnedVersionIds.size > 0;
+    if (hasPinned) {
+      versionBatchQueries.push({
+        EntityName: MJ_ARTIFACT_VERSIONS_ENTITY,
+        ExtraFilter: `ID IN (${buildSqlInUuidList(Array.from(pinnedVersionIds), 'existingArtifactVersionIds')})`,
+        Fields: ['ID', 'ArtifactID', 'VersionNumber', 'Name', 'ContentMode', 'Content', 'FileID', 'FileName', 'MimeType', 'ContentSizeBytes'],
+        ResultType: 'simple',
+        MaxRows: MAX_ATTACHMENTS_SCAN,
+      });
+    }
+    const unpinnedArtifactList = Array.from(unpinnedArtifactIds);
+    for (const artId of unpinnedArtifactList) {
+      versionBatchQueries.push({
+        EntityName: MJ_ARTIFACT_VERSIONS_ENTITY,
+        ExtraFilter: `ArtifactID = '${AssertValidUUID(artId, 'existingArtifactId')}'`,
+        Fields: ['ID', 'ArtifactID', 'VersionNumber', 'Name', 'ContentMode', 'Content', 'FileID', 'FileName', 'MimeType', 'ContentSizeBytes'],
+        OrderBy: 'VersionNumber DESC',
+        ResultType: 'simple',
+        MaxRows: 1,
+      });
+    }
+    if (versionBatchQueries.length > 0) {
+      const versionBatchRes = await rv.RunViews<MJArtifactVersionRow>(versionBatchQueries, contextUser);
+      let cursor = 0;
+      if (hasPinned) {
+        const verRes = versionBatchRes[cursor++];
+        if (!verRes?.Success) {
+          throw new Error(`Unable to load pinned Artifact Versions for existing attachments: ${verRes?.ErrorMessage ?? 'query failed'}.`);
+        }
+        for (const v of verRes.Results ?? []) {
+          versionById.set(v.ID.toLowerCase(), v);
+        }
+      }
+      for (let i = 0; i < unpinnedArtifactList.length; i += 1) {
+        const artVerRes = versionBatchRes[cursor++];
         if (!artVerRes?.Success) {
           throw new Error(`Unable to load Artifact Versions for existing unpinned artifacts: ${artVerRes?.ErrorMessage ?? 'query failed'}.`);
         }
@@ -1539,20 +1556,16 @@ export class CommunityAttachmentServerService {
     });
     const companionByFileId = new Map<string, MJArtifactVersionRow>();
     if (filesNeedingCompanion.length > 0) {
-      const perFileResults = await Promise.all(
-        filesNeedingCompanion.map((fid) =>
-          rv.RunView<MJArtifactVersionRow>(
-            {
-              EntityName: MJ_ARTIFACT_VERSIONS_ENTITY,
-              ExtraFilter: `FileID = '${AssertValidUUID(fid, 'existingCompanionFileId')}'`,
-              Fields: ['ID', 'ArtifactID', 'VersionNumber', 'Name', 'ContentMode', 'Content', 'FileID', 'FileName', 'MimeType', 'ContentSizeBytes'],
-              OrderBy: 'VersionNumber DESC',
-              ResultType: 'simple',
-              MaxRows: 1,
-            },
-            contextUser,
-          ),
-        ),
+      const perFileResults = await rv.RunViews<MJArtifactVersionRow>(
+        filesNeedingCompanion.map((fid) => ({
+          EntityName: MJ_ARTIFACT_VERSIONS_ENTITY,
+          ExtraFilter: `FileID = '${AssertValidUUID(fid, 'existingCompanionFileId')}'`,
+          Fields: ['ID', 'ArtifactID', 'VersionNumber', 'Name', 'ContentMode', 'Content', 'FileID', 'FileName', 'MimeType', 'ContentSizeBytes'],
+          OrderBy: 'VersionNumber DESC',
+          ResultType: 'simple',
+          MaxRows: 1,
+        })),
+        contextUser,
       );
       for (const compRes of perFileResults) {
         if (!compRes?.Success) {
@@ -2301,46 +2314,29 @@ export class CommunityAttachmentServerService {
       }
     }
 
-    const artifactMap = new Map<string, MJArtifactRow>();
+    const postIds = Array.from(new Set(params.attachments.map((a) => a.PostID)));
+    type HydrateBatchRow = MJArtifactRow | MJFileRow | MJArtifactVersionRow | ForumArtifactPostRow;
+    const hydrateQueries: RunViewParams[] = [];
+    const artIdx = artifactIds.size > 0 ? hydrateQueries.length : -1;
     if (artifactIds.size > 0) {
-      const artRes = await rv.RunView<MJArtifactRow>(
-        {
-          EntityName: MJ_ARTIFACTS_ENTITY,
-          ExtraFilter: `ID IN (${buildSqlInUuidList(Array.from(artifactIds), 'artifactIds')})`,
-          Fields: ['ID', 'Name', 'TypeID', 'Type'],
-          ResultType: 'simple',
-          MaxRows: MAX_ATTACHMENTS_SCAN,
-        },
-        params.contextUser,
-      );
-      if (artRes?.Success) {
-        for (const a of artRes.Results ?? []) {
-          artifactMap.set(a.ID.toLowerCase(), a);
-        }
-      }
+      hydrateQueries.push({
+        EntityName: MJ_ARTIFACTS_ENTITY,
+        ExtraFilter: `ID IN (${buildSqlInUuidList(Array.from(artifactIds), 'artifactIds')})`,
+        Fields: ['ID', 'Name', 'TypeID', 'Type'],
+        ResultType: 'simple',
+        MaxRows: MAX_ATTACHMENTS_SCAN,
+      });
     }
-
-    const fileMap = new Map<string, MJFileRow>();
+    const fileIdx = fileIds.size > 0 ? hydrateQueries.length : -1;
+    const compIdx = fileIds.size > 0 ? hydrateQueries.length + 1 : -1;
     if (fileIds.size > 0) {
-      const fileRes = await rv.RunView<MJFileRow>(
+      hydrateQueries.push(
         {
           EntityName: MJ_FILES_ENTITY,
           ExtraFilter: `ID IN (${buildSqlInUuidList(Array.from(fileIds), 'fileIds')})`,
           ResultType: 'simple',
           MaxRows: MAX_ATTACHMENTS_SCAN,
         },
-        params.contextUser,
-      );
-      if (fileRes?.Success) {
-        for (const f of fileRes.Results ?? []) {
-          fileMap.set(f.ID.toLowerCase(), f);
-        }
-      }
-    }
-
-    const companionVersionByFileId = new Map<string, MJArtifactVersionRow>();
-    if (fileIds.size > 0) {
-      const compRes = await rv.RunView<MJArtifactVersionRow>(
         {
           EntityName: MJ_ARTIFACT_VERSIONS_ENTITY,
           ExtraFilter: `FileID IN (${buildSqlInUuidList(Array.from(fileIds), 'companionFileIds')})`,
@@ -2349,8 +2345,45 @@ export class CommunityAttachmentServerService {
           ResultType: 'simple',
           MaxRows: MAX_ATTACHMENTS_SCAN,
         },
-        params.contextUser,
       );
+    }
+    const apIdx = postIds.length > 0 ? hydrateQueries.length : -1;
+    if (postIds.length > 0) {
+      hydrateQueries.push({
+        EntityName: COMMUNITY_ENTITY_NAMES.ForumArtifactPosts,
+        ExtraFilter: `ID IN (${buildSqlInUuidList(postIds, 'artifactPostIds')})`,
+        Fields: ['ID', 'ArtifactID', 'PinnedArtifactVersionID', 'SpaceItemID', 'ArtifactModality', 'CollaborationMode', 'ShowInlinePreview'],
+        ResultType: 'simple',
+        MaxRows: MAX_ATTACHMENTS_SCAN,
+      });
+    }
+
+    const hydrateResults =
+      hydrateQueries.length > 0 ? await rv.RunViews<HydrateBatchRow>(hydrateQueries, params.contextUser) : [];
+
+    const artifactMap = new Map<string, MJArtifactRow>();
+    if (artIdx >= 0) {
+      const artRes = hydrateResults[artIdx] as RunViewResult<MJArtifactRow> | undefined;
+      if (artRes?.Success) {
+        for (const a of artRes.Results ?? []) {
+          artifactMap.set(a.ID.toLowerCase(), a);
+        }
+      }
+    }
+
+    const fileMap = new Map<string, MJFileRow>();
+    if (fileIdx >= 0) {
+      const fileRes = hydrateResults[fileIdx] as RunViewResult<MJFileRow> | undefined;
+      if (fileRes?.Success) {
+        for (const f of fileRes.Results ?? []) {
+          fileMap.set(f.ID.toLowerCase(), f);
+        }
+      }
+    }
+
+    const companionVersionByFileId = new Map<string, MJArtifactVersionRow>();
+    if (compIdx >= 0) {
+      const compRes = hydrateResults[compIdx] as RunViewResult<MJArtifactVersionRow> | undefined;
       if (compRes?.Success) {
         for (const v of compRes.Results ?? []) {
           if (!v.FileID) continue;
@@ -2363,19 +2396,9 @@ export class CommunityAttachmentServerService {
       }
     }
 
-    const postIds = Array.from(new Set(params.attachments.map((a) => a.PostID)));
     const artifactPostMap = new Map<string, ForumArtifactPostRow>();
-    if (postIds.length > 0) {
-      const apRes = await rv.RunView<ForumArtifactPostRow>(
-        {
-          EntityName: COMMUNITY_ENTITY_NAMES.ForumArtifactPosts,
-          ExtraFilter: `ID IN (${buildSqlInUuidList(postIds, 'artifactPostIds')})`,
-          Fields: ['ID', 'ArtifactID', 'PinnedArtifactVersionID', 'SpaceItemID', 'ArtifactModality', 'CollaborationMode', 'ShowInlinePreview'],
-          ResultType: 'simple',
-          MaxRows: MAX_ATTACHMENTS_SCAN,
-        },
-        params.contextUser,
-      );
+    if (apIdx >= 0) {
+      const apRes = hydrateResults[apIdx] as RunViewResult<ForumArtifactPostRow> | undefined;
       if (apRes?.Success) {
         for (const ap of apRes.Results ?? []) {
           artifactPostMap.set(ap.SpaceItemID.toLowerCase(), ap);

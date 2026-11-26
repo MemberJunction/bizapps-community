@@ -659,10 +659,7 @@ function buildMockWorld(options: MockWorldOptions = {}) {
     },
   );
 
-  mock.method(
-    RunView.prototype,
-    'RunView',
-    async (
+  const runViewHandler = async (
       query: { EntityName: string; ExtraFilter?: string; Fields?: string[]; OrderBy?: string; MaxRows?: number },
       contextUser?: UserInfo,
     ) => {
@@ -827,7 +824,15 @@ function buildMockWorld(options: MockWorldOptions = {}) {
       }
 
       return { Success: true, Results: [] };
-    },
+    };
+  mock.method(RunView.prototype, 'RunView', runViewHandler);
+  mock.method(
+    RunView.prototype,
+    'RunViews',
+    async (
+      queries: Array<{ EntityName: string; ExtraFilter?: string; Fields?: string[]; OrderBy?: string; MaxRows?: number }>,
+      contextUser?: UserInfo,
+    ) => Promise.all(queries.map((q) => runViewHandler(q, contextUser))),
   );
 
   return { spaceItems, attachments, artifactPosts, artifacts, artifactVersions, files };

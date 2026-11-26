@@ -8,9 +8,9 @@ import {
 import {
   failValidation,
   getStringOldValue,
+  loadBatchRows,
   loadEntityById,
   loadRows,
-  loadSingleRow,
   resolveForumRow,
   validUuidOrNull,
 } from './server-entity-helpers.ts';
@@ -53,36 +53,41 @@ export class ForumPostTagServerEntity extends mjBizAppsCommunityForumPostTagEnti
       return failValidation(result, 'TopicTagID', 'TopicTagID must be a valid UUID.');
     }
 
-    const postRes = await loadSingleRow<PostForumRow>(
-      this,
-      COMMUNITY_ENTITY_NAMES.ForumPosts,
-      `ID = '${validPostId}'`,
-      ['ID', 'ForumID'],
-    );
-    if (!postRes.success || !postRes.row) {
+    type PostOrTagRow = PostForumRow | TopicTagSpaceRow;
+    const [postBatch, tagBatch] = await loadBatchRows<PostOrTagRow>(this, [
+      {
+        entityName: COMMUNITY_ENTITY_NAMES.ForumPosts,
+        extraFilter: `ID = '${validPostId}'`,
+        fields: ['ID', 'ForumID'],
+        maxRows: 1,
+      },
+      {
+        entityName: COMMUNITY_ENTITY_NAMES.ForumTopicTags,
+        extraFilter: `ID = '${validTopicTagId}'`,
+        fields: ['ID', 'SpaceID'],
+        maxRows: 1,
+      },
+    ]);
+    const postRow = postBatch?.success ? (postBatch.rows[0] as PostForumRow | undefined) ?? null : null;
+    if (!postBatch?.success || !postRow) {
       return failValidation(result, 'PostID', `ForumPost ${validPostId} was not found.`);
     }
 
-    const forum = await resolveForumRow(this, postRes.row.ForumID);
+    const forum = await resolveForumRow(this, postRow.ForumID);
     if (!forum) {
-      return failValidation(result, 'PostID', `Forum ${postRes.row.ForumID} was not found.`);
+      return failValidation(result, 'PostID', `Forum ${postRow.ForumID} was not found.`);
     }
 
-    const tagRes = await loadSingleRow<TopicTagSpaceRow>(
-      this,
-      COMMUNITY_ENTITY_NAMES.ForumTopicTags,
-      `ID = '${validTopicTagId}'`,
-      ['ID', 'SpaceID'],
-    );
-    if (!tagRes.success || !tagRes.row) {
+    const tagRow = tagBatch?.success ? (tagBatch.rows[0] as TopicTagSpaceRow | undefined) ?? null : null;
+    if (!tagBatch?.success || !tagRow) {
       return failValidation(result, 'TopicTagID', `ForumTopicTag ${validTopicTagId} was not found.`);
     }
 
-    if (!UUIDsEqual(tagRes.row.SpaceID, forum.SpaceID)) {
+    if (!UUIDsEqual(tagRow.SpaceID, forum.SpaceID)) {
       return failValidation(
         result,
         'TopicTagID',
-        `ForumTopicTag SpaceID (${tagRes.row.SpaceID}) does not match post Forum SpaceID (${forum.SpaceID}).`,
+        `ForumTopicTag SpaceID (${tagRow.SpaceID}) does not match post Forum SpaceID (${forum.SpaceID}).`,
       );
     }
 

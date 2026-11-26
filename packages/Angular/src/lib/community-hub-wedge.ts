@@ -221,7 +221,7 @@ export async function ResolveCommunityActionIDWithRunView(
     }
   }
 
-  const rv = options?.runView ?? (Metadata.Provider && activeUser ? new RunView() : null);
+  const rv = options?.runView ?? (Metadata.Provider && activeUser ? RunView.FromMetadataProvider(Metadata.Provider) : null);
   if (rv) {
     const driverClass = EscapeSqlLiteral(COMMUNITY_ACTION_DRIVER_CLASSES[key]);
     for (const entityName of ['MJ: Actions', 'Actions'] as const) {

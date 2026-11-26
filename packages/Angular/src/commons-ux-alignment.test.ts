@@ -1424,7 +1424,8 @@ describe('Community Space Avatar Images — Projection, Sanitization, Directory 
     assert.match(hubHtml, /class="mjc-hub-brand__avatar"[\s\S]*\[src\]="headerAvatar"/);
     assert.match(hubHtml, /class="mjc-porch__space-avatar"[\s\S]*\[src\]="porchAvatar"/);
     assert.match(hubHtml, /class="mjc-working-space-shell__avatar"[\s\S]*\[src\]="gradAvatar"/);
-    assert.match(hubTs, /LoadAllPaginatedRows<CommunitySpaceRowProjection>/);
+    assert.match(hubTs, /LoadAllPaginatedBatches</);
+    assert.match(hubTs, /PaginatedLoadResult<CommunitySpaceRowProjection>/);
     assert.match(hubTs, /MergeCommunitySpaceProjections\(/);
   });
 });

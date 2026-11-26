@@ -1,4 +1,4 @@
-import { RunView, type UserInfo } from '@memberjunction/core';
+import { RunView, type RunViewParams, type RunViewResult, type UserInfo } from '@memberjunction/core';
 import { ActionParam, ActionResultSimple, RunActionParams } from '@memberjunction/actions-base';
 import { BaseAction } from '@memberjunction/actions';
 import { CommunicationEngine, ProcessedMessageServer } from '@memberjunction/communication-engine';
@@ -477,8 +477,9 @@ export class SendPersonalizedCommunityDigestAction extends BaseAction {
     spaceRoleById: Map<string, CollaborationSpaceRoleTypeRow>;
     forumRoleById: Map<string, ForumRoleTypeAuthRow>;
   }> {
-    const [spacesRes, spaceRolesRes, forumRolesRes] = await Promise.all([
-      new RunView().RunView<CollaborationSpaceRow>(
+    type AuthCatalogBatchRow = CollaborationSpaceRow | CollaborationSpaceRoleTypeRow | ForumRoleTypeAuthRow;
+    const batchResults = await new RunView().RunViews<AuthCatalogBatchRow>(
+      [
         {
           EntityName: 'MJ_BizApps_Collaboration: Spaces',
           ExtraFilter: '1=1',
@@ -486,9 +487,6 @@ export class SendPersonalizedCommunityDigestAction extends BaseAction {
           ResultType: 'simple',
           MaxRows: 500,
         },
-        user,
-      ),
-      new RunView().RunView<CollaborationSpaceRoleTypeRow>(
         {
           EntityName: 'MJ_BizApps_Collaboration: Space Role Types',
           ExtraFilter: '1=1',
@@ -496,9 +494,6 @@ export class SendPersonalizedCommunityDigestAction extends BaseAction {
           ResultType: 'simple',
           MaxRows: 200,
         },
-        user,
-      ),
-      new RunView().RunView<ForumRoleTypeAuthRow>(
         {
           EntityName: COMMUNITY_ENTITY_NAMES.ForumRoleTypes,
           ExtraFilter: '1=1',
@@ -506,9 +501,12 @@ export class SendPersonalizedCommunityDigestAction extends BaseAction {
           ResultType: 'simple',
           MaxRows: 200,
         },
-        user,
-      ),
-    ]);
+      ],
+      user,
+    );
+    const spacesRes = batchResults[0] as RunViewResult<CollaborationSpaceRow> | undefined;
+    const spaceRolesRes = batchResults[1] as RunViewResult<CollaborationSpaceRoleTypeRow> | undefined;
+    const forumRolesRes = batchResults[2] as RunViewResult<ForumRoleTypeAuthRow> | undefined;
 
     if (!spacesRes?.Success || !spaceRolesRes?.Success || !forumRolesRes?.Success) {
       return {
@@ -559,8 +557,9 @@ export class SendPersonalizedCommunityDigestAction extends BaseAction {
     }
 
     const forumInList = forums.map((f) => `'${f.ID}'`).join(',');
-    const [profileRes, spaceMemberRes, forumMemberRes] = await Promise.all([
-      new RunView().RunView<MemberProfileRow>(
+    type RecipientAuthBatchRow = MemberProfileRow | CollaborationSpaceMemberRow | ForumMemberAuthRow;
+    const recipientBatch = await new RunView().RunViews<RecipientAuthBatchRow>(
+      [
         {
           EntityName: COMMUNITY_ENTITY_NAMES.CommunityMemberProfiles,
           ExtraFilter: `UserID = '${recipientUserId}'`,
@@ -568,9 +567,6 @@ export class SendPersonalizedCommunityDigestAction extends BaseAction {
           ResultType: 'simple',
           MaxRows: 50,
         },
-        user,
-      ),
-      new RunView().RunView<CollaborationSpaceMemberRow>(
         {
           EntityName: 'MJ_BizApps_Collaboration: Space Members',
           ExtraFilter: `UserID = '${recipientUserId}'`,
@@ -578,9 +574,6 @@ export class SendPersonalizedCommunityDigestAction extends BaseAction {
           ResultType: 'simple',
           MaxRows: 500,
         },
-        user,
-      ),
-      new RunView().RunView<ForumMemberAuthRow>(
         {
           EntityName: COMMUNITY_ENTITY_NAMES.ForumMembers,
           ExtraFilter: `ForumID IN (${forumInList}) AND UserID = '${recipientUserId}'`,
@@ -588,9 +581,12 @@ export class SendPersonalizedCommunityDigestAction extends BaseAction {
           ResultType: 'simple',
           MaxRows: 200,
         },
-        user,
-      ),
-    ]);
+      ],
+      user,
+    );
+    const profileRes = recipientBatch[0] as RunViewResult<MemberProfileRow> | undefined;
+    const spaceMemberRes = recipientBatch[1] as RunViewResult<CollaborationSpaceMemberRow> | undefined;
+    const forumMemberRes = recipientBatch[2] as RunViewResult<ForumMemberAuthRow> | undefined;
 
     if (!profileRes?.Success || !spaceMemberRes?.Success || !forumMemberRes?.Success) {
       return {
@@ -925,10 +921,46 @@ export class SendPersonalizedCommunityDigestAction extends BaseAction {
       }
 
       const postIds = postsRes.Results.map((p) => p.ID);
-      const [tagsByPostId, epistemicByQuestionId] = await Promise.all([
-        this.loadPostTags(postIds, user),
-        this.loadEpistemicStatuses(postIds, user),
-      ]);
+      const idList = postIds.map((id) => `'${id}'`).join(',');
+      type EnrichBatchRow = PostTagJoinRow | AnswerEpistemicRow;
+      let tagsByPostId = new Map<string, string[]>();
+      const epistemicByQuestionId = new Map<string, EpistemicAnswerStatus>();
+      try {
+        const enrichResults = await new RunView().RunViews<EnrichBatchRow>(
+          [
+            {
+              EntityName: COMMUNITY_ENTITY_NAMES.ForumPostTags,
+              ExtraFilter: `PostID IN (${idList})`,
+              Fields: ['PostID', 'TopicTagID'],
+              ResultType: 'simple',
+              MaxRows: 500,
+            },
+            {
+              EntityName: COMMUNITY_ENTITY_NAMES.ForumAnswerPosts,
+              ExtraFilter: `QuestionPostID IN (${idList}) AND IsAcceptedByAuthor = 1`,
+              Fields: ['QuestionPostID', 'AIEpistemicStatus'],
+              ResultType: 'simple',
+              MaxRows: 200,
+            },
+          ],
+          user,
+        );
+        const joinRes = enrichResults[0] as RunViewResult<PostTagJoinRow> | undefined;
+        const epistemicRes = enrichResults[1] as RunViewResult<AnswerEpistemicRow> | undefined;
+        if (epistemicRes?.Success && epistemicRes.Results) {
+          for (const row of epistemicRes.Results) {
+            if (row.AIEpistemicStatus) {
+              epistemicByQuestionId.set(row.QuestionPostID, row.AIEpistemicStatus);
+            }
+          }
+        }
+        tagsByPostId = await this.resolvePostTagNamesFromJoins(
+          joinRes?.Success && joinRes.Results ? joinRes.Results : [],
+          user,
+        );
+      } catch {
+        // Optional enrichment.
+      }
 
       return postsRes.Results.map((row) => {
         const forum = forumById.get(row.ForumID.toLowerCase());
@@ -958,24 +990,13 @@ export class SendPersonalizedCommunityDigestAction extends BaseAction {
     }
   }
 
-  private async loadPostTags(postIds: string[], user: UserInfo): Promise<Map<string, string[]>> {
+  private async resolvePostTagNamesFromJoins(
+    joins: ReadonlyArray<PostTagJoinRow>,
+    user: UserInfo,
+  ): Promise<Map<string, string[]>> {
     const out = new Map<string, string[]>();
-    if (postIds.length === 0) return out;
-    const idList = postIds.map((id) => `'${id}'`).join(',');
+    if (joins.length === 0) return out;
     try {
-      const joinRes = await new RunView().RunView<PostTagJoinRow>(
-        {
-          EntityName: COMMUNITY_ENTITY_NAMES.ForumPostTags,
-          ExtraFilter: `PostID IN (${idList})`,
-          Fields: ['PostID', 'TopicTagID'],
-          ResultType: 'simple',
-          MaxRows: 500,
-        },
-        user,
-      );
-      const joins = joinRes?.Success && joinRes.Results ? joinRes.Results : [];
-      if (joins.length === 0) return out;
-
       const uniqueTagIds = Array.from(new Set(joins.map((j) => j.TopicTagID)));
       const tagIdList = uniqueTagIds.map((id) => `'${id}'`).join(',');
       const tagRes = await new RunView().RunView<TopicTagRow>(
@@ -1005,35 +1026,25 @@ export class SendPersonalizedCommunityDigestAction extends BaseAction {
     return out;
   }
 
-  private async loadEpistemicStatuses(
-    questionIds: string[],
-    user: UserInfo,
-  ): Promise<Map<string, EpistemicAnswerStatus>> {
-    const out = new Map<string, EpistemicAnswerStatus>();
-    if (questionIds.length === 0) return out;
-    const idList = questionIds.map((id) => `'${id}'`).join(',');
+  private async loadPostTags(postIds: string[], user: UserInfo): Promise<Map<string, string[]>> {
+    if (postIds.length === 0) return new Map<string, string[]>();
+    const idList = postIds.map((id) => `'${id}'`).join(',');
     try {
-      const res = await new RunView().RunView<AnswerEpistemicRow>(
+      const joinRes = await new RunView().RunView<PostTagJoinRow>(
         {
-          EntityName: COMMUNITY_ENTITY_NAMES.ForumAnswerPosts,
-          ExtraFilter: `QuestionPostID IN (${idList}) AND IsAcceptedByAuthor = 1`,
-          Fields: ['QuestionPostID', 'AIEpistemicStatus'],
+          EntityName: COMMUNITY_ENTITY_NAMES.ForumPostTags,
+          ExtraFilter: `PostID IN (${idList})`,
+          Fields: ['PostID', 'TopicTagID'],
           ResultType: 'simple',
-          MaxRows: 200,
+          MaxRows: 500,
         },
         user,
       );
-      if (res?.Success && res.Results) {
-        for (const row of res.Results) {
-          if (row.AIEpistemicStatus) {
-            out.set(row.QuestionPostID, row.AIEpistemicStatus);
-          }
-        }
-      }
+      const joins = joinRes?.Success && joinRes.Results ? joinRes.Results : [];
+      return await this.resolvePostTagNamesFromJoins(joins, user);
     } catch {
-      // Optional enrichment.
+      return new Map<string, string[]>();
     }
-    return out;
   }
 
   private async loadRecipients(userIds: string[], user: UserInfo): Promise<UserLookupRow[]> {
@@ -1075,65 +1086,89 @@ export class SendPersonalizedCommunityDigestAction extends BaseAction {
     }
 
     try {
+      const rv = new RunView();
       const forumClause = ` AND ForumID IN (${authorizedForumIds.map((id) => `'${id}'`).join(',')})`;
-      const authoredRes = await new RunView().RunView<MemberAuthoredRow>(
-        {
-          EntityName: COMMUNITY_ENTITY_NAMES.ForumPosts,
-          ExtraFilter: `AuthorUserID = '${memberUserId}'${forumClause}`,
-          Fields: ['ID', 'ForumID', 'Title', 'BodyMarkdown', 'AuthorUserID', '__mj_CreatedAt'],
-          OrderBy: '__mj_CreatedAt DESC',
-          ResultType: 'simple',
-          MaxRows: 25,
-        },
+      type SignalBatchRow = MemberAuthoredRow | MemberReactionRow;
+      const signalBatch = await rv.RunViews<SignalBatchRow>(
+        [
+          {
+            EntityName: COMMUNITY_ENTITY_NAMES.ForumPosts,
+            ExtraFilter: `AuthorUserID = '${memberUserId}'${forumClause}`,
+            Fields: ['ID', 'ForumID', 'Title', 'BodyMarkdown', 'AuthorUserID', '__mj_CreatedAt'],
+            OrderBy: '__mj_CreatedAt DESC',
+            ResultType: 'simple',
+            MaxRows: 25,
+          },
+          {
+            EntityName: COMMUNITY_ENTITY_NAMES.ForumPostReactions,
+            ExtraFilter: `UserID = '${memberUserId}'`,
+            Fields: ['PostID', 'UserID', '__mj_CreatedAt'],
+            OrderBy: '__mj_CreatedAt DESC',
+            ResultType: 'simple',
+            MaxRows: 20,
+          },
+        ],
         user,
       );
+      const authoredRes = signalBatch[0] as RunViewResult<MemberAuthoredRow> | undefined;
+      const reactionRes = signalBatch[1] as RunViewResult<MemberReactionRow> | undefined;
+
       const authoredRows = authoredRes?.Success && authoredRes.Results ? authoredRes.Results : [];
-      const authoredTags = await this.loadPostTags(
-        authoredRows.map((r) => r.ID),
+      const reactionRows = (reactionRes?.Success && reactionRes.Results ? reactionRes.Results : []).filter(
+        (r) => authorizedPostIds.has(r.PostID.toLowerCase()),
+      );
+      const reactedPostIds = Array.from(new Set(reactionRows.map((r) => r.PostID)));
+      const allPostIdsForTags = Array.from(new Set([...authoredRows.map((r) => r.ID), ...reactedPostIds]));
+
+      type SignalFollowUpRow = MemberAuthoredRow | PostTagJoinRow;
+      const followUpQueries: RunViewParams[] = [];
+      const reactedIdx = reactedPostIds.length > 0 ? followUpQueries.length : -1;
+      if (reactedPostIds.length > 0) {
+        followUpQueries.push({
+          EntityName: COMMUNITY_ENTITY_NAMES.ForumPosts,
+          ExtraFilter: `ID IN (${reactedPostIds.map((id) => `'${id}'`).join(',')})${forumClause}`,
+          Fields: ['ID', 'ForumID', 'Title', 'BodyMarkdown', '__mj_CreatedAt'],
+          ResultType: 'simple',
+          MaxRows: 20,
+        });
+      }
+      const tagsIdx = allPostIdsForTags.length > 0 ? followUpQueries.length : -1;
+      if (allPostIdsForTags.length > 0) {
+        followUpQueries.push({
+          EntityName: COMMUNITY_ENTITY_NAMES.ForumPostTags,
+          ExtraFilter: `PostID IN (${allPostIdsForTags.map((id) => `'${id}'`).join(',')})`,
+          Fields: ['PostID', 'TopicTagID'],
+          ResultType: 'simple',
+          MaxRows: 500,
+        });
+      }
+
+      const followUpResults =
+        followUpQueries.length > 0 ? await rv.RunViews<SignalFollowUpRow>(followUpQueries, user) : [];
+      const reactedRes = reactedIdx >= 0 ? (followUpResults[reactedIdx] as RunViewResult<MemberAuthoredRow> | undefined) : undefined;
+      const tagJoinsRes = tagsIdx >= 0 ? (followUpResults[tagsIdx] as RunViewResult<PostTagJoinRow> | undefined) : undefined;
+
+      const tagsByPostId = await this.resolvePostTagNamesFromJoins(
+        tagJoinsRes?.Success && tagJoinsRes.Results ? tagJoinsRes.Results : [],
         user,
       );
+
       for (const row of authoredRows) {
         interactions.push({
           postId: row.ID,
           forumId: row.ForumID,
           title: row.Title,
           bodyText: row.BodyMarkdown,
-          topicTags: authoredTags.get(row.ID) ?? [],
+          topicTags: tagsByPostId.get(row.ID) ?? [],
           interactionType: 'authored',
           occurredAt: row.__mj_CreatedAt ?? new Date(),
         });
       }
 
-      const reactionRes = await new RunView().RunView<MemberReactionRow>(
-        {
-          EntityName: COMMUNITY_ENTITY_NAMES.ForumPostReactions,
-          ExtraFilter: `UserID = '${memberUserId}'`,
-          Fields: ['PostID', 'UserID', '__mj_CreatedAt'],
-          OrderBy: '__mj_CreatedAt DESC',
-          ResultType: 'simple',
-          MaxRows: 20,
-        },
-        user,
-      );
-      const reactionRows = (reactionRes?.Success && reactionRes.Results ? reactionRes.Results : []).filter(
-        (r) => authorizedPostIds.has(r.PostID.toLowerCase()),
-      );
       if (reactionRows.length > 0) {
-        const reactedPostIds = Array.from(new Set(reactionRows.map((r) => r.PostID)));
-        const reactedRes = await new RunView().RunView<MemberAuthoredRow>(
-          {
-            EntityName: COMMUNITY_ENTITY_NAMES.ForumPosts,
-            ExtraFilter: `ID IN (${reactedPostIds.map((id) => `'${id}'`).join(',')})${forumClause}`,
-            Fields: ['ID', 'ForumID', 'Title', 'BodyMarkdown', '__mj_CreatedAt'],
-            ResultType: 'simple',
-            MaxRows: 20,
-          },
-          user,
-        );
         const reactedById = new Map(
           (reactedRes?.Success && reactedRes.Results ? reactedRes.Results : []).map((p) => [p.ID, p]),
         );
-        const reactedTags = await this.loadPostTags(reactedPostIds, user);
         for (const r of reactionRows) {
           const post = reactedById.get(r.PostID);
           if (!post) continue;
@@ -1142,7 +1177,7 @@ export class SendPersonalizedCommunityDigestAction extends BaseAction {
             forumId: post.ForumID,
             title: post.Title,
             bodyText: post.BodyMarkdown,
-            topicTags: reactedTags.get(post.ID) ?? [],
+            topicTags: tagsByPostId.get(post.ID) ?? [],
             interactionType: 'reacted',
             occurredAt: r.__mj_CreatedAt ?? post.__mj_CreatedAt ?? new Date(),
           });

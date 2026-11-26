@@ -2,6 +2,7 @@ import {
   BaseEngine,
   Metadata,
   type BaseEnginePropertyConfig,
+  type BaseEntityEvent,
   type IMetadataProvider,
   type UserInfo,
 } from '@memberjunction/core';
@@ -12,6 +13,7 @@ import {
   type CommunityConfiguration,
 } from '@mj-biz-apps/community-core';
 import {
+  COMMUNITY_ENTITY_NAMES,
   ForumSubtypeDirectory,
   PostSubtypeDirectory,
   type IForumRoleTypeDescriptor,
@@ -22,12 +24,25 @@ import {
 
 const normalizeKey = (key: string | null | undefined): string => (key ?? '').trim().toLowerCase();
 
+/** Maximum number of distinct Space forum directories retained in the bounded user-scoped container cache. */
+const MAX_CACHED_SPACE_CONTAINERS = 20;
+
+interface SpaceIdCarrier {
+  SpaceID?: string | null;
+}
+
 /**
  * Browser-safe process-wide singleton metadata cache for BizApps Community (`ForumType`, `PostType`, `ForumRoleType`)
  * and 4-tier configuration cascade resolution.
- * Modeled on CollaborationEngineBase in @mj-biz-apps/collaboration-engine-base: a `BaseEngine<T>` subclass whose
- * `Config()` loads its entities via `BaseEnginePropertyConfig[]`/`Load()`, with O(1) `Map` lookups memoized and
- * invalidated in `AdditionalLoading()`.
+ *
+ * Follows the BizApps 5-rule performance standard:
+ * 1. `BaseEngine<T>` (`BaseSingleton`) for bounded reference/taxonomy metadata (`AutoRefresh: true`).
+ * 2. Multi-provider & impersonation safety: `ProviderToUse` follows the active provider passed to `Config()`
+ *    or `Metadata.Provider`, auto-evicts user-scoped caches on `userId` change, sets `CacheLocal: false`
+ *    on any RLS-filtered entity, and gates optional queries on `EntityInfo.GetUserPermisions(user)?.CanRead`.
+ * 3. O(1) lookup maps invalidated on reload in `AdditionalLoading()`.
+ * 4. Bounded per-space container cache (`GetCachedSpaceForums`/`SetCachedSpaceForums`) with `BaseEntity`
+ *    event invalidation, explicit `InvalidateSpace()`/`ClearUserCaches()`, and persona-switch eviction.
  */
 export class CommunityEngineBase extends BaseEngine<CommunityEngineBase> {
   private _forumTypes: IForumTypeDescriptor[] = [];
@@ -35,6 +50,20 @@ export class CommunityEngineBase extends BaseEngine<CommunityEngineBase> {
   private _forumRoleTypes: IForumRoleTypeDescriptor[] = [];
   private _applicationSettings: Array<Pick<MJApplicationSettingEntity, 'Name' | 'Value' | 'ApplicationID'>> = [];
   private _appSettings: Partial<CommunityConfiguration> = {};
+
+  /** Explicit provider passed to the most recent `Config(..., provider)` call, or `null` to follow `Metadata.Provider`. */
+  private _activeProvider: IMetadataProvider | null = null;
+  /** Provider instance used during the last completed `Config()` load so provider switches force a refresh. */
+  private _lastLoadedProvider: IMetadataProvider | null = null;
+  /** Normalized user ID that owns the current user-scoped container cache entries. */
+  private _lastContextUserId: string | null = null;
+
+  /**
+   * Bounded user-scoped container cache (`ConversationEngine`-style): maps normalized `spaceId`
+   * to that Space's visible `IForumSummary[]` window. Never caches global unbounded transactional
+   * tables; evicted automatically on `userId` switch and on `Forums` `BaseEntity` save/delete events.
+   */
+  private _spaceForumsCache = new Map<string, ReadonlyArray<IForumSummary>>();
 
   /** `MJ: Application Settings.Name` this engine reads its `CommunityConfiguration` JSON from. */
   public static readonly APPLICATION_SETTINGS_NAME = 'CommunitySettings';
@@ -54,36 +83,191 @@ export class CommunityEngineBase extends BaseEngine<CommunityEngineBase> {
     return super.getInstance<CommunityEngineBase>();
   }
 
+  /**
+   * Impersonation-safe / multi-provider override: follows the explicit provider passed to the most
+   * recent `Config()` call, or `Metadata.Provider` when no explicit provider is pinned — never
+   * remaining stuck on an earlier provider after an impersonation switch or reconnect.
+   */
+  public override get ProviderToUse(): IMetadataProvider {
+    return this._activeProvider ?? Metadata.Provider ?? super.ProviderToUse;
+  }
+
+  /** The normalized user ID currently associated with user-scoped caches, or `null` if none. */
+  public get ActiveUserId(): string | null {
+    return this._lastContextUserId;
+  }
+
+  /**
+   * Ensures user-scoped caches belong to `userId`. If the active user changed (e.g., persona switch
+   * or impersonation), evicts all user-scoped caches immediately and returns `true`.
+   */
+  public EnsureUserCacheContext(userId: string | null | undefined): boolean {
+    const normalized = normalizeKey(userId);
+    const nextUserId = normalized.length > 0 ? normalized : null;
+    if (this._lastContextUserId !== nextUserId) {
+      this.ClearUserCaches();
+      this._lastContextUserId = nextUserId;
+      return true;
+    }
+    return false;
+  }
+
+  /** Explicitly clears all user-scoped / bounded container caches. */
+  public ClearUserCaches(): void {
+    this._spaceForumsCache.clear();
+  }
+
+  /** Explicitly invalidates the bounded container cache for a single Space. */
+  public InvalidateSpace(spaceId: string): void {
+    const key = normalizeKey(spaceId);
+    if (key) {
+      this._spaceForumsCache.delete(key);
+    }
+  }
+
+  /**
+   * Reads a Space's cached forum directory window for the active user. Auto-evicts if the active
+   * user changed since the cache was populated.
+   */
+  public GetCachedSpaceForums(
+    spaceId: string,
+    contextUser?: UserInfo | null,
+  ): ReadonlyArray<IForumSummary> | undefined {
+    const effectiveUserId = contextUser?.ID ?? this.ProviderToUse?.CurrentUser?.ID ?? null;
+    if (this.EnsureUserCacheContext(effectiveUserId)) {
+      return undefined;
+    }
+    const key = normalizeKey(spaceId);
+    if (!key) return undefined;
+    return this._spaceForumsCache.get(key);
+  }
+
+  /**
+   * Stores a bounded Space forum directory window for the active user, evicting oldest entries
+   * past {@link MAX_CACHED_SPACE_CONTAINERS} and clearing prior user entries on user switch.
+   */
+  public SetCachedSpaceForums(
+    spaceId: string,
+    forums: ReadonlyArray<IForumSummary>,
+    contextUser?: UserInfo | null,
+  ): void {
+    const effectiveUserId = contextUser?.ID ?? this.ProviderToUse?.CurrentUser?.ID ?? null;
+    this.EnsureUserCacheContext(effectiveUserId);
+    const key = normalizeKey(spaceId);
+    if (!key) return;
+    // Refresh insertion order for FIFO/LRU-style eviction
+    this._spaceForumsCache.delete(key);
+    this._spaceForumsCache.set(key, [...forums]);
+    while (this._spaceForumsCache.size > MAX_CACHED_SPACE_CONTAINERS) {
+      const oldestKey = this._spaceForumsCache.keys().next().value;
+      if (oldestKey !== undefined) {
+        this._spaceForumsCache.delete(oldestKey);
+      } else {
+        break;
+      }
+    }
+  }
+
+  /** Checks `EntityInfo.GetUserPermisions(user)?.CanRead` before querying an entity. */
+  private canReadEntity(
+    md: IMetadataProvider | null | undefined,
+    entityName: string,
+    user: UserInfo | undefined,
+    isOptional: boolean,
+  ): boolean {
+    if (!md || typeof md.EntityByName !== 'function') {
+      return true;
+    }
+    const entityInfo = md.EntityByName(entityName);
+    if (!entityInfo) {
+      // Skip optional entities when the provider's metadata catalog is populated but omits them.
+      if (isOptional && Array.isArray(md.Entities) && md.Entities.length > 0) {
+        return false;
+      }
+      return true;
+    }
+    if (!user || typeof entityInfo.GetUserPermisions !== 'function') {
+      return true;
+    }
+    return entityInfo.GetUserPermisions(user)?.CanRead === true;
+  }
+
+  /** Returns `false` for any RLS-filtered or untrusted-cache entity (`CacheLocal: false`). */
+  private isCacheLocalSafe(md: IMetadataProvider | null | undefined, entityName: string): boolean {
+    if (!md || typeof md.EntityByName !== 'function') {
+      return true;
+    }
+    const entityInfo = md.EntityByName(entityName);
+    if (!entityInfo) {
+      return true;
+    }
+    if (entityInfo.TrustServerCacheCompletely === false) {
+      return false;
+    }
+    if (Array.isArray(entityInfo.Permissions) && entityInfo.Permissions.some((p) => Boolean(p.ReadRLSFilterID))) {
+      return false;
+    }
+    return true;
+  }
+
   public async Config(
     forceRefresh?: boolean,
     contextUser?: UserInfo,
     provider?: IMetadataProvider,
   ): Promise<void> {
+    this._activeProvider = provider ?? null;
     const md = provider ?? Metadata.Provider;
-    const params: Array<Partial<BaseEnginePropertyConfig>> = [
-      {
-        PropertyName: '_forumTypes',
-        EntityName: 'MJ_BizApps_Community: Forum Types',
-        CacheLocal: true,
-      },
-      {
-        PropertyName: '_postTypes',
-        EntityName: 'MJ_BizApps_Community: Post Types',
-        CacheLocal: true,
-      },
-      {
-        PropertyName: '_forumRoleTypes',
-        EntityName: 'MJ_BizApps_Community: Forum Role Types',
-        CacheLocal: true,
-      },
-      {
-        PropertyName: '_applicationSettings',
-        EntityName: 'MJ: Application Settings',
-        CacheLocal: true,
-      },
+    const effectiveUser = contextUser ?? md?.CurrentUser;
+
+    const userChanged = this.EnsureUserCacheContext(effectiveUser?.ID ?? null);
+    const providerChanged = Boolean(this._lastLoadedProvider && md && this._lastLoadedProvider !== md);
+    const effectiveForceRefresh = Boolean(forceRefresh) || providerChanged || userChanged;
+
+    const params: Array<Partial<BaseEnginePropertyConfig>> = [];
+
+    const coreConfigs: Array<{ PropertyName: string; EntityName: string; Optional: boolean }> = [
+      { PropertyName: '_forumTypes', EntityName: COMMUNITY_ENTITY_NAMES.ForumTypes, Optional: false },
+      { PropertyName: '_postTypes', EntityName: COMMUNITY_ENTITY_NAMES.PostTypes, Optional: false },
+      { PropertyName: '_forumRoleTypes', EntityName: COMMUNITY_ENTITY_NAMES.ForumRoleTypes, Optional: false },
+      { PropertyName: '_applicationSettings', EntityName: 'MJ: Application Settings', Optional: true },
     ];
 
-    return await this.Load(params, md, forceRefresh ?? false, contextUser);
+    for (const cfg of coreConfigs) {
+      if (this.canReadEntity(md, cfg.EntityName, effectiveUser, cfg.Optional)) {
+        params.push({
+          PropertyName: cfg.PropertyName,
+          EntityName: cfg.EntityName,
+          AutoRefresh: true,
+          CacheLocal: this.isCacheLocalSafe(md, cfg.EntityName),
+        });
+      } else if (cfg.PropertyName === '_applicationSettings') {
+        // Clear any prior privileged user's settings when current user lacks read permission.
+        this._applicationSettings = [];
+        this._appSettings = {};
+      }
+    }
+
+    this._lastLoadedProvider = md ?? null;
+    if (params.length === 0) {
+      await this.AdditionalLoading(effectiveUser);
+      return;
+    }
+    return await this.Load(params, md, effectiveForceRefresh, effectiveUser);
+  }
+
+  protected override async HandleIndividualBaseEntityEvent(event: BaseEntityEvent): Promise<boolean> {
+    if (event.type === 'save' || event.type === 'delete') {
+      const entityName = event.baseEntity?.EntityInfo?.Name?.trim().toLowerCase();
+      if (entityName === COMMUNITY_ENTITY_NAMES.Forums.toLowerCase()) {
+        const carrier = event.baseEntity as SpaceIdCarrier;
+        if (typeof carrier.SpaceID === 'string' && carrier.SpaceID.trim().length > 0) {
+          this.InvalidateSpace(carrier.SpaceID);
+        } else {
+          this.ClearUserCaches();
+        }
+      }
+    }
+    return await super.HandleIndividualBaseEntityEvent(event);
   }
 
   protected override async AdditionalLoading(_contextUser?: UserInfo): Promise<void> {
