@@ -23,10 +23,30 @@
         <div class="mjc-hub-header__inner">
           @if (!EmbeddedMode) {
             <div class="mjc-hub-brand">
-              <svg class="mjc-hub-brand__emblem" width="32" height="32" viewBox="0 0 36 36" aria-hidden="true">
-                <rect x="2" y="2" width="32" height="32" rx="9" class="mjc-emblem-bg" />
-                <path d="M18 9L26 14V22L18 27L10 22V14L18 9Z" class="mjc-emblem-accent" />
-              </svg>
+              @if (headerSpaceAvatarUrl; as headerAvatar) {
+                <img
+                  class="mjc-hub-brand__avatar"
+                  [src]="headerAvatar"
+                  alt=""
+                  width="36"
+                  height="36"
+                  aria-hidden="true"
+                  (error)="onHeaderAvatarError(headerAvatar)"
+                />
+              } @else if (headerSpaceIconClass; as headerIcon) {
+                <span
+                  class="mjc-hub-brand__icon-tile"
+                  [style.--mjc-space-accent]="headerSpaceColor"
+                  aria-hidden="true"
+                >
+                  <i [class]="headerIcon"></i>
+                </span>
+              } @else {
+                <svg class="mjc-hub-brand__emblem" width="32" height="32" viewBox="0 0 36 36" aria-hidden="true">
+                  <rect x="2" y="2" width="32" height="32" rx="9" class="mjc-emblem-bg" />
+                  <path d="M18 9L26 14V22L18 27L10 22V14L18 9Z" class="mjc-emblem-accent" />
+                </svg>
+              }
               <div class="mjc-hub-brand__copy">
                 <h1 class="mjc-hub-brand__title">{{ spaceName || 'Community' }}</h1>
               </div>
@@ -196,6 +216,25 @@
                 >
                   ← Return to Community Hub
                 </button>
+                @if (graduatedSpaceAvatarUrl; as gradAvatar) {
+                  <img
+                    class="mjc-working-space-shell__avatar"
+                    [src]="gradAvatar"
+                    alt=""
+                    width="48"
+                    height="48"
+                    aria-hidden="true"
+                    (error)="onHeaderAvatarError(gradAvatar)"
+                  />
+                } @else {
+                  <span
+                    class="mjc-working-space-shell__icon-tile"
+                    [style.--mjc-space-accent]="graduatedSpaceColor"
+                    aria-hidden="true"
+                  >
+                    <i [class]="graduatedSpaceIconClass"></i>
+                  </span>
+                }
                 <div>
                   <span class="mjc-community-hub__badge">Collaboration Working Space</span>
                   <h2 id="mjc-working-space-title" class="mjc-working-space-shell__title">
@@ -550,9 +589,30 @@
                   @if (!porchCollapsed) {
                     <div id="mjc-porch-expanded-body" class="mjc-porch__grid">
                       <div class="mjc-porch__lead">
-                        <h2 class="mjc-porch__headline">
-                          What’s worth your attention in {{ spaceName }} this week.
-                        </h2>
+                        <div class="mjc-porch__lead-head">
+                          @if (headerSpaceAvatarUrl; as porchAvatar) {
+                            <img
+                              class="mjc-porch__space-avatar"
+                              [src]="porchAvatar"
+                              alt=""
+                              width="56"
+                              height="56"
+                              aria-hidden="true"
+                              (error)="onHeaderAvatarError(porchAvatar)"
+                            />
+                          } @else if (headerSpaceIconClass; as porchIcon) {
+                            <span
+                              class="mjc-porch__space-icon-tile"
+                              [style.--mjc-space-accent]="headerSpaceColor"
+                              aria-hidden="true"
+                            >
+                              <i [class]="porchIcon"></i>
+                            </span>
+                          }
+                          <h2 class="mjc-porch__headline">
+                            What’s worth your attention in {{ spaceName }} this week.
+                          </h2>
+                        </div>
                         <p class="mjc-porch__summary">
                           Catch up on verified answers, shared playbooks, active discussions, and open community voting.
                         </p>

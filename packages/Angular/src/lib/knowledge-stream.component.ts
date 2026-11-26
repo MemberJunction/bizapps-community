@@ -10,6 +10,7 @@ import {
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import {
+  DEFAULT_COMMUNITY_SPACE_ICON_CLASS,
   FilterCommonsStream,
   STREAM_TYPE_FILTER_OPTIONS,
   type CommunityCommonsItem,
@@ -107,9 +108,40 @@ export class KnowledgeStreamComponent {
   public showAllTopics = false;
   private readonly defaultVisibleTopicLimit = 10;
   private readonly expandedItemIds = new Set<string>();
+  private readonly failedSpaceAvatarIds = new Set<string>();
   private readonly inlineReplyDrafts = new Map<string, string>();
   private readonly inlineReplyAttachments = new Map<string, DraftCommunityAttachment[]>();
   private readonly inlineReplyAttachmentErrors = new Map<string, string | null>();
+
+  public get featuredSpaces(): ReadonlyArray<CommunitySpaceDirectoryItem> {
+    return this.spaces.filter((space) => space.id !== 'all');
+  }
+
+  public hasRenderableAvatar(space: CommunitySpaceDirectoryItem | null | undefined): boolean {
+    if (!space?.imageUrl) {
+      return false;
+    }
+    return !this.failedSpaceAvatarIds.has(space.id.toLowerCase());
+  }
+
+  public spaceIconClass(space: CommunitySpaceDirectoryItem | null | undefined): string {
+    return space?.iconClass?.trim() || DEFAULT_COMMUNITY_SPACE_ICON_CLASS;
+  }
+
+  public spaceForItem(item: CommunityCommonsItem): CommunitySpaceDirectoryItem | null {
+    const key = item.spaceId?.trim().toLowerCase();
+    if (!key || key === 'all') {
+      return null;
+    }
+    return this.spaces.find((s) => s.id.toLowerCase() === key) ?? null;
+  }
+
+  public onSpaceAvatarError(spaceId: string): void {
+    const key = spaceId?.trim().toLowerCase();
+    if (!key) return;
+    this.failedSpaceAvatarIds.add(key);
+    this.cdr.markForCheck();
+  }
 
   public get visibleTopics(): ReadonlyArray<string> {
     if (this.showAllTopics || this.topics.length <= this.defaultVisibleTopicLimit) {

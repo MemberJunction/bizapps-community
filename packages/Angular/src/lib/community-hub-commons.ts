@@ -1,5 +1,9 @@
 import { UUIDsEqual } from '@memberjunction/global';
-import { AssertValidUUID, type CommunityAttachmentItem } from '@mj-biz-apps/community-core';
+import {
+  AssertValidUUID,
+  SanitizeCommunityAttachmentUrl,
+  type CommunityAttachmentItem,
+} from '@mj-biz-apps/community-core';
 import { DEMO_SEED_ATTACHMENTS } from './community-attachment-demo.ts';
 import {
   ConvertDraftsToCommunityAttachments,
@@ -44,12 +48,18 @@ export type AskShareEntryType = 'Question' | 'Discussion Post' | 'Playbook Note'
 
 export type CommunityBadgeTone = 'success' | 'warning' | 'danger' | 'brand' | 'neutral';
 
+export const DEFAULT_COMMUNITY_SPACE_ICON_CLASS = 'fa-solid fa-people-roof' as const;
+
 export interface CommunitySpaceDirectoryItem {
   id: CommunitySpaceFilterId;
   name: string;
   category: string;
   description: string;
   badge?: string;
+  imageUrl?: string | null;
+  bannerImageUrl?: string | null;
+  iconClass?: string | null;
+  color?: string | null;
 }
 
 export interface CommunityStreamTypeOption {
@@ -162,12 +172,33 @@ export interface AuthorizedForumOption {
   postingPolicy?: string | null;
 }
 
+/**
+ * Strongly-typed structural projection over `MJ_BizApps_Collaboration: Spaces` and
+ * `MJ_BizApps_Community: Community Spaces` rows so `bizapps-community` compiles cleanly both
+ * before and after `MJCollaborationSpaceEntity` publishes `ImageURL`.
+ */
+export interface CommunitySpaceRowProjection {
+  ID: string;
+  Name?: string | null;
+  Slug?: string | null;
+  CommunityKind?: string | null;
+  Description?: string | null;
+  IconClass?: string | null;
+  Color?: string | null;
+  ImageURL?: string | null;
+  BannerImageURL?: string | null;
+}
+
 export interface LiveSpaceDirectoryRow {
   ID: string;
   Slug?: string | null;
   CommunityKind?: string | null;
   Name?: string | null;
   Description?: string | null;
+  IconClass?: string | null;
+  Color?: string | null;
+  ImageURL?: string | null;
+  BannerImageURL?: string | null;
 }
 
 export interface LiveForumDirectoryRow {
@@ -353,12 +384,14 @@ export const COMMUNITY_SPACES_DIRECTORY: ReadonlyArray<CommunitySpaceDirectoryIt
     name: 'All Spaces',
     category: 'Commons',
     description: 'Every architecture circle, operational playbook, verified Q&A canon, and governance RFC.',
+    iconClass: 'fa-solid fa-layer-group',
   },
   {
     id: 'architecture-standards',
     name: 'Architecture & Standards',
     category: 'Technical Space',
     description: 'Schema parity, multi-region GraphQL patterns, and MemberJunction platform standards.',
+    iconClass: 'fa-solid fa-sitemap',
   },
   {
     id: 'product-ideation',
@@ -366,12 +399,14 @@ export const COMMUNITY_SPACES_DIRECTORY: ReadonlyArray<CommunitySpaceDirectoryIt
     category: 'Ideation Space',
     description: 'Quadratic priority proposals, capability requests, and member roadmap motions.',
     badge: 'Active',
+    iconClass: 'fa-solid fa-lightbulb',
   },
   {
     id: 'operations-playbooks',
     name: 'Operations & Playbooks',
     category: 'Runbook Space',
     description: 'Zero-downtime rotation runbooks, OAuth2 onboarding guides, and telemetry checklists.',
+    iconClass: 'fa-solid fa-book-open',
   },
   {
     id: 'governance-rfcs',
@@ -379,6 +414,7 @@ export const COMMUNITY_SPACES_DIRECTORY: ReadonlyArray<CommunitySpaceDirectoryIt
     category: 'Governance Space',
     description: 'Open community motions, working group deliverables, and standards ratifications.',
     badge: 'Ballot',
+    iconClass: 'fa-solid fa-scale-balanced',
   },
 ];
 
@@ -1808,6 +1844,112 @@ export function ComputeNextTrapFocusTarget<T>(
   return focusables[currentIndex + 1];
 }
 
+const SAFE_ICON_CLASS_REGEX = /^[a-zA-Z0-9_-]+(?:\s+[a-zA-Z0-9_-]+)*$/;
+const SAFE_HEX_COLOR_REGEX = /^[#](?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/;
+const SAFE_ROOT_RELATIVE_IMAGE_PATH_REGEX = /^\/(?!\/)[a-zA-Z0-9._~:/?#[\]@!$&'()*+,;=%-]+$/;
+
+/**
+ * Sanitizes a Community Space avatar or banner image URL, permitting `https://`, `http://`,
+ * `blob:https://...`, validated `data:image/*` URIs (excluding SVG), `/api/files/<uuid>`,
+ * and safe root-relative asset paths (e.g. `/assets/...`).
+ */
+export function SanitizeCommunitySpaceImageUrl(rawUrl: string | null | undefined): string | null {
+  if (typeof rawUrl !== 'string') {
+    return null;
+  }
+  const trimmed = rawUrl.trim();
+  if (!trimmed) {
+    return null;
+  }
+  const attachmentSafe = SanitizeCommunityAttachmentUrl(trimmed, 'image');
+  if (attachmentSafe) {
+    return attachmentSafe;
+  }
+  if (
+    SAFE_ROOT_RELATIVE_IMAGE_PATH_REGEX.test(trimmed) &&
+    !trimmed.includes('..') &&
+    !/[\u0000-\u001F\u007F]/.test(trimmed)
+  ) {
+    return trimmed;
+  }
+  return null;
+}
+
+/**
+ * Sanitizes a FontAwesome icon class string from `Space.IconClass`, rejecting unsafe characters.
+ */
+export function SanitizeCommunitySpaceIconClass(rawIconClass: string | null | undefined): string | null {
+  if (typeof rawIconClass !== 'string') {
+    return null;
+  }
+  const normalized = rawIconClass.trim().replace(/\s+/g, ' ');
+  if (!normalized || !SAFE_ICON_CLASS_REGEX.test(normalized)) {
+    return null;
+  }
+  return normalized;
+}
+
+/**
+ * Sanitizes a hex accent color string from `Space.Color`.
+ */
+export function SanitizeCommunitySpaceColor(rawColor: string | null | undefined): string | null {
+  if (typeof rawColor !== 'string') {
+    return null;
+  }
+  const trimmed = rawColor.trim();
+  if (!trimmed || !SAFE_HEX_COLOR_REGEX.test(trimmed)) {
+    return null;
+  }
+  return trimmed;
+}
+
+/**
+ * Merges strongly-typed structural projections from `MJ_BizApps_Collaboration: Spaces` and
+ * `MJ_BizApps_Community: Community Spaces` into `LiveSpaceDirectoryRow[]`, threading `ImageURL`,
+ * `BannerImageURL`, `IconClass`, `Color`, `Name`, and `Description`.
+ */
+export function MergeCommunitySpaceProjections(params: {
+  collabSpaces: ReadonlyArray<CommunitySpaceRowProjection>;
+  communitySpaces: ReadonlyArray<CommunitySpaceRowProjection>;
+}): LiveSpaceDirectoryRow[] {
+  const collabById = new Map<string, CommunitySpaceRowProjection>();
+  for (const space of params.collabSpaces) {
+    const id = space.ID?.trim();
+    if (id) {
+      collabById.set(id.toLowerCase(), space);
+    }
+  }
+
+  if (params.communitySpaces.length > 0) {
+    return params.communitySpaces.map((cs) => {
+      const collab = collabById.get(cs.ID.trim().toLowerCase());
+      return {
+        ID: cs.ID,
+        Slug: cs.Slug ?? null,
+        CommunityKind: cs.CommunityKind ?? null,
+        Name: collab?.Name ?? cs.Name ?? cs.Slug ?? null,
+        Description: collab?.Description ?? cs.Description ?? null,
+        IconClass: collab?.IconClass ?? cs.IconClass ?? null,
+        Color: collab?.Color ?? cs.Color ?? null,
+        ImageURL: collab?.ImageURL ?? cs.ImageURL ?? null,
+        BannerImageURL: cs.BannerImageURL ?? collab?.BannerImageURL ?? null,
+      };
+    });
+  }
+
+  return params.collabSpaces.map((space) => ({
+    ID: space.ID,
+    Slug: space.Slug ?? null,
+    Name: space.Name ?? null,
+    Description: space.Description ?? null,
+    CommunityKind: space.CommunityKind ?? 'Community Space',
+    IconClass: space.IconClass ?? null,
+    Color: space.Color ?? null,
+    ImageURL: space.ImageURL ?? null,
+    BannerImageURL: space.BannerImageURL ?? null,
+  }));
+}
+
 /**
  * Builds the Knowledge Stream left-rail Space directory strictly from database `CommunitySpace` /
  * `Space` / `Forum` records in live sessions. Returns `COMMUNITY_SPACES_DIRECTORY` ONLY when
@@ -1828,6 +1970,10 @@ export function BuildDynamicSpaceDirectory(params: {
       name: 'All Spaces',
       category: 'Commons',
       description: 'Every authorized community space and forum in this workspace.',
+      imageUrl: null,
+      bannerImageUrl: null,
+      iconClass: 'fa-solid fa-layer-group',
+      color: null,
     },
   ];
 
@@ -1844,6 +1990,10 @@ export function BuildDynamicSpaceDirectory(params: {
       name: space.Name?.trim() || space.Slug?.trim() || 'Community Space',
       category: space.CommunityKind?.trim() || 'Community Space',
       description: space.Description?.trim() || 'Authorized community space.',
+      imageUrl: SanitizeCommunitySpaceImageUrl(space.ImageURL),
+      bannerImageUrl: SanitizeCommunitySpaceImageUrl(space.BannerImageURL),
+      iconClass: SanitizeCommunitySpaceIconClass(space.IconClass) ?? DEFAULT_COMMUNITY_SPACE_ICON_CLASS,
+      color: SanitizeCommunitySpaceColor(space.Color),
     });
   }
 
@@ -1858,6 +2008,10 @@ export function BuildDynamicSpaceDirectory(params: {
       name: forum.Name?.trim() || 'Community Forum',
       category: forum.SpaceID ? 'Community Space' : 'Forum',
       description: forum.Description?.trim() || 'Authorized community discussion forum.',
+      imageUrl: null,
+      bannerImageUrl: null,
+      iconClass: 'fa-solid fa-comments',
+      color: null,
     });
   }
 

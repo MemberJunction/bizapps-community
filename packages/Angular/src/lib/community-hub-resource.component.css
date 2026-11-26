@@ -62,6 +62,88 @@
   flex-shrink: 0;
 }
 
+.mjc-hub-brand__avatar,
+.mjc-hub-brand__icon-tile {
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  flex-shrink: 0;
+}
+
+.mjc-hub-brand__avatar {
+  display: block;
+  object-fit: cover;
+  border: 1px solid var(--mj-border-default);
+  background: var(--mj-bg-surface-sunken, var(--mj-bg-page));
+}
+
+.mjc-hub-brand__icon-tile {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid color-mix(in srgb, var(--mjc-space-accent, var(--mj-brand-primary)) 32%, var(--mj-border-default));
+  background: color-mix(in srgb, var(--mjc-space-accent, var(--mj-brand-primary)) 16%, var(--mj-bg-surface));
+  color: var(--mjc-space-accent, var(--mj-brand-primary));
+  font-size: 0.95rem;
+}
+
+.mjc-working-space-shell__avatar,
+.mjc-working-space-shell__icon-tile {
+  width: 48px;
+  height: 48px;
+  border-radius: 12px;
+  flex-shrink: 0;
+}
+
+.mjc-working-space-shell__avatar {
+  display: block;
+  object-fit: cover;
+  border: 1px solid var(--mj-border-default);
+  background: var(--mj-bg-surface-sunken, var(--mj-bg-page));
+}
+
+.mjc-working-space-shell__icon-tile {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid color-mix(in srgb, var(--mjc-space-accent, var(--mj-brand-primary)) 32%, var(--mj-border-default));
+  background: color-mix(in srgb, var(--mjc-space-accent, var(--mj-brand-primary)) 16%, var(--mj-bg-surface));
+  color: var(--mjc-space-accent, var(--mj-brand-primary));
+  font-size: 1.15rem;
+}
+
+.mjc-porch__lead-head {
+  display: flex;
+  align-items: center;
+  gap: var(--mj-space-3);
+}
+
+.mjc-porch__space-avatar,
+.mjc-porch__space-icon-tile {
+  width: 56px;
+  height: 56px;
+  border-radius: 14px;
+  flex-shrink: 0;
+}
+
+.mjc-porch__space-avatar {
+  display: block;
+  object-fit: cover;
+  border: 1px solid var(--mj-border-default);
+  background: var(--mj-bg-surface-sunken, var(--mj-bg-page));
+  box-shadow: var(--mj-shadow-sm);
+}
+
+.mjc-porch__space-icon-tile {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid color-mix(in srgb, var(--mjc-space-accent, var(--mj-brand-primary)) 32%, var(--mj-border-default));
+  background: color-mix(in srgb, var(--mjc-space-accent, var(--mj-brand-primary)) 16%, var(--mj-bg-surface));
+  color: var(--mjc-space-accent, var(--mj-brand-primary));
+  font-size: 1.35rem;
+}
+
 .mjc-emblem-bg {
   fill: var(--mj-brand-primary);
 }

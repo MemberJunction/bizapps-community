@@ -323,7 +323,7 @@ if (harnessMode === 'collaboration') {
   };
   const builtinDefaults = [
     { key: 'Overview', label: 'Overview', icon: 'fa-solid fa-gauge-high', sortKey: 10 },
-    { key: 'Library', label: 'Documents', icon: 'fa-solid fa-folder-open', sortKey: 20 },
+    { key: 'Library', label: 'Files', icon: 'fa-solid fa-folder-open', sortKey: 20 },
     { key: 'Chat', label: 'Chat', icon: 'fa-solid fa-comments', sortKey: 40 },
   ];
   const resolvedTabs = spaceDriverInstance.GetTabs(

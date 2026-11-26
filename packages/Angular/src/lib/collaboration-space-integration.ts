@@ -383,7 +383,7 @@ function readCommunityRulesExtension(ctx: SpaceUIContext): CommunityExtensionRul
 /**
  * Full Collaboration `SpaceType` UI driver registered under `'CommunitySpaceUIDriver'`
  * (matching `SpaceType.UIDriverClass` in `metadata/space-types/.space-types.json`).
- * Preserves Collaboration's native workspace tabs (`Overview`, `Documents`, `Work`, `Notes`, `Chat`,
+ * Preserves Collaboration's native workspace tabs (`Overview`, `Files`, `Work`, `Chat`,
  * `People`, `Settings`) while overlaying Community's structured `Forums & Stream`, `Q&A Canon`,
  * `Ideation & Wallets`, and `Playbooks & Mini-Apps` tabs plus the Overview card and header chips.
  */
