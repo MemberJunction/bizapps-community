@@ -106,15 +106,20 @@ import {
   BuildEditorialPorchHighlights,
   COMMUNITY_SPACES_DIRECTORY,
   ComputeNextTrapFocusTarget,
+  DEFAULT_COMMUNITY_SPACE_ICON_CLASS,
   FilterAskShareTopicTagSuggestions,
   FilterForumsForAskShareEntryType,
   FindMatchedCanonQuestion,
   GraduateStreamItem,
   IsForumCompatibleWithAskShareEntryType,
   MapForumNameToSpaceId,
+  MergeCommunitySpaceProjections,
   PersistAskSharePost,
   PersistDetailReply,
   ResolveAuthorizedForumTarget,
+  SanitizeCommunitySpaceColor,
+  SanitizeCommunitySpaceIconClass,
+  SanitizeCommunitySpaceImageUrl,
   SEEDED_COMMUNITY_SESSIONS,
   ToggleReactionViaProvider,
   type AskShareEntryType,
@@ -126,6 +131,7 @@ import {
   type CommunitySessionItem,
   type CommunitySpaceDirectoryItem,
   type CommunitySpaceFilterId,
+  type CommunitySpaceRowProjection,
   type CommunityStreamTypeFilter,
   type LiveForumDirectoryRow,
   type LiveForumTopicTagRow,
@@ -486,10 +492,12 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
   public activeSection: 'hub' | 'spaces' = 'hub';
   public embeddedCollaborationMode = false;
   public activeGraduatedSpaceId: string | null = null;
-  public graduatedSpaceRecord: { ID: string; Name: string; Description: string | null } | null = null;
+  public graduatedSpaceRecord: CommunitySpaceRowProjection | null = null;
   public isLoadingGraduatedSpace = false;
 
   public spaceName = 'MemberJunction Community';
+  public activeHeaderSpace: CommunitySpaceDirectoryItem | null = null;
+  private readonly failedHeaderAvatarUrls = new Set<string>();
   public isOfflineDemoMode = false;
   public authorizedForums: AuthorizedForumOption[] = [];
   public allowedForumIDs: string[] = [];
@@ -922,10 +930,69 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
 
   private loadHubStateVersion = 0;
 
+  public get headerSpaceAvatarUrl(): string | null {
+    const url = this.activeHeaderSpace?.imageUrl ?? null;
+    if (!url || this.failedHeaderAvatarUrls.has(url)) {
+      return null;
+    }
+    return url;
+  }
+
+  public get headerSpaceIconClass(): string | null {
+    return this.activeHeaderSpace?.iconClass ?? null;
+  }
+
+  public get headerSpaceColor(): string | null {
+    return this.activeHeaderSpace?.color ?? null;
+  }
+
+  public onHeaderAvatarError(url: string): void {
+    if (!url) return;
+    this.failedHeaderAvatarUrls.add(url);
+    this.cdr.markForCheck();
+  }
+
+  public get graduatedSpaceAvatarUrl(): string | null {
+    const url = SanitizeCommunitySpaceImageUrl(this.graduatedSpaceRecord?.ImageURL);
+    if (!url || this.failedHeaderAvatarUrls.has(url)) {
+      return null;
+    }
+    return url;
+  }
+
+  public get graduatedSpaceIconClass(): string {
+    return (
+      SanitizeCommunitySpaceIconClass(this.graduatedSpaceRecord?.IconClass) ??
+      DEFAULT_COMMUNITY_SPACE_ICON_CLASS
+    );
+  }
+
+  public get graduatedSpaceColor(): string | null {
+    return SanitizeCommunitySpaceColor(this.graduatedSpaceRecord?.Color);
+  }
+
+  private resolveEntityProjectionFields(
+    entityName: string,
+    requiredFields: ReadonlyArray<string>,
+    optionalFields: ReadonlyArray<string>,
+  ): string[] {
+    const fields = [...requiredFields];
+    const entity = Metadata.Provider?.Entities?.find((e) => e.Name === entityName);
+    const knownFieldNames = new Set(entity?.Fields?.map((f) => f.Name.toLowerCase()) ?? []);
+    for (const optionalField of optionalFields) {
+      if (knownFieldNames.size === 0 || knownFieldNames.has(optionalField.toLowerCase())) {
+        fields.push(optionalField);
+      }
+    }
+    return fields;
+  }
+
   private resetTransientSpaceState(): void {
     this.userAddedCommonsItems.length = 0;
     this.forumSpaceIdByForumId.clear();
     this.spaceNameById.clear();
+    this.activeHeaderSpace = null;
+    this.failedHeaderAvatarUrls.clear();
     this.repliesByRootPostId.clear();
     this.upvotedPostIds.clear();
     this.tagNamesByPostId.clear();
@@ -982,6 +1049,17 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
       const rawScopeId = this.ScopeSpaceId?.trim() ?? '';
       const scopedSpaceId = rawScopeId ? AssertValidUUID(rawScopeId, 'ScopeSpaceId') : null;
 
+      const collabSpaceFields = this.resolveEntityProjectionFields(
+        'MJ_BizApps_Collaboration: Spaces',
+        ['ID', 'Name'],
+        ['Description', 'IconClass', 'Color', 'ImageURL'],
+      );
+      const communitySpaceFields = this.resolveEntityProjectionFields(
+        COMMUNITY_ENTITY_NAMES.CommunitySpaces,
+        ['ID', 'Slug', 'CommunityKind'],
+        ['Name', 'Description', 'IconClass', 'Color', 'ImageURL', 'BannerImageURL'],
+      );
+
       const [
         forumsResult,
         forumTypesResult,
@@ -1004,18 +1082,18 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
           fields: ['ID', 'Code'],
           user,
         }),
-        LoadAllPaginatedRows<{ ID: string; Name: string }>({
+        LoadAllPaginatedRows<CommunitySpaceRowProjection>({
           runView: rv,
           entityName: 'MJ_BizApps_Collaboration: Spaces',
           extraFilter: scopedSpaceId ? `ID = '${scopedSpaceId}'` : '1=1',
-          fields: ['ID', 'Name'],
+          fields: collabSpaceFields,
           user,
         }),
-        LoadAllPaginatedRows<{ ID: string; Slug: string; CommunityKind: string }>({
+        LoadAllPaginatedRows<CommunitySpaceRowProjection>({
           runView: rv,
           entityName: COMMUNITY_ENTITY_NAMES.CommunitySpaces,
           extraFilter: scopedSpaceId ? `ID = '${scopedSpaceId}'` : '1=1',
-          fields: ['ID', 'Slug', 'CommunityKind'],
+          fields: communitySpaceFields,
           user,
         }),
         LoadAllPaginatedRows<{ ID: string; Code: string }>({
@@ -1051,22 +1129,17 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
 
       const forumRows = forumsResult.success ? forumsResult.rows : [];
       const collabSpaces = collabSpacesResult.success ? collabSpacesResult.rows : [];
-      const collabNameById = new Map(collabSpaces.map((s) => [s.ID.toLowerCase(), s.Name]));
+      const collabNameById = new Map(
+        collabSpaces
+          .filter((s) => typeof s.Name === 'string' && s.Name.trim().length > 0)
+          .map((s) => [s.ID.toLowerCase(), s.Name!.trim()]),
+      );
       const communitySpaces = communitySpacesResult.success ? communitySpacesResult.rows : [];
 
-      const liveSpaceRows: LiveSpaceDirectoryRow[] =
-        communitySpaces.length > 0
-          ? communitySpaces.map((cs) => ({
-              ID: cs.ID,
-              Slug: cs.Slug,
-              CommunityKind: cs.CommunityKind,
-              Name: collabNameById.get(cs.ID.toLowerCase()) ?? cs.Slug,
-            }))
-          : collabSpaces.map((s) => ({
-              ID: s.ID,
-              Name: s.Name,
-              CommunityKind: 'Community Space',
-            }));
+      const liveSpaceRows: LiveSpaceDirectoryRow[] = MergeCommunitySpaceProjections({
+        collabSpaces,
+        communitySpaces,
+      });
 
       const liveForumRows: LiveForumDirectoryRow[] = forumRows.map((f) => ({
         ID: f.ID,
@@ -1111,12 +1184,17 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
       this.allowedForumIDs = this.authorizedForums.map((f) => f.id);
       if (scopedSpaceId) {
         this.spaceName = collabNameById.get(scopedSpaceId.toLowerCase()) ?? this.spaceName;
+        this.activeHeaderSpace =
+          this.streamSpaces.find((s) => s.id.toLowerCase() === scopedSpaceId.toLowerCase()) ?? null;
       } else {
         const preferredSpace =
           liveSpaceRows.find((s) => /\b(commons|hub|community)\b/i.test(s.Name ?? '')) ??
           collabSpaces.find((s) => /\b(commons|hub|community)\b/i.test(s.Name ?? '')) ??
           (liveSpaceRows.length === 1 ? liveSpaceRows[0] : null);
         this.spaceName = preferredSpace?.Name ?? 'Community';
+        this.activeHeaderSpace = preferredSpace
+          ? (this.streamSpaces.find((s) => s.id.toLowerCase() === preferredSpace.ID.toLowerCase()) ?? null)
+          : null;
       }
 
       if (!forumsResult.success) {
@@ -2601,11 +2679,16 @@ export class CommunityHubResource extends BaseResourceComponent implements OnIni
     this.cdr.markForCheck();
     try {
       const safeId = AssertValidUUID(spaceId, 'graduatedSpaceId');
-      const res = await new RunView().RunView<{ ID: string; Name: string; Description: string | null }>(
+      const graduatedSpaceFields = this.resolveEntityProjectionFields(
+        'MJ_BizApps_Collaboration: Spaces',
+        ['ID', 'Name'],
+        ['Description', 'IconClass', 'Color', 'ImageURL'],
+      );
+      const res = await new RunView().RunView<CommunitySpaceRowProjection>(
         {
           EntityName: 'MJ_BizApps_Collaboration: Spaces',
           ExtraFilter: `ID = '${safeId}'`,
-          Fields: ['ID', 'Name', 'Description'],
+          Fields: graduatedSpaceFields,
           ResultType: 'simple',
           MaxRows: 1,
         },

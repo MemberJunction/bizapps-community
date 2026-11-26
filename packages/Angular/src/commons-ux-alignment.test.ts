@@ -14,21 +14,27 @@ import {
   COMMUNITY_TOPIC_TAGS,
   ComputeNextTrapFocusTarget,
   CreateAskShareStreamItem,
+  DEFAULT_COMMUNITY_SPACE_ICON_CLASS,
   FilterAskShareTopicTagSuggestions,
   FilterForumsForAskShareEntryType,
   FilterCommonsStream,
   FindMatchedCanonQuestion,
   GraduateStreamItem,
   IsForumCompatibleWithAskShareEntryType,
+  MergeCommunitySpaceProjections,
   PersistAskSharePost,
   PersistDetailReply,
   ResolveAuthorizedForumTarget,
+  SanitizeCommunitySpaceColor,
+  SanitizeCommunitySpaceIconClass,
+  SanitizeCommunitySpaceImageUrl,
   SEEDED_COMMUNITY_SESSIONS,
   STREAM_TYPE_FILTER_OPTIONS,
   ToggleReactionViaProvider,
   ToggleStreamItemUpvote,
   ValidateAskShareDraft,
   type CommunityCommonsReply,
+  type CommunitySpaceRowProjection,
 } from './lib/community-hub-commons.ts';
 import * as CommunityHubMutations from './lib/community-hub-mutations.ts';
 import {
@@ -1238,5 +1244,187 @@ describe('Slice 3 — Live Thread Reply, Upvote Reaction, Dynamic Directories, T
     assert.ok(streamHtml.includes('[innerHTML]="renderMarkdown('));
     assert.ok(!streamHtml.includes('id="mjc-canon-quick-lookup"'), 'duplicate Instant Answers search input must be removed');
     assert.ok(streamHtml.includes('toggleShowAllTopics()'));
+  });
+});
+
+describe('Community Space Avatar Images — Projection, Sanitization, Directory & Template Wiring', () => {
+  const SPACE_A_ID = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+  const SPACE_B_ID = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+  const SPACE_C_ID = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
+  const FORUM_FALLBACK_ID = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd';
+  const SAMPLE_PNG_DATA_URL =
+    'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
+
+  it('sanitizes space avatar URLs, FontAwesome icon classes, and hex accent colors safely', () => {
+    assert.equal(
+      SanitizeCommunitySpaceImageUrl('https://cdn.example.com/avatars/community-128.png'),
+      'https://cdn.example.com/avatars/community-128.png',
+    );
+    assert.equal(SanitizeCommunitySpaceImageUrl(SAMPLE_PNG_DATA_URL), SAMPLE_PNG_DATA_URL);
+    assert.equal(
+      SanitizeCommunitySpaceImageUrl('/assets/community-avatars/hub-128.webp'),
+      '/assets/community-avatars/hub-128.webp',
+    );
+    assert.equal(SanitizeCommunitySpaceImageUrl('javascript:alert(1)'), null);
+    assert.equal(SanitizeCommunitySpaceImageUrl('data:image/svg+xml,<svg onload=alert(1)>'), null);
+    assert.equal(SanitizeCommunitySpaceImageUrl('//evil.example.com/avatar.png'), null);
+    assert.equal(SanitizeCommunitySpaceImageUrl('/assets/../etc/passwd'), null);
+    assert.equal(SanitizeCommunitySpaceImageUrl('   '), null);
+
+    assert.equal(SanitizeCommunitySpaceIconClass('  fa-solid   fa-rocket  '), 'fa-solid fa-rocket');
+    assert.equal(SanitizeCommunitySpaceIconClass('fa-solid fa-rocket" onclick="alert(1)'), null);
+    assert.equal(SanitizeCommunitySpaceIconClass(''), null);
+
+    assert.equal(SanitizeCommunitySpaceColor('#9333ea'), '#9333ea');
+    assert.equal(SanitizeCommunitySpaceColor('#abc'), '#abc');
+    assert.equal(SanitizeCommunitySpaceColor('red; background:url(javascript:alert(1))'), null);
+    assert.equal(SanitizeCommunitySpaceColor(''), null);
+  });
+
+  it('merges Collaboration Spaces and Community Spaces projections while threading ImageURL, BannerImageURL, IconClass, and Color', () => {
+    const collabSpaces: CommunitySpaceRowProjection[] = [
+      {
+        ID: SPACE_A_ID,
+        Name: 'Architecture Commons',
+        Description: 'Platform architecture guild and RFC review circles.',
+        IconClass: 'fa-solid fa-sitemap',
+        Color: '#4f46e5',
+        ImageURL: SAMPLE_PNG_DATA_URL,
+      },
+      {
+        ID: SPACE_B_ID,
+        Name: 'Security Working Group',
+        Description: 'Threat modeling and response drills.',
+        IconClass: 'fa-solid fa-shield-halved',
+        Color: '#2563eb',
+        ImageURL: null,
+      },
+    ];
+    const communitySpaces: CommunitySpaceRowProjection[] = [
+      {
+        ID: SPACE_A_ID,
+        Slug: 'architecture-commons',
+        CommunityKind: 'Technical Community',
+        BannerImageURL: 'https://cdn.example.com/banners/arch.png',
+      },
+      {
+        ID: SPACE_B_ID,
+        Slug: 'security-wg',
+        CommunityKind: 'Working Group',
+        BannerImageURL: null,
+      },
+    ];
+
+    const merged = MergeCommunitySpaceProjections({ collabSpaces, communitySpaces });
+    assert.equal(merged.length, 2);
+    assert.deepEqual(merged[0], {
+      ID: SPACE_A_ID,
+      Slug: 'architecture-commons',
+      CommunityKind: 'Technical Community',
+      Name: 'Architecture Commons',
+      Description: 'Platform architecture guild and RFC review circles.',
+      IconClass: 'fa-solid fa-sitemap',
+      Color: '#4f46e5',
+      ImageURL: SAMPLE_PNG_DATA_URL,
+      BannerImageURL: 'https://cdn.example.com/banners/arch.png',
+    });
+    assert.equal(merged[1].ImageURL, null);
+    assert.equal(merged[1].IconClass, 'fa-solid fa-shield-halved');
+    assert.equal(merged[1].Color, '#2563eb');
+
+    // When communitySpaces is empty, falls back cleanly to Collaboration Spaces rows
+    const collabOnly = MergeCommunitySpaceProjections({ collabSpaces, communitySpaces: [] });
+    assert.equal(collabOnly.length, 2);
+    assert.equal(collabOnly[0].CommunityKind, 'Community Space');
+    assert.equal(collabOnly[0].ImageURL, SAMPLE_PNG_DATA_URL);
+  });
+
+  it('threads ImageURL and IconClass + Color fallbacks through BuildDynamicSpaceDirectory', () => {
+    const directory = BuildDynamicSpaceDirectory({
+      isOfflineDemoMode: false,
+      spaces: [
+        {
+          ID: SPACE_A_ID,
+          Name: 'Platform Community',
+          CommunityKind: 'Product Community',
+          Description: 'Flagship community hub.',
+          ImageURL: 'https://cdn.example.com/spaces/platform-128.png',
+          BannerImageURL: 'https://cdn.example.com/spaces/platform-banner.png',
+          IconClass: 'fa-solid fa-compass',
+          Color: '#9333ea',
+        },
+        {
+          ID: SPACE_B_ID,
+          Name: 'Ops Guild',
+          CommunityKind: 'Runbook Space',
+          ImageURL: 'javascript:alert(1)',
+          IconClass: 'fa-solid fa-book-open',
+          Color: '#059669',
+        },
+        {
+          ID: SPACE_C_ID,
+          Name: 'Minimal Space',
+          CommunityKind: 'Community Space',
+          ImageURL: null,
+          IconClass: null,
+          Color: 'not-a-hex-color',
+        },
+      ],
+      forums: [
+        {
+          ID: FORUM_FALLBACK_ID,
+          Name: 'Standalone Forum',
+          SpaceID: null,
+          Description: 'Forum without a linked space row.',
+        },
+      ],
+    });
+
+    assert.equal(directory.length, 5);
+    assert.equal(directory[0].id, 'all');
+    assert.equal(directory[0].iconClass, 'fa-solid fa-layer-group');
+    assert.equal(directory[0].imageUrl, null);
+
+    // Space A preserves sanitized ImageURL, BannerImageURL, IconClass, and Color
+    assert.equal(directory[1].imageUrl, 'https://cdn.example.com/spaces/platform-128.png');
+    assert.equal(directory[1].bannerImageUrl, 'https://cdn.example.com/spaces/platform-banner.png');
+    assert.equal(directory[1].iconClass, 'fa-solid fa-compass');
+    assert.equal(directory[1].color, '#9333ea');
+
+    // Space B strips unsafe ImageURL and retains IconClass + Color fallback
+    assert.equal(directory[2].imageUrl, null);
+    assert.equal(directory[2].iconClass, 'fa-solid fa-book-open');
+    assert.equal(directory[2].color, '#059669');
+
+    // Space C falls back to DEFAULT_COMMUNITY_SPACE_ICON_CLASS and rejects invalid Color
+    assert.equal(directory[3].imageUrl, null);
+    assert.equal(directory[3].iconClass, DEFAULT_COMMUNITY_SPACE_ICON_CLASS);
+    assert.equal(directory[3].color, null);
+
+    // Standalone forum fallback uses forum comments icon
+    assert.equal(directory[4].id, FORUM_FALLBACK_ID);
+    assert.equal(directory[4].imageUrl, null);
+    assert.equal(directory[4].iconClass, 'fa-solid fa-comments');
+  });
+
+  it('renders community space avatars with IconClass fallback across directory tiles, rail, active space banner, and hub headers', () => {
+    const streamHtml = readFileSync(join(LIB_DIR, 'knowledge-stream.component.html'), 'utf8');
+    const hubHtml = readFileSync(join(LIB_DIR, 'community-hub-resource.component.html'), 'utf8');
+    const hubTs = readFileSync(join(LIB_DIR, 'community-hub-resource.component.ts'), 'utf8');
+
+    // Knowledge Stream: rail avatar, featured community tiles, active space banner, and stream card chip
+    assert.match(streamHtml, /class="mjc-space-avatar mjc-space-avatar--rail"[\s\S]*\[src\]="space\.imageUrl"/);
+    assert.match(streamHtml, /class="mjc-space-directory"/);
+    assert.match(streamHtml, /class="mjc-space-avatar mjc-space-avatar--tile"[\s\S]*\[src\]="space\.imageUrl"/);
+    assert.match(streamHtml, /class="mjc-space-avatar mjc-space-avatar--banner"[\s\S]*\[src\]="activeSpace\.imageUrl"/);
+    assert.match(streamHtml, /\[class\]="spaceIconClass\(space\)"/);
+    assert.match(streamHtml, /\(error\)="onSpaceAvatarError\(space\.id\)"/);
+
+    // Community Hub Resource: sticky header, porch hero, and graduated working space header
+    assert.match(hubHtml, /class="mjc-hub-brand__avatar"[\s\S]*\[src\]="headerAvatar"/);
+    assert.match(hubHtml, /class="mjc-porch__space-avatar"[\s\S]*\[src\]="porchAvatar"/);
+    assert.match(hubHtml, /class="mjc-working-space-shell__avatar"[\s\S]*\[src\]="gradAvatar"/);
+    assert.match(hubTs, /LoadAllPaginatedRows<CommunitySpaceRowProjection>/);
+    assert.match(hubTs, /MergeCommunitySpaceProjections\(/);
   });
 });

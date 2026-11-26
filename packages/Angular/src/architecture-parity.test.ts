@@ -317,13 +317,29 @@ describe('OpenApp Readiness — Collaboration Space UI Driver, BaseSpaceTab & Ba
   );
   const spaceTypeMetadata = JSON.parse(
     readFileSync(join(HERE, '..', '..', '..', 'metadata', 'space-types', '.space-types.json'), 'utf8'),
-  ) as Array<{ fields?: { Code?: string; UIDriverClass?: string } }>;
+  ) as Array<{
+    fields?: {
+      Code?: string;
+      UIDriverClass?: string;
+      Configuration?: {
+        Labels?: {
+          Tabs?: Record<string, string>;
+        };
+      };
+    };
+  }>;
 
   it("registers CommunityCollaborationSpaceUIDriver under 'CommunitySpaceUIDriver' matching metadata UIDriverClass", () => {
     const driverClassName = spaceTypeMetadata[0]?.fields?.UIDriverClass;
     assert.equal(driverClassName, 'CommunitySpaceUIDriver');
     assert.match(integrationSource, /@RegisterClass\(BaseSpaceTypeUIDriver,\s*'CommunitySpaceUIDriver'\)/);
     assert.match(integrationSource, /extends BaseSpaceTypeUIDriver/);
+  });
+
+  it('aligns community SpaceType tab label overrides with Collaboration (library -> Files, no notes override)', () => {
+    const tabLabels = spaceTypeMetadata[0]?.fields?.Configuration?.Labels?.Tabs;
+    assert.equal(tabLabels?.['library'], 'Files');
+    assert.equal(tabLabels?.['notes'], undefined);
   });
 
   it('registers all 4 BaseSpaceTab contributions and the Shared Overview card for community spaces with OnPush', () => {
