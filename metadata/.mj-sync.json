@@ -15,7 +15,8 @@
     "entity-permissions",
     "entities",
     "prompts",
-    "actions"
+    "actions",
+    "chief-of-staff-skills"
   ],
   "emitSyncNotes": false,
   "sqlLogging": {

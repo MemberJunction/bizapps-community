@@ -1,0 +1,78 @@
+[
+  {
+    "fields": {
+      "Name": "Community",
+      "Description": "Navigate member discussions, Q&A forums, thread syntheses, epistemic answer grading, and personalized community digests in BizApps Community with space, forum, and team-band RLS scoping. Installed by the BizApps Community app.",
+      "Instructions": "@file:templates/community-chief-of-staff.skill.md",
+      "Status": "Active",
+      "ActivationMode": "Auto",
+      "Category": "Collaboration",
+      "IconClass": "fa-solid fa-comments",
+      "Color": "#0D9488",
+      "CreatedByUserID": "@lookup:MJ: Users.Name=System"
+    },
+    "relatedEntities": {
+      "MJ: AI Agent Skills": [
+        {
+          "fields": {
+            "AgentID": "@lookup:MJ: AI Agents.Name=Chief of Staff",
+            "SkillID": "@parent:ID",
+            "Status": "Active"
+          },
+          "primaryKey": {
+            "ID": "35AE0DBE-E049-46B1-A5DE-DD79654019F0"
+          }
+        }
+      ],
+      "MJ: AI Skill Actions": [
+        {
+          "fields": {
+            "SkillID": "@parent:ID",
+            "ActionID": "@lookup:MJ: Actions.Name=Ask-First Deflection",
+            "Role": "Tool",
+            "ExposeToModel": true
+          },
+          "primaryKey": {
+            "ID": "59EFC24A-1D68-4C1D-B6B7-883DA1709BEF"
+          }
+        },
+        {
+          "fields": {
+            "SkillID": "@parent:ID",
+            "ActionID": "@lookup:MJ: Actions.Name=Living Thread Synthesis",
+            "Role": "Tool",
+            "ExposeToModel": true
+          },
+          "primaryKey": {
+            "ID": "350229FB-E480-4BE1-8C80-50DF1F218AB9"
+          }
+        },
+        {
+          "fields": {
+            "SkillID": "@parent:ID",
+            "ActionID": "@lookup:MJ: Actions.Name=Epistemic Answer Grading",
+            "Role": "Tool",
+            "ExposeToModel": true
+          },
+          "primaryKey": {
+            "ID": "9593FD6C-E168-4430-A57B-C9FE74D94E62"
+          }
+        },
+        {
+          "fields": {
+            "SkillID": "@parent:ID",
+            "ActionID": "@lookup:MJ: Actions.Name=Export Community Digest PDF",
+            "Role": "Tool",
+            "ExposeToModel": true
+          },
+          "primaryKey": {
+            "ID": "5814FB0B-F748-4F7F-AFEC-12E905874B8A"
+          }
+        }
+      ]
+    },
+    "primaryKey": {
+      "ID": "DB3BD041-28CB-46EF-A6F4-862CED28CC1F"
+    }
+  }
+]
